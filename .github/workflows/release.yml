@@ -23,7 +23,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"   # the version baked into the image
@@ -43,7 +43,7 @@ jobs:
       id-token: write      # keyless (sigstore) signing of the provenance attestation
       attestations: write  # attach the build-provenance attestation to the image
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Multi-arch: amd64 for Proxmox hosts/servers, arm64 for Apple-Silicon
       # workstations (the image runs wherever the MCP client lives). Proximo's

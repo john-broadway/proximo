@@ -18,7 +18,7 @@ jobs:
       security-events: write   # upload findings to the repo Security tab
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
