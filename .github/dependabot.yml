@@ -1,11 +1,18 @@
 version: 2
 updates:
-  # Keep GitHub Actions current — in particular the SHA-pinned privileged actions
-  # in release.yml (login / build-push / attest), which sign and publish the image.
-  # Dependabot bumps both the pinned SHA and its `# vN` comment as new releases land.
+  # Keep GitHub Actions current — especially the SHA-pinned privileged actions in
+  # the release workflows (login / build-push / attest / pypi-publish).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: ci
+
+  # Keep Python dependencies current + surface CVE-driven bumps (reads pyproject.toml).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps

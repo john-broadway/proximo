@@ -26,3 +26,39 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q -ra
+
+  version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check version consistency (pyproject == __init__ == CHANGELOG)
+        run: python scripts/version_tools.py check   # stdlib only, no install needed
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history so gitleaks scans commits, not just the tree
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        # Free for public repos / personal accounts — no GITLEAKS_LICENSE needed.
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    # ON-RAMP: warn-only on the first pass so pre-existing advisories don't block the
+    # first green release. Remove `continue-on-error` to make it a hard fail once the
+    # baseline is clean (see plan Task 8 follow-up).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Audit dependencies for known CVEs
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          local: true
