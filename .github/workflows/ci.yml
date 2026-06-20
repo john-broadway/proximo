@@ -45,7 +45,10 @@ jobs:
           fetch-depth: 0   # full history so gitleaks scans commits, not just the tree
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2
-        # Free for public repos / personal accounts — no GITLEAKS_LICENSE needed.
+        # Free for individual accounts — no GITLEAKS_LICENSE needed. GITHUB_TOKEN is
+        # required to scan pull requests (gitleaks-action v2 breaking change).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   pip-audit:
     runs-on: ubuntu-latest
