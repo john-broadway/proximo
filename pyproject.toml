@@ -26,10 +26,10 @@ dependencies = [
 # Install with: pip install 'proximo-proxmox[a2a]'  (adds the official a2a-sdk + an ASGI server).
 # a2a-sdk[signing] pulls PyJWT for the SIGNET card-signing helpers; cryptography is used directly
 # by proximo.a2a.signing — declared explicitly rather than relied on transitively.
-a2a = ["a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=0.37", "cryptography>=42"]
+a2a = ["a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=1.3.1", "cryptography>=42"]
 dev = [
   "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "pyright>=1.1",
-  "a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=0.37", "cryptography>=42",  # A2A slice + SIGNET tests
+  "a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=1.3.1", "cryptography>=42",  # A2A slice + SIGNET tests
 ]
 
 [project.scripts]
