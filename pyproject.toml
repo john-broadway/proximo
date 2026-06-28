@@ -28,7 +28,7 @@ dependencies = [
 # by proximo.a2a.signing — declared explicitly rather than relied on transitively.
 a2a = ["a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=0.37", "cryptography>=42"]
 dev = [
-  "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "pyright>=1.1",
+  "pytest>=8", "pytest-asyncio>=1.4.0", "ruff>=0.6", "pyright>=1.1",
   "a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=0.37", "cryptography>=42",  # A2A slice + SIGNET tests
 ]
 
