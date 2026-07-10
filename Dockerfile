@@ -4,7 +4,7 @@
 # Dependabot's `docker` ecosystem bumps the digest weekly and Trivy re-scans the base
 # on every push to main + weekly, so it still receives upstream security updates
 # without floating at build time.
-FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.
