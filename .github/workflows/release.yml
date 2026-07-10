@@ -55,7 +55,7 @@ jobs:
         # The next three actions are SHA-pinned (not floating tags): they hold the
         # token, publish the image, and sign provenance — a re-pointed tag here would
         # be a supply-chain hole. Dependabot bumps the SHA and the `# vN` comment.
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
