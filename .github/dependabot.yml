@@ -1,6 +1,15 @@
-# Dependabot — keep dependencies, pinned Actions, and the Docker base image current, grouped so
-# updates arrive as a few tidy PRs instead of one-per-package. Majors stay ungrouped on purpose
-# (a breaking bump deserves its own reviewed PR).
+# Dependabot — keep pinned Actions and the Docker base image current, grouped so updates arrive as
+# a few tidy PRs instead of one-per-package. Majors stay ungrouped on purpose (a breaking bump
+# deserves its own reviewed PR).
+#
+# NOTE — no `pip` ecosystem here, on purpose. proximo is uv-managed: requirements/*.txt are
+# hash-pinned `uv export` artifacts, and Dependabot (which has no `uv` ecosystem) can only edit
+# them package-by-package — it cannot run `uv` to move a parent+child pin or a lockstep transitive
+# together. That produces un-installable PRs (e.g. bumping pydantic-core past pydantic's exact pin,
+# or protobuf past the proto-plus/grpc cap). Python dependency currency is handled by
+# `uv lock --upgrade` + re-export (the four commands in each requirements/*.txt header), gated by
+# the full test suite. Dependabot SECURITY updates still cover CVEs — they run off the dependency
+# graph, independent of this file (automated-security-fixes + vulnerability-alerts are ENABLED).
 version: 2
 updates:
   # Keep GitHub Actions current — especially the SHA-pinned privileged actions in the release
@@ -14,19 +23,6 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-
-  # Python deps (reads pyproject.toml). proximo is uv-managed, but Dependabot has no `uv`
-  # ecosystem, so `pip` surfaces the dependency bumps; uv.lock is refreshed on the next `uv sync`.
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: deps
-    groups:
-      python:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # Keep the Docker base image digest current. The Dockerfile pins python:3.13-slim by sha256
   # (reproducible builds); without this the base would never get upstream security updates.
