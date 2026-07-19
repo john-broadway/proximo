@@ -8,7 +8,7 @@
 # Two stages so the WHOLE dependency chain is hash-pinned (requirements/*.txt, exported
 # from uv.lock) and the final image carries neither the build tooling nor the source tree.
 
-FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS build
+FROM python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91 AS build
 
 WORKDIR /app
 # Allow-list copy: only what the wheel build needs. The working tree is never copied
@@ -22,7 +22,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
  && python -m build --wheel --no-isolation
 
-FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+FROM python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.
