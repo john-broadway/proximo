@@ -1,27 +1,37 @@
+# Dependabot — keep dependencies, pinned Actions, and the Docker base image current, grouped so
+# updates arrive as a few tidy PRs instead of one-per-package. Majors stay ungrouped on purpose
+# (a breaking bump deserves its own reviewed PR).
 version: 2
 updates:
-  # Keep GitHub Actions current — especially the SHA-pinned privileged actions in
-  # the release workflows (login / build-push / attest / pypi-publish).
+  # Keep GitHub Actions current — especially the SHA-pinned privileged actions in the release
+  # workflows (login / build-push / attest / pypi-publish).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
 
-  # Keep Python dependencies current + surface CVE-driven bumps (reads pyproject.toml).
+  # Python deps (reads pyproject.toml). proximo is uv-managed, but Dependabot has no `uv`
+  # ecosystem, so `pip` surfaces the dependency bumps; uv.lock is refreshed on the next `uv sync`.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: deps
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
-  # Keep the Docker base image digest current. The Dockerfile pins python:3.13-slim
-  # by sha256 (reproducible builds); without this the base would never receive
-  # upstream security updates. Merged bumps are re-scanned by the Trivy workflow on
-  # push to main. Stay on the 3.13 line — take digest/patch, not a 3.14 tag jump
-  # (moving the Python minor in the shipped image is a deliberate, reviewed change).
+  # Keep the Docker base image digest current. The Dockerfile pins python:3.13-slim by sha256
+  # (reproducible builds); without this the base would never get upstream security updates.
+  # Merged bumps are re-scanned by the Trivy workflow on push to main. Stay on the 3.13 line —
+  # take digest/patch, not a 3.14 tag jump (moving the shipped Python minor is a reviewed change).
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -31,3 +41,6 @@ updates:
     ignore:
       - dependency-name: "python"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      docker:
+        patterns: ["*"]
