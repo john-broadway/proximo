@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://john-broadway.github.io/proximo/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-dark-3f119338.png">
-      <img alt="Proximo" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-light-ebf45407.png" width="880">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-dark-63e64dd5.png">
+      <img alt="Proximo" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-light-c1322c4d.png" width="880">
     </picture>
   </a>
 </p>
