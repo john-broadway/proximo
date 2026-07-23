@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://john-broadway.github.io/proximo/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-hero-dark.png">
-      <img alt="Proximo: hand your AI agent the keys. Planned, proven, undone. Win the crowd and you will win your freedom." src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-hero-light.png" width="880">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-hero-dark.png?v=2">
+      <img alt="Proximo: hand your AI agent the keys. Planned, proven, undone. Win the crowd and you will win your freedom." src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-hero-light.png?v=2" width="880">
     </picture>
   </a>
 </p>
