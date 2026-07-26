@@ -21,8 +21,13 @@ updates:
     commit-message:
       prefix: ci
     groups:
+      # Grouped for minor/patch only. A major is a breaking bump and gets its own PR, so the
+      # review is on one action instead of buried in a "N updates" batch. Without this
+      # `update-types` line the group swallows majors too: PR #47 carried setup-python v6 to v7
+      # inside a routine-looking batch, which is exactly what the header claims does not happen.
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Keep the Docker base image digest current. The Dockerfile pins python:3.13-slim by sha256
   # (reproducible builds); without this the base would never get upstream security updates.
