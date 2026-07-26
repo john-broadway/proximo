@@ -39,6 +39,19 @@ jobs:
       - name: Check version consistency (pyproject == __init__ == CHANGELOG == server.json)
         run: python scripts/version_tools.py check   # stdlib only, no install needed
 
+  # requirements/*.txt are exports of uv.lock, and the `test` job installs them with pip,
+  # so uv is absent there and the drift guard in tests/test_requirements_lock.py skips —
+  # exactly where a stale export does its damage. That skip is why pyasn1 sat two days at
+  # 0.6.3 in dev.txt while the lock already said 0.6.4 (alerts #3/#4). This job is the
+  # environment where the guard cannot skip.
+  requirements-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Check requirements/*.txt still match uv.lock
+        run: uv run --no-project --with pytest pytest tests/test_requirements_lock.py -q -ra
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:

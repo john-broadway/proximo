@@ -8,9 +8,13 @@
 #                   consistently with dev.txt so the two files co-install
 #   sbom.txt     <- sbom.in   (cyclonedx-bom), pinned consistently with runtime.txt
 #
-# Run after ANY dependency change (pyproject, uv lock). tests/test_requirements_lock.py
-# fails when the exported pair drifts from uv.lock; release.sh regenerates + verifies all
-# four in its gate.
+# Run after ANY dependency change (pyproject, uv lock), and COMMIT uv.lock alongside the
+# four exports — the lock is tracked, and a lock that moves without its exports is the
+# drift this guards against (pyasn1 sat two days at 0.6.3 in dev.txt while the lock said
+# 0.6.4). tests/test_requirements_lock.py fails when the exported pair drifts from uv.lock
+# and when the lock is untracked; the ci.yml `requirements-drift` job runs that guard in an
+# environment that has uv, because the `test` job installs with pip and would skip it.
+# release.sh regenerates + verifies all four in its gate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -32,8 +32,13 @@ audit.log
 *.env
 !*.env.example
 
-# Lockfile (library — consumers resolve their own deps)
-uv.lock
+# uv.lock is TRACKED, deliberately. It used to be ignored on the reasoning "library,
+# consumers resolve their own deps" — true for PyPI consumers, and committing the lock
+# does not change that, because the lock never enters the wheel. But this repo also ships
+# a hash-pinned container and an SBOM built from requirements/*.txt, which are exports of
+# the lock. With the lock ignored, that chain started at a file living on one machine, and
+# any other clone regenerated the pins from a fresh resolution. Guarded by
+# tests/test_requirements_lock.py::test_uv_lock_is_tracked_by_git.
 
 # Throwaway verification/smoke scratch (may hold local paths; never commit)
 .scratch/
