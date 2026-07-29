@@ -86,7 +86,7 @@ def build_agent_card(
     card = AgentCard(
         name="Proximo",
         description=(
-            "The ethical Proxmox operator agent — one trust core, two faces (MCP + A2A). "
+            "The ethical Proxmox operator agent — one governed core, three faces (MCP, A2A, API). "
             "Every mutation is planned, audited, and reversible by construction."
         ),
         version=pkg_version,

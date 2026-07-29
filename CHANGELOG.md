@@ -2,6 +2,61 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.26.0] — 2026-07-28
+
+**The surface stops costing what it covers.** Reported from outside, with a measurement:
+Proximo was unusable with a local model. The full tool catalog crossed to every client on
+every connection — **~348,000 tokens** of schema before a single question, past a 200k window
+on its own, and ~122,000 for a single auto-scoped plane. An 8k-32k local model died at
+connection time. The report was correct, and measuring it confirmed it was worse than reported.
+
+Nothing had ever measured this. The surface grew 365 → 493 → 603 → 715 → 900 with no gate
+anywhere costing what a jump did to the client's context.
+
+- **Schema slimming — 348k → 276k tokens, no capability change.** 84,000 of those tokens were
+  one sentence: the per-call target selector's description, identical on 899 of 900 tools.
+  Another 24,000 were pydantic writing a `title` beside every parameter name that already said
+  the same word. `title` is presentational in JSON Schema and never reaches validation.
+- **Scoping, in the field-standard shape** (GitHub's MCP server vocabulary, so it is one
+  adopters already know). Most specific wins: `PROXIMO_TOOLS` (exact names) → `PROXIMO_TOOLSETS`
+  (23 domain groups: `pve.guests`, `pve.ceph`, `pbs.tape`, `pmg.quarantine`, …) →
+  `PROXIMO_SURFACES` (planes, unchanged) → auto-scope. A typo refuses startup rather than
+  quietly serving a different set than you picked.
+- **`PROXIMO_TOOLSETS=dynamic` — the whole surface on a small model.** Three tools resident
+  (`proximo_find_tools` / `proximo_tool_schema` / `proximo_call`) at **~555 tokens**; the other
+  ~311 stay callable, just not resident. Dispatch routes through the same internal path a direct
+  call uses, so the PLAN gate, the PROVE ledger write and your token's ACL all still apply — a
+  smaller doorway, not a looser one.
+
+- **Counted lean list responses — the payload half of the same report.** Schema bloat wastes
+  context; response bloat corrupts answers: with the full 25-field guest listing (PSI pressure
+  metrics, byte counters) in a 16k context, a 12B local model counted 19 guests on a 28-guest
+  cluster — complete correct data, wrong answer. Lean rows alone were not enough (the same
+  model then counted 24), so counting moved server-side: `pve_list_guests` and
+  `pve_cluster_resources` now return `{total, by_status|by_type, rows}` with the rows in a
+  curated identity/state field set by default (~4× and ~3× smaller on that same cluster). With
+  the counted envelope the model answered 28/18/10 correctly, three runs out of three.
+  `fields='all'` keeps the raw rows, `fields='vmid,mem,…'` picks columns, and a field no row
+  carries refuses with the list of fields that ARE available — an error that teaches, never a
+  silently empty answer.
+
+Measured on a real 28-guest cluster: `dynamic` 4 tools / ~555 tokens · `PROXIMO_TOOLS` with
+three names / ~1,040 · `pve.guests` 27 tools / ~8,900 · `PROXIMO_SURFACES=pve` 310 / ~97,000.
+Toolsets reach roughly 32k-class models; `dynamic` is the mode that reaches ~8k.
+
+**PROVE now records the interval, not just the result.** Mutations write an `executing` entry
+before the call and a terminal entry after, sharing a derived intent id, so an operation that
+died mid-flight is visible instead of invisible. Previously a SIGKILL between the call and the
+outcome write left an executed mutation with **no ledger entry at all**; `audit.in_flight()`
+now names what was running. Verified by killing a real mutation, not by simulating one. The
+interval lives in the same hash-chained log, so the crash record is tamper-evident. Reads are
+unchanged — a read that dies changed nothing. Refusals carry no intent: they never started.
+
+Also: `pve_doctor` reports the active scoping layer across all four (it knew only
+`PROXIMO_SURFACES`, and silently misreported boxes scoped any other way).
+
+_Recent: 0.25.0 closed the PMG plane and added a fourth transport (715 → 900 tools)._
+
 ## [0.25.0] — 2026-07-18
 
 **The PMG plane closes — and a fourth transport arrives.** 715 → **900 tools** (Wave 9, 10

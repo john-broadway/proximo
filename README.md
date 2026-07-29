@@ -191,7 +191,9 @@ A second cut: `doctor` preflight, a destructive delete answered with a **PLAN**,
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
-900 tools is an estate, not a starting point. Where an operator actually starts:
+900 tools is an estate, not a starting point — and you only carry the part you use. One env var sets your floor: `PROXIMO_TOOLSETS=dynamic` serves 3 search tools with all 900 still callable (~555 tokens of context), one domain like `pve.guests` runs ~8,900, a whole plane ~97,000. **The estate is 900. The doorway is yours to size.** Coverage and context stopped being the same number.
+
+Where an operator actually starts:
 
 | You want to… | Start with | Worth knowing |
 |---|---|---|
@@ -206,21 +208,21 @@ Those backends are deliberately boring. Anyone can call them. **The product is t
 | Operate the federated fleet | `pdm_resources_list`, `pdm_pve_lxc_list` | governed control, dry-run-first |
 | Prove the record wasn't touched | `audit_verify` | registered on every surface, always |
 
-Every tool, grouped by surface, with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md).
+Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the surface to your model: [`docs/SETUP.md`](docs/SETUP.md).
 
 ## Install & run
 
-> 📦 **`0.25.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.25.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.26.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.26.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.25.0 — the PMG plane closes; a fourth transport arrives.** 715 → **900 tools** — PMG
-> node admin, the full mail-plane config (LDAP/DKIM/TLS/ACME/PBS-remote), identity + cluster
-> bootstrap/join, quarantine + statistics; every one of PMG's 425 live API methods accounted for
-> by an exit-code-gated audit (0 undocumented). Proximo now governs the full PVE + PBS + PMG
-> surface through one trust core. Plus **native MCP over Streamable HTTP** (`proximo-mcp-http`,
-> the first community-contributed transport) — networked MCP clients, no third-party bridge, the
-> same webguard perimeter. Schema-built, not yet live-proven — docstrings say which.
+> **New in 0.26.0 — the surface stops costing what it covers.** ~348k tokens of schema crossed
+> to every client before a question — 84k of it one parameter description repeated on 899 of 900
+> tools. Slimmed to ~276k, then made non-resident: **`PROXIMO_TOOLSETS=dynamic`** serves 3 search
+> tools at **~555 tokens**, all 900 still callable through the same governed dispatch; toolsets
+> scope 23 domains, `PROXIMO_TOOLS` pins exact names. **PROVE records the interval** — a mutation
+> killed mid-flight leaves an `executing` entry instead of no trace. Lists answer counted + lean
+> (`{total, by_status, rows}`): the 12B that counted 19 of 28 guests now answers 28/18/10.
 >
-> Recent: **0.24.0** — Ceph + SDN deep: 603 → 715, both planes closed by audit (48/48 + 90/90). See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.25.0** — the PMG plane closes; a fourth transport arrives: 715 → **900 tools**. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -239,7 +241,7 @@ Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env 
 
 > **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist.
 >
-> **Big surface, scoped context:** you don't have to load the whole estate. `PROXIMO_SURFACES=pve,exec` registers only those planes (that pair = 202 tools). Unpicked planes never touch your context window. `audit_verify` always stays. A typo'd surface refuses startup.
+> **Big surface, scoped context:** you don't have to load the whole estate. `PROXIMO_SURFACES=pve,exec` registers only those planes (that pair = 314 tools). Unpicked planes never touch your context window. `audit_verify` always stays. A typo'd surface refuses startup.
 
 **The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's.
 
@@ -257,11 +259,11 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.25.0** — **the PMG plane closes; a fourth transport arrives**: 715 → **900 tools** — PMG
-  node admin, mail-plane config (LDAP/DKIM/TLS/ACME), identity + cluster bootstrap/join,
-  quarantine + statistics (all 425 PMG methods audited, 0 undocumented), plus native MCP over
-  Streamable HTTP — the first community-contributed transport, merged after a two-lens adversarial
-  review. Every chunk reviewed; three real Criticals caught (a dry-run blind to deletes, a sole-admin delete footgun, a hostile echo that nearly smuggled a peer's root password into the ledger); all fixed before ship.
+- 🩸 **0.26.0** — **the surface stops costing what it covers**: an outside report said Proximo was
+  unusable on a local model. Right, and worse than reported — ~348k tokens of schema before a
+  question, 84k of it one repeated sentence. Now non-resident: `dynamic` serves 3 search tools at
+  ~555 tokens, all 900 still callable; list responses answer counted + lean (a 12B that miscounted
+  19 of 28 guests now answers 28/18/10). The 3-step `dynamic` loop still strains small models.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
@@ -290,7 +292,7 @@ Apache-2.0 — chosen for the patent grant that suits infrastructure tooling. Fu
 
 ## Credits
 
-Built by **John Broadway** with **Claude** and **Maude** — a human–AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer.
+Built by **John Broadway** with **Claude** and **Maude** — a human–AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer. And to **meyergru**, who put a real measurement on the table instead of an opinion — the context-cost work above exists because of that report.
 
 ---
 

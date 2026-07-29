@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 640" role="img" aria-label="Proximo architecture: four transports, one governed spine, the trust spine, the token floor, four Proxmox products">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 640" role="img" aria-label="Proximo architecture: MCP (stdio and Streamable HTTP), A2A, and API clients over one governed spine, the trust spine, the token floor, four Proxmox products">
   <style>
     .t  { font: 600 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #1f2328; }
     .s  { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #57606a; }

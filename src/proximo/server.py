@@ -15,6 +15,7 @@ Ethical spine:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import time
@@ -26,7 +27,8 @@ from typing import Annotated, Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from . import __version__
+from . import __version__, lean
+from . import audit as audit_mod
 from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
@@ -248,6 +250,35 @@ def _untrusted_detail(action: str, detail: dict | None) -> dict | None:
     return {**(detail or {}), "untrusted": True, "content_trust": "adversarial"}
 
 
+def _with_intent(detail: dict | None, intent: str | None) -> dict | None:
+    """Spread `intent` into a COPY of detail at call time. Reads (intent None) pass the caller's
+    object through untouched, so non-mutation ledger entries stay byte-identical to before."""
+    if intent is None:
+        return detail
+    return {**(detail or {}), "intent": intent}
+
+
+def intent_id(action: str, target: str) -> str:
+    """Stable id for one OPERATION, derived from what it does and what it does it to.
+
+    DERIVED, not caller-supplied, and that is the design. A `proximo_intent` tool parameter would
+    ride ~900 schemas — the same multiplication that cost 84k tokens of repeated prose and was
+    just removed. Derivation costs zero schema bytes AND needs no cooperation: a client retrying
+    an operation gets the same id whether or not it knows intents exist.
+
+    (action, target) is the right key because Proxmox's own UPID identifies an ATTEMPT — a retried
+    migration is a fresh UPID with no link to its predecessor. This identifies the operation across
+    attempts. Two deliberate identical actions on the same target do collapse to one intent; that
+    is correct for "what happened to this operation" and is why the ledger keeps every attempt's
+    own entry pair rather than collapsing them.
+
+    Truncated to 12 hex chars: it lands in every mutation's detail, and a full digest is noise in
+    a forensic read. Collision across a single box's action+target space is not a security
+    boundary — nothing authorizes on this value, it only groups entries for a human or a reader.
+    """
+    return hashlib.sha256(f"{action}\x00{target}".encode()).hexdigest()[:12]
+
+
 def _audited(action: str, target: str, fn: Callable[[], Any], *,
              mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
              detail: dict | None = None) -> Any:
@@ -314,6 +345,9 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
             # ungated. Record and refuse rather than serve untracked bytes. (The earlier "swallow —
             # is_tainted fails closed anyway" reasoning was wrong: it only holds when the marker DIR
             # is broken in a way is_tainted also trips, not when the write simply never lands.)
+            # No intent here, deliberately: this refuses BEFORE fn() runs, so there is no
+            # execution interval to open or close. Stamping an intent on a refusal would make
+            # audit.in_flight() reason about an operation that never started.
             audit.record(action, target=target, mutation=mutation, outcome="blocked:taint_mark_failed",
                          detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
                          remote=ledger_remote())
@@ -321,20 +355,36 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
                 f"taint tracking is enabled but the taint marker could not be written for {action!r} "
                 "— refusing to return untrusted output untracked (fail-closed)"
             ) from e
-    # L16 NOTE (inherent): there is a narrow window between fn() completing and the outcome
-    # audit.record() below. On process death (SIGKILL/OOM/power loss) in that window, the
-    # mutation runs but only a "planned" ledger entry exists — the outcome is not recorded.
-    # Compensating control: audit.record() calls fsync (audit.py line ~367) so in-process
-    # crashes are covered; the Proxmox task log is the authoritative record for async ops.
-    # PROVE is tamper-evident, not tamper-proof against OS-level death.
-    # A full fix (pre-record an "executing" entry) is a deliberate design change, not a one-liner:
-    # it introduces a new ledger outcome state that ripples into audit_verify chain-verification,
-    # the ledger test suite, and any callers that inspect outcome values — deferred intentionally.
+    # L16 (CLOSED — was deferred as "a deliberate design change, not a one-liner"): the window
+    # between fn() firing and the outcome record below. On process death (SIGKILL/OOM/power loss)
+    # in that window the mutation RAN and the ledger said nothing — PROVE could not answer "what
+    # was executing when we died," which is the first question anyone asks after a crash on a
+    # hypervisor. fsync only ever covered in-process crashes.
+    #
+    # Now: mutations pre-record an `executing` entry carrying a derived intent id, and the terminal
+    # entry carries the same id. An `executing` with no partner is a stranded operation
+    # (audit.in_flight). The interval lives in the SAME hash-chained log as everything else, so the
+    # crash record is tamper-evident — which a side-car state file or job database could not be.
+    #
+    # Mutations only. A read that dies changed nothing, so pre-recording reads would double ledger
+    # volume to answer a question nobody asks.
+    #
+    # `detail` is NOT rebound here. Several tools mutate the dict they passed in, DURING fn(), to
+    # record values only knowable from the call (`raw_result`, a resolved `iface_type`), and the
+    # terminal record below reads that same live object. Snapshotting it here froze those writes
+    # out of the ledger — a real regression the confirm-sweep tests caught. Intent is spread in at
+    # each record site instead, so every copy is taken after fn() has had its say.
+    intent = intent_id(action, target) if mutation else None
+    if intent is not None:
+        audit.record(action, target=target, mutation=True, outcome=audit_mod.EXECUTING,
+                     detail=_untrusted_detail(action, {**(detail or {}), "intent": intent}),
+                     remote=ledger_remote())
     try:
         result = fn()
     except Exception as e:
         audit.record(action, target=target, mutation=mutation, outcome="error",
-                     detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
+                     detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
+                                                       "error": type(e).__name__}),
                      remote=ledger_remote())
         raise
     if callable(outcome):
@@ -350,15 +400,19 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
                     f"{type(resolved_outcome).__name__}, expected str"
                 )
         except Exception as e:
+            # Carries the intent: fn() ALREADY RAN, so this is the terminal entry closing the
+            # interval the `executing` record opened. Omitting it here would leave a real,
+            # executed mutation looking permanently in-flight to audit.in_flight().
             audit.record(action, target=target, mutation=mutation,
                          outcome="error:outcome_resolution_failed",
-                         detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
+                         detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
+                                                           "error": type(e).__name__}),
                          remote=ledger_remote())
             raise
     else:
         resolved_outcome = outcome
     audit.record(action, target=target, mutation=mutation, outcome=resolved_outcome,
-                 detail=_untrusted_detail(action, detail), remote=ledger_remote())
+                 detail=_untrusted_detail(action, _with_intent(detail, intent)), remote=ledger_remote())
     if mutation:
         return {"status": resolved_outcome, "result": fence_output(action, result)}
     return fence_output(action, result)
@@ -935,6 +989,80 @@ SURFACES: dict[str, tuple[str, ...]] = {
 }
 _ALWAYS_REGISTERED = frozenset({"audit_verify"})
 
+# --- PROXIMO_TOOLSETS — domain scoping, one layer finer than SURFACES. ---
+# SURFACES scopes by plane, which is too coarse to reach a small context: pve alone is 310 tools
+# (~97k tokens), still ~12x an 8k local window. Domain groups are what the field standard uses
+# (GitHub's MCP server: `repos`/`issues`/`pull_requests` + per-tool override), so the vocabulary
+# is one adopters already know. Grouped from the real tool names, not invented — and every tool
+# must land in at least one group or it becomes unreachable the moment anyone scopes by toolset
+# (tests/test_toolsets.py pins that; there is no runtime warning for an orphan).
+TOOLSETS: dict[str, tuple[str, ...]] = {
+    # --- Proxmox VE ---
+    "pve.guests":      ("pve_guest", "pve_list_guests", "pve_clone", "pve_template", "pve_snapshot",
+                        "pve_rollback", "pve_disk", "pve_cloudinit", "pve_agent", "pve_create_vm",
+                        "pve_create_container", "pve_delete_guest"),
+    "pve.cluster":     ("pve_cluster", "pve_node", "pve_ha", "pve_task", "pve_hardware",
+                        "pve_mapping", "pve_diagnose", "pve_doctor"),
+    "pve.storage":     ("pve_storage", "pve_backup", "pve_restore", "pve_replication"),
+    # SDN is split out deliberately: 83 of the 87 network tools are SDN, and most operators
+    # never configure it. Folding them together made "I want network tools" cost 27k tokens.
+    "pve.network":     ("pve_network",),
+    "pve.sdn":         ("pve_sdn",),
+    "pve.firewall":    ("pve_firewall", "pve_ipset", "pve_security_groups"),
+    "pve.access":      ("pve_user", "pve_role", "pve_acl", "pve_token", "pve_group", "pve_pool",
+                        "pve_realm", "pve_tfa", "pve_overbroad"),
+    "pve.ceph":        ("pve_ceph",),
+    "pve.maintenance": ("pve_apt", "pve_acme", "pve_notification", "pve_metrics"),
+    # --- Proxmox Backup Server ---
+    "pbs.datastores":  ("pbs_datastore", "pbs_gc", "pbs_prune", "pbs_snapshot", "pbs_backup",
+                        "pbs_verify", "pbs_sync", "pbs_admin", "pbs_s3", "pbs_remote", "pbs_key",
+                        "pbs_encryption_key", "pbs_namespace", "pbs_pull", "pbs_push"),
+    "pbs.tape":        ("pbs_tape",),
+    "pbs.access":      ("pbs_user", "pbs_realm", "pbs_tfa", "pbs_group", "pbs_acl", "pbs_token",
+                        "pbs_role", "pbs_permission"),
+    "pbs.node":        ("pbs_node", "pbs_disk", "pbs_service", "pbs_subscription", "pbs_tasks"),
+    "pbs.maintenance": ("pbs_apt", "pbs_acme", "pbs_notification", "pbs_metrics", "pbs_traffic",
+                        "pbs_status", "pbs_version", "pbs_ping", "pbs_job"),
+    # --- Proxmox Mail Gateway ---
+    "pmg.quarantine":  ("pmg_quarantine", "pmg_spam", "pmg_virus", "pmg_attachment", "pmg_track"),
+    "pmg.rules":       ("pmg_ruledb", "pmg_action", "pmg_who", "pmg_what", "pmg_when",
+                        "pmg_customscores", "pmg_dkim", "pmg_mimetypes", "pmg_regextest",
+                        "pmg_welcomelist"),
+    "pmg.mail":        ("pmg_transport", "pmg_mynetworks", "pmg_fetchmail", "pmg_tlspolicy",
+                        "pmg_relay", "pmg_postfix", "pmg_mail", "pmg_domain", "pmg_dnsbl",
+                        "pmg_tls_inbound_domains"),
+    "pmg.statistics":  ("pmg_statistics", "pmg_stat"),
+    "pmg.access":      ("pmg_access", "pmg_user", "pmg_ldap", "pmg_tfa", "pmg_role", "pmg_acl",
+                        "pmg_token", "pmg_group"),
+    "pmg.node":        ("pmg_node", "pmg_cluster", "pmg_service", "pmg_subscription", "pmg_disk",
+                        "pmg_doctor", "pmg_tasks"),
+    "pmg.maintenance": ("pmg_apt", "pmg_acme", "pmg_notification", "pmg_config", "pmg_backup",
+                        "pmg_metrics", "pmg_version", "pmg_ping", "pmg_pbs_remote"),
+    # --- the rest ---
+    "pdm":             ("pdm_",),
+    "exec":            ("ct_",),
+}
+
+
+def toolset_keep(names: Iterable[str], spec: str | None) -> set[str]:
+    """Pure filter: which tool names stay registered under a PROXIMO_TOOLSETS spec.
+
+    None/blank => everything (inert). Unknown name => ValueError, same fail-closed contract as
+    surface_keep: a typo must refuse startup rather than quietly serve a different set than the
+    operator believes they picked. `audit_verify` is never scopeable away — PROVE is not optional.
+    """
+    names = set(names)
+    if spec is None or not spec.strip():
+        return names
+    picked = [t.strip().lower() for t in spec.split(",") if t.strip()]
+    unknown = sorted(set(picked) - set(TOOLSETS))
+    if unknown:
+        raise ValueError(
+            f"PROXIMO_TOOLSETS: unknown toolset(s) {unknown} — valid: {sorted(TOOLSETS)} "
+            "(refusing to start rather than serve a set you didn't pick)")
+    prefixes = tuple(p for t in picked for p in TOOLSETS[t])
+    return {n for n in names if n.startswith(prefixes) or n in _ALWAYS_REGISTERED}
+
 
 def surface_keep(names: Iterable[str], spec: str | None) -> set[str]:
     """Pure filter: which tool names stay registered under a PROXIMO_SURFACES spec.
@@ -980,6 +1108,20 @@ def configured_surfaces() -> set[str]:
     return found
 
 
+def _autoscope_keep(names: Iterable[str]) -> set[str] | None:
+    """The keep-set for auto-scoping to configured planes, or None when it must not narrow.
+
+    None means "leave the registry alone": autoscope explicitly off, or no data plane detectable
+    (config ambiguous — never surprise an operator with an empty server).
+    """
+    if os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in ("off", "0", "false", "no"):
+        return None
+    planes = configured_surfaces()
+    if not (planes - {"exec"}):
+        return None
+    return surface_keep(names, ",".join(sorted(planes)))
+
+
 def _prune_registry(server_mcp, keep: set[str], reason: str) -> None:
     registry = server_mcp._tool_manager._tools
     total = len(registry)
@@ -995,12 +1137,47 @@ def _apply_surfaces(server_mcp=mcp) -> None:
     full surface; (2) otherwise auto-scope to the *configured* planes (default-on; disable
     with PROXIMO_AUTOSCOPE=off); (3) if nothing is detectable, serve everything (never
     surprise an operator with an empty server when config is ambiguous)."""
+    # Layers, most specific first. The first one SET wins outright — they do not intersect,
+    # because an operator who names exact tools has already answered the coarser question, and
+    # silently ANDing a leftover PROXIMO_SURFACES from their env would serve them less than they
+    # asked for with no way to see why.
+    #
+    # `_tool_manager` is read INSIDE each branch, never hoisted: the no-op paths must not touch
+    # the server object at all (pinned by test_apply_surfaces_*_touches_nothing). Hoisting it
+    # broke both of those the first time through.
+    tools_spec = os.environ.get("PROXIMO_TOOLS")
+    if tools_spec and tools_spec.strip():
+        _prune_registry(server_mcp, tool_keep(server_mcp._tool_manager._tools.keys(), tools_spec),
+                        f"PROXIMO_TOOLS={tools_spec.strip()}")
+        return
+
+    toolsets_spec = os.environ.get("PROXIMO_TOOLSETS")
+    if toolsets_spec and toolsets_spec.strip():
+        picked = toolsets_spec.strip().lower()
+        if picked == LEAN_KEYWORD:
+            # Auto-scope FIRST, then snapshot. Found by dogfooding a live PVE-only box: because
+            # this branch wins precedence over autoscope, the catalog was snapshotted before any
+            # plane scoping ran, so `find_tools("cluster status")` offered pmg_ and pdm_ tools on
+            # a host with neither configured. Calling one can only fail — the facade was
+            # advertising capability the deployment does not have and spending a small model's
+            # turns to discover it. Lean is a context choice; it must not widen what is reachable.
+            keep = _autoscope_keep(server_mcp._tool_manager._tools.keys())
+            if keep is not None:
+                _prune_registry(server_mcp, keep, "lean: auto-scoped to configured planes")
+            apply_lean(server_mcp)
+            return
+        if picked != "all":
+            _prune_registry(server_mcp,
+                            toolset_keep(server_mcp._tool_manager._tools.keys(), toolsets_spec),
+                            f"PROXIMO_TOOLSETS={toolsets_spec.strip()}")
+        return
+
     spec = os.environ.get("PROXIMO_SURFACES")
     if spec and spec.strip():
         if spec.strip().lower() == "all":   # explicit escape hatch: serve the full surface
             return
-        registry = server_mcp._tool_manager._tools
-        _prune_registry(server_mcp, surface_keep(registry.keys(), spec), f"PROXIMO_SURFACES={spec.strip()}")
+        _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
+                        f"PROXIMO_SURFACES={spec.strip()}")
         return
     if os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in ("off", "0", "false", "no"):
         return
@@ -1011,6 +1188,134 @@ def _apply_surfaces(server_mcp=mcp) -> None:
     keep = surface_keep(registry.keys(), ",".join(sorted(planes)))
     if len(keep) < len(registry):   # only announce/prune when it actually narrows
         _prune_registry(server_mcp, keep, f"auto-scoped to configured planes ({','.join(sorted(planes))})")
+
+
+# --- schema slimming — the fixed cost every client pays before asking anything. ---
+# Pydantic labels each property with a `title` derived from its own key ("vmid" -> "Vmid"), and
+# titles each $defs model with its class name. In a JSON schema the key already sits above the
+# value, so the label restates it; across ~3k properties on ~900 tools that restatement was ~24k
+# tokens of the tools/list payload. `title` is presentational only in JSON Schema (never affects
+# validation or dispatch), so removing it changes nothing a client can act on.
+# Applied at import, once, to the live registry — the payload is built from these dicts.
+def strip_schema_titles(node: Any) -> Any:
+    """Recursively drop presentational `title` keys from a generated JSON schema (in place)."""
+    if isinstance(node, dict):
+        node.pop("title", None)
+        for value in node.values():
+            strip_schema_titles(value)
+    elif isinstance(node, list):
+        for item in node:
+            strip_schema_titles(item)
+    return node
+
+
+def _slim_registry_schemas(server_mcp=mcp) -> None:
+    for tool_obj in server_mcp._tool_manager._tools.values():
+        params = getattr(tool_obj, "parameters", None)
+        if isinstance(params, dict):
+            strip_schema_titles(params)
+
+
+# --- PROXIMO_TOOLS — exact-name selection, the finest scoping layer. ---
+def tool_keep(names: Iterable[str], spec: str | None) -> set[str]:
+    """Pure filter: exactly the named tools (plus audit_verify). Blank => inert.
+
+    Fail-closed on an unknown name for the same reason as the coarser layers: an operator who
+    typos one entry of a hand-picked list must be told, not handed a server quietly missing a
+    tool they believe they enabled.
+    """
+    names = set(names)
+    if spec is None or not spec.strip():
+        return names
+    picked = {t.strip() for t in spec.split(",") if t.strip()}
+    unknown = sorted(picked - names)
+    if unknown:
+        raise ValueError(
+            f"PROXIMO_TOOLS: unknown tool(s) {unknown} "
+            "(refusing to start rather than serve a set you didn't pick)")
+    return picked | (names & _ALWAYS_REGISTERED)
+
+
+# --- LEAN / dynamic mode — the facade. ---
+# Registers three small tools in place of the whole catalog. The catalog is SNAPSHOT FIRST and
+# returned, because pruning the registry is what removes the schemas from tools/list — dispatch
+# still needs somewhere to look the tool up. Getting that order wrong yields a server that lists
+# three tools and can call none of them.
+LEAN_KEYWORD = "dynamic"
+
+
+async def dispatch_tool(server_mcp, catalog: dict, name: str, arguments: dict):
+    """Call a catalogued tool THROUGH ToolManager.call_tool — never around it.
+
+    This is the invariant the whole mode rests on. `call_tool` resolves the Tool and awaits
+    `tool.run(arguments)`, and `tool.fn` is the DECORATED function: target_aware, the PLAN gate,
+    the PROVE ledger write, every opt-in control. Reaching for `tool.fn.__wrapped__` or the
+    module-level function would run the body with none of them and look identical to a caller —
+    a second, ungoverned mutate path. Don't.
+
+    The tool is temporarily re-attached to the manager so call_tool can resolve it, then removed;
+    the registry (what tools/list reports) is unchanged on both success and failure.
+    """
+    if name not in catalog:
+        raise KeyError(f"unknown tool {name!r}")
+    registry = server_mcp._tool_manager._tools
+    restore = name in registry
+    registry[name] = catalog[name]
+    try:
+        return await server_mcp._tool_manager.call_tool(name, arguments)
+    finally:
+        if not restore:
+            registry.pop(name, None)
+
+
+# The catalog the facade dispatches into. Module-level so it is inspectable (tests, diagnostics)
+# rather than sealed inside a closure — what lean mode offers is a real property of the running
+# server, and a property nothing can read is a property nothing can check.
+LEAN_CATALOG: dict = {}
+
+
+def apply_lean(server_mcp=mcp) -> dict:
+    """Swap the registry for the three-tool facade. Returns the snapshot used for dispatch.
+
+    Snapshots whatever is registered AT CALL TIME, so any scoping applied first (auto-scope to
+    configured planes, PROXIMO_SURFACES) narrows the catalog too. That ordering is load-bearing:
+    see the caller in _apply_surfaces.
+    """
+    global LEAN_CATALOG
+    catalog = dict(server_mcp._tool_manager._tools)
+    LEAN_CATALOG = catalog
+
+    @server_mcp.tool()
+    def proximo_find_tools(query: str, limit: int = 25) -> list[dict]:
+        """Search Proximo's full tool catalog by keyword. START HERE.
+
+        Only three tools are loaded; the other ~900 are searchable but not resident. Search for
+        what you want ("guest power", "ceph pool", "firewall"), then call proximo_tool_schema on
+        a result to get its arguments, then proximo_call to run it. All terms must match.
+        """
+        return lean.search_tools(catalog, query, limit=limit)
+
+    @server_mcp.tool()
+    def proximo_tool_schema(name: str) -> dict:
+        """Full description + JSON input schema for one tool found via proximo_find_tools."""
+        return lean.tool_schema(catalog, name)
+
+    @server_mcp.tool()
+    async def proximo_call(tool: str, arguments: dict | None = None) -> Any:
+        """Run a catalogued tool by name. Get its argument shape from proximo_tool_schema first.
+
+        Governed identically to calling the tool directly: the same dry-run PLAN gate, the same
+        tamper-evident ledger entry, the same token ACL. This is a smaller doorway, not a
+        looser one.
+        """
+        return await dispatch_tool(server_mcp, catalog, tool, arguments or {})
+
+    keep = {"proximo_find_tools", "proximo_tool_schema", "proximo_call"} | set(_ALWAYS_REGISTERED)
+    for name in [n for n in server_mcp._tool_manager._tools if n not in keep]:
+        server_mcp.remove_tool(name)
+    print(f"proximo: lean mode — 3 facade tools registered, {len(catalog)} searchable",
+          file=sys.stderr)
+    return catalog
 
 
 def main() -> None:
@@ -1031,6 +1336,10 @@ def main() -> None:
         parser = argparse.ArgumentParser(prog="proximo doctor", add_help=False)
         parser.add_argument("--target", default=None,
                             help="Named target from PROXIMO_TARGETS registry to probe.")
+        parser.add_argument("--receipt", action="store_true",
+                            help="render the run as one pasteable artifact, with node and cluster "
+                                 "names, addresses, storage/pool ids, users, realms and API token "
+                                 "ids removed. Nothing is transmitted — sharing it is your call.")
         args = parser.parse_args(sys.argv[2:])
         try:
             result = pve_doctor(proximo_target=args.target)
@@ -1043,6 +1352,17 @@ def main() -> None:
         # never serialized into this report (verified: the secret appears 0x in the output). The
         # CodeQL py/clear-text-logging-sensitive-data flag here is a taint over-approximation
         # through the shared config object, not a real disclosure.
+        if args.receipt:
+            from datetime import datetime
+
+            from proximo import __version__
+            from proximo.receipt import render
+            # The clock lives at this impure edge on purpose, so `render` stays pure and the same
+            # report always produces the same artifact.
+            print(render(result, version=__version__,
+                         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                  end="")
+            return
         print(json.dumps(result, indent=2))
         return
     # `proximo mint` — print-only onboarding recipe: create → write → grant → wire → verify.
@@ -2074,6 +2394,12 @@ from proximo.tools.pve_sdn_routing import (  # noqa: E402,F401
     pve_sdn_route_map_entry_update,
     pve_sdn_route_maps_list,
 )
+
+# Every tool is registered by now (registration is an import side effect of the blocks above), so
+# this is the first point where the whole surface can be slimmed in one pass. Import-time, not
+# main()-time, so embedders and the test suite see the same payload the stdio server serves.
+_slim_registry_schemas()
+
 
 if __name__ == "__main__":
     main()

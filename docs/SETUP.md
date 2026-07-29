@@ -186,6 +186,73 @@ token still says so. Grant only what you mean to, only where you mean it.
 
 ---
 
+## Fitting a smaller model — scoping the tool surface
+
+Proximo governs 900 operations. Every one of them costs your model context at connection time,
+before you ask anything — the full surface is ~276k tokens of schema, which does not fit most
+models and wastes most of a large one. So pick what you need. Four layers, most specific wins:
+
+| Set this | Serves | Real cost |
+|---|---|---|
+| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those | **~1,040 tokens** |
+| `PROXIMO_TOOLSETS=dynamic` | 3 search tools; all 900 callable | **~555 tokens** |
+| `PROXIMO_TOOLSETS=pve.guests` | one domain (27 tools) | ~8,900 tokens |
+| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (48 tools) | ~15,700 tokens |
+| `PROXIMO_SURFACES=pve` | a whole plane (310 tools) | ~97,000 tokens |
+| *(nothing)* | auto-scoped to your configured planes | up to ~276,000 tokens |
+
+Available toolsets: `pve.guests` `pve.cluster` `pve.storage` `pve.network` `pve.sdn`
+`pve.firewall` `pve.access` `pve.ceph` `pve.maintenance` · `pbs.datastores` `pbs.tape`
+`pbs.access` `pbs.node` `pbs.maintenance` · `pmg.quarantine` `pmg.rules` `pmg.mail`
+`pmg.statistics` `pmg.access` `pmg.node` `pmg.maintenance` · `pdm` · `exec`.
+
+A typo refuses startup rather than quietly serving a different set than you picked, and
+`audit_verify` is never scopeable away — PROVE is not optional at any size.
+
+### `dynamic` — the whole surface on a small model
+
+`PROXIMO_TOOLSETS=dynamic` loads three tools instead of 900:
+
+- `proximo_find_tools(query)` — search the catalog
+- `proximo_tool_schema(name)` — get one tool's arguments
+- `proximo_call(tool, arguments)` — run it
+
+The other 897 stay callable; they stop being *resident*. This is the only mode that fits an ~8k
+context — a single domain toolset is ~8.9k, so toolsets alone reach roughly 32k-class models,
+not the smallest ones.
+
+**It is a smaller doorway, not a looser one.** `proximo_call` dispatches through the same
+internal path a direct tool call uses, so the dry-run PLAN gate, the tamper-evident ledger entry
+and your token's ACL all apply exactly as they would otherwise. The trade is ergonomic, not
+governmental: your model spends two extra round trips discovering a tool, and it must be capable
+enough to drive search-then-call. If yours is not, use a toolset instead.
+
+## Many boxes from one Proximo — `proximo_target`
+
+One Proximo can address several Proxmox remotes. Register them in a TOML file (see
+`packaging/targets.example.toml`) and point `PROXIMO_TARGETS` at it:
+
+```toml
+[targets.backup-dc]
+kind = "pbs"          # pve | pbs | pmg | pdm
+base_url = "https://pbs.example.lan:8007"
+token_path = "/etc/proximo/backup-dc.token"
+```
+
+Every tool then accepts an optional **`proximo_target`** parameter naming which registered box to
+run that one call against. Omit it and the call goes to the single default box from your
+environment (`PROXIMO_API_BASE_URL` and friends) — exactly as it does when no registry is
+configured at all. The selection applies to that call only; it does not change any later call.
+
+A target's `kind` is enforced: naming a PBS target on a PVE tool refuses rather than guessing. All
+targets record to the same PROVE ledger, with the target name in each entry's `remote` field, so a
+multi-box deployment still has one tamper-evident chain.
+
+The parameter's in-schema description is deliberately one short clause. It is duplicated onto ~900
+tools, so every character there costs a client's context window ~900 times over — the full
+explanation belongs here, read once by a person, rather than in the tool schema read on every
+connection. See `tests/test_schema_budget.py` for the budget that enforces it.
+
 ## Remote / multi-client (optional)
 
 Steps 1–5 run Proximo **beside your client**: the client spawns it, it talks to Proxmox, and nothing

@@ -1,3 +1,19 @@
+proximo (0.26.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.26.0 (minor — the surface stops costing what it covers).
+    Schema slimming drops the tools/list payload from ~348k to ~276k tokens with
+    no capability change (84k of it was one repeated parameter description on 899
+    of 900 tools; 24k was redundant pydantic titles). New scoping layers in the
+    field-standard shape: PROXIMO_TOOLS (exact names), PROXIMO_TOOLSETS (23 domain
+    groups), and PROXIMO_TOOLSETS=dynamic — a 3-tool search facade at ~555 tokens
+    with the whole catalog still callable through the same governed dispatch.
+    PROVE now records an "executing" entry before each mutation and a terminal
+    entry after, sharing a derived intent id, so an operation killed mid-flight is
+    visible instead of leaving no trace. pve_doctor reports the active scoping
+    layer across all four.
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Tue, 28 Jul 2026 22:30:00 +0000
+
 proximo (0.25.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.25.0 (minor — the PMG plane closes, and a fourth transport

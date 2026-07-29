@@ -273,7 +273,9 @@ def test_prune_audit_detail_no_secret(tmp_path, monkeypatch):
     server.pve_acl_prune("/vms", "svc@pam!citoken", kind="token", roleid="PVEVMAdmin", confirm=True)
     ok_entry = next(e for e in _entries(log) if e.get("action") == "pve_acl_prune" and e.get("outcome") == "ok")
     detail = ok_entry["detail"]
-    assert set(detail.keys()) == {"confirmed", "roleid", "narrow_role", "narrow_path"}
+    # `intent` is the derived (action, target) grouping id — a truncated sha256 of two values the
+    # entry already states in clear. It carries no secret, which is what this test guards.
+    assert set(detail.keys()) == {"confirmed", "roleid", "narrow_role", "narrow_path", "intent"}
     assert detail["roleid"] == "PVEVMAdmin"
     assert detail["confirmed"] is True
     assert detail["narrow_role"] is None

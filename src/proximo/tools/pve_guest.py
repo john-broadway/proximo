@@ -44,6 +44,7 @@ from proximo.planning import (
     plan_snapshot_create,
     plan_snapshot_delete,
 )
+from proximo.projection import envelope_rows, project_rows
 from proximo.provisioning import (
     clone_guest,
     create_container,
@@ -85,13 +86,19 @@ def pve_node_status(
 @tool()
 def pve_list_guests(
     node: Annotated[str | None, Field(description="PVE node name to list guests on. Omit to list guests across the whole cluster.")] = None,
-) -> list[dict]:
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (vmid/name/type/status/uptime/tags), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
     """READ-ONLY: list all VMs and LXC containers on a node with their current state. Returns
-    a list of guest objects, each with VMID, name, type (lxc or qemu), and status — works across
-    both kinds in a single call. For one guest's runtime detail use pve_guest_status; for its
-    stored config use pve_guest_config_get."""
+    a counted envelope — total, by_status, and `guests`: the rows in the lean default set
+    (vmid, name, type lxc|qemu, status, uptime, tags). Trust total/by_status for count
+    questions; they are computed server-side from the full listing. Pass fields='all' for raw
+    rows (per-guest counters, PSI pressure metrics) or fields='vmid,mem,...' to pick columns.
+    For one guest's runtime detail use pve_guest_status; for its stored config use
+    pve_guest_config_get."""
     cfg, api, _, _ = _proximo_server._svc()
-    return _audited("pve_list_guests", node or cfg.node, lambda: api.list_guests(node))
+    rows = _audited("pve_list_guests", node or cfg.node, lambda: api.list_guests(node))
+    lean = project_rows(rows, fields, ("vmid", "name", "type", "status", "uptime", "tags"))
+    return envelope_rows(rows, lean, "guests", "status")
 
 
 @tool()

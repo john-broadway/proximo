@@ -114,8 +114,10 @@ def test_in_scope_target_proceeds(tmp_path, monkeypatch):
     assert resp == {"status": "ok", "result": {"ok": True}}
 
     entries = _entries(log)
-    assert len(entries) == 1
-    assert entries[0]["outcome"] == "ok"
+    # Two entries: the SCOPE gate passed, so the mutation actually ran, and a run now opens with
+    # an `executing` record before fn() and closes with the outcome. The blocked-path tests above
+    # stay at one entry precisely because a refusal never starts an interval.
+    assert [e["outcome"] for e in entries] == ["executing", "ok"]
     assert not any(e["outcome"].startswith("blocked:") for e in entries)
 
 

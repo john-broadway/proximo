@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.25.0"
-description = "The Proxmox MCP you can hand the keys — VE + Backup Server + Mail Gateway + Datacenter Manager on one clean surface: every dangerous op planned, undoable, and audited."
+version = "0.26.0"
+description = "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

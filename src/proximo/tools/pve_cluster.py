@@ -29,6 +29,7 @@ from proximo.cluster_ops import (
     plan_ha_rule_update,
     plan_migrate,
 )
+from proximo.projection import envelope_rows, project_rows
 from proximo.server import (
     _audited,
     _plan,
@@ -74,16 +75,24 @@ def pve_cluster_status() -> list[dict]:
 @tool()
 def pve_cluster_resources(
     resource_type: Annotated[str | None, Field(description="Optional filter: 'vm', 'storage', 'node', or 'sdn'; omit to list all resource types.")] = None,
-) -> list[dict]:
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (id/type/node/status/name/vmid/storage/uptime), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
     """READ-ONLY: list all resources across the cluster (VMs, nodes, storage, SDN).
 
     resource_type: optional filter — 'vm', 'storage', 'node', or 'sdn'; omit for all types.
-    No state change. Returns a list of PVE resource dicts (shape varies by type). For overall
-    cluster health/quorum use pve_cluster_status; to list only guests use pve_list_guests."""
+    No state change. Returns a counted envelope — total, by_type, and `resources`: dicts in
+    the lean identity/state set (shape still varies by type; a key is kept only where the row
+    has it). Trust total/by_type for count questions; they are computed server-side. Pass
+    fields='all' for raw rows with usage counters, or fields='id,mem,...' to pick columns. For
+    overall cluster health/quorum use pve_cluster_status; to list only guests use
+    pve_list_guests."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/resources/{resource_type or 'all'}"
-    return _audited("pve_cluster_resources", tgt,
+    rows = _audited("pve_cluster_resources", tgt,
                     lambda: cluster_resources(api, resource_type))
+    lean = project_rows(rows, fields,
+                        ("id", "type", "node", "status", "name", "vmid", "storage", "uptime"))
+    return envelope_rows(rows, lean, "resources", "type")
 
 
 @tool()

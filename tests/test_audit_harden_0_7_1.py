@@ -529,10 +529,14 @@ def test_audited_outcome_resolver_failure_still_writes_ledger_entry(tmp_path, mo
 
     assert ran == [1]  # the mutation really executed
     entries = _entries(log)
-    assert len(entries) == 1  # ...and it left a ledger trace despite the resolver failure
-    assert entries[0]["outcome"] == "error:outcome_resolution_failed"
-    assert entries[0]["mutation"] is True
-    assert entries[0]["detail"]["error"] == "KeyError"
+    # Two entries now: mutations pre-record `executing` before fn() so a process death mid-call
+    # is still visible (see audit.in_flight). The resolver-failure entry is the TERMINAL one.
+    assert len(entries) == 2
+    assert entries[0]["outcome"] == "executing"
+    assert entries[-1]["outcome"] == "error:outcome_resolution_failed"
+    assert entries[-1]["mutation"] is True
+    assert entries[-1]["detail"]["error"] == "KeyError"
+    assert entries[0]["detail"]["intent"] == entries[-1]["detail"]["intent"]
     assert led.verify().ok
 
 
@@ -549,8 +553,9 @@ def test_audited_outcome_resolver_nonstr_return_is_resolution_failure(tmp_path, 
                      mutation=True, outcome=lambda result: None)  # type: ignore[arg-type,return-value]
 
     entries = _entries(log)
-    assert len(entries) == 1
-    assert entries[0]["outcome"] == "error:outcome_resolution_failed"
-    assert entries[0]["mutation"] is True
-    assert entries[0]["detail"]["error"] == "TypeError"
+    assert len(entries) == 2          # `executing` + terminal (see audit.in_flight)
+    assert entries[0]["outcome"] == "executing"
+    assert entries[-1]["outcome"] == "error:outcome_resolution_failed"
+    assert entries[-1]["mutation"] is True
+    assert entries[-1]["detail"]["error"] == "TypeError"
     assert led.verify().ok

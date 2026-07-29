@@ -555,3 +555,34 @@ def open_ledger(cfg: Any) -> AuditLedger:
             )
         return ledger
     return AuditLedger(log, key=key)
+
+
+# --- crash forensics: which mutations were mid-flight when the process stopped. ---
+# Mutations record an `executing` entry BEFORE the call and a terminal entry after, both carrying
+# the same derived `intent` (server.intent_id). An `executing` with no terminal partner therefore
+# means exactly one thing: that operation was running when this process stopped. Before this, a
+# SIGKILL between the call and the outcome write left an executed mutation with no ledger trace at
+# all — the L16 note in server.py documented the hole and deferred the fix.
+#
+# Pure and read-only: takes already-parsed entries so it can be run over an exported chain, a
+# copy, or a live log without touching the ledger. Order matters (the chain is append-only), so a
+# re-attempt of the same intent correctly re-opens the interval its predecessor closed.
+EXECUTING = "executing"
+
+
+def in_flight(entries: list[dict]) -> list[dict]:
+    """The `executing` entries with no terminal entry for the same intent, oldest first.
+
+    An entry with no `intent` in its detail is ignored rather than guessed at: pre-intent ledgers
+    are still valid chains, and inventing pairings across them would report phantom crashes.
+    """
+    open_by_intent: dict[str, dict] = {}
+    for entry in entries:
+        intent = (entry.get("detail") or {}).get("intent")
+        if not intent:
+            continue
+        if entry.get("outcome") == EXECUTING:
+            open_by_intent[intent] = entry
+        else:
+            open_by_intent.pop(intent, None)
+    return list(open_by_intent.values())

@@ -350,8 +350,14 @@ def acl_prune(
     partial failure never widens access; but an auditor reading only the ledger cannot tell
     the revoke already applied. A distinct partial-outcome state (a named
     PruneRegrantFailedError, or a "partial:revoke_only" outcome) is a deliberate follow-up —
-    it ripples into audit_verify + the ledger outcome-state suite, the same reason the L16
-    window fix was deferred — not a one-liner; tracked as a known limit, not a stop-ship.
+    it ripples into audit_verify + the ledger outcome-state suite; tracked as a known limit,
+    not a stop-ship.
+
+    (This used to cite "the same reason the L16 window fix was deferred". That fix has since
+    LANDED — a new `executing` outcome plus a derived intent id, see server._audited and
+    audit.in_flight — so the deferral no longer has that precedent behind it. The limit here
+    is still real and still open; only the justification changed. The pattern that closed L16
+    is also the shape that would close this one: record the interval, not just the result.)
 
     MUTATION — confirm-gated + audited at the server layer (see plan_prune_grant for the
     matching dry-run preview).

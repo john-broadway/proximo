@@ -2,17 +2,34 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.john-broadway/proximo-proxmox",
   "title": "Proximo — the Proxmox MCP you can hand the keys",
-  "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM, every op planned, audited, undoable.",
+  "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-avatar-256.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-favicon-64.png",
+      "mimeType": "image/png",
+      "sizes": ["64x64"]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-mark.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
   "repository": {
     "url": "https://github.com/john-broadway/proximo",
     "source": "github"
   },
-  "version": "0.25.0",
+  "version": "0.26.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "proximo-proxmox",
-      "version": "0.25.0",
+      "version": "0.26.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

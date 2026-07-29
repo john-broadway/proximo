@@ -93,11 +93,13 @@ def resolve_target_fields(name: str, expected_kind: str) -> dict:
 # Real type object (NOT a string) so FastMCP's inspect.signature(..., eval_str=True) is a no-op for it.
 # The Field description propagates into EVERY target-aware tool's input schema at once — without it,
 # `proximo_target` shows up undocumented on ~all multi-target tools (0% schema coverage).
-_TARGET_DESC = (
-    "Which configured Proxmox target to run this call against — a target name from your "
-    "multi-target config (a specific PVE/PBS/PMG/PDM box). Omit to use the single/default "
-    "target from the environment; the selection applies only to this call."
-)
+#
+# KEEP IT SHORT. This string is duplicated onto ~900 tools, so its cost to a client's context is
+# its length x the whole surface: the original 374-char version spent ~84k tokens of the tools/list
+# payload restating the same paragraph, more than a third of all schema bytes. One clause is the
+# budget (tests/test_schema_budget.py). The long-form explanation lives in docs/SETUP.md, which is
+# read once by a human, instead of ~900 times by a model.
+_TARGET_DESC = "Configured target name to run against; omit for the default box."
 _TARGET_PARAM = inspect.Parameter(
     "proximo_target",
     inspect.Parameter.KEYWORD_ONLY,

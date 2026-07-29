@@ -11,8 +11,10 @@ sails straight into the public commit untouched.
 This tool models that transform. It (1) STRIPS paths that must never be public (`.gitea/` —
 the public mirror uses `.github/`), and (2) scans the kept files for internal-infra leak
 shapes (RFC1918 IPs, internal-TLD hostnames, absolute `/root` paths, credential token shapes),
-with an allowlist for documented example values. Patterns are GENERIC — this file is itself
-public, so it names no real infrastructure.
+plus two INTERNAL-ONLY denylists (site-specific identifiers, and rival handles/products whose
+competitive analysis is internal strategy), with an allowlist for documented example values.
+Patterns are GENERIC and the denylists live under a deny prefix — this file is itself public,
+so it names no real infrastructure and no competitor.
 
 Stdlib only (runs anywhere, no install — same discipline as version_tools.py).
 
@@ -57,6 +59,13 @@ DENY_BASENAMES: tuple[str, ...] = ("CLAUDE.md", "POSITIONING.md", "LANDSCAPE.md"
 # never publish. Sourced from this INTERNAL-ONLY file — it lives under a deny prefix, so it is
 # stripped from the public mirror and can safely name real infra while THIS public tool names none.
 DENY_LITERALS_FILE = ".gitea/leak-deny.txt"
+
+# Rival handles/products whose competitive analysis is internal strategy (see docs/internal/LANDSCAPE)
+# and must never surface in public copy. Same design as the literals file: INTERNAL-ONLY, under a deny
+# prefix, so it is stripped from the public mirror and THIS public tool names no competitor. The
+# generic ecosystem tools users legitimately reference (Terraform, Ansible, proxmoxer, …) are NOT
+# listed — only distinctive tokens with low false-positive risk belong here.
+COMPETITOR_DENY_FILE = ".gitea/competitor-deny.txt"
 
 # Generic leak-shape patterns. No real infra literals — this file ships publicly.
 _RFC1918 = re.compile(
@@ -166,18 +175,20 @@ def partition_paths(
 def audit_files(
     files: dict[str, str], deny: tuple[str, ...] = DENY_PREFIXES,
     deny_literals: tuple[str, ...] = (),
+    competitor_names: tuple[str, ...] = (),
 ) -> AuditResult:
     """Audit a path->content map AS IF published: deny paths are stripped (and NOT scanned —
-    they won't be public); kept files are scanned for leak shapes plus any site-specific internal
-    identifiers in *deny_literals*."""
+    they won't be public); kept files are scanned for leak shapes, any site-specific internal
+    identifiers in *deny_literals*, and any rival handles/products in *competitor_names*."""
     kept, stripped = partition_paths(files.keys(), deny)
-    extra: tuple[tuple[str, re.Pattern[str]], ...] = ()
-    pat = _deny_literal_pattern(deny_literals)
-    if pat is not None:
-        extra = (("internal-literal", pat),)
+    extra: list[tuple[str, re.Pattern[str]]] = []
+    for kind, names in (("internal-literal", deny_literals), ("competitor-name", competitor_names)):
+        pat = _deny_literal_pattern(names)
+        if pat is not None:
+            extra.append((kind, pat))
     findings: list[Finding] = []
     for p in sorted(kept):
-        findings.extend(scan_text(p, files[p], extra))
+        findings.extend(scan_text(p, files[p], tuple(extra)))
     return AuditResult(kept=sorted(kept), stripped=sorted(stripped), findings=findings)
 
 
@@ -189,13 +200,12 @@ def _repo_root() -> Path:
     return Path(out.strip())
 
 
-def load_deny_literals(root: Path | None = None) -> tuple[str, ...]:
-    """Site-specific internal identifiers to refuse (bare node/host names with no generic shape),
-    read from the INTERNAL-ONLY ``DENY_LITERALS_FILE`` (one per line, ``#`` comments). That file
-    lives under a deny prefix, so it is stripped from the public mirror and may name real infra.
-    Returns a lowercased tuple; empty when the file is absent (e.g. a public clone)."""
+def _read_denylist_file(rel_path: str, root: Path | None = None) -> tuple[str, ...]:
+    """Read a one-token-per-line denylist (``#`` comments + blank lines ignored) from an
+    INTERNAL-ONLY file under a deny prefix. Returns a lowercased tuple; empty when the file is
+    absent (e.g. a public clone), so the gate degrades to shape-only rather than erroring."""
     root = root or _repo_root()
-    f = root / DENY_LITERALS_FILE
+    f = root / rel_path
     if not f.exists():
         return ()
     out: list[str] = []
@@ -204,6 +214,19 @@ def load_deny_literals(root: Path | None = None) -> tuple[str, ...]:
         if s and not s.startswith("#"):
             out.append(s.lower())
     return tuple(out)
+
+
+def load_deny_literals(root: Path | None = None) -> tuple[str, ...]:
+    """Site-specific internal identifiers to refuse (bare node/host names with no generic shape),
+    from the INTERNAL-ONLY ``DENY_LITERALS_FILE``. That file lives under a deny prefix, so it is
+    stripped from the public mirror and may name real infra while this public tool names none."""
+    return _read_denylist_file(DENY_LITERALS_FILE, root)
+
+
+def load_competitor_names(root: Path | None = None) -> tuple[str, ...]:
+    """Rival handles/products that must never appear in public copy, from the INTERNAL-ONLY
+    ``COMPETITOR_DENY_FILE``. Stripped from the public mirror, so this public tool names no rival."""
+    return _read_denylist_file(COMPETITOR_DENY_FILE, root)
 
 
 def _git(args: list[str], cwd: Path, env: dict | None = None) -> str:
@@ -255,7 +278,8 @@ def _main(argv: list[str]) -> int:
     ref = argv[1] if len(argv) > 1 else "HEAD"
 
     if cmd == "audit":
-        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals())
+        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals(),
+                          competitor_names=load_competitor_names())
         for p in res.stripped:
             print(f"strip (internal-only, won't publish): {p}")
         for f in res.findings:
@@ -274,7 +298,8 @@ def _main(argv: list[str]) -> int:
         return 1
 
     if cmd == "build-tree":
-        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals())
+        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals(),
+                          competitor_names=load_competitor_names())
         if not res.ok:
             for f in res.findings:
                 print(f"LEAK [{f.kind}] {f.path}:{f.line}: {f.match}", file=sys.stderr)

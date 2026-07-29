@@ -68,6 +68,128 @@ enforcement. Use Proxmox's model directly:
    startup if the token or audit-key file is group/other-accessible. Revocation is instant
    and yours: `pveum user token remove proximo@pve readonly` ends everything, mid-session.
 
+## Building the boundary: a hardened deployment (Layer 2 in practice)
+
+The two-deployment model says the opt-in gates become a real boundary, not a speed
+bump, only when their state lives outside the agent's write reach. This section is the
+runbook for that, written for the deployment shape it actually protects: the Proximo
+process (and the agent driving it) running as a **confined, non-root OS user**, with
+the Proxmox hosts on separate machines. If instead your agent runs as root on the same
+box as everything it manages, none of the steps below bind it (a root process undoes
+them) and your protection is Layer 1, the token floor, alone. That is a valid posture;
+just don't mistake it for a boundary.
+
+### The foundation: a confined user and a state directory it cannot own
+
+```sh
+# a dedicated, unprivileged OS user for the Proximo/agent process (name is an example)
+useradd --system --home-dir /var/lib/proximo --shell /usr/sbin/nologin proximo
+
+# a root-owned directory for gate state: the agent may write INTO it (for the anchor),
+# but the sticky bit stops it removing or replacing the root-owned files (the trip)
+install -d -m 1770 -o root -g proximo /etc/proximo
+```
+
+Mode `1770` grants the `proximo` group `rwx` plus the sticky bit, and gives the world
+nothing (not `1777`/`1773`). Sticky means the agent cannot delete or rename a file it does
+not own, even in a group-writable directory. That one mode serves both gates below:
+root owns the CONTAIN trip so the agent can't clear it, while the agent can still write
+the audit anchor.
+
+Set the env vars that name these paths from a **root-owned environment**, not the MCP
+client's own config. A systemd unit `EnvironmentFile` (root-owned, `600`) is the right
+home for `PROXIMO_CONTAIN_TRIP_PATH` and `PROXIMO_AUDIT_ANCHOR_*`. Do not set them in the
+agent's client config (e.g. `~/.claude.json`): the agent can write that file and simply
+repoint or unset the very switch it is meant to be constrained by.
+
+### CONTAIN: a kill-switch the agent cannot clear
+
+`contain.py` reads `PROXIMO_CONTAIN_TRIP_PATH` fresh on every mutation and fails closed.
+Put the trip file where only you can create or remove it:
+
+```sh
+export PROXIMO_CONTAIN_TRIP_PATH=/etc/proximo/CONTAIN   # from the root-owned EnvironmentFile
+
+# arm the breaker (as root), mid-incident, no restart:
+printf 'halted: investigating\n' > /etc/proximo/CONTAIN
+# clear it (as root) once the incident is closed:
+rm -f /etc/proximo/CONTAIN
+```
+
+The agent process can read the trip to surface the reason, but because the file is
+root-owned and the directory is sticky it cannot delete the file to un-contain itself. If
+`PROXIMO_CONTAIN_TRIP_PATH` points inside the agent's own writable home instead, the
+breaker is advisory: a compromised agent clears it.
+
+### ARM: mint the write credential, don't stockpile it
+
+The everyday token is read-only; the default arm pattern (see "Scoping the token", point
+3) swaps in a pre-minted write token. The stronger pattern keeps no write token at rest at
+all: mint it at arm, revoke it at disarm, both as **root on the Proxmox host**, a hand the
+confined agent does not have, so the agent cannot arm itself.
+
+```sh
+# ARM: run as root on the PVE host (or over SSH to it from your own workstation):
+umask 177
+pvesh create /access/users/proximo@pve/token/arm --privsep 1 --output-format json \
+  | python3 -c 'import json,sys; print("proximo@pve!arm=" + json.load(sys.stdin)["value"], end="")' \
+  > /run/proximo/arm.token          # tmpfs, root-owned, 600 (never a persisted .env)
+pveum acl modify /vms --tokens 'proximo@pve!arm' --roles PVEVMAdmin
+pveum acl modify /vms --users  'proximo@pve'      --roles PVEVMAdmin
+# then place arm.token into PROXIMO_TOKEN_PATH on the agent box OUT-OF-BAND: paste it over
+# your own terminal, or scp the 600 file. Never through the agent's shell or a chat.
+```
+
+```sh
+# DISARM: run as root on the PVE host:
+pveum user token remove proximo@pve arm    # the write credential ceases to exist
+# then restore the read-only token into PROXIMO_TOKEN_PATH on the agent box.
+```
+
+Two things make this bind. The secret is delivered by paste or stdin over your own
+terminal, never a persisted `.env` and never the agent's shell-passthrough (that lands in
+the transcript; PyPI tokens have leaked exactly this way). And minting requires root on
+Proxmox, which the confined agent lacks. Compose it with LEASE (`PROXIMO_ARM_TTL`) so a
+forgotten disarm still fails closed when the lease lapses, and with SCOPE
+(`PROXIMO_SCOPE_PATH`) to bound the arm to named targets.
+
+If revoke-at-disarm is operationally too heavy (it needs root on the Proxmox host every
+cycle), the lighter form keeps one pre-minted write token but seals it at rest with `age`
+or `sops`, so it doesn't exist in cleartext in the agent's world between arms: arm
+decrypts to a tmpfs path with your key, disarm shreds the plaintext. It's weaker than
+mint-and-revoke, since the credential still exists (only encrypted), but it removes the
+standing plaintext secret.
+
+### PROVE: an off-box head anchor
+
+`PROXIMO_AUDIT_EXPECTED_HEAD` pins the ledger head so a tail truncation, a forged append,
+or a full wipe is caught. But **every recorded call advances the head, reads included**,
+so a hand-pinned value goes stale immediately. Prefer the auto-anchor
+(`PROXIMO_AUDIT_ANCHOR_SINK=file` + `PROXIMO_AUDIT_ANCHOR_FILE_PATH`): Proximo reads the
+last pin at startup and verifies against it, and the anti-poisoning rule means it never
+re-pins a head that has MOVED (a verify that just caught a truncation cannot overwrite the
+good pin).
+
+Placement is the whole game, because the anchor's value is that it's less compromisable
+than the agent box:
+
+- **The strong form is genuinely off-box.** Point the anchor file at a mount or store on
+  a different, less-compromisable host, where this box writes the latest head but a
+  separate authority retains and monitors history.
+- **On a single box, mind the mechanism.** Proximo itself (as the agent user) writes the
+  pin, via `audit_verify`'s on-demand export, so a file the agent literally *cannot* write
+  fails closed and breaks the tool. The property you want is not "the agent can't touch
+  it" but "the agent writes the latest, and can't erase the history you keep." Put the
+  anchor in the root-owned `/etc/proximo` (group-writable, so the atomic publish works)
+  and have root independently retain each published head: a root-only append log, or
+  filesystem snapshots of the file. Without that retained history, a non-root compromise
+  that bothers to rewrite the pin defeats a single-box anchor; it still catches the far
+  more common truncate-or-wipe.
+
+When you're done, verify the boundary you built. `proximo doctor` reports which pillars
+stand and which sockets are empty, and it never echoes the configured paths back (a
+hijacked session shouldn't learn where you put your switch).
+
 ## Supported versions
 
 Proximo is pre-1.0; security fixes land on the **latest release only**. There is no

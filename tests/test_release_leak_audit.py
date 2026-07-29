@@ -133,6 +133,60 @@ def test_load_deny_literals_reads_internal_only_file():
     assert all(s == s.lower() for s in lits)
 
 
+# --- pure: competitor-name denylist (rival handles/products that must not leak into public copy) ---
+def test_competitor_name_is_flagged():
+    files = {"README.md": "faster than RivalMCP by design"}
+    res = rla.audit_files(files, competitor_names=("RivalMCP",))
+    assert any(f.kind == "competitor-name" and f.match == "RivalMCP" for f in res.findings)
+
+
+def test_competitor_name_match_is_case_insensitive():
+    files = {"docs/x.md": "compared with rivalmcp here"}
+    res = rla.audit_files(files, competitor_names=("RivalMCP",))
+    assert any(f.kind == "competitor-name" for f in res.findings)
+
+
+def test_competitor_name_is_word_boundaried_no_substring_false_positive():
+    # a longer token that merely CONTAINS the name must not trip the gate
+    files = {"docs/x.md": "the RivalMCPExtended fork"}
+    res = rla.audit_files(files, competitor_names=("RivalMCP",))
+    assert not any(f.kind == "competitor-name" for f in res.findings)
+
+
+def test_no_competitor_names_means_no_competitor_findings():
+    files = {"README.md": "faster than RivalMCP"}
+    res = rla.audit_files(files)  # default: empty competitor list -> generic gate only
+    assert not any(f.kind == "competitor-name" for f in res.findings)
+
+
+def test_competitor_name_inside_stripped_file_is_not_reported():
+    # The internal landscape legitimately names rivals; it is stripped, so it must NOT be a finding.
+    files = {"docs/internal/LANDSCAPE.md": "RivalMCP has 200 stars"}
+    res = rla.audit_files(files, competitor_names=("RivalMCP",))
+    assert res.ok
+    assert res.findings == []
+
+
+def test_load_competitor_names_reads_internal_only_file():
+    # the denylist lives under a stripped (.gitea) path so the public tool names no rival; loading it
+    # returns a lowercased tuple (empty on a public clone where the file is absent).
+    names = rla.load_competitor_names()
+    assert isinstance(names, tuple)
+    assert all(s == s.lower() for s in names)
+
+
+def test_current_public_surface_has_no_competitor_names():
+    # The real publish surface must name no tracked rival — the competitor denylist over kept files.
+    res = rla.audit_files(
+        rla.files_in_ref("HEAD"),
+        deny_literals=rla.load_deny_literals(),
+        competitor_names=rla.load_competitor_names(),
+    )
+    assert res.ok, "competitor/internal leak in public surface:\n" + "\n".join(
+        f"  {f.kind} {f.path}:{f.line}: {f.match}" for f in res.findings
+    )
+
+
 def test_root_ellipsis_placeholder_is_not_flagged():
     # `/root/...` in prose is rule-text, not a real path.
     files = {"CLAUDE.md": "no absolute `/root/...` paths in tracked files"}

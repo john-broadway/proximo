@@ -58,6 +58,8 @@ is expected behavior (see `SECURITY.md` → "Honest scope notes"):
 - **Co-located Layer-2 gates are advisory.** If gate state (CONSENT dir, CONTAIN trip
   file, SCOPE file, taint marker) sits where the agent can write, a compromised agent can
   clear it. Real boundary ⇢ put that state out of the agent's reach, or rely on Layer 1.
+  The runbook for building that reach is `SECURITY.md` → "Building the boundary: a
+  hardened deployment (Layer 2 in practice)".
 - **Risk ratings are not a sandbox.** `LOW` means "no state change," not "safe." Proximo
   previews/undoes/proves; it does not sandbox the Proxmox API.
 - **UNDO is not universal.** Firewall / SDN / ACL / token planes have no Proxmox rollback

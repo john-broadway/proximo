@@ -34,17 +34,28 @@ BASE = {
     # keyword search matches the name field, and "Proximo" doesn't contain the
     # substring "proxmox" (2026-07-10 community audit: invisible in "proxmox" search).
     "name": "Proximo — the Proxmox MCP you can hand the keys",
-    "description": (
-        "The Proxmox MCP you can hand the keys — VE + Backup Server + Mail Gateway "
-        "+ Datacenter Manager on one clean surface: every dangerous op planned, "
-        "undoable, and audited."
-    ),
+    # description is NOT here on purpose — see pyproject_description(). It used to be a
+    # hardcoded copy of the pyproject line, and the two silently diverged: CLAUDE.md said
+    # "description comes from pyproject" while this literal was the real source, so a
+    # regen re-wrote the STALE text over a corrected one (2026-07-26).
 }
 
 
 def pyproject_version() -> str:
     data = tomllib.loads((ROOT / "pyproject.toml").read_text())
     return data["project"]["version"]
+
+
+def pyproject_description() -> str:
+    """The ONE description, read from pyproject — the same line PyPI ships.
+
+    Every listing that quotes a different sentence is a listing that drifts on its own
+    clock. Keep the estate on one source: pyproject -> PyPI + this manifest, and the same
+    text pasted into server.json (the MCP registry caps title/description at 100 chars,
+    so the line is written to fit that ceiling and therefore fits everywhere else too).
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    return data["project"]["description"]
 
 
 def list_capabilities(timeout: float = 90.0) -> dict[str, list[dict]]:
@@ -122,6 +133,7 @@ def main() -> int:
         raise SystemExit("refusing to write an empty tools array")
     manifest = {
         **BASE,
+        "description": pyproject_description(),
         "version": pyproject_version(),
         "tools": [
             {"name": t["name"], "description": t.get("description", ""),

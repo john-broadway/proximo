@@ -401,3 +401,40 @@ def test_no_silently_shadowed_tools():
         f"{decorator_count} @mcp.tool() decorators but only {len(names)} tools exposed — "
         f"a tool name collides and is being silently shadowed (lost tool)."
     )
+
+
+def test_readme_surface_subset_counts_are_real():
+    """A `PROXIMO_SURFACES=<spec>` example that quotes a tool count must quote the TRUE one.
+
+    `copy_ripple_check.check_tool_counts` deliberately skips these lines (_EXAMPLE_MARKERS),
+    and rightly so: a scoped subset is not the canonical total, so comparing it to the full
+    surface would be a guaranteed false positive. But skipping is all it did — nothing then
+    checked the subset claim, so README's "PROXIMO_SURFACES=pve,exec (that pair = 202 tools)"
+    sat at 202 while the real answer grew to 314. Off by 112, in the file every MCP directory
+    scrapes.
+
+    The exemption stays (it is correct). This is the check that should have stood behind it:
+    resolve the spec through the same `surface_keep` the server uses at startup and compare.
+    """
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    names = _exposed_tools()
+    spec_re = re.compile(r"PROXIMO_SURFACES=([a-z0-9,_-]+)")
+    count_re = re.compile(r"(?<!\+)\b(\d{2,4}) (?:MCP )?tools\b")
+
+    checked = 0
+    for line in readme.splitlines():
+        spec = spec_re.search(line)
+        claim = count_re.search(line)
+        if not (spec and claim):
+            continue
+        checked += 1
+        actual = len(server.surface_keep(names, spec.group(1)))
+        assert int(claim.group(1)) == actual, (
+            f"README claims PROXIMO_SURFACES={spec.group(1)} yields {claim.group(1)} tools, "
+            f"but surface_keep resolves {actual}. Refresh the worked example with the "
+            f"release ripple — this line is exempt from check_tool_counts by design."
+        )
+    assert checked, (
+        "no PROXIMO_SURFACES example with a tool count found in README.md — if the worked "
+        "example was removed, drop this test; do not let it pass vacuously."
+    )

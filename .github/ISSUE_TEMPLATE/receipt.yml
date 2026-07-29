@@ -1,0 +1,70 @@
+name: Receipt from `proximo doctor --receipt`
+description: Paste a receipt. It is redacted before it is written, and you chose to send it.
+title: "receipt: "
+labels: ["receipt"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sending this. It is the only way we find out what Proximo actually does on
+        clusters we cannot see.
+
+        **Generate one with:**
+
+        ```
+        proximo doctor --receipt > receipt.txt
+        ```
+
+        Node and cluster names, addresses, storage and pool identifiers, users, realms and API
+        token ids are removed before the file is written. **Read it before you paste it.** It is
+        your cluster and your call, and we would rather you checked than took our word for it.
+
+        If you are reporting a **security** defect, do not open an issue. Use private vulnerability
+        reporting on the Security tab, per `SECURITY.md`.
+
+  - type: textarea
+    id: receipt
+    attributes:
+      label: The receipt
+      description: Paste it whole, including the header and fingerprint.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: >
+        The single most useful thing you can add, and the one thing the receipt cannot contain.
+        A refusal we intended and a refusal we did not look identical from the inside. Only you
+        know which one you were trying to do.
+    validations:
+      required: true
+
+  - type: input
+    id: pve
+    attributes:
+      label: Proxmox version
+      placeholder: "PVE 9.2 / PBS 3.x / PMG 8.x"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: armed
+    attributes:
+      label: Was the operator armed (write-capable) at the time?
+      options:
+        - "No — read-only"
+        - "Yes — armed"
+        - "Not sure"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: read
+    attributes:
+      label: Before you send
+      options:
+        - label: I read the receipt and I am content for its contents to be public.
+          required: true

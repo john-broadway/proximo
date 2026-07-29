@@ -1,6 +1,6 @@
 """The governed dispatch — the ONE transport-agnostic path over Proximo's tool surface.
 
-Proximo is a governed core with interchangeable transports. The core is the 365 MCP tools, each
+Proximo is a governed core with interchangeable transports. The core is the MCP tool surface, each
 wrapped in the trust spine (PLAN-by-default, PROVE ledger, UNDO, the opt-in gates) and bounded by
 the Proxmox token scope. `mcp.call_tool` runs a tool through that spine — exactly what an MCP
 client gets. Every network face (A2A, HTTP) is a thin adapter over the two functions here:

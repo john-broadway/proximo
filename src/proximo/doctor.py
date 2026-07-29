@@ -200,7 +200,7 @@ def doctor_check(api) -> dict:
 def _surfaces_report() -> dict:
     """The tool-surface picture: what this server serves, per plane, and why.
 
-    Answers the "364 tools is a lot" reaction in-band: Proximo is one audited plane over
+    Answers the "that is a lot of tools" reaction in-band: Proximo is one audited plane over
     all four Proxmox products, but it **auto-scopes to the planes you've configured** — a
     PVE+PBS-only box serves just those tools, no flag. This block shows which planes are
     configured vs served and how to light up a hidden one. Degrades to a note on any error.
@@ -229,10 +229,25 @@ def _surfaces_report() -> dict:
                 row["enable_with"] = enable.get(plane, "")
             planes[plane] = row
 
+        # Reported in precedence order, matching server._apply_surfaces. doctor's whole job is to
+        # tell an operator what THIS box is actually serving, so a layer it cannot name is a layer
+        # it will silently misreport — caught by dogfooding, where doctor said "auto-scoped" on a
+        # box whose surface was in fact being set by PROXIMO_TOOLSETS.
+        tools_spec = os.environ.get("PROXIMO_TOOLS", "").strip()
+        toolsets_spec = os.environ.get("PROXIMO_TOOLSETS", "").strip()
         spec = os.environ.get("PROXIMO_SURFACES", "").strip()
         autoscope_off = os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in (
             "off", "0", "false", "no")
-        if spec.lower() == "all":
+        if tools_spec:
+            scoping = f"PROXIMO_TOOLS={tools_spec} — exact tools"
+        elif toolsets_spec.lower() == "dynamic":
+            scoping = ("PROXIMO_TOOLSETS=dynamic — search facade (3 tools resident; the rest "
+                       "searchable via proximo_find_tools, still auto-scoped to configured planes)")
+        elif toolsets_spec and toolsets_spec.lower() != "all":
+            scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
+        elif toolsets_spec.lower() == "all":
+            scoping = "PROXIMO_TOOLSETS=all — full surface (auto-scope overridden)"
+        elif spec.lower() == "all":
             scoping = "PROXIMO_SURFACES=all — full surface (auto-scope overridden)"
         elif spec:
             scoping = f"PROXIMO_SURFACES={spec} — explicit"
@@ -250,9 +265,11 @@ def _surfaces_report() -> dict:
             "note": (
                 "One audited plane over all four Proxmox products; Proximo serves only the "
                 "planes you've configured. Light up a plane with its PROXIMO_*_BASE_URL (or a "
-                "target); force the full surface with PROXIMO_SURFACES=all; pin an exact set "
-                "with PROXIMO_SURFACES=pve,pbs. Scoping is context hygiene, not an authorization "
-                "control — the token ACL stays the real boundary."
+                "target). Size the surface to your model, most specific wins: PROXIMO_TOOLS for "
+                "exact tools, PROXIMO_TOOLSETS for domains (pve.guests, pbs.tape, …) or "
+                "'dynamic' for a 3-tool search facade with everything still callable, "
+                "PROXIMO_SURFACES for whole planes. Scoping is context hygiene, not an "
+                "authorization control — the token ACL stays the real boundary."
             ),
         }
     except Exception as e:  # never let introspection break a read-only preflight

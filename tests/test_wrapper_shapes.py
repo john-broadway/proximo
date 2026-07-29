@@ -316,6 +316,9 @@ def wired(tmp_path, monkeypatch):
 SENTINELS: dict[str, Any] = {
     "vmid": "100",
     "newid": "101",
+    # projection.project_rows: 'all' | comma list of fields actually present in the response —
+    # 'all' is the one value valid against any backend payload
+    "fields": "all",
     "ctid": "100",
     "node": "node1",
     "kind": "lxc",
