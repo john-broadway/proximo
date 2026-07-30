@@ -6,6 +6,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Semver to tag the image with (e.g. 0.27.0). Only for a hand-run rebuild when the
+          release event's own run could not produce an image — the tags otherwise come from the
+          git ref, and a branch ref carries no semver. Also moves `latest`, because a release
+          whose image arrived late is still that release's image. Leave blank for a plain
+          sha-tagged dispatch.
+        required: false
+        type: string
 
 env:
   # ghcr.io/john-broadway/proximo — matches the pull path documented in the README.
@@ -45,6 +55,23 @@ jobs:
       id-token: write      # keyless (sigstore) signing of the provenance attestation
       attestations: write  # attach the build-provenance attestation to the image
     steps:
+      # Refuse a malformed hand-typed version BEFORE anything is built or pushed: it becomes an
+      # image tag, and a junk tag in a public registry is not something you quietly take back.
+      # Kept as a step rather than its own job on purpose — a separate job would have to be
+      # conditional on the input, and a SKIPPED dependency skips its dependents, which would
+      # have silently stopped building images on every ordinary release.
+      # The value reaches the shell only via env, never ${{ }} inside run:, so it cannot inject.
+      - name: Refuse a version input that is not a bare semver
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          printf 'version input: %s\n' "$VERSION"
+          printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+[-.a-z0-9]*$' || {
+            echo "::error::version must look like 0.27.0 — refusing to tag an image with it"
+            exit 1
+          }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Multi-arch: amd64 for Proxmox hosts/servers, arm64 for Apple-Silicon
@@ -75,7 +102,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' || inputs.version != '' }}
             type=sha
 
       - name: Build and push
@@ -109,7 +137,10 @@ jobs:
   # workflow_dispatch of this file has no release.tag_name to mirror).
   mirror-to-dockerhub:
     needs: image
-    if: github.event_name == 'release'
+    # Also on a versioned hand-run rebuild: the counting mirror should not silently miss a
+    # release whose image arrived late. The called workflow strips a leading `v` itself and
+    # validates the tag, so either shape is safe to hand it.
+    if: github.event_name == 'release' || inputs.version != ''
     # Grant what the called reusable workflow requests (packages: read to pull the GHCR source
     # image). The top-level token is contents:read only; without re-granting here, the reusable
     # call requests more than this job's token can provide and GitHub fails release.yml at startup.
@@ -118,5 +149,5 @@ jobs:
       packages: read
     uses: ./.github/workflows/dockerhub-mirror.yml
     with:
-      tag: ${{ github.event.release.tag_name }}
+      tag: ${{ github.event.release.tag_name || inputs.version }}
     secrets: inherit
