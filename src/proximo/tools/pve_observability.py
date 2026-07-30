@@ -102,14 +102,21 @@ def pve_node_service_status(
 @tool()
 def pve_node_rrddata(
     node: Annotated[str | None, Field(description="PVE node name; defaults to the configured node")] = None,
-    timeframe: Annotated[str, Field(description="RRD time window: 'hour', 'day', 'week', 'month', or 'year'")] = "hour",
+    timeframe: Annotated[str, Field(description="Rolling RRD window ENDING NOW: 'hour', 'day', 'week', 'month', or 'year'. 'day' is the last ~24 hours, NOT the calendar day")] = "hour",
     cf: Annotated[str | None, Field(description="RRD consolidation function: 'AVERAGE' or 'MAX'; defaults to server-side default")] = None,
 ) -> list[dict]:
     """READ-ONLY: fetch RRD (round-robin database) time-series telemetry for a PVE node.
 
     No state change. Returns a list of data-point dicts with timestamps and per-metric values
     (the exact metric keys vary by PVE version) over the specified timeframe, optionally aggregated by
-    consolidation function (AVERAGE or MAX). Node-level only, not per-guest."""
+    consolidation function (AVERAGE or MAX). Node-level only, not per-guest.
+
+    **The window ROLLS and ends at now.** `day` means the last ~24 hours, which spans two
+    calendar days for all but one instant. PVE's RRD endpoint accepts no start/end, so a
+    CALENDAR day ("today", "yesterday", a named date) is NOT available from this tool and must
+    not be reported as though it were: answer with the span the data actually covers, which the
+    returned `time` fields state exactly. Asked for "today", say you are showing the last 24
+    hours and give the real bounds."""
     cfg, api, _, _ = _proximo_server._svc()
     return _audited("pve_node_rrddata", node or cfg.node,
                     lambda: node_rrddata(api, node, timeframe, cf))

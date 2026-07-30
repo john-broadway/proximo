@@ -250,6 +250,15 @@ Two behaviours worth knowing before you rely on it:
   a TTL: it expires nothing on its own. Set it to `0` only if you arm and connect in one
   motion, and note that a garbled value falls back to the default rather than to zero, so a
   typo cannot silently start cutting live arms.
+- **File cleanup is opt-in and can only deny, never grant.** With `PROXIMO_REAP_UNLINK_DAYS`
+  set, `reap` also unlinks session token + lock files that are proven read-only, unheld, and
+  idle past the TTL — the removal happens while holding the file's own exclusive lock, so it
+  cannot race a session that is just starting. A dangling symlink is cleaned on the same
+  terms: it has no target to hold bytes, so it provably is not the write token by shape. Any
+  other unreadable file stays put and is reported as an error — unreadable means unprovable.
+  Note the garbled-value direction is the *opposite* of `PROXIMO_REAP_GRACE`: an unparseable
+  value disables unlinking, because deletion is the destructive verb and a typo must not
+  enable it.
 
 Holding the lock is best-effort and never blocks startup, so the honest limit is this: an
 arm that never gets held (an older server, a read-only session dir) reads as dead once the

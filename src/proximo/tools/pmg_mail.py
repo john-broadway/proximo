@@ -1659,7 +1659,7 @@ def pmg_node_syslog(
 
 @tool()
 def pmg_node_rrddata(
-    timeframe: Annotated[str, Field(description="RRD timeframe: hour|day|week|month|year.")],
+    timeframe: Annotated[str, Field(description="Rolling RRD window ENDING NOW: hour|day|week|month|year. 'day' is the last ~24 hours, NOT the calendar day.")],
     node: Annotated[str | None, Field(description="PMG node name; defaults to the configured node.")] = None,
     cf: Annotated[str | None, Field(description="RRD consolidation function: AVERAGE|MAX.")] = None,
 ) -> list[dict]:
@@ -1667,6 +1667,10 @@ def pmg_node_rrddata(
 
     Returns a list of time-series dicts over the given timeframe (hour|day|week|month|year). For
     a PVE hypervisor node's RRD data use pve_node_rrddata instead.
+
+    **The window ROLLS and ends at now.** No start/end is accepted, so a CALENDAR day ("today",
+    a named date) is NOT available and must not be reported as though it were: state the span
+    the returned `time` fields actually cover.
     """
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node

@@ -295,3 +295,154 @@ def test_hold_session_lock_is_a_noop_without_a_session(tmp_path, monkeypatch):
 def test_hold_session_lock_refuses_a_malformed_key(tmp_path, monkeypatch):
     _wire(tmp_path, monkeypatch)
     assert hold_session_lock("../escape") is None
+
+
+# ---------------------------------------------------------------- unlink: the sprawl half
+#
+# Restoring the key fixes the DANGEROUS half of a dead armed session; the file itself is the
+# OTHER half. Nothing ever unlinked, so a session dir accretes one token + one lock per session
+# forever (found 2026-07-29: 167 files, 0 armed) — a credential store nobody audits. Unlinking
+# is opt-in (PROXIMO_REAP_UNLINK_DAYS) and only ever touches a file that is read-only, unheld,
+# and idle past the TTL: deleting a read-only token can DENY, never grant.
+
+UNLINK_ENV = "PROXIMO_REAP_UNLINK_DAYS"  # pinned as the literal an operator types
+DAY = 86400
+
+
+def test_unlinking_is_off_unless_opted_in(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    (sessions / "old.token").write_text(RO_TOKEN)
+    _age(sessions / "old.token", 90 * DAY)
+    assert _actions(reap_stale_arms())["old"] == "read-only"
+    assert (sessions / "old.token").exists()
+
+
+def test_an_idle_readonly_session_file_is_unlinked_past_the_ttl(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "gone.token").write_text(RO_TOKEN)
+    (sessions / "gone.lock").write_text("")
+    _age(sessions / "gone.token", 8 * DAY)
+    assert _actions(reap_stale_arms())["gone"] == "unlinked"
+    assert not (sessions / "gone.token").exists()
+    assert not (sessions / "gone.lock").exists()   # the sidecar goes with it
+
+
+def test_a_readonly_file_inside_the_ttl_is_kept(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "warm.token").write_text(RO_TOKEN)
+    _age(sessions / "warm.token", 6 * DAY)
+    assert _actions(reap_stale_arms())["warm"] == "read-only"
+    assert (sessions / "warm.token").exists()
+
+
+def test_a_held_readonly_session_is_never_unlinked(tmp_path, monkeypatch):
+    """Liveness beats age: a long-lived session that has been read-only for a month is still a
+    session, and cutting its token file out from under it is not this tool's call."""
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "veteran.token").write_text(RO_TOKEN)
+    _age(sessions / "veteran.token", 30 * DAY)
+    assert hold_session_lock("veteran") is not None
+    try:
+        assert _actions(reap_stale_arms())["veteran"] == "read-only"
+        assert (sessions / "veteran.token").exists()
+    finally:
+        release_session_locks()
+
+
+def test_an_armed_stale_file_is_restored_not_unlinked(tmp_path, monkeypatch):
+    """The two verbs never share a pass: restore stamps a fresh mtime, so an ex-armed file
+    becomes unlink-eligible only after it sits idle as read-only for the whole TTL."""
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    do_arm(session="stale")
+    _age(sessions / "stale.token", 30 * DAY)
+    release_session_locks()
+    assert _actions(reap_stale_arms())["stale"] == "reaped"
+    assert (sessions / "stale.token").read_text() == RO_TOKEN
+
+
+@pytest.mark.parametrize("raw", ["banana", "0", "-3", "7.5", ""])
+def test_a_garbled_or_zero_unlink_ttl_means_no_unlinking(tmp_path, monkeypatch, raw):
+    """Deletion is the destructive verb, so a typo must not ENABLE it — the mirror image of
+    REAP_GRACE, where a typo must not DISABLE the race guard."""
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, raw)
+    (sessions / "typo.token").write_text(RO_TOKEN)
+    _age(sessions / "typo.token", 90 * DAY)
+    assert _actions(reap_stale_arms())["typo"] == "read-only"
+    assert (sessions / "typo.token").exists()
+
+
+def test_dry_run_reports_the_unlink_without_deleting(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "preview.token").write_text(RO_TOKEN)
+    _age(sessions / "preview.token", 8 * DAY)
+    assert _actions(reap_stale_arms(dry_run=True))["preview"] == "unlinked"
+    assert (sessions / "preview.token").exists()
+
+
+def test_an_orphan_lock_file_is_swept_past_the_ttl(tmp_path, monkeypatch):
+    """hold_session_lock creates a lock for EVERY session, armed or not, so locks whose token
+    never existed (or died first) are the other half of the sprawl."""
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "ghost.lock").write_text("")
+    _age(sessions / "ghost.lock", 8 * DAY)
+    assert _actions(reap_stale_arms())["ghost"] == "unlinked"
+    assert not (sessions / "ghost.lock").exists()
+
+
+def test_a_fresh_orphan_lock_is_kept(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "newborn.lock").write_text("")
+    decisions = reap_stale_arms()
+    assert "newborn" not in _actions(decisions)   # not even a decision: nothing to say yet
+    assert (sessions / "newborn.lock").exists()
+
+
+def test_orphan_locks_are_untouched_without_the_opt_in(tmp_path, monkeypatch):
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    (sessions / "ghost.lock").write_text("")
+    _age(sessions / "ghost.lock", 90 * DAY)
+    decisions = reap_stale_arms()
+    assert "ghost" not in _actions(decisions)
+    assert (sessions / "ghost.lock").exists()
+
+
+def test_dry_run_and_real_run_reach_the_same_verdict_on_an_unopenable_lock(tmp_path, monkeypatch):
+    """Parity is the property: a dry run that predicts "would unlink" where the real run would
+    refuse "lock unopenable" is a preview that lies. Both must keep the file and say why."""
+    import proximo.arm as arm_mod
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    (sessions / "sealed.token").write_text(RO_TOKEN)
+    (sessions / "sealed.lock").write_text("")
+    _age(sessions / "sealed.token", 8 * DAY)
+
+    def _refuse(path, *, create):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(arm_mod, "_open_lock", _refuse)
+    for dry in (True, False):
+        decisions = _actions(reap_stale_arms(dry_run=dry))
+        assert decisions["sealed"] == "read-only", f"dry_run={dry}"
+        assert (sessions / "sealed.token").exists()
+
+
+def test_a_broken_symlink_session_file_still_ages_and_unlinks(tmp_path, monkeypatch):
+    """The sprawl object is the directory entry, not its target: a token symlink whose target
+    is gone can never be read, so stat-following would keep it forever."""
+    _src, _ro, sessions, _tp = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv(UNLINK_ENV, "7")
+    link = sessions / "dangling.token"
+    link.symlink_to(sessions / "no-such-target")
+    old = time.time() - 8 * DAY
+    os.utime(link, (old, old), follow_symlinks=False)
+    decisions = _actions(reap_stale_arms())
+    assert decisions["dangling"] == "unlinked"
+    assert not link.exists(follow_symlinks=False)

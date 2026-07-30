@@ -111,7 +111,7 @@ def pbs_snapshot_protected_get(
 def pbs_datastore_rrd(
     store: Annotated[str, Field(description="PBS datastore name.")],
     cf: Annotated[str, Field(description="RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default.")],
-    timeframe: Annotated[str, Field(description="RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default.")],
+    timeframe: Annotated[str, Field(description="Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available.")],
 ) -> dict:
     """READ-ONLY: datastore stats telemetry (I/O, usage over time) — the datastore-level
     parallel of pbs_node_rrd. The live schema declares returns:null despite real data —

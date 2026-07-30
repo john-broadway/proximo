@@ -212,16 +212,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.27.1`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.27.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.28.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.28.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.27.1 — installable again.** `mcp` was declared with no upper bound, so once the MCP
-> SDK released a 2.0.0 that removed the module this server imports, every fresh install off PyPI
-> resolved it and then failed to import — `uvx proximo-proxmox` included. Now capped, with every
-> requirement bounding its major and a test reading the metadata an adopter resolves against. Our
-> lockfile held a working version all along, which is why the suite never noticed: **a lockfile
-> protects the build, not the adopter.** No code changed.
+> **New in 0.28.0 — two honesty fixes.** The RRD tools stopped letting a model call a rolling
+> window "today": the schema never said those windows roll and end at *now*, so an agent asked
+> for today answered from the last 24 hours. It wasn't hallucinating — **the description told it
+> that.** Fixed at all five sites that shipped the wording, pinned by tests. And `proximo reap`
+> gained opt-in cleanup (`PROXIMO_REAP_UNLINK_DAYS`) for dead sessions' token and lock files,
+> which restoring the key never removed. Tool count unchanged at 904.
 >
-> Recent: **0.27.0** — local knowledge (estate memory + a local docs index, both refusing rather than answering with a number a small model misreads), and `arm`/`disarm`/`reap` for write authority that cannot outlive its session. 900 → **904** tools. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.27.1** — an unbounded `mcp` dependency met an SDK major that removed the module this server imports, so every fresh PyPI install broke while the suite stayed green. Capped and bounded: a lockfile protects the build, not the adopter.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,12 +258,12 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.27.1** — **installable again, and the reason it wasn't is worth writing down**: an unbounded `mcp`
-  dependency meant that once the SDK shipped a major removing the module this server imports, every new install
-  off PyPI resolved it and could not import proximo at all — for two days, while the suite stayed green, because
-  the repo's lockfile held a working version and lockfiles never reach an adopter. Capped, bounded throughout,
-  pinned by a test that reads the published metadata. 0.27.0 brought the capability the line is named for: local
-  knowledge that refuses rather than guesses, and write authority that cannot outlive its session.
+- 🩸 **0.28.0** — **a reviewer asked for "utilization charts for today" and got the last 24 hours, and he was
+  right to call it**: the RRD schema never said its windows roll and end at *now*, so the model picked one and
+  called it today. The model wasn't hallucinating — our own tool description authored the claim. Every one of the
+  five tools carrying that wording now states the limit, and what to report instead, pinned by tests. `proximo
+  reap` also learned to clean up after dead sessions, since putting the key back never removed the files. **A
+  tool description is a prompt: whatever it omits, the model fills in.**
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

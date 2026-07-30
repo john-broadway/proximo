@@ -2,6 +2,36 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.28.0] — 2026-07-30
+
+Two honesty fixes, one in what the software *says* and one in what it *leaves behind*.
+
+- **The RRD tools no longer let a model call a rolling window "today."** A reviewer on the
+  Proxmox forum asked an agent for "utilization charts for today" and got a confident answer
+  built on the last 24 hours, which spans two calendar days. The model was not hallucinating:
+  the schema offered a `day` timeframe and described it only as "the specified timeframe," so
+  `day` read as "today." These endpoints accept no start/end, so a calendar day genuinely
+  cannot be served — and now every one of them says so, in the text the model actually reads.
+  Fixed across the whole class rather than the reported site: `pve_node_rrddata`,
+  `pmg_node_rrddata`, `pbs_node_rrd`, `pbs_datastore_rrd`, and `proximo_baseline`, with the
+  disclosure pinned by tests at all five. Reported by **meyergru**, whose earlier report shaped
+  0.26.0's context work.
+
+- **`proximo reap` can now clean up after dead sessions, opt-in.** Restoring the read-only key
+  was always only half the job: nothing ever removed a dead session's token + lock files, so a
+  session dir accretes one pair per session forever — a credential store nobody audits (the
+  deployment this pattern was found on had 167 files for 0 live arms). With
+  `PROXIMO_REAP_UNLINK_DAYS=N` set, `reap` also unlinks session files that are proven
+  read-only, unheld (kernel flock, same oracle as reaping), and idle more than N days —
+  removal happens under the file's own exclusive lock so it cannot race a starting session,
+  and an ex-armed file is restored first (fresh mtime), making it eligible only after a further
+  full TTL. Orphan lock files and dangling symlinks (no target = provably not a token) sweep
+  on the same terms; any other unreadable file stays put as an error. `--dry-run` runs the
+  same probes and stops short of the unlink itself, so the preview cannot say "would unlink"
+  anywhere the real run would refuse. Unset or garbled = no unlinking:
+  deletion is the destructive verb, so a typo must not enable it — deliberately the opposite
+  fallback direction from `PROXIMO_REAP_GRACE`.
+
 ## [0.27.1] — 2026-07-30
 
 **A fresh `pip install proximo-proxmox` had been broken for two days, and nothing in this repo

@@ -49,6 +49,7 @@ SESSION_KEY_ENV = "PROXIMO_SESSION_KEY"
 TOKEN_PATH_ENV = "PROXIMO_TOKEN_PATH"  # noqa: S105 -- env var NAME; shared with lease.py
 LEASE_ENV = "PROXIMO_ARM_TTL"
 REAP_GRACE_ENV = "PROXIMO_REAP_GRACE"
+REAP_UNLINK_ENV = "PROXIMO_REAP_UNLINK_DAYS"
 
 _KEY_MAX = 128
 _KEY_ALLOWED = frozenset(string.ascii_letters + string.digits + "._-")
@@ -443,7 +444,8 @@ def _refuse_if_readonly_source_is_the_write_token(ro_source: str, target: str) -
 
 @dataclass(frozen=True)
 class ReapDecision:
-    """One session's verdict. ``action`` is reaped | live | read-only | grace | error."""
+    """One session's verdict. ``action`` is reaped | live | read-only | grace | error |
+    unlinked (opt-in, ``PROXIMO_REAP_UNLINK_DAYS``)."""
 
     session: str
     target: str
@@ -532,6 +534,74 @@ def _reap_grace() -> int:
     return max(0, value)
 
 
+def _unlink_after() -> int | None:
+    """Seconds of idleness after which a read-only, unheld session file may be unlinked.
+
+    ``None`` = unlinking disabled, the default. Unlike ``_reap_grace`` a garbled value DISABLES
+    rather than defaulting: deletion is the destructive verb here, so a typo must not enable it.
+    The two fallback directions are opposite on purpose — each fails toward safety for its own
+    verb (zero grace would cut fresh arms; surprise deletion would eat session files).
+    """
+    raw = os.environ.get(REAP_UNLINK_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        days = int(raw)
+    except ValueError:
+        return None
+    return days * 86400 if days > 0 else None
+
+
+def _idle_seconds(path: str, now: float) -> int | None:
+    """Idleness of the directory ENTRY (lstat): the sprawl object is the entry itself, and a
+    dangling symlink — which stat-following could never age — still has an mtime of its own."""
+    try:
+        return int(now - os.lstat(path).st_mtime)
+    except OSError:
+        return None
+
+
+def _unlink_under_lock(token_path: str | None, lock_path: str,
+                       *, dry_run: bool = False) -> str | None:
+    """Unlink a dead session's files while HOLDING the exclusive lock, so the holder check and
+    the removal are one act: a session arriving in between either beats us to the lock (we keep
+    the files and say so) or opens the path after the unlink and mints a fresh lock file via
+    ``hold_session_lock``. Returns the reason the files were kept, or None on success.
+
+    ``dry_run`` runs the SAME probes and stops short of the unlink itself, so a preview cannot
+    predict "would unlink" anywhere the real run would refuse — parity by construction, not by
+    keeping two code paths in step.
+    """
+    fd: int | None = None
+    try:
+        fd = _open_lock(lock_path, create=False)
+    except FileNotFoundError:
+        fd = None  # token without a lock: nothing to hold, nothing could hold it
+    except (OSError, ValueError) as exc:
+        return f"lock unopenable: {getattr(exc, 'strerror', None) or exc}"
+    try:
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return "a holder still has the lock"
+        if dry_run:
+            return None
+        try:
+            if token_path is not None:
+                os.unlink(token_path)
+            if fd is not None:
+                os.unlink(lock_path)
+        except FileNotFoundError:
+            pass  # already gone is the outcome we wanted
+        except OSError as exc:
+            return f"unlink failed: {exc.strerror}"
+        return None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def _has_live_holder(lock_path: str) -> bool:
     """True only when a holder demonstrably still has the lock.
 
@@ -560,6 +630,13 @@ def reap_stale_arms(dry_run: bool = False) -> list[ReapDecision]:
 
     Scans only the session dir — a global arm is the operator's own standing act and has no
     session that could be dead, so it is never touched.
+
+    With ``PROXIMO_REAP_UNLINK_DAYS`` set (opt-in), also unlinks the OTHER half of a dead
+    session: its files. Restoring the key fixes the dangerous half; the token + lock themselves
+    otherwise accrete forever, one pair per session — a credential store nobody audits. Only a
+    file that is proven read-only, unheld, and idle past the TTL is touched, so an unlink can
+    DENY at worst, never grant. An ex-armed file is restored first (fresh mtime) and becomes
+    eligible only after a full TTL of read-only idleness.
     """
     session_dir = os.environ.get(SESSION_DIR_ENV, "").strip()
     if not session_dir or not os.path.isdir(session_dir):
@@ -581,6 +658,7 @@ def reap_stale_arms(dry_run: bool = False) -> list[ReapDecision]:
 
     ro_source = os.environ.get(READONLY_SOURCE_ENV, "").strip()
     grace = _reap_grace()
+    unlink_after = _unlink_after()
     now = time.time()
     decisions: list[ReapDecision] = []
 
@@ -596,11 +674,11 @@ def reap_stale_arms(dry_run: bool = False) -> list[ReapDecision]:
             with open(target, "rb") as f:
                 current = f.read()
         except OSError as exc:
-            decisions.append(ReapDecision(session, target, "error", f"unreadable: {exc.strerror}"))
+            decisions.append(_unreadable_verdict(session, target, unlink_after, now,
+                                                 dry_run, exc))
             continue
         if current != armed_bytes:
-            decisions.append(ReapDecision(session, target, "read-only",
-                                          "not holding the write token"))
+            decisions.append(_readonly_verdict(session, target, unlink_after, now, dry_run))
             continue
         try:
             age = int(now - os.stat(target).st_mtime)
@@ -637,6 +715,78 @@ def reap_stale_arms(dry_run: bool = False) -> list[ReapDecision]:
             continue
         decisions.append(ReapDecision(session, target, "reaped",
                                       f"armed {age}s ago, no holder held the lock"))
+
+    if unlink_after is not None:
+        decisions.extend(_sweep_orphan_locks(session_dir, unlink_after, now, dry_run))
+    return decisions
+
+
+def _readonly_verdict(session: str, target: str, unlink_after: int | None, now: float,
+                      dry_run: bool) -> ReapDecision:
+    """The verdict for a session file that is NOT holding the write token: kept (the default),
+    or — with the unlink opt-in, past the TTL, and demonstrably unheld — unlinked."""
+    idle = _idle_seconds(target, now)
+    if unlink_after is None or idle is None or idle <= unlink_after:
+        return ReapDecision(session, target, "read-only", "not holding the write token")
+    try:
+        lock_path = session_lock_path(session)
+    except ArmError:  # pragma: no cover -- a session dir exists by here
+        return ReapDecision(session, target, "read-only", "not holding the write token")
+    kept = _unlink_under_lock(target, lock_path, dry_run=dry_run)
+    if kept is None:
+        prefix = "would unlink (" if dry_run else ""
+        suffix = ")" if dry_run else ""
+        return ReapDecision(session, target, "unlinked",
+                            f"{prefix}read-only, idle {idle // 86400}d, no holder{suffix}")
+    return ReapDecision(session, target, "read-only", f"kept: {kept}")
+
+
+def _unreadable_verdict(session: str, target: str, unlink_after: int | None, now: float,
+                        dry_run: bool, exc: OSError) -> ReapDecision:
+    """The verdict for a session file whose bytes cannot be read. Normally that is an error —
+    unreadable means unprovable, and only a PROVEN read-only file may be unlinked. The one
+    exception is a dangling symlink: it has no target to hold bytes at all, so it provably is
+    not the write token by SHAPE rather than by content, and it is exactly the entry that
+    stat-following cleanup could never age out."""
+    dangling = os.path.islink(target) and not os.path.exists(target)
+    idle = _idle_seconds(target, now)
+    if not dangling or unlink_after is None or idle is None or idle <= unlink_after:
+        return ReapDecision(session, target, "error", f"unreadable: {exc.strerror}")
+    try:
+        lock_path = session_lock_path(session)
+    except ArmError:  # pragma: no cover -- a session dir exists by here
+        return ReapDecision(session, target, "error", f"unreadable: {exc.strerror}")
+    kept = _unlink_under_lock(target, lock_path, dry_run=dry_run)
+    if kept is None:
+        prefix = "would unlink (" if dry_run else ""
+        suffix = ")" if dry_run else ""
+        return ReapDecision(session, target, "unlinked",
+                            f"{prefix}dangling symlink, idle {idle // 86400}d, no holder{suffix}")
+    return ReapDecision(session, target, "error", f"unreadable: {exc.strerror}; kept: {kept}")
+
+
+def _sweep_orphan_locks(session_dir: str, unlink_after: int, now: float,
+                        dry_run: bool) -> list[ReapDecision]:
+    """The orphan-lock sweep. hold_session_lock mints a lock for EVERY session, armed or not, so
+    locks whose token never existed (or was unlinked this pass) are the other half of the sprawl.
+    A kept orphan gets no decision at all: there is nothing to report about a lock that is simply
+    young or held — the decisions list describes sessions, not directory contents."""
+    decisions: list[ReapDecision] = []
+    for name in sorted(os.listdir(session_dir)):
+        if not name.endswith(LOCK_SUFFIX):
+            continue
+        session = name[: -len(LOCK_SUFFIX)]
+        if os.path.exists(os.path.join(session_dir, session + TOKEN_SUFFIX)):
+            continue  # its token's own verdict covers this session
+        lock_path = os.path.join(session_dir, name)
+        idle = _idle_seconds(lock_path, now)
+        if idle is None or idle <= unlink_after:
+            continue
+        if _unlink_under_lock(None, lock_path, dry_run=dry_run) is None:
+            verb = "would unlink orphan lock" if dry_run else "orphan lock"
+            decisions.append(ReapDecision(
+                session, lock_path, "unlinked",
+                f"{verb}, idle {idle // 86400}d, no holder"))
     return decisions
 
 
@@ -657,7 +807,8 @@ def render_reap(decisions: list[ReapDecision], *, dry_run: bool = False) -> str:
     if not decisions:
         return ("proximo reap: no per-session arms to check "
                 f"({SESSION_DIR_ENV} unset or empty)")
-    icon = {"reaped": "🔒", "live": "▶", "read-only": "·", "grace": "⏳", "error": "⚠️"}
+    icon = {"reaped": "🔒", "live": "▶", "read-only": "·", "grace": "⏳", "error": "⚠️",
+            "unlinked": "🧹"}
     lines = []
     for d in sorted(decisions, key=lambda x: (x.action != "error", x.action, x.session)):
         verb = "would disarm" if (dry_run and d.action == "reaped") else d.action

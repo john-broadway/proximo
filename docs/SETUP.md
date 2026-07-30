@@ -223,6 +223,15 @@ process does. So it is safe to run any time, including from a timer — live ses
 and skipped. Arms newer than `PROXIMO_REAP_GRACE` (default 300s) are left alone, since a session
 that just armed may not have connected yet.
 
+Restoring the key fixes the dangerous half of a dead session; the files are the other half. By
+default nothing removes them, so the session dir accretes one token + one lock per session
+forever — a credential store nobody audits. Set `PROXIMO_REAP_UNLINK_DAYS=7` (any positive
+integer) and `reap` also unlinks session files that are read-only, unheld, and idle past that
+many days, sidecar lock included. Only a proven read-only file is ever unlinked — a dead armed
+session is restored first, which stamps a fresh mtime, so its file becomes eligible only after
+a further full TTL of idleness. A garbled value disables unlinking rather than defaulting: a
+typo must not switch deletion on.
+
 ---
 
 ## Fitting a smaller model — scoping the tool surface

@@ -821,3 +821,52 @@ def test_node_journal_returns_strings_passthrough():
     out = node_journal(api)
     assert out == ["cursor;s=abc", "Mar 02 23:32 pve1 pveproxy[1]: worker started"]
     assert all(isinstance(x, str) for x in out)
+
+
+# --------------------------------------------------------- the window must not lie (2026-07-30)
+#
+# A forum reviewer asked an agent for "utilization charts for today" and got a confident answer
+# built on the last 24 HOURS — which spans two calendar days. The model was not hallucinating:
+# the schema offered a `day` timeframe and said only "over the specified timeframe", so `day`
+# read as "today". RRD windows are ROLLING and end at now; these endpoints expose no start/end
+# at all. The schema has to say so, or the tool description is the thing telling the lie.
+#
+# Pinned across the whole CLASS, not the one site that was reported: the same wording shipped
+# on five tools over four planes, and fixing only the reported one leaves four lies standing.
+
+RRD_TOOL_SITES = [
+    ("pve_observability.py", "pve_node_rrddata"),
+    ("pmg_mail.py", "pmg_node_rrddata"),
+    ("pbs_admin.py", "pbs_node_rrd"),
+    ("pbs_datastore_admin.py", "pbs_datastore_rrd"),
+    ("memory_tools.py", "proximo_baseline"),
+]
+
+
+def _tool_text(module: str, fn: str) -> str:
+    """The schema text as the MODEL receives it: signature Field descriptions plus docstring.
+    Read from the FILE, not an import: these modules are only importable through server.py's
+    registration order, and the property under test is what the text SAYS."""
+    from pathlib import Path
+
+    import proximo
+    src = (Path(proximo.__file__).parent / "tools" / module).read_text()
+    start = src.index(f"def {fn}(")
+    nxt = src.find("@tool()", start)
+    return src[start:nxt if nxt != -1 else len(src)]
+
+
+@pytest.mark.parametrize("module,fn", RRD_TOOL_SITES)
+def test_every_rrd_window_is_disclosed_as_rolling_and_ending_now(module, fn):
+    text = _tool_text(module, fn).lower()
+    assert "rolling" in text, f"{fn}: must say the window ROLLS, or 'day' reads as 'today'"
+    assert "now" in text, f"{fn}: must say the window ENDS AT NOW"
+
+
+@pytest.mark.parametrize("module,fn", RRD_TOOL_SITES)
+def test_every_rrd_schema_warns_a_calendar_day_is_not_available(module, fn):
+    """The honest half: these endpoints expose no start/end, so 'today' or any specific date
+    CANNOT be served. Saying so in the schema is what stops a model claiming it did."""
+    text = _tool_text(module, fn).lower()
+    assert "calendar" in text, f"{fn}: must name the calendar-day limit"
+    assert "not" in text, f"{fn}: must state the limit negatively, not imply it"

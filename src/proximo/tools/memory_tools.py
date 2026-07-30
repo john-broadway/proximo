@@ -42,7 +42,7 @@ def proximo_baseline(
     vmid: Annotated[str, Field(description="Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container.")],
     kind: Annotated[str, Field(description="Guest type: `lxc` for a container or `qemu` for a VM.")] = "lxc",
     node: Annotated[str | None, Field(description="PVE node the guest runs on. Omit to use the configured default node.")] = None,
-    timeframe: Annotated[str, Field(description="RRD window the baseline covers: `hour`, `day`, `week` (default), `month`, or `year`.")] = "week",
+    timeframe: Annotated[str, Field(description="Rolling RRD window the baseline covers, ENDING NOW: `hour`, `day`, `week` (default), `month`, or `year`. `day` is the last ~24 hours, NOT the calendar day; a specific date is not available.")] = "week",
     refresh: Annotated[bool, Field(description="Set `true` to pull fresh rrddata and recompute; default serves the stored rollup when one exists.")] = False,
 ) -> dict:
     """READ-ONLY: what "normal" looks like for one guest — cpu/mem distribution rollups

@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.27.1",
+  "version": "0.28.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -248,7 +248,7 @@
           },
           "timeframe": {
             "default": "week",
-            "description": "RRD window the baseline covers: `hour`, `day`, `week` (default), `month`, or `year`.",
+            "description": "Rolling RRD window the baseline covers, ENDING NOW: `hour`, `day`, `week` (default), `month`, or `year`. `day` is the last ~24 hours, NOT the calendar day; a specific date is not available.",
             "type": "string"
           },
           "refresh": {
@@ -6010,7 +6010,7 @@
             "type": "string"
           },
           "timeframe": {
-            "description": "RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default.",
+            "description": "Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available.",
             "type": "string"
           },
           "node": {
@@ -6932,7 +6932,7 @@
             "type": "string"
           },
           "timeframe": {
-            "description": "RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default.",
+            "description": "Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available.",
             "type": "string"
           },
           "proximo_target": {
@@ -21354,11 +21354,11 @@
     },
     {
       "name": "pmg_node_rrddata",
-      "description": "READ-ONLY: get PMG node RRD performance data. Needs PROXIMO_PMG_* config.\n\nReturns a list of time-series dicts over the given timeframe (hour|day|week|month|year). For\na PVE hypervisor node's RRD data use pve_node_rrddata instead.\n",
+      "description": "READ-ONLY: get PMG node RRD performance data. Needs PROXIMO_PMG_* config.\n\nReturns a list of time-series dicts over the given timeframe (hour|day|week|month|year). For\na PVE hypervisor node's RRD data use pve_node_rrddata instead.\n\n**The window ROLLS and ends at now.** No start/end is accepted, so a CALENDAR day (\"today\",\na named date) is NOT available and must not be reported as though it were: state the span\nthe returned `time` fields actually cover.\n",
       "inputSchema": {
         "properties": {
           "timeframe": {
-            "description": "RRD timeframe: hour|day|week|month|year.",
+            "description": "Rolling RRD window ENDING NOW: hour|day|week|month|year. 'day' is the last ~24 hours, NOT the calendar day.",
             "type": "string"
           },
           "node": {
@@ -44374,7 +44374,7 @@
     },
     {
       "name": "pve_node_rrddata",
-      "description": "READ-ONLY: fetch RRD (round-robin database) time-series telemetry for a PVE node.\n\nNo state change. Returns a list of data-point dicts with timestamps and per-metric values\n(the exact metric keys vary by PVE version) over the specified timeframe, optionally aggregated by\nconsolidation function (AVERAGE or MAX). Node-level only, not per-guest.",
+      "description": "READ-ONLY: fetch RRD (round-robin database) time-series telemetry for a PVE node.\n\nNo state change. Returns a list of data-point dicts with timestamps and per-metric values\n(the exact metric keys vary by PVE version) over the specified timeframe, optionally aggregated by\nconsolidation function (AVERAGE or MAX). Node-level only, not per-guest.\n\n**The window ROLLS and ends at now.** `day` means the last ~24 hours, which spans two\ncalendar days for all but one instant. PVE's RRD endpoint accepts no start/end, so a\nCALENDAR day (\"today\", \"yesterday\", a named date) is NOT available from this tool and must\nnot be reported as though it were: answer with the span the data actually covers, which the\nreturned `time` fields state exactly. Asked for \"today\", say you are showing the last 24\nhours and give the real bounds.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -44391,7 +44391,7 @@
           },
           "timeframe": {
             "default": "hour",
-            "description": "RRD time window: 'hour', 'day', 'week', 'month', or 'year'",
+            "description": "Rolling RRD window ENDING NOW: 'hour', 'day', 'week', 'month', or 'year'. 'day' is the last ~24 hours, NOT the calendar day",
             "type": "string"
           },
           "cf": {

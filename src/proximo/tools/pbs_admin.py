@@ -134,7 +134,7 @@ def pbs_node_identity(
 @tool()
 def pbs_node_rrd(
     cf: Annotated[str, Field(description="RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default.")],
-    timeframe: Annotated[str, Field(description="RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default.")],
+    timeframe: Annotated[str, Field(description="Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available.")],
     node: Annotated[str, Field(description="PBS node name (or 'localhost').")] = "localhost",
 ) -> dict:
     """READ-ONLY: node stats telemetry (host CPU/memory/network, I/O). The live schema declares

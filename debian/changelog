@@ -1,3 +1,19 @@
+proximo (0.28.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.28.0 (minor - one new opt-in capability plus a schema-honesty
+    repair; no tool count change, 904). `proximo reap` gains an opt-in cleanup of
+    dead sessions' token and lock files via PROXIMO_REAP_UNLINK_DAYS: restoring the
+    read-only key was only half the job, and the files themselves accreted one pair
+    per session forever. Only a file proven read-only, unheld by the kernel flock,
+    and idle past the TTL is removed, under its own exclusive lock; unset or garbled
+    disables it, because deletion is the destructive verb. Separately, the RRD tools
+    stopped letting a model call a rolling window "today": the schema never said the
+    windows roll and end at now, so a model asked for today answered from the last
+    24 hours. Fixed across all five sites that shipped the wording, with the
+    disclosure pinned by tests.
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Thu, 30 Jul 2026 21:20:00 +0000
+
 proximo (0.27.1-1) UNRELEASED; urgency=high
 
   * Track upstream 0.27.1 (patch - a packaging hotfix; no code, tool or interface

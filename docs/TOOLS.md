@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.27.1**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.28.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -2707,10 +2707,17 @@ No state change. Returns a list of data-point dicts with timestamps and per-metr
 (the exact metric keys vary by PVE version) over the specified timeframe, optionally aggregated by
 consolidation function (AVERAGE or MAX). Node-level only, not per-guest.
 
+**The window ROLLS and ends at now.** `day` means the last ~24 hours, which spans two
+calendar days for all but one instant. PVE's RRD endpoint accepts no start/end, so a
+CALENDAR day ("today", "yesterday", a named date) is NOT available from this tool and must
+not be reported as though it were: answer with the span the data actually covers, which the
+returned `time` fields state exactly. Asked for "today", say you are showing the last 24
+hours and give the real bounds.
+
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `timeframe` | string | no | RRD time window: 'hour', 'day', 'week', 'month', or 'year' (default: `"hour"`) |
+| `timeframe` | string | no | Rolling RRD window ENDING NOW: 'hour', 'day', 'week', 'month', or 'year'. 'day' is the last ~24 hours, NOT the calendar day (default: `"hour"`) |
 | `cf` | string (nullable) | no | RRD consolidation function: 'AVERAGE' or 'MAX'; defaults to server-side default (default: `null`) |
 | `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
@@ -5671,7 +5678,7 @@ config.
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
 | `cf` | string | yes | RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default. |
-| `timeframe` | string | yes | RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default. |
+| `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available. |
 | `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_s3_refresh`
@@ -6751,7 +6758,7 @@ pmg_node_rrddata/pbs_metrics_status precedent). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cf` | string | yes | RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default. |
-| `timeframe` | string | yes | RRD time frame: hour, day, week, month, year, or decade. REQUIRED — no server-side default. |
+| `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
@@ -11885,9 +11892,13 @@ READ-ONLY: get PMG node RRD performance data. Needs PROXIMO_PMG_* config.
 Returns a list of time-series dicts over the given timeframe (hour|day|week|month|year). For
 a PVE hypervisor node's RRD data use pve_node_rrddata instead.
 
+**The window ROLLS and ends at now.** No start/end is accepted, so a CALENDAR day ("today",
+a named date) is NOT available and must not be reported as though it were: state the span
+the returned `time` fields actually cover.
+
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `timeframe` | string | yes | RRD timeframe: hour\|day\|week\|month\|year. |
+| `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour\|day\|week\|month\|year. 'day' is the last ~24 hours, NOT the calendar day. |
 | `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
 | `cf` | string (nullable) | no | RRD consolidation function: AVERAGE\|MAX. (default: `null`) |
 | `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
@@ -14675,7 +14686,7 @@ point-in-time state use pve_guest_status; for raw series use pve_node_rrddata (n
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
 | `node` | string (nullable) | no | PVE node the guest runs on. Omit to use the configured default node. (default: `null`) |
-| `timeframe` | string | no | RRD window the baseline covers: `hour`, `day`, `week` (default), `month`, or `year`. (default: `"week"`) |
+| `timeframe` | string | no | Rolling RRD window the baseline covers, ENDING NOW: `hour`, `day`, `week` (default), `month`, or `year`. `day` is the last ~24 hours, NOT the calendar day; a specific date is not available. (default: `"week"`) |
 | `refresh` | boolean | no | Set `true` to pull fresh rrddata and recompute; default serves the stored rollup when one exists. (default: `false`) |
 | `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
