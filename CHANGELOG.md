@@ -2,6 +2,26 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.27.1] — 2026-07-30
+
+**A fresh `pip install proximo-proxmox` had been broken for two days, and nothing in this repo
+could see it.** `pyproject.toml` declared `mcp>=1.2.0` with no upper bound. The MCP SDK published
+2.0.0 on 2026-07-28, and 2.x removed `mcp.server.fastmcp` — the module `proximo/server.py` imports
+on its 29th line. From that release onward every new install off PyPI, of **any** proximo version,
+resolved mcp 2.0.0 and then failed to import the package at all. `uvx proximo-proxmox`, the
+zero-install path the README leads with, was broken the same way.
+
+- **`mcp` is now capped below 2**, and every other runtime and adopter-facing requirement bounds
+  its major (`httpx<1`, and the `[a2a]` / `[http]` / `[mcp-http]` extras). The cap is a hotfix, not
+  a verdict on 2.x: porting off `mcp.server.fastmcp` is real work and is not this release.
+- **Why the suite stayed green through all of it:** `uv.lock` and the hash-pinned
+  `requirements/*.txt` hold mcp at a 1.x, so CI, the container image and every local run were fine.
+  Those pins deliberately never enter the wheel, because PyPI consumers resolve their own
+  dependencies — which is exactly the hole. **A lockfile protects the build; only a bound in the
+  published metadata protects an adopter.** A new test reads the metadata an adopter actually
+  resolves against and fails on any unbounded major, so this cannot recur silently.
+- Nothing else changed: no tool, no behavior, no interface. The tool estate stays 904.
+
 ## [0.27.0] — 2026-07-30
 
 **Two additions, both opt-in and inert until you set their env var, plus three honesty repairs

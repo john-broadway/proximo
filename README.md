@@ -212,17 +212,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.27.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.27.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.27.1`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.27.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.27.0 — local knowledge, and write authority you can toggle.** Two opt-in seams, inert
-> until their env var is set: **estate memory** (`proximo_recall`, `proximo_baseline`) answers from
-> an age-stamped local map and `rrddata` rollups; the **wiki seam** (`proximo_wiki`) does BM25
-> search over a local docs index. Both **refuse** when unfed rather than return anything
-> answer-shaped, because a 4B read a bare `total: 0` as "0" whatever the note beside it said.
-> **`arm`/`disarm`** swap read-only for write and disclose whether the boundary is REAL or ADVISORY;
-> **`reap`** disarms a dead session via a kernel `flock`, so it survives `SIGKILL`. 900 → **904**.
+> **New in 0.27.1 — installable again.** `mcp` was declared with no upper bound, so once the MCP
+> SDK released a 2.0.0 that removed the module this server imports, every fresh install off PyPI
+> resolved it and then failed to import — `uvx proximo-proxmox` included. Now capped, with every
+> requirement bounding its major and a test reading the metadata an adopter resolves against. Our
+> lockfile held a working version all along, which is why the suite never noticed: **a lockfile
+> protects the build, not the adopter.** No code changed.
 >
-> Recent: **0.26.0** — the surface stops costing what it covers: ~348k tokens of connection-time schema down to ~555 in the smallest doorway. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.27.0** — local knowledge (estate memory + a local docs index, both refusing rather than answering with a number a small model misreads), and `arm`/`disarm`/`reap` for write authority that cannot outlive its session. 900 → **904** tools. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -259,11 +258,12 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.27.0** — **local knowledge, and an arm that cannot outlive its session**: estate memory
-  and a local docs index answer from what the server already holds, and both refuse rather than
-  return a number a small model will misread. `arm`/`disarm` disclose whether the boundary is real
-  or advisory; `reap` uses a kernel `flock`, so a killed session still gets disarmed. Three
-  honesty repairs came with it, including an autoscope guard that could serve 5 tools of 904.
+- 🩸 **0.27.1** — **installable again, and the reason it wasn't is worth writing down**: an unbounded `mcp`
+  dependency meant that once the SDK shipped a major removing the module this server imports, every new install
+  off PyPI resolved it and could not import proximo at all — for two days, while the suite stayed green, because
+  the repo's lockfile held a working version and lockfiles never reach an adopter. Capped, bounded throughout,
+  pinned by a test that reads the published metadata. 0.27.0 brought the capability the line is named for: local
+  knowledge that refuses rather than guesses, and write authority that cannot outlive its session.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

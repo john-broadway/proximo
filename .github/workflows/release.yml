@@ -72,6 +72,18 @@ jobs:
             exit 1
           }
 
+      # The {{major}}.{{minor}} floating tag also comes from the ref, so a versioned hand-run
+      # would otherwise publish 0.27.0 without its 0.27 companion — which is what happened the
+      # first time. Derived here, from the value already validated above.
+      - name: Derive the major.minor floating tag
+        id: mm
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          MM="${VERSION%.*}"
+          printf 'majorminor=%s\n' "$MM" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Multi-arch: amd64 for Proxmox hosts/servers, arm64 for Apple-Silicon
@@ -103,6 +115,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.mm.outputs.majorminor }},enable=${{ inputs.version != '' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' || inputs.version != '' }}
             type=sha
 

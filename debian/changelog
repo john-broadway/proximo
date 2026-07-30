@@ -1,3 +1,19 @@
+proximo (0.27.1-1) UNRELEASED; urgency=high
+
+  * Track upstream 0.27.1 (patch - a packaging hotfix; no code, tool or interface
+    change). The mcp dependency was declared without an upper bound, and the MCP
+    SDK's 2.0.0 release on 2026-07-28 removed mcp.server.fastmcp, which
+    proximo/server.py imports. Every fresh install off PyPI - of any version -
+    therefore resolved mcp 2.0.0 and then could not import the package at all,
+    including the `uvx proximo-proxmox` path the README leads with. mcp is now
+    capped below 2, and every other runtime and adopter-facing requirement bounds
+    its major. The repo's own lockfile held a working 1.x, which is why the suite
+    stayed green throughout: a lockfile protects the build, only a bound in the
+    published metadata protects an adopter. A new test reads that metadata and
+    fails on any unbounded major.
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Thu, 30 Jul 2026 09:20:00 +0000
+
 proximo (0.27.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.27.0 (minor - two opt-in capabilities, plus honesty repairs;
