@@ -695,9 +695,8 @@ def test_memory_status_never_raises_on_a_broken_db(tmp_path, monkeypatch):
 
 
 def test_doctor_report_carries_the_memory_section(tmp_path, monkeypatch):
-    from tests.test_doctor import _DoctorApi
-
     from proximo.doctor import doctor_check
+    from test_doctor import _DoctorApi  # not "tests.": bare `pytest` (CI) has tests/ on sys.path, not the repo root
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
     observe_guests(GUEST_ROWS)
@@ -710,9 +709,8 @@ def test_doctor_report_carries_the_memory_section(tmp_path, monkeypatch):
 
 
 def test_doctor_flags_a_broken_memory_db(tmp_path, monkeypatch):
-    from tests.test_doctor import _DoctorApi
-
     from proximo.doctor import doctor_check
+    from test_doctor import _DoctorApi  # not "tests.": bare `pytest` (CI) has tests/ on sys.path, not the repo root
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path))  # a DIRECTORY
     report = doctor_check(_DoctorApi())

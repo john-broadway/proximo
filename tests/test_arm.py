@@ -41,6 +41,57 @@ WRITE_TOKEN = "proximo@pve!arm=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"  # noqa: S1
 RO_TOKEN = "proximo@pve!ro=11111111-2222-3333-4444-555555555555"  # noqa: S105 -- test sentinel
 
 
+def _stat_reports(monkeypatch, owners):
+    """Make `os.stat` report a chosen owner uid for chosen paths; real stat everywhere else.
+
+    `owners` maps a path to the uid stat should report for it. Everything else about the stat
+    result stays real — mode, sticky bit, type.
+
+    Why report instead of `os.chown`: chown to another uid needs root, so every ownership test
+    below could only ever run privileged, and CI (uid 1001) either failed or would have to skip
+    the security verdict entirely. What the code under test reads is `st_uid` and `st_mode`, so
+    this double lacks nothing it looks at — the kernel's chown semantics are not what is being
+    tested, our verdict logic is.
+    """
+    real_stat = os.stat
+    table = {os.path.realpath(p): uid for p, uid in owners.items()}
+
+    class _Reported:
+        def __init__(self, st, uid):
+            self._st = st
+            self.st_uid = uid
+
+        def __getattr__(self, name):
+            return getattr(self._st, name)
+
+    def fake_stat(p, *a, **kw):
+        st = real_stat(p, *a, **kw)
+        try:
+            uid = table.get(os.path.realpath(p))
+        except TypeError:          # a file descriptor, never one of our paths
+            uid = None
+        return _Reported(st, uid) if uid is not None else st
+
+    monkeypatch.setattr(os, "stat", fake_stat)
+
+
+def _as_root_owner(monkeypatch, path, *, dir_uid=0):
+    """Present the REAL-boundary condition at any uid: run as root, over a root-owned file.
+
+    boundary_state asserts a REAL boundary only when the euid is 0 AND the file and its
+    directory belong to that euid. The euid-0 half is deliberate, not incidental — a non-root
+    arm is a uid the server may share, so the boundary cannot be asserted (pinned by
+    test_an_unprivileged_arm_is_advisory_even_at_600). A CI runner is uid 1001 and cannot
+    create a root-owned file at all, so the scenario is reported rather than constructed.
+
+    These tests used to just hardcode `geteuid -> 0` and leave ownership real. That passed on a
+    root box, where the files happen to be root's too, and failed everywhere else — the code
+    was right and the test was environment-dependent.
+    """
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    _stat_reports(monkeypatch, {path: 0, os.path.dirname(str(path)): dir_uid})
+
+
 def _wire(tmp_path, monkeypatch, *, mode=0o600):
     """A minimal agnostic arm environment: a write source, a read-only source, a session dir."""
     src = tmp_path / "operator.token"
@@ -232,10 +283,9 @@ def test_an_unprivileged_arm_is_advisory_even_at_600(tmp_path, monkeypatch):
     assert any("uid" in r for r in b.reasons)
 
 
-def test_root_owned_600_source_armed_as_root_is_not_advisory(tmp_path, monkeypatch):
+def test_an_owner_run_600_source_is_not_advisory(tmp_path, monkeypatch):
     src, _ro, _s, _t = _wire(tmp_path, monkeypatch, mode=0o600)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    monkeypatch.setattr(os, "stat", os.stat)  # keep real stat
+    _as_root_owner(monkeypatch, src)
     b = boundary_state(str(src))
     assert b.advisory is False
     # It must still name the condition it cannot verify rather than claim a flat guarantee.
@@ -370,7 +420,7 @@ def test_a_merely_readable_readonly_source_is_not_advisory(tmp_path, monkeypatch
     wrong file — and false alarms are how a disclosure gets trained into background noise.
     """
     _src, ro, _s, _t = _wire(tmp_path, monkeypatch)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    _as_root_owner(monkeypatch, ro)
     os.chmod(ro, 0o644)  # noqa: S103 -- readable, NOT writable: the ordinary everyday credential
 
     result = do_disarm(session=None)
@@ -380,7 +430,7 @@ def test_a_merely_readable_readonly_source_is_not_advisory(tmp_path, monkeypatch
 
 def test_the_readonly_boundary_never_claims_the_write_token_can_be_copied(tmp_path, monkeypatch):
     _src, ro, _s, _t = _wire(tmp_path, monkeypatch)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    _as_root_owner(monkeypatch, ro)
     os.chmod(ro, 0o646)  # noqa: S103 -- writable: a real substitution surface
 
     b = do_disarm(session=None).boundary
@@ -398,8 +448,10 @@ def test_the_readonly_boundary_never_claims_the_write_token_can_be_copied(tmp_pa
 
 def test_a_source_owned_by_another_uid_is_advisory(tmp_path, monkeypatch):
     src, _ro, _s, _t = _wire(tmp_path, monkeypatch, mode=0o600)
+    # stat REPORTS a foreign owner rather than os.chown giving it one: chown needs root, and
+    # this property (foreign owner => advisory) holds at any uid.
     monkeypatch.setattr(os, "geteuid", lambda: 0)
-    os.chown(src, 65534, 65534)             # owner is NOT the uid running arm
+    _stat_reports(monkeypatch, {src: 65534, os.path.dirname(str(src)): 0})
 
     b = boundary_state(str(src))
     assert b.advisory is True, b
@@ -409,13 +461,14 @@ def test_a_source_owned_by_another_uid_is_advisory(tmp_path, monkeypatch):
 def test_a_directory_owned_by_another_uid_is_advisory(tmp_path, monkeypatch):
     """Whoever owns the directory can replace the entry, whatever the file's own mode says."""
     src, _ro, _s, _t = _wire(tmp_path, monkeypatch, mode=0o600)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
     holder = tmp_path / "theirs"
     holder.mkdir()
     moved = holder / "operator.token"
     moved.write_text(src.read_text())
     os.chmod(moved, 0o600)
-    os.chown(holder, 65534, 65534)          # directory owner is a second uid; file stays root's
+    # The FILE reports root's (so the file branch passes) and only the DIRECTORY is foreign,
+    # which is what isolates this to the directory branch.
+    _as_root_owner(monkeypatch, moved, dir_uid=65534)
 
     b = boundary_state(str(moved))
     assert b.advisory is True, b
@@ -426,7 +479,7 @@ def test_the_real_verdict_states_the_mode_it_actually_saw(tmp_path, monkeypatch)
     """The REAL sentence said "is 600" and "owned by this uid" without checking either."""
     from proximo.arm import render_text
     src, _ro, _s, token_path = _wire(tmp_path, monkeypatch, mode=0o400)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    _as_root_owner(monkeypatch, src)
 
     b = boundary_state(str(src))
     assert b.advisory is False, b.reasons          # 400 root-owned in a root dir IS real
@@ -442,7 +495,7 @@ def test_a_writable_directory_makes_the_boundary_advisory(tmp_path, monkeypatch)
     it reported a real boundary for a source any second uid could unlink and rewrite.
     """
     src, _ro, _s, _t = _wire(tmp_path, monkeypatch, mode=0o600)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    _as_root_owner(monkeypatch, src)
     holder = tmp_path / "loose"
     holder.mkdir()
     os.chmod(holder, 0o777)  # noqa: S103 -- a world-writable dir is the substitution surface
