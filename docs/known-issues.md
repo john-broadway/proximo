@@ -7,6 +7,8 @@ Staging ground for verified defects, in GitHub-issue form. File upstream on John
 ## Config footgun: `PROXIMO_ENABLE_EXEC` (and every `PROXIMO_*` var) set in `proximo.env` is silently ignored by the stdio MCP
 
 > **RESOLVED 2026-07-01** via fix **(2)** below: `config.load_env_file()` now sources `~/.config/proximo/proximo.env` (override: `PROXIMO_ENV_FILE`) into `os.environ` at the top of `server.main()` and `proximo-a2a`, filling only `PROXIMO_*` keys not already set (real/inline env still wins), before any `from_env()`. What it loads prints to stderr. Kept here for provenance.
+>
+> **One honest limit of that fix:** it merges by individual key, not by plane — decommissioning a plane (removing its base-URL/token vars from the env you actually run with) does not clear that plane's old keys out of the default `proximo.env` file, so a stale PBS/PMG/PDM config still sitting there can silently reactivate on the next start with nothing left to override it.
 
 **Type:** bug / docs · **Severity:** medium (security-relevant — it governs the near-root exec edge) · **Found:** 2026-07-01, dogfooding the end-user setup while enabling `ct_exec` for a lab test.
 

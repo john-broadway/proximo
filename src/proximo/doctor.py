@@ -192,6 +192,13 @@ def doctor_check(api) -> dict:
 
     report["surfaces"] = _surfaces_report()
 
+    # Tier-1 memory (opt-in): enabled/size/freshness. A broken db is a doctor FINDING —
+    # flagged for the operator, never an exception (memory_status never raises).
+    from proximo.memory import memory_status
+    report["memory"] = memory_status()
+    if "error" in report["memory"]:
+        flags.append(f"memory db error: {report['memory']['error']}")
+
     report["flags"] = flags
     report["complete"] = complete
     return report
@@ -241,8 +248,18 @@ def _surfaces_report() -> dict:
         if tools_spec:
             scoping = f"PROXIMO_TOOLS={tools_spec} — exact tools"
         elif toolsets_spec.lower() == "dynamic":
-            scoping = ("PROXIMO_TOOLSETS=dynamic — search facade (3 tools resident; the rest "
-                       "searchable via proximo_find_tools, still auto-scoped to configured planes)")
+            # The count comes from the composition, never a constant: with memory on the facade
+            # is 4, and a doctor that states a number it did not derive is a doctor that will
+            # misreport the box it exists to describe.
+            from proximo.memory import memory_enabled
+            memory_first = memory_enabled()
+            scoping = (
+                f"PROXIMO_TOOLSETS=dynamic — search facade "
+                f"({4 if memory_first else 3} facade tools resident + audit_verify"
+                + ("; memory-first: proximo_recall answers estate questions in one call"
+                   if memory_first else "")
+                + "; the rest searchable via proximo_find_tools, still auto-scoped to "
+                  "configured planes)")
         elif toolsets_spec and toolsets_spec.lower() != "all":
             scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
         elif toolsets_spec.lower() == "all":
@@ -253,7 +270,7 @@ def _surfaces_report() -> dict:
             scoping = f"PROXIMO_SURFACES={spec} — explicit"
         elif autoscope_off:
             scoping = "PROXIMO_AUTOSCOPE=off — full surface"
-        elif configured - {"exec"}:
+        elif configured - server._UTILITY_SURFACES:
             scoping = "auto-scoped to configured planes"
         else:
             scoping = "no plane configured yet — serving the full surface"
@@ -267,7 +284,7 @@ def _surfaces_report() -> dict:
                 "planes you've configured. Light up a plane with its PROXIMO_*_BASE_URL (or a "
                 "target). Size the surface to your model, most specific wins: PROXIMO_TOOLS for "
                 "exact tools, PROXIMO_TOOLSETS for domains (pve.guests, pbs.tape, …) or "
-                "'dynamic' for a 3-tool search facade with everything still callable, "
+                "'dynamic' for a small search facade with everything still callable, "
                 "PROXIMO_SURFACES for whole planes. Scoping is context hygiene, not an "
                 "authorization control — the token ACL stays the real boundary."
             ),

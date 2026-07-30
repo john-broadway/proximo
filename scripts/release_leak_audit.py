@@ -267,7 +267,11 @@ def build_public_tree(
         all_paths = [p for p in _git(["ls-tree", "-r", "--name-only", "-z", ref], root).split("\0") if p]
         _, stripped = partition_paths(all_paths, deny)
         if stripped:
-            _git(["rm", "--cached", "--quiet", "--ignore-unmatch", "--", *stripped], root, env=env)
+            # -f: with ref != HEAD the temp-index entry differs from both HEAD and the worktree
+            # for any file changed since `ref`, and un-forced `git rm --cached` refuses that as
+            # a staged-content safety. The safety protects a REAL index; this one is isolated
+            # (GIT_INDEX_FILE above) and --cached never touches the worktree, so forcing is safe.
+            _git(["rm", "-f", "--cached", "--quiet", "--ignore-unmatch", "--", *stripped], root, env=env)
         return _git(["write-tree"], root, env=env).strip()
     finally:
         os.unlink(idx)

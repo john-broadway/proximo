@@ -39,6 +39,46 @@ def test_from_env_fails_loud_when_core_missing(monkeypatch):
         ProximoConfig.from_env()
 
 
+def test_from_env_reports_all_missing_vars_in_one_message(monkeypatch):
+    # verdict 1.15: from_env() used to do three sequential os.environ subscripts inside one
+    # try, so only the FIRST missing var was ever reported per call -- an operator fixed one,
+    # reran, hit the next, three cycles. All three missing required vars must be collected and
+    # named in ONE RuntimeError, with the same "Missing required Proximo env var" prefix
+    # existing callers match on (server.py's broad `except RuntimeError` doesn't string-match,
+    # but keep the phrase anyway since it's the honest description of what happened).
+    for v in ("PROXIMO_API_BASE_URL", "PROXIMO_NODE", "PROXIMO_TOKEN_PATH"):
+        monkeypatch.delenv(v, raising=False)
+    with pytest.raises(RuntimeError, match="Missing required Proximo env var") as exc_info:
+        ProximoConfig.from_env()
+    msg = str(exc_info.value)
+    assert "PROXIMO_API_BASE_URL" in msg, msg
+    assert "PROXIMO_NODE" in msg, msg
+    assert "PROXIMO_TOKEN_PATH" in msg, msg
+
+
+def test_from_env_reports_only_the_actually_missing_vars(monkeypatch):
+    # A partially-configured box must name only what's missing, not the whole triple.
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://x:8006/api2/json")
+    monkeypatch.delenv("PROXIMO_NODE", raising=False)
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/run/x")
+    with pytest.raises(RuntimeError, match="Missing required Proximo env var") as exc_info:
+        ProximoConfig.from_env()
+    msg = str(exc_info.value)
+    assert "PROXIMO_NODE" in msg, msg
+    assert "PROXIMO_API_BASE_URL" not in msg, msg
+    assert "PROXIMO_TOKEN_PATH" not in msg, msg
+
+
+def test_from_env_single_missing_var_message_unchanged_shape(monkeypatch):
+    # Single-missing case keeps the exact historical message shape (name after the colon),
+    # so any existing narrow catcher is unaffected.
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://x:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    monkeypatch.delenv("PROXIMO_TOKEN_PATH", raising=False)
+    with pytest.raises(RuntimeError, match=r"Missing required Proximo env var: PROXIMO_TOKEN_PATH$"):
+        ProximoConfig.from_env()
+
+
 def test_exec_is_off_by_default():
     # API-only is the safe default; in-container exec must be explicitly enabled.
     assert _cfg().enable_exec is False

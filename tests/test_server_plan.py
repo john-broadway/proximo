@@ -790,6 +790,10 @@ def test_ct_logs_exec_disabled_wins_over_allowlist(tmp_path, monkeypatch):
 # "a tool changed"; this catches "a dangerous tool is ungated".
 _READ_ONLY_TOOLS = frozenset({
     "audit_verify", "ct_diagnose", "ct_logs",
+    "proximo_recall",  # Tier-1 memory read: local SQLite only, no PVE call, no state change
+    "proximo_baseline",  # Tier-1 memory: rrddata READ + local rollup cache; no PVE state change
+    "proximo_wiki",  # local docs index search: read-only SQLite (opened mode=ro), no PVE call
+    "proximo_wiki_read",  # same — one section out of the local index, no state change anywhere
     "pbs_datastore_get", "pbs_datastore_status", "pbs_datastores_list",
     "pbs_gc_status", "pbs_jobs_list", "pbs_namespaces_list",
     "pbs_remote_get", "pbs_remotes_list", "pbs_snapshots_list",

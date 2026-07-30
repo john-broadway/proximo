@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import Field
 
 import proximo.server as _proximo_server
+from proximo import memory
 from proximo.backends import _check_vmid
 from proximo.cloudinit import (
     capture_cloudinit_undo,
@@ -97,6 +98,7 @@ def pve_list_guests(
     pve_guest_config_get."""
     cfg, api, _, _ = _proximo_server._svc()
     rows = _audited("pve_list_guests", node or cfg.node, lambda: api.list_guests(node))
+    memory.observe_guests(rows)  # opportunistic Tier-1 feed; inert unless PROXIMO_MEMORY
     lean = project_rows(rows, fields, ("vmid", "name", "type", "status", "uptime", "tags"))
     return envelope_rows(rows, lean, "guests", "status")
 
@@ -289,7 +291,9 @@ def ct_diagnose(
     if cfg.enable_exec and not cfg.ct_permitted(ctid):
         return _blocked_allowlist("ct_diagnose", str(ctid), mutation=False)
     use_exec = exec_ if cfg.enable_exec else None
-    return _audited("ct_diagnose", target, lambda: diagnose_container(api, use_exec, ctid, kind, node))
+    report = _audited("ct_diagnose", target, lambda: diagnose_container(api, use_exec, ctid, kind, node))
+    memory.journal_record("ct_diagnose", target, report)  # inert unless PROXIMO_MEMORY
+    return report
 
 
 @tool()
@@ -303,7 +307,9 @@ def pve_diagnose(
     connectivity and effective permissions use pve_doctor, and for in-container evidence use
     ct_diagnose. Returns a dict of the gathered sections; omit `node` to use the configured default."""
     _, api, _, _ = _proximo_server._svc()
-    return _audited("pve_diagnose", node or "node", lambda: diagnose_node(api, node))
+    report = _audited("pve_diagnose", node or "node", lambda: diagnose_node(api, node))
+    memory.journal_record("pve_diagnose", node or "node", report)  # inert unless PROXIMO_MEMORY
+    return report
 
 
 @tool()
@@ -313,7 +319,9 @@ def pve_doctor() -> dict:
     this FIRST after install to verify your config/token before wiring Proximo into an MCP client.
     Returns a dict with reachable/version, the can/cannot capability map, config, and advisory flags."""
     _, api, _, _ = _proximo_server._svc()
-    return _audited("pve_doctor", "preflight", lambda: doctor_check(api), mutation=False)
+    report = _audited("pve_doctor", "preflight", lambda: doctor_check(api), mutation=False)
+    memory.journal_record("pve_doctor", "preflight", report)  # inert unless PROXIMO_MEMORY
+    return report
 
 
 # --- Provisioning (REST API, async). create/clone are additive; delete is DESTRUCTIVE. ---

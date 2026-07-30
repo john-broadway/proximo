@@ -12,7 +12,7 @@ What closes it is making the catalog NON-RESIDENT. Lean mode serves three small 
     proximo_tool_schema(name)      the full input schema, for the one or two that matched
     proximo_call(tool, arguments)  dispatch
 
-~900 tokens resident instead of ~276,000. The 900 tools still exist and still work; they stop
+~900 tokens resident instead of ~276,000. The ~900 tools still exist and still work; they stop
 being sent to every client on every connection. This is the same pattern the agent harnesses
 themselves use at this scale — deferred schemas fetched on demand — and it is the only approach
 measured here that fits a small local context.
@@ -36,6 +36,30 @@ from typing import Any
 # point: a result set that carried full descriptions would re-import the cost lean mode removes.
 _SUMMARY_MAX = 140
 _DEFAULT_LIMIT = 25
+
+# Operators type "vm"/"container"/"ct"/"destroy"/"remove"; Proximo's own tool names and
+# docstrings say "guest"/"delete" — pve_delete_guest says neither "vm" nor "container" anywhere,
+# so "delete vm"/"delete container"/"remove vm"/"destroy vm" returned zero hits against the real
+# 900-tool catalog. Kept short and honest: five entries, the exact gap a real operator hit.
+_QUERY_SYNONYMS = {
+    "vm": "guest",
+    "container": "guest",
+    "ct": "guest",
+    "destroy": "delete",
+    "remove": "delete",
+}
+
+
+def _term_variants(term: str) -> tuple[str, ...]:
+    """A query term plus its synonym, so either spelling finds a tool.
+
+    This WIDENS a term, it does not replace it: a bare "vm" query must still find
+    `pve_create_vm`, whose own name says vm, not guest, while also finding `pve_delete_guest`
+    via the vm->guest mapping. Swapping the term outright would fix one query and break the
+    other.
+    """
+    synonym = _QUERY_SYNONYMS.get(term)
+    return (term, synonym) if synonym else (term,)
 
 
 def _summary_of(description: str) -> str:
@@ -67,19 +91,26 @@ def search_tools(catalog: dict[str, Any], query: str, limit: int = _DEFAULT_LIMI
 
     A blank query RAISES rather than returning everything — "no filter" degrading into "the whole
     catalog" is the exact blowup this mode prevents.
+
+    Each term is matched by ITSELF OR its operator-vocabulary synonym (`_QUERY_SYNONYMS`): "delete
+    vm" must find `pve_delete_guest`, whose name says "guest"/"delete", never "vm".
     """
     terms = [t for t in (query or "").strip().lower().split() if t]
     if not terms:
         raise ValueError("query must not be blank — lean mode never returns the whole catalog")
+
+    variants_per_term = [_term_variants(t) for t in terms]
 
     scored: list[tuple[int, str, dict]] = []
     for name, tool in catalog.items():
         lname = name.lower()
         description = getattr(tool, "description", "") or ""
         ldesc = description.lower()
-        if not all(t in lname or t in ldesc for t in terms):
+        if not all(
+            any(v in lname or v in ldesc for v in variants) for variants in variants_per_term
+        ):
             continue
-        in_name = sum(t in lname for t in terms)
+        in_name = sum(any(v in lname for v in variants) for variants in variants_per_term)
         if lname == "_".join(terms) or lname == "".join(terms):
             rank = 0                      # exact name
         elif in_name == len(terms):

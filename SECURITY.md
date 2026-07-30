@@ -153,6 +153,108 @@ Proxmox, which the confined agent lacks. Compose it with LEASE (`PROXIMO_ARM_TTL
 forgotten disarm still fails closed when the lease lapses, and with SCOPE
 (`PROXIMO_SCOPE_PATH`) to bound the arm to named targets.
 
+#### `proximo arm` / `proximo disarm` — the swap, for the pre-minted pattern only
+
+The recipe above is the mint-and-revoke deployment, and it stays a manual root-on-Proxmox
+act: no write token exists at rest there, so there is nothing on the agent box to swap.
+For the **pre-minted** pattern — one write token kept at rest, swapped in and out — the
+swap is mechanical, and two commands do it:
+
+```sh
+proximo arm     --session ci-7f2a      # install the write token
+proximo disarm  --session ci-7f2a      # put the read-only one back
+```
+
+Point `PROXIMO_ARM_SOURCE` at the write token and `PROXIMO_READONLY_SOURCE` at the
+everyday one. With `PROXIMO_SESSION_DIR` set, each session key gets its own token file, so
+arming one caller leaves the others read-only. The key comes from `--session` or
+`PROXIMO_SESSION_KEY` and is yours to choose — Proximo never infers it from a client's
+environment.
+
+Naming a session **without** `PROXIMO_SESSION_DIR` set is refused rather than served. The
+only place left to install the token would be the shared `PROXIMO_TOKEN_PATH`, which arms
+every caller on the box — wider than what was asked for, and widening authority past the
+operator's stated intent is the failure this whole section exists to prevent. Drop
+`--session` to arm globally on purpose. `disarm` does not mirror that refusal: its fallback
+only ever *removes* authority, so it restores the shared token and says so.
+
+**These commands grant no authority the caller did not already have.** Anyone who can run
+`proximo arm` can already read `PROXIMO_ARM_SOURCE` and copy it into place; the command is
+ergonomics over that fact, not a new door. Whether an arm is a real boundary is therefore a
+question of **file ownership, not of software** — the same thing that decides whether the
+CONTAIN breaker is real or advisory. So `arm` reads the source's mode, its owner, **and the
+owner and mode of the directory holding it**, then tells you which one you have:
+
+```
+boundary: REAL, conditional on the server not running as uid 0
+   (the arm source (the write token) is mode 0o600, owned by uid 0, in a directory owned by
+   uid 0, and no other uid can read or replace it; …)
+boundary: ADVISORY — the arm source is not protected against a second uid:
+     - the arm source is owned by uid 65534, not the uid running this command (0), so that
+       uid can rewrite it whatever its mode says
+```
+
+`ADVISORY` is not a warning that something broke; it is the accurate description of a
+single-uid box, where the process that reads the token can also replace it.
+
+To get a real boundary the file's mode is **not sufficient on its own**: mode `600` says
+who may open the file, and says nothing about who may delete it and put another one there.
+Whoever owns the containing directory can unlink and replace the entry, and whoever owns
+the file can rewrite it regardless of its mode. So a real boundary needs the arm source
+**and its directory** owned by the uid you arm from, neither group- nor other-writable,
+armed from a root context — or use mint-and-revoke so no write token exists at rest at all.
+`disarm` gets the same disclosure about `PROXIMO_READONLY_SOURCE`, because a read-only
+source a second uid can rewrite is what turns a future `disarm` into a reported success
+that leaves write authority live.
+
+`disarm` resolves every ambiguity toward read-only: an unusable session key falls back to
+the global token path rather than refusing, because a refused disarm is the one outcome
+that leaves write authority live. It refuses loudly in exactly one case — no read-only
+token to restore — where it cannot do the safe thing at all and a false `DISARMED` would be
+worse than an error.
+
+#### `proximo reap` — the arm that outlived its session
+
+An arm is a file on disk, read fresh per call, so it survives the thing that asked for it.
+A session that crashes, is killed, or simply loses its client leaves the write token sitting
+in place with nobody left to disarm it. LEASE closes that by *expiring on time*; `reap`
+closes it by *noticing the session is gone*, which needs no TTL and so does not cut a long
+session short. They compose — use both.
+
+```sh
+proximo reap --dry-run     # decide, change nothing
+proximo reap               # restore the read-only token for every ended session
+```
+
+**The kernel is the liveness oracle, not a heuristic.** A serving process holds a *shared*
+`flock` on a sidecar `<session>.lock` for its whole life, and `reap` tries an *exclusive*
+non-blocking lock: that can only succeed once every holder is gone, and the OS releases
+those on exit, crash and `SIGKILL` alike. Nothing polls, nothing heartbeats, and nothing
+inspects the client — which is what makes it work for any MCP client rather than one
+particular agent harness. A shared lock (not exclusive) means several processes may serve
+one session key while a single exclusive try still detects that all of them died.
+
+Run it from a timer, or at the start of an operator session. It is safe to run at any
+moment, including while sessions are live: a live holder is simply reported and skipped.
+
+Two behaviours worth knowing before you rely on it:
+
+- **Uncertainty resolves toward reaping.** A missing lock file, a permission error, or a
+  symlinked lock path all read as *dead*. That is deliberate: reaping only ever **removes**
+  write authority, so a wrong "dead" verdict costs one `arm`, while a wrong "live" verdict
+  leaves the write key in place indefinitely. It also means a planted symlink cannot be used
+  to keep an arm alive.
+- **A brand-new arm is protected for `PROXIMO_REAP_GRACE` seconds (default 300).** Between
+  `arm` and the server taking its lock, nobody holds it — without that window `reap` would
+  cut an arm that is seconds old and about to be picked up. It is a startup-race guard, not
+  a TTL: it expires nothing on its own. Set it to `0` only if you arm and connect in one
+  motion, and note that a garbled value falls back to the default rather than to zero, so a
+  typo cannot silently start cutting live arms.
+
+Holding the lock is best-effort and never blocks startup, so the honest limit is this: an
+arm that never gets held (an older server, a read-only session dir) reads as dead once the
+grace window passes and is disarmed. That direction costs an `arm`, never authority.
+
 If revoke-at-disarm is operationally too heavy (it needs root on the Proxmox host every
 cycle), the lighter form keeps one pre-minted write token but seals it at rest with `age`
 or `sops`, so it doesn't exist in cleartext in the agent's world between arms: arm

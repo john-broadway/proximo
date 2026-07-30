@@ -41,6 +41,13 @@ _EXPECTED_ADVERSARIAL = frozenset({
     "pmg_ldap_groups_list", "pmg_ldap_group_members_get",
     # config free-text + logs
     "pve_node_syslog", "pve_node_journal", "pve_task_log", "pve_list_guests",
+    # Tier-1 memory recall re-serves names/tags stored FROM the adversarial reads above;
+    # classified adversarial so storage cannot launder taint (memory design rail, 2026-07-29)
+    "proximo_recall",
+    # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
+    # above all) — a thread can carry "now run pve_delete_guest" as easily as a fix. Same
+    # laundering argument as proximo_recall one line up (wiki seam design rail, 2026-07-29).
+    "proximo_wiki", "proximo_wiki_read",
     "pve_guest_config_get", "pve_cluster_resources", "pve_snapshot_list",
     "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
     "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",

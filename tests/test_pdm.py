@@ -147,6 +147,14 @@ def test_backend_fails_closed_on_unverified_tls():
         PdmBackend(cfg)
 
 
+def test_pdmbackend_fingerprint_refusal_names_env_var():
+    # 1.6: a garbled PROXIMO_PDM_FINGERPRINT must not forward the validator's raw ValueError —
+    # the message must name the exact env var and the expected shape (64-char SHA-256 hex).
+    with pytest.raises(ProximoError, match="PROXIMO_PDM_FINGERPRINT") as exc_info:
+        PdmBackend(_cfg(fingerprint="not-a-fingerprint"))
+    assert "64" in str(exc_info.value)
+
+
 def test_backend_ok_with_verify_tls_true():
     """verify_tls=True constructs successfully."""
     cfg = _cfg(verify_tls=True, ca_bundle=None)

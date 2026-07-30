@@ -144,6 +144,12 @@ REVIEWED_TRUSTED: frozenset[str] = frozenset({
     # metrics) — matches the pve_node_rrddata/pmg_node_rrddata REVIEWED_TRUSTED precedent, argued
     # explicitly in pbs_metrics.py's module docstring (NOT the externally-authored-content
     # precedent that landed pbs_s3_list_buckets in taint.ADVERSARIAL_TOOLS instead).
+    # proximo_baseline returns numeric distribution rollups (n/mean/p50/p95/max) computed
+    # server-side from rrddata plus advisory strings the SERVER composes from those numbers —
+    # no attacker-shapeable free text is echoed (guest names/tags are NOT in its output; the
+    # memory tool that re-serves those, proximo_recall, is in taint.ADVERSARIAL_TOOLS).
+    # Matches the pve_node_rrddata/pmg_node_rrddata numeric-telemetry precedent.
+    'proximo_baseline',
     'pbs_metrics_servers_list', 'pbs_metrics_status',
     'pbs_metrics_influxdb_http_list', 'pbs_metrics_influxdb_http_get',
     'pbs_metrics_influxdb_http_create', 'pbs_metrics_influxdb_http_update',

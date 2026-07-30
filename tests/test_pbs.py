@@ -1207,6 +1207,14 @@ def test_pbsbackend_fails_closed_on_unverified_tls():
         PbsBackend(_cfg(verify_tls=False))
 
 
+def test_pbsbackend_fingerprint_refusal_names_env_var():
+    # 1.6: a garbled PROXIMO_PBS_FINGERPRINT must not forward the validator's raw ValueError —
+    # the message must name the exact env var and the expected shape (64-char SHA-256 hex).
+    with pytest.raises(ProximoError, match="PROXIMO_PBS_FINGERPRINT") as exc_info:
+        PbsBackend(_cfg(fingerprint="not-a-fingerprint"))
+    assert "64" in str(exc_info.value)
+
+
 def test_pbsbackend_ok_with_ca_bundle_even_when_verify_false():
     """A ca_bundle provides a trust anchor — construction is allowed."""
     backend = PbsBackend(_cfg(verify_tls=False, ca_bundle="/etc/ssl/certs/ca-certificates.crt"))

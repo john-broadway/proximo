@@ -89,7 +89,7 @@ import httpx
 
 from ._secretfile import refuse_exposed_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
-from .backends import ProximoError
+from .backends import ProximoError, fingerprint_refused
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
 # ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ class PbsBackend:
             try:
                 ctx = fingerprint_pinned_context(config.fingerprint)
             except ValueError as e:
-                raise ProximoError(f"PBS fingerprint refused: {e}") from e
+                raise fingerprint_refused("PBS", e) from e
             self._client = httpx.Client(base_url=config.base_url, verify=ctx, timeout=60)
             return
         verify: bool | str = config.ca_bundle if config.ca_bundle else config.verify_tls

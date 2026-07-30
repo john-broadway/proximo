@@ -2,6 +2,146 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.27.0] — 2026-07-30
+
+**Two additions, both opt-in and inert until you set their env var, plus three honesty repairs
+found by reading the code and the output rather than the tests.** The tool estate grows 900 to
+904. A default install's served surface does not change: the four new tools are opt-in, and
+autoscope prunes them when their env var is unset.
+
+**Local knowledge, so the model stops guessing.** Two seams that let the server answer from
+something it already holds instead of a fresh round trip.
+
+- **Tier-1 estate memory** (`PROXIMO_MEMORY=1`). `proximo_recall` returns an age-stamped local
+  map of the estate; `proximo_baseline` returns per-guest cpu/mem distribution rollups derived
+  from `rrddata`, stored-first. Both are derived, local, and never a health verdict.
+- **The wiki seam reader** (`PROXIMO_WIKI=1`). `proximo_wiki` does BM25 search and
+  `proximo_wiki_read` reads one section, over a **local** docs index. No documentation content
+  ships: **you build the index**, which keeps the forum and wiki licensing question out of the
+  picture and means yours is fresher than any frozen pack. Proximo ships the reader and the
+  contract, and **the contract is published** in `docs/SETUP.md` ("The wiki index") so any builder
+  that writes the pinned schema qualifies. Retrieved text is classified ADVERSARIAL and trips the
+  taint marker, because a solved forum thread can carry "now run pve_delete_guest" as easily as a
+  fix.
+- **Said plainly, because it is the honest limit:** an unfed memory map used to answer `total: 0`
+  beside a note explaining that zero was not a claim about the estate. A 4B local model answered
+  "0" anyway, three runs of three at temperature 0, without ever calling the tool the note named.
+  Removing the number left a hole and the model filled the hole with zero. So these tools now
+  **refuse** rather than return anything answer-shaped: they name the reason, name the remedy, and
+  record it. The 4B still sometimes emits "0". We stopped supplying the lie. We cannot stop a
+  downstream model inventing one, and this is not a fix for that.
+
+**Write authority you can toggle, and that cannot outlive its session.**
+
+- **`proximo arm` / `proximo disarm`** swap the token the server reads: read-only by default, a
+  pre-minted write token while armed. Client-agnostic by construction. The session key arrives as
+  an explicit `--session` or `PROXIMO_SESSION_KEY` and is never sniffed from a client's
+  environment. It performs the swap **and discloses** whether the arm is a REAL boundary or merely
+  ADVISORY, because whether an arm restrains anyone is a file-ownership question, not a code one.
+  It grants no capability the caller lacked: anyone who can run `arm` could already copy that file
+  into place. What is new is the disclosure.
+- **`proximo reap`** restores read-only for sessions that ended while armed. **The kernel is the
+  liveness oracle:** a serving process holds a shared `flock` on a sidecar lock file for its whole
+  life, and reap tries an exclusive non-blocking lock, which can only succeed once every holder is
+  gone. The kernel releases those on exit, crash and kill alike, so this survives `SIGKILL` where
+  a heuristic would not.
+- New env: `PROXIMO_ARM_SOURCE`, `PROXIMO_READONLY_SOURCE`, `PROXIMO_SESSION_DIR`,
+  `PROXIMO_SESSION_KEY`, `PROXIMO_REAP_GRACE`. `PROXIMO_TOKEN_PATH` is reused.
+
+### Fixed
+
+- **Autoscope could serve a near-empty server.** `_apply_surfaces` carried two autoscope
+  implementations. When `memory` and `wiki` joined `exec` as surfaces that are not data planes,
+  only one of the two guards learned about it. With `PROXIMO_MEMORY=1` and no detectable data
+  plane (an unreadable targets file, a target kind outside the surface map, or the opt-in set
+  before the plane), the served registry narrowed from 904 tools to 5. It announced that on
+  stderr only, which MCP clients do not surface, so the operator saw a 5-tool server and no
+  reason for it. There is now one guard, shared.
+- **`disarm` could report success while installing write authority.** The boundary disclosure
+  assessed the arm source and never the read-only source, though a disarm's correctness rests
+  entirely on the latter. If the read-only source held the write token's bytes, `disarm` printed
+  DISARMED and installed write authority. It now refuses on a byte-identical pair, and reports a
+  boundary for the file it actually depends on. The read-only token is the everyday credential,
+  which makes it the one likeliest to be left loose.
+- **The boundary check judged permission bits and ignored ownership.** Permission bits do not bound
+  the owner: a mode-400 token **owned by another uid** is fully rewritable by that uid, and whoever
+  owns the containing **directory** can unlink the file and put a different one there whatever its
+  mode says. Both were unchecked, so a nobody-owned token in a nobody-owned directory reported as a
+  REAL boundary. The verdict now covers the file's owner, the directory's owner, and the directory's
+  mode, honoring the sticky bit so `/tmp`-shaped directories are not counted as a substitution
+  surface for someone else's file. `SECURITY.md`'s recipe is corrected to match: mode `600` alone
+  was never sufficient, because it says who may open a file and nothing about who may replace it.
+- **The REAL verdict printed three things it had not checked.** It read "is 600, owned by this uid,
+  in a directory no second uid can write" for a mode-400 file owned by uid 65534 in a directory
+  owned by uid 65534. It now prints the mode, the file's owner and the directory's owner it actually
+  observed.
+- **A refusal claimed live write authority that did not exist.** The byte-identical-sources refusal
+  ended "Write authority is still live until you do" unconditionally, but it refuses *before*
+  installing anything, so with a genuine read-only token in place the sentence was false. It now
+  reads the served token and says which case it is. A false alarm is the same class of defect as a
+  false all-clear.
+- **Four wiki refusals named a tool that does not ship.** They told the operator to build the
+  index with a private, unpublished builder tool that is not part of this package, so every
+  adopter was handed a remedy they could not run. It read as "you missed a step" when the truth is
+  "you build this yourself, and here is the contract". The refusals now point at the published
+  contract, and no shipped file names a private builder.
+- **A garbled `PROXIMO_ARM_TTL` contradicted its own enforcement.** LEASE fails closed on an
+  unparseable opt-in and holds the arm expired. `arm` parsed the same value to "no TTL" and
+  printed "no auto-expiry", about an arm that was already dead. Both the text output and the
+  `--json` shape now distinguish an unparseable lease from an absent one.
+
+**From the independent pre-release review** (a second lens over this whole entry's diff):
+
+- **The local tools demanded PVE configuration they never use.** `proximo_recall`, `proximo_wiki`
+  and `proximo_wiki_read` operate on local SQLite, but each opened with a PVE-strict service call —
+  so a PBS-only box with `PROXIMO_WIKI=1` was served the tools and then refused with an env error
+  naming a subsystem the operator never configured. The calls are gone, and the ledger fallback now
+  tolerates a PVE-less box, so the wiki seam's local-first story is true on the deployments it was
+  designed for. The seam tests mocked the service call, which is exactly why they missed it; the
+  new pins use the real one.
+- **`audit_verify` demanded PVE configuration to verify a local file.** The PROVE pillar's own
+  verification tool — the one every surface serves — crashed with a raw env error on a box with
+  no PVE config, though the ledger it verifies is local. Found by a hostile first-contact pass
+  on two smallest-footprint boxes; the fourth site of the same defect class this review caught.
+- **`proximo_baseline`'s stored path demanded PVE configuration it promised not to need.** The
+  docstring says a stored rollup answers "with NO PVE call", but an eager service unpack required
+  PVE env before the memory-only path could run — the same defect in milder form, caught by the
+  local verification pass on top of the review. The api now resolves lazily, on the pull path only.
+- **`arm --json` dropped `dir_owner_uid`.** The text render printed it; the JSON mirror of the same
+  verdict omitted it, leaving structured consumers to regex the reasons prose. Parity restored.
+- **`doctor`'s scoping text kept a stale guard.** It still read `- {"exec"}` after the
+  utility-surface set grew memory and wiki; it now uses the same `_UTILITY_SURFACES` guard as
+  autoscope, so a future utility-only entry point cannot make it call a full surface "auto-scoped".
+
+**From a hostile first-contact pass** — six adopter personas ran the product cold on the smallest
+footprints (zero config, PBS-only, a small model's doorway) and tried to make it embarrass us:
+
+- **`proximo doctor --product {pve,pbs,pmg,pdm}`.** The doctor was hardcoded to PVE, so SETUP's own
+  "verify your boundary" step dead-ended a PBS-only operator with an env error about a plane they
+  never configured. `pmg` now dispatches to its own doctor; `pbs`/`pdm` have no doctor tool yet and
+  say exactly that, pointing at `proximo mint --product <plane>`, whose runbook carries the check.
+  A bare `proximo doctor` on a box where another plane *is* configured now names that plane.
+- **A connection failure names what to check.** DNS failure, refused connection and timeout used to
+  reach the caller as a raw OS errno through the first tools the README recommends, while `doctor`
+  degraded gracefully on the identical fault. Both now share one seam; the ledger still records the
+  real exception type.
+- **Refusals that name their remedy.** The four fingerprint refusals (one per plane) forwarded a raw
+  validator error; they now name that plane's env var and the expected 64-char digest. Both
+  allowlist denials named neither the variable nor how to add an entry. The memory and wiki readers
+  leaked a bare sqlite error when their path pointed at a directory instead of a file. Config now
+  reports **every** missing environment variable at once instead of one per run.
+- **The tool search speaks the operator's nouns.** `proximo_find_tools` returned nothing for "delete
+  vm" or "remove container" because the catalog says *guest*; a small model could miss the most
+  destructive tool in the surface. And `ct_exec`/`ct_psql` lost their MUTATION marker to summary
+  truncation — the one line that model reads. Both fixed, the marker now pinned by a structural test.
+- **Counted numbers say which configuration they describe.** "Serves 900" matched no real install;
+  measured live it is 310 for a single-plane default and 896 with all four data planes and exec off,
+  against 904 registered. Every token figure the docs print is now checked against live measurement
+  in CI, so the tables cannot drift into fiction.
+
+_Recent: 0.26.0 stopped the tool surface costing what it covers, taking the connection-time schema
+from ~348k tokens to ~555 in the smallest doorway._
+
 ## [0.26.0] — 2026-07-28
 
 **The surface stops costing what it covers.** Reported from outside, with a measurement:
@@ -22,8 +162,9 @@ anywhere costing what a jump did to the client's context.
   (23 domain groups: `pve.guests`, `pve.ceph`, `pbs.tape`, `pmg.quarantine`, …) →
   `PROXIMO_SURFACES` (planes, unchanged) → auto-scope. A typo refuses startup rather than
   quietly serving a different set than you picked.
-- **`PROXIMO_TOOLSETS=dynamic` — the whole surface on a small model.** Three tools resident
-  (`proximo_find_tools` / `proximo_tool_schema` / `proximo_call`) at **~555 tokens**; the other
+- **`PROXIMO_TOOLSETS=dynamic` — the whole surface on a small model.** Three facade tools resident
+  (`proximo_find_tools` / `proximo_tool_schema` / `proximo_call`) plus the ever-present
+  `audit_verify` at **~555 tokens**; the other
   ~311 stay callable, just not resident. Dispatch routes through the same internal path a direct
   call uses, so the PLAN gate, the PROVE ledger write and your token's ACL all still apply — a
   smaller doorway, not a looser one.

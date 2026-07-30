@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlencode
 
-from .backends import ProximoError, _check_node
+from .backends import ProximoError, _check_kind, _check_node, _check_vmid
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,34 @@ def node_rrddata(
     timeframe = _check_timeframe(timeframe)
     n = node or api.config.node
     path = f"/nodes/{n}/rrddata?timeframe={timeframe}"
+    if cf is not None:
+        cf = _check_cf(cf)
+        path = f"{path}&cf={cf}"
+    return api._get(path) or []
+
+
+def guest_rrddata(
+    api,
+    vmid: str,
+    kind: str = "lxc",
+    node: str | None = None,
+    timeframe: str = "hour",
+    cf: str | None = None,
+) -> list[dict]:
+    """Get RRD telemetry for a single guest (VM or container).
+
+    GET /nodes/{node}/{kind}/{vmid}/rrddata?timeframe={tf}[&cf={cf}]
+
+    Same contract as node_rrddata, scoped to one guest: timeframe hour/day/week/month/year,
+    optional cf AVERAGE/MAX. Returns time-series points (cpu fraction, mem/maxmem bytes,
+    disk/net counters; exact keys vary by PVE version). Feeds the Tier-1 baseline rollups
+    (proximo_baseline) — the one place memory-layer code reads PVE, by design.
+    """
+    vmid, kind = _check_vmid(vmid), _check_kind(kind)
+    _check_node(node)
+    timeframe = _check_timeframe(timeframe)
+    n = node or api.config.node
+    path = f"/nodes/{n}/{kind}/{vmid}/rrddata?timeframe={timeframe}"
     if cf is not None:
         cf = _check_cf(cf)
         path = f"{path}&cf={cf}"

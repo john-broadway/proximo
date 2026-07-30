@@ -146,6 +146,17 @@ ADVERSARIAL_TOOLS: frozenset[str] = frozenset({
     "pmg_ldap_groups_list", "pmg_ldap_group_members_get",
     # config free-text + logs: operator-set, but free-text fields a guest/attacker can shape
     "pve_node_syslog", "pve_node_journal", "pve_task_log", "pve_list_guests",
+    # Tier-1 memory recall re-serves names/tags STORED from the adversarial reads above —
+    # classified adversarial itself so stored bytes re-enter the taint model rather than
+    # laundering through the estate map (design rail, 2026-07-29).
+    "proximo_recall",
+    # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
+    # above all): a thread can carry "now run pve_delete_guest" as easily as a fix, and the
+    # bytes arrive already inside the model's context window. Classified adversarial for the
+    # same reason as proximo_recall one line up — retrieved bytes must re-enter the taint
+    # model instead of laundering through local storage. This is the rail that makes reading
+    # a community corpus defensible at all (wiki seam design, 2026-07-29).
+    "proximo_wiki", "proximo_wiki_read",
     "pve_guest_config_get", "pve_cluster_resources", "pve_snapshot_list",
     "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
     "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",

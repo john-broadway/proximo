@@ -20,6 +20,7 @@ import anyio
 import pytest
 
 from proximo import server
+from proximo.backends import ProximoError
 
 
 def _fresh_mcp():
@@ -127,7 +128,10 @@ def test_dispatch_refuses_an_unknown_tool():
     async def go():
         return await server.dispatch_tool(m, catalog, "no_such_tool", {})
 
-    with pytest.raises(KeyError, match="no_such_tool"):
+    # ProximoError with a did-you-mean, not a bare KeyError: in dynamic mode a small model
+    # calls directly without the schema step, and a dead-end KeyError was its whole answer
+    # (arena verdict 1.12, 2026-07-30).
+    with pytest.raises(ProximoError, match="no_such_tool"):
         anyio.run(go)
 
 
@@ -170,3 +174,76 @@ def test_lean_catalog_respects_configured_planes(monkeypatch):
         f"{sorted(n for n in catalog if n.startswith(('pmg_', 'pbs_', 'pdm_')))[:5]}"
     )
     assert "pve_cluster_status" in catalog, "the configured plane must still be reachable"
+
+
+# --- increment 5: memory-first answering -----------------------------------------------------
+#
+# The facade's cost is ROUND TRIPS, not bytes. A small model must drive find_tools ->
+# tool_schema -> call for every question; a 9B stalled empty doing it at 8k ctx. The dominant
+# question class ("what exists / how many / what changed") is one memory already holds, counted
+# server-side and age-stamped. When memory is on, proximo_recall becomes resident so that class
+# costs ONE zero-argument call instead of three hops.
+#
+# It is KEPT, never redefined. A facade-local wrapper around recall_state would be a second path
+# to the same body with none of the decorators — the property this whole mode must not lose.
+
+def test_memory_on_makes_recall_resident_in_the_facade(monkeypatch):
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    m = _fresh_mcp()
+    server.apply_lean(m)
+    assert set(m._tool_manager._tools) == {
+        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
+        "audit_verify",
+    }
+
+
+def test_memory_off_leaves_the_facade_at_three(monkeypatch):
+    """No dead tool burning resident tokens on a first call that could only fail."""
+    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    m = _fresh_mcp()
+    server.apply_lean(m)
+    assert "proximo_recall" not in m._tool_manager._tools
+
+
+def test_resident_recall_is_the_governed_tool_itself_not_a_copy(monkeypatch):
+    """The invariant: no second path to the same body.
+
+    Would fail if apply_lean defined its own @tool wrapper calling recall_state — that function
+    would carry no target_aware, no PLAN gate, no PROVE ledger write, and would look identical
+    from the outside.
+    """
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    m = _fresh_mcp()
+    catalog = server.apply_lean(m)
+    assert m._tool_manager._tools["proximo_recall"] is catalog["proximo_recall"]
+
+
+def test_recall_scoped_away_is_not_resurrected_by_memory_being_on(monkeypatch):
+    """PROXIMO_SURFACES excluding memory was a choice; the facade does not overrule it."""
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    m = _fresh_mcp()
+    m._tool_manager._tools.pop("proximo_recall", None)
+    server.apply_lean(m)
+    assert "proximo_recall" not in m._tool_manager._tools
+
+
+def test_find_tools_sends_estate_questions_to_recall_when_memory_is_on(monkeypatch):
+    """A resident tool the model never reaches for is only a token cost.
+
+    find_tools' description IS the small model's map. It must name recall as the one-call answer
+    for the estate question class, and must not still claim three tools are loaded.
+    """
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    m = _fresh_mcp()
+    server.apply_lean(m)
+    desc = m._tool_manager._tools["proximo_find_tools"].description
+    assert "proximo_recall" in desc
+    assert "three tools" not in desc.lower()
+
+
+def test_find_tools_does_not_advertise_recall_when_memory_is_off(monkeypatch):
+    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    m = _fresh_mcp()
+    server.apply_lean(m)
+    desc = m._tool_manager._tools["proximo_find_tools"].description
+    assert "proximo_recall" not in desc

@@ -1,3 +1,33 @@
+proximo (0.27.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.27.0 (minor - two opt-in capabilities, plus honesty repairs;
+    900 -> 904 tools, and a default install's served surface is unchanged because
+    the four new tools are opt-in and auto-scoped away when their env var is
+    unset). Tier-1 estate memory (PROXIMO_MEMORY=1) adds proximo_recall, an
+    age-stamped local estate map, and proximo_baseline, per-guest cpu/mem rollups
+    derived from rrddata. The wiki seam (PROXIMO_WIKI=1) adds proximo_wiki and
+    proximo_wiki_read: BM25 search and one-section reads over a local docs index,
+    joined by a file contract so proximo imports nothing from the index builder.
+    Both refuse rather than return anything answer-shaped when unfed, because a 4B
+    model answered "0" from a bare total field regardless of the note beside it.
+    New CLI: proximo arm / proximo disarm swap the read-only token for a pre-minted
+    write token and disclose whether that arm is a real boundary or merely
+    advisory; proximo reap restores read-only for sessions that ended while armed,
+    using a shared flock the kernel releases on exit, crash or kill. Fixes: a
+    drifted autoscope guard could narrow the served registry from 904 tools to 5 on
+    a box with an opt-in enabled and no detectable data plane; disarm could report
+    DISARMED while installing write authority when the read-only source held the
+    write token's bytes; the boundary check judged permission bits and ignored
+    ownership, so a token owned by another uid, or sitting in a directory owned by
+    another uid, reported as a real boundary; the REAL verdict printed a mode and an
+    owner it had not checked; a refusal claimed live write authority when none was
+    installed; four wiki refusals named a builder that does not ship, leaving public
+    adopters a remedy they could not run (the index contract is now published in
+    docs/SETUP.md); and a garbled PROXIMO_ARM_TTL printed "no auto-expiry" for an arm
+    that LEASE already held expired.
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Wed, 29 Jul 2026 22:30:00 +0000
+
 proximo (0.26.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.26.0 (minor — the surface stops costing what it covers).

@@ -10,6 +10,8 @@ import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 import proximo.server as server
 from proximo import targets
 from proximo.audit import AuditLedger
@@ -245,6 +247,119 @@ def test_cli_doctor_no_target_defaults_to_none(monkeypatch, capsys):
     assert called.get("proximo_target") is None
 
 
+# --- CLI: `proximo doctor --product {pve,pbs,pmg,pdm}` mirrors `proximo mint --product` ------
+#
+# Verdict 1.3: `proximo doctor` was hardcoded to pve_doctor with no product flag, so SETUP.md's
+# own mandated Step 4 dead-ends a PBS-only operator with a raw PVE missing-env error. pmg_doctor
+# is a real tool and gets a real dispatch; pbs/pdm have no doctor tool yet, so those two REFUSE
+# honestly (naming the mint runbook / a real read tool) rather than pretending to check anything.
+
+def test_cli_doctor_default_product_is_pve(monkeypatch):
+    """No --product given: behavior is unchanged — still calls pve_doctor."""
+    called = {}
+
+    def _stub(**kw):
+        called.update(kw)
+        return {}
+
+    monkeypatch.setattr(server, "pve_doctor", _stub)
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor"])
+    server.main()
+    assert called.get("proximo_target") is None
+
+
+def test_cli_doctor_product_pve_explicit_still_honors_target(monkeypatch):
+    called = {}
+
+    def _stub(**kw):
+        called.update(kw)
+        return {}
+
+    monkeypatch.setattr(server, "pve_doctor", _stub)
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor", "--product", "pve", "--target", "mybox"])
+    server.main()
+    assert called.get("proximo_target") == "mybox"
+
+
+def test_cli_doctor_product_pmg_dispatches_to_pmg_doctor_not_pve(monkeypatch):
+    """PMG has a real doctor tool (pmg_doctor) — --product pmg must call IT."""
+    called = {}
+    pve_called = {"hit": False}
+
+    def _pmg_stub(**kw):
+        called.update(kw)
+        return {}
+
+    def _pve_stub(**kw):
+        pve_called["hit"] = True
+        return {}
+
+    monkeypatch.setattr(server, "pmg_doctor", _pmg_stub)
+    monkeypatch.setattr(server, "pve_doctor", _pve_stub)
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor", "--product", "pmg"])
+    server.main()
+    assert called.get("proximo_target") is None
+    assert pve_called["hit"] is False
+
+
+def test_cli_doctor_product_pbs_refuses_honestly_no_doctor_tool(monkeypatch, capsys):
+    """PBS has no pbs_doctor tool yet — refuse with the remedy that DOES exist (mint's runbook),
+    never a raw missing-env error naming PVE's own vars."""
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor", "--product", "pbs"])
+    with pytest.raises(SystemExit) as exc:
+        server.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "pbs_doctor" in err
+    assert "mint --product pbs" in err
+    assert "PROXIMO_API_BASE_URL" not in err  # never the PVE-flavored dead end
+
+
+def test_cli_doctor_product_pdm_refuses_honestly_no_doctor_tool(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor", "--product", "pdm"])
+    with pytest.raises(SystemExit) as exc:
+        server.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "pdm_doctor" in err
+    assert "mint --product pdm" in err
+
+
+def test_cli_doctor_unknown_product_rejected(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor", "--product", "bogus"])
+    with pytest.raises(SystemExit):
+        server.main()
+
+
+def test_cli_doctor_default_pve_missing_env_points_at_configured_pbs_plane(monkeypatch, capsys):
+    """The verdict's core case: a PBS-only operator runs bare `proximo doctor` (CLI default is
+    still pve). Instead of the raw "Missing required Proximo env var: PROXIMO_API_BASE_URL..."
+    dead end, the failure must point at the plane that IS actually configured."""
+    def _pve_stub(**kw):
+        raise RuntimeError(
+            "Missing required Proximo env var: PROXIMO_API_BASE_URL, PROXIMO_NODE, PROXIMO_TOKEN_PATH"
+        )
+
+    monkeypatch.setattr(server, "pve_doctor", _pve_stub)
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example.lan:8007/api2/json")
+    monkeypatch.delenv("PROXIMO_PMG_BASE_URL", raising=False)
+    monkeypatch.delenv("PROXIMO_PDM_BASE_URL", raising=False)
+    # Setting a plane's base-url env var makes _apply_surfaces()'s autoscope see it as
+    # configured — main() calls that BEFORE the doctor block, and it PERMANENTLY prunes the
+    # shared, process-wide `server.mcp` tool registry, breaking unrelated tests later in the
+    # same pytest process. Turn it off: this test is about the doctor dispatch message, not
+    # surface-scoping, and PROXIMO_AUTOSCOPE doesn't affect _configured_other_planes() (which
+    # reads the env var directly).
+    monkeypatch.setenv("PROXIMO_AUTOSCOPE", "off")
+    monkeypatch.setattr(sys, "argv", ["proximo", "doctor"])
+    with pytest.raises(SystemExit) as exc:
+        server.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "mint --product pbs" in err
+    assert "PROXIMO_PBS_BASE_URL" in err
+
+
 # --- The spine section: four pillars standing, two sockets yours to erect ---
 
 def test_spine_reports_four_standing_pillars(monkeypatch):
@@ -316,3 +431,48 @@ def test_doctor_report_carries_no_secret_material(tmp_path):
     assert pmg_password not in rendered
     assert "PVEAPIToken" not in rendered
     assert token_file.read_text().strip() not in rendered
+
+
+# --- increment 5: doctor must name the facade it is actually serving -------------------------
+#
+# doctor exists to tell an operator what THIS box serves. The dynamic line hard-coded "3 tools
+# resident"; with memory on the facade is 4. A count doctor states from a constant instead of
+# from the composition is the same defect class this file already caught once, when doctor said
+# "auto-scoped" on a box actually scoped by PROXIMO_TOOLSETS.
+
+def test_dynamic_scoping_line_counts_the_memory_first_facade(monkeypatch):
+    monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
+    assert "4 facade tools resident + audit_verify" in scoping
+    assert "proximo_recall" in scoping
+
+
+def test_dynamic_scoping_line_stays_three_without_memory(monkeypatch):
+    monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
+    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
+    assert "3 facade tools resident + audit_verify" in scoping
+    assert "proximo_recall" not in scoping
+
+
+def test_surfaces_note_does_not_hardcode_a_facade_size(monkeypatch):
+    """The note sits directly under `scoping`; a constant there contradicts the derived count."""
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    note = doctor_check(_DoctorApi())["surfaces"]["note"]
+    assert "3-tool" not in note
+
+
+def test_surfaces_report_uses_the_utility_guard_not_a_bare_exec_set(monkeypatch):
+    """A utility-only config (memory/wiki, no data plane) serves the full surface, and the
+    scoping text must say so — the same _UTILITY_SURFACES guard _autoscope_planes uses,
+    not the stale pre-widening {"exec"} (ultra review 2026-07-30). No entry point reaches
+    this branch today, which is exactly why it gets a pin before one arrives."""
+    from proximo import doctor, server
+
+    for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_AUTOSCOPE",
+                "PROXIMO_MEMORY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(server, "configured_surfaces", lambda: {"memory", "wiki"})
+    rep = doctor._surfaces_report()
+    assert rep["scoping"].startswith("no plane configured yet"), rep["scoping"]

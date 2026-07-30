@@ -113,12 +113,18 @@ class ProximoConfig:
 
     @classmethod
     def from_env(cls) -> ProximoConfig:
-        try:
-            api_base_url = os.environ["PROXIMO_API_BASE_URL"]
-            node = os.environ["PROXIMO_NODE"]
-            token_path = os.environ["PROXIMO_TOKEN_PATH"]
-        except KeyError as e:  # fail loud, never guess
-            raise RuntimeError(f"Missing required Proximo env var: {e.args[0]}") from e
+        # Collect ALL missing required keys up front, never just the first: three sequential
+        # dict subscripts inside one try only ever surfaced the first miss, forcing an operator
+        # through a fix-one/rerun/hit-the-next cycle three times over (verdict 1.15). One pass,
+        # one RuntimeError, every missing var named — same message shape when only one is
+        # missing, so an existing narrow catcher on the single-var text is unaffected.
+        _required = ("PROXIMO_API_BASE_URL", "PROXIMO_NODE", "PROXIMO_TOKEN_PATH")
+        missing = [k for k in _required if k not in os.environ]
+        if missing:  # fail loud, never guess
+            raise RuntimeError(f"Missing required Proximo env var: {', '.join(missing)}")
+        api_base_url = os.environ["PROXIMO_API_BASE_URL"]
+        node = os.environ["PROXIMO_NODE"]
+        token_path = os.environ["PROXIMO_TOKEN_PATH"]
         return cls._build(
             api_base_url=api_base_url,
             node=node,

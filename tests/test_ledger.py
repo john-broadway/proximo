@@ -864,3 +864,25 @@ def test_concurrent_appends_keyed_serialize_and_verify(tmp_path):
     prev_hashes = [e["prev_hash"] for e in lines]
     assert prev_hashes[0] == GENESIS_HASH
     assert prev_hashes[1:] == entry_hashes[:-1]
+
+
+def test_audit_verify_works_on_a_box_with_no_pve_env(monkeypatch, tmp_path):
+    """audit_verify verifies a LOCAL file — the PROVE pillar must stand on a PBS-only or
+    zero-config box (arena find, 2026-07-30: raw RuntimeError traceback on first contact,
+    the same defect class 741211b fixed for recall/wiki/baseline). Real _svc on purpose:
+    _wire_audit above mocks it, which is why this path was never exercised."""
+    import proximo.server as server
+
+    for var in ("PROXIMO_API_BASE_URL", "PROXIMO_NODE", "PROXIMO_TOKEN_PATH",
+                "PROXIMO_TARGETS", "PROXIMO_AUDIT_EXPECTED_HEAD"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PROXIMO_AUDIT_LOG", str(tmp_path / "audit.log"))
+    monkeypatch.setenv("PROXIMO_LEDGER_REDACT", "1")
+    server._svc_cache_clear()
+    try:
+        led = server._instance_ledger()
+        led.record("a", target="t1")
+        out = server.audit_verify()
+        assert out["ok"] and out["head"] == led.head()
+    finally:
+        server._svc_cache_clear()

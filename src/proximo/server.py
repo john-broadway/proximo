@@ -15,6 +15,7 @@ Ethical spine:
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 import sys
@@ -24,6 +25,7 @@ from datetime import UTC, datetime
 from functools import cache, lru_cache
 from typing import Annotated, Any
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
@@ -139,13 +141,16 @@ def _ledger() -> AuditLedger:
     active target (a pbs_*/pmg_*/pdm_* tool's ledger call, where _svc's pve resolution raises)
     by falling back to the instance ledger directly. This is the seam the ledger helpers use.
 
-    The broad ProximoError catch is intentional: a non-PVE tool's ledger acquisition must not
-    fail because the (unrelated) env PVE backend is misconfigured (e.g. verify_tls off w/o a CA).
-    A genuine PVE problem still surfaces loudly when a pve_* tool runs, and at config-load warning
-    time — it is not silently lost, only kept out of an unrelated plane's path."""
+    The broad RuntimeError catch is intentional: a non-PVE tool's ledger acquisition must not
+    fail because the (unrelated) env PVE backend is misconfigured (e.g. verify_tls off w/o a CA)
+    OR entirely absent — from_env() raises a plain RuntimeError (not ProximoError) on missing
+    PVE env, and a PBS-only box serving the memory/wiki utility surfaces still needs its ledger.
+    RuntimeError covers ProximoError (a subclass), so both shapes fall back. A genuine PVE
+    problem still surfaces loudly when a pve_* tool runs, and at config-load warning time — it
+    is not silently lost, only kept out of an unrelated plane's path."""
     try:
         return _svc()[3]
-    except ProximoError:
+    except RuntimeError:
         return _instance_ledger()
 
 
@@ -279,6 +284,31 @@ def intent_id(action: str, target: str) -> str:
     return hashlib.sha256(f"{action}\x00{target}".encode()).hexdigest()[:12]
 
 
+# Verdict 1.4: a raw httpx/socket connection error ("[Errno -2] Name or service not known")
+# must not leak through a tool call the way `proximo doctor`'s own reachability check already
+# refuses to leak it (doctor.py's `flags` entry names the env vars instead). Keyed by action
+# prefix so a pbs_*/pmg_*/pdm_* tool names ITS OWN plane's env vars rather than every plane
+# parroting PVE's — all four backends (ApiBackend/PbsBackend/PmgBackend/PdmBackend) build an
+# httpx.Client the same way, so this one hint table covers all of them from the one shared seam.
+_UNREACHABLE_ENV_HINT: dict[str, str] = {
+    "pve_": "PROXIMO_API_BASE_URL, the token file at PROXIMO_TOKEN_PATH, and TLS/CA "
+            "(PROXIMO_CA_BUNDLE / PROXIMO_VERIFY_TLS)",
+    "pbs_": "PROXIMO_PBS_BASE_URL, the token file at PROXIMO_PBS_TOKEN_PATH, and TLS/CA "
+            "(PROXIMO_PBS_CA_BUNDLE / PROXIMO_PBS_VERIFY_TLS)",
+    "pmg_": "PROXIMO_PMG_BASE_URL, the password file at PROXIMO_PMG_PASSWORD_PATH, and TLS/CA "
+            "(PROXIMO_PMG_CA_BUNDLE / PROXIMO_PMG_VERIFY_TLS)",
+    "pdm_": "PROXIMO_PDM_BASE_URL, the token file at PROXIMO_PDM_TOKEN_PATH, and TLS/CA "
+            "(PROXIMO_PDM_CA_BUNDLE / PROXIMO_PDM_VERIFY_TLS)",
+}
+
+
+def _unreachable_hint(action: str) -> str:
+    for prefix, hint in _UNREACHABLE_ENV_HINT.items():
+        if action.startswith(prefix):
+            return hint
+    return _UNREACHABLE_ENV_HINT["pve_"]  # ct_*/other non-plane-prefixed actions: PVE is the host
+
+
 def _audited(action: str, target: str, fn: Callable[[], Any], *,
              mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
              detail: dict | None = None) -> Any:
@@ -386,6 +416,15 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
                      detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
                                                        "error": type(e).__name__}),
                      remote=ledger_remote())
+        if isinstance(e, httpx.TransportError):
+            # Same class of failure `doctor` already degrades gracefully (verdict 1.4): a
+            # connection-level httpx failure (DNS/refused/timeout/TLS) must not hand the caller
+            # a raw OS errno string with no pointer to what to check. The ledger entry above still
+            # carries the real exception type name — only what's RAISED to the caller changes.
+            raise ProximoError(
+                f"{action}: cannot reach / authenticate to the Proxmox API — check "
+                f"{_unreachable_hint(action)}."
+            ) from e
         raise
     if callable(outcome):
         # fn() has ALREADY RUN — the mutation is real. A resolver bug (raise, or a non-str
@@ -591,7 +630,7 @@ def ct_exec(
     snapshot: Annotated[bool, Field(description="Take a fail-closed auto-undo snapshot before running.")] = False,
     confirm: Annotated[bool, Field(description="False (default) returns a dry-run PLAN; true executes.")] = False,
 ) -> dict:
-    """Run a command inside an LXC (ssh -> pct exec). MUTATION-CAPABLE.
+    """MUTATION-CAPABLE: run a command inside an LXC (ssh -> pct exec).
 
     Dry-run by default: without confirm=True you get a PLAN — the command plus a heuristic
     read-vs-write / destructive-pattern classification (advisory only) — recorded to the ledger.
@@ -651,7 +690,7 @@ def ct_psql(
     snapshot: Annotated[bool, Field(description="Take a fail-closed auto-undo snapshot before running.")] = False,
     confirm: Annotated[bool, Field(description="False (default) returns a dry-run PLAN; true executes.")] = False,
 ) -> dict:
-    """Run SQL via psql inside a container (as the db OS user). MUTATION-CAPABLE.
+    """MUTATION-CAPABLE: run SQL via psql inside a container (as the db OS user).
 
     Dry-run by default: without confirm=True you get a PLAN — the SQL plus a heuristic
     read/DML/DDL classification (advisory only) — recorded to the ledger. Re-call with
@@ -749,7 +788,15 @@ def audit_verify(
     truncation, a forged tail-append, or a full file replacement — a forward walk
     alone can't see those. Falls back to PROXIMO_AUDIT_EXPECTED_HEAD when omitted.
     """
-    cfg, _, _, audit = _svc()
+    # The ledger is a LOCAL file: a box with no (or non-PVE) config still has a chain to
+    # verify, and the PROVE pillar must stand there. Same tolerance contract as _ledger();
+    # from_env_ledger carries the audit_* fields including the env head pin, and never
+    # demands the PVE triple. (Arena find 2026-07-30 — the fourth site of the 741211b class.)
+    try:
+        cfg, _, _, audit = _svc()
+    except RuntimeError:
+        cfg = ProximoConfig.from_env_ledger()
+        audit = _instance_ledger()
     pin = expected_head if expected_head is not None else cfg.expected_head
     if pin is not None:
         # Normalize a copy-pasted head (case-insensitive hexdigest; strip stray spaces/newline) the
@@ -986,6 +1033,8 @@ SURFACES: dict[str, tuple[str, ...]] = {
     "pmg": ("pmg_",),   # Proxmox Mail Gateway
     "pdm": ("pdm_",),   # Proxmox Datacenter Manager (reads + governed fleet control: power/snapshot/migrate)
     "exec": ("ct_",),   # in-container exec/psql/logs/diagnose (ssh -> pct)
+    "memory": ("proximo_recall", "proximo_baseline"),  # Tier-1 estate memory (opt-in via PROXIMO_MEMORY)
+    "wiki": ("proximo_wiki",),  # local docs index, prefix covers _read (opt-in via PROXIMO_WIKI)
 }
 _ALWAYS_REGISTERED = frozenset({"audit_verify"})
 
@@ -1041,6 +1090,11 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     # --- the rest ---
     "pdm":             ("pdm_",),
     "exec":            ("ct_",),
+    # Tier-1 estate memory (opt-in via PROXIMO_MEMORY; see proximo/memory.py)
+    "memory":          ("proximo_recall", "proximo_baseline"),
+    # Local Proxmox docs index (opt-in via PROXIMO_WIKI; see proximo/wiki.py). One prefix
+    # covers both tools; the seam is a file contract, so no builder import exists anywhere.
+    "wiki":            ("proximo_wiki",),
 }
 
 
@@ -1105,11 +1159,34 @@ def configured_surfaces() -> set[str]:
         pass
     if os.environ.get("PROXIMO_ENABLE_EXEC", "").strip().lower() in _TRUEISH:
         found.add("exec")
+    # Cross-plane UTILITY surfaces. They are not planes and have no base URL to detect, so their
+    # configuration signal is their own opt-in env var — the shape `exec` above already has.
+    # Missing them meant autoscope (on by DEFAULT) silently pruned proximo_recall,
+    # proximo_baseline and both wiki tools on every real box: live-caught 2026-07-29 driving the
+    # real config, with the whole suite green, because the test doubles mirror the full registry.
+    from proximo.memory import memory_enabled
+    from proximo.wiki import wiki_enabled
+    if memory_enabled():
+        found.add("memory")
+    if wiki_enabled():
+        found.add("wiki")
     return found
 
 
-def _autoscope_keep(names: Iterable[str]) -> set[str] | None:
-    """The keep-set for auto-scoping to configured planes, or None when it must not narrow.
+# Surfaces that are real but are NOT data planes: they can never make a config unambiguous on
+# their own. See the guard in _autoscope_keep.
+_UTILITY_SURFACES = frozenset({"exec", "memory", "wiki"})
+
+
+def _autoscope_planes() -> set[str] | None:
+    """The planes to auto-scope to, or None when autoscope must not narrow at all.
+
+    Split out from _autoscope_keep so BOTH callers share one guard, and so the decision can be
+    made without touching the server object: the no-op paths of _apply_surfaces must not read
+    `_tool_manager` (pinned by test_apply_surfaces_*_touches_nothing, whose double defines only
+    remove_tool). The duplicate that this split removes had drifted — the default branch still
+    read `planes - {"exec"}` after _UTILITY_SURFACES grew memory and wiki, so `PROXIMO_MEMORY=1`
+    with an undetectable data plane narrowed 904 tools to 5.
 
     None means "leave the registry alone": autoscope explicitly off, or no data plane detectable
     (config ambiguous — never surprise an operator with an empty server).
@@ -1117,7 +1194,15 @@ def _autoscope_keep(names: Iterable[str]) -> set[str] | None:
     if os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in ("off", "0", "false", "no"):
         return None
     planes = configured_surfaces()
-    if not (planes - {"exec"}):
+    if not (planes - _UTILITY_SURFACES):
+        return None
+    return planes
+
+
+def _autoscope_keep(names: Iterable[str]) -> set[str] | None:
+    """The keep-set for auto-scoping to configured planes, or None when it must not narrow."""
+    planes = _autoscope_planes()
+    if planes is None:
         return None
     return surface_keep(names, ",".join(sorted(planes)))
 
@@ -1179,10 +1264,8 @@ def _apply_surfaces(server_mcp=mcp) -> None:
         _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
                         f"PROXIMO_SURFACES={spec.strip()}")
         return
-    if os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in ("off", "0", "false", "no"):
-        return
-    planes = configured_surfaces()
-    if not (planes - {"exec"}):   # no data plane detected → ambiguous, serve all (touch nothing)
+    planes = _autoscope_planes()
+    if planes is None:   # autoscope off, or no data plane detected → ambiguous, touch nothing
         return
     registry = server_mcp._tool_manager._tools
     keep = surface_keep(registry.keys(), ",".join(sorted(planes)))
@@ -1255,9 +1338,17 @@ async def dispatch_tool(server_mcp, catalog: dict, name: str, arguments: dict):
 
     The tool is temporarily re-attached to the manager so call_tool can resolve it, then removed;
     the registry (what tools/list reports) is unchanged on both success and failure.
+
+    Fail-closed on an unknown name, with the SAME did-you-mean mechanism `proximo_tool_schema`
+    (lean.tool_schema) already uses, raised as ProximoError rather than a bare KeyError: a small
+    model in dynamic mode calls proximo_call directly to conserve round trips, skipping the
+    schema-lookup step entirely, so this is its only chance at a recoverable error instead of a
+    dead end.
     """
     if name not in catalog:
-        raise KeyError(f"unknown tool {name!r}")
+        near = difflib.get_close_matches(name, catalog, n=3, cutoff=0.6)
+        hint = f" — did you mean: {', '.join(near)}" if near else ""
+        raise ProximoError(f"unknown tool {name!r}{hint}")
     registry = server_mcp._tool_manager._tools
     restore = name in registry
     registry[name] = catalog[name]
@@ -1281,18 +1372,48 @@ def apply_lean(server_mcp=mcp) -> dict:
     configured planes, PROXIMO_SURFACES) narrows the catalog too. That ordering is load-bearing:
     see the caller in _apply_surfaces.
     """
+    from proximo.memory import memory_enabled
+
     global LEAN_CATALOG
     catalog = dict(server_mcp._tool_manager._tools)
     LEAN_CATALOG = catalog
 
-    @server_mcp.tool()
-    def proximo_find_tools(query: str, limit: int = 25) -> list[dict]:
-        """Search Proximo's full tool catalog by keyword. START HERE.
+    # MEMORY-FIRST ANSWERING. What lean mode costs is ROUND TRIPS: every question, however
+    # small, is find_tools -> tool_schema -> call, and a 9B stalled empty driving that at 8k
+    # ctx. The dominant question class — what exists, how many, what changed, when did this
+    # last happen — is one Tier-1 memory already holds, counted server-side and age-stamped.
+    # When memory is on, proximo_recall goes resident so that class costs ONE zero-argument
+    # call instead of three hops.
+    #
+    # KEPT, never redefined. Re-declaring a facade-local recall would run the same body with
+    # no target_aware, no PLAN gate, no ledger write and no taint classification — the second
+    # ungoverned path this module exists to not have. Absent from the catalog (scoped away via
+    # PROXIMO_SURFACES) it stays absent: that was the operator's choice, not ours to overrule.
+    recall_resident = memory_enabled() and "proximo_recall" in catalog
 
-        Only three tools are loaded; the other ~900 are searchable but not resident. Search for
-        what you want ("guest power", "ceph pool", "firewall"), then call proximo_tool_schema on
-        a result to get its arguments, then proximo_call to run it. All terms must match.
-        """
+    if recall_resident:
+        find_tools_doc = (
+            "Search Proximo's full tool catalog by keyword.\n\n"
+            "ESTATE QUESTIONS FIRST: if the question is what exists, how many, what changed, "
+            "or when something last happened, call proximo_recall instead — it answers from "
+            "local memory in one call, with no search and no schema lookup, and it stamps how "
+            "old the answer is. Come here for everything else.\n\n"
+            "The facade is resident; the other ~900 tools are searchable but not. Search for "
+            "what you want (\"guest power\", \"ceph pool\", \"firewall\"), then call "
+            "proximo_tool_schema on a result to get its arguments, then proximo_call to run "
+            "it. All terms must match."
+        )
+    else:
+        find_tools_doc = (
+            "Search Proximo's full tool catalog by keyword. START HERE.\n\n"
+            "Only three tools are loaded; the other ~900 are searchable but not resident. "
+            "Search for what you want (\"guest power\", \"ceph pool\", \"firewall\"), then "
+            "call proximo_tool_schema on a result to get its arguments, then proximo_call to "
+            "run it. All terms must match."
+        )
+
+    @server_mcp.tool(description=find_tools_doc)
+    def proximo_find_tools(query: str, limit: int = 25) -> list[dict]:
         return lean.search_tools(catalog, query, limit=limit)
 
     @server_mcp.tool()
@@ -1310,12 +1431,79 @@ def apply_lean(server_mcp=mcp) -> dict:
         """
         return await dispatch_tool(server_mcp, catalog, tool, arguments or {})
 
-    keep = {"proximo_find_tools", "proximo_tool_schema", "proximo_call"} | set(_ALWAYS_REGISTERED)
+    facade = {"proximo_find_tools", "proximo_tool_schema", "proximo_call"}
+    if recall_resident:
+        facade.add("proximo_recall")
+    keep = facade | set(_ALWAYS_REGISTERED)
     for name in [n for n in server_mcp._tool_manager._tools if n not in keep]:
         server_mcp.remove_tool(name)
-    print(f"proximo: lean mode — 3 facade tools registered, {len(catalog)} searchable",
-          file=sys.stderr)
+    print(f"proximo: lean mode — {len(facade)} facade tools registered"
+          f"{' (memory-first: proximo_recall resident)' if recall_resident else ''}, "
+          f"{len(catalog)} searchable", file=sys.stderr)
     return catalog
+
+
+# `proximo doctor --product {pve,pbs,pmg,pdm}` mirrors `proximo mint --product`'s flag (verdict
+# 1.3): SETUP.md's Step 4 ("verify YOUR boundary") was 100% PVE-flavored — a PBS/PMG/PDM-only
+# operator following it literally got a bare PVE missing-env RuntimeError with no pointer to the
+# one place that IS honest about their plane (`mint --product <plane>`'s own runbook).
+#
+# pmg_doctor is a real read-only preflight tool and gets a real dispatch; pbs/pdm have no doctor
+# tool at all yet, so those two refuse HONESTLY — naming the runbook and a real read tool that
+# does exist — rather than pretending to check something that isn't there.
+_DOCTOR_NO_TOOL_REMEDY: dict[str, str] = {
+    "pbs": "no pbs_doctor tool exists yet — run `proximo mint --product pbs` for the onboarding "
+           "runbook (its own verify step is the live connectivity check), or call pbs_version / "
+           "pbs_datastores_list directly once PROXIMO_PBS_BASE_URL and PROXIMO_PBS_TOKEN_PATH "
+           "are set.",
+    "pdm": "no pdm_doctor tool exists yet — run `proximo mint --product pdm` for the onboarding "
+           "runbook (its own verify step is the live connectivity check), or call pdm_ping / "
+           "pdm_version directly once PROXIMO_PDM_BASE_URL and PROXIMO_PDM_TOKEN_PATH are set.",
+}
+
+# base-url env var per OTHER plane, used only to point a PVE-default doctor failure at the plane
+# the operator actually configured, instead of a bare missing-env error naming vars they never
+# intended to set (PBS-only-walk verdict finding: SETUP.md's Step 4 dead-ends this operator).
+_OTHER_PLANE_BASE_URL_ENV: dict[str, str] = {
+    "pbs": "PROXIMO_PBS_BASE_URL",
+    "pmg": "PROXIMO_PMG_BASE_URL",
+    "pdm": "PROXIMO_PDM_BASE_URL",
+}
+
+
+def _configured_other_planes(exclude: str) -> list[str]:
+    """Which OTHER planes look configured (their base-url env var is set), in a stable order."""
+    return [p for p in ("pbs", "pmg", "pdm")
+            if p != exclude and os.environ.get(_OTHER_PLANE_BASE_URL_ENV[p])]
+
+
+def _run_doctor(product: str, target: str | None) -> dict:
+    """Dispatch `proximo doctor --product <product>` to the right doctor tool, or refuse honestly
+    if none exists for that plane. Looks up `pve_doctor`/`pmg_doctor` as globals (not a
+    module-load-time dict) so a test's `monkeypatch.setattr(server, "pve_doctor", ...)` is always
+    what actually gets called."""
+    tools = {"pve": pve_doctor, "pmg": pmg_doctor}
+    if product not in tools:
+        raise ProximoError(_DOCTOR_NO_TOOL_REMEDY[product])
+    try:
+        return tools[product](proximo_target=target)
+    except RuntimeError as e:
+        # The verdict's core case: `proximo doctor` defaults to pve, so a PBS/PMG/PDM-only
+        # operator running it bare hits PVE's own missing-env error — even though THEIR plane
+        # is fine. Point at the plane that's actually configured instead of leaving them at a
+        # dead end naming env vars they never intended to set.
+        if product == "pve" and "Missing required Proximo env var" in str(e):
+            other = _configured_other_planes("pve")
+            if other:
+                plane = other[0]
+                pointer = (f"`proximo doctor --product {plane}`" if plane in tools
+                           else f"`proximo mint --product {plane}`'s onboarding runbook "
+                                f"(no {plane}_doctor tool exists yet)")
+                raise ProximoError(
+                    f"no PVE env is configured ({e}), but {_OTHER_PLANE_BASE_URL_ENV[plane]} is "
+                    f"set — pve is only the CLI default; run {pointer} instead of --product pve."
+                ) from e
+        raise
 
 
 def main() -> None:
@@ -1333,16 +1521,21 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         import argparse
         import json
+
+        from proximo.mint import PRODUCTS
         parser = argparse.ArgumentParser(prog="proximo doctor", add_help=False)
         parser.add_argument("--target", default=None,
                             help="Named target from PROXIMO_TARGETS registry to probe.")
+        parser.add_argument("--product", default="pve", choices=PRODUCTS,
+                            help=f"one of: {', '.join(PRODUCTS)} (default: pve; mirrors "
+                                 "`proximo mint --product`)")
         parser.add_argument("--receipt", action="store_true",
                             help="render the run as one pasteable artifact, with node and cluster "
                                  "names, addresses, storage/pool ids, users, realms and API token "
                                  "ids removed. Nothing is transmitted — sharing it is your call.")
         args = parser.parse_args(sys.argv[2:])
         try:
-            result = pve_doctor(proximo_target=args.target)
+            result = _run_doctor(args.product, args.target)
         except Exception as e:  # config/token/connectivity problem — give a plain message, not a trace
             print(f"proximo doctor: {e}", file=sys.stderr)
             raise SystemExit(1) from None
@@ -1396,6 +1589,52 @@ def main() -> None:
             raise SystemExit(2) from None
         print(json.dumps(recipe, indent=2) if args.json else render_text(recipe))
         return
+    # `proximo arm` / `proximo disarm` — the write-authority toggle: swap the token the server
+    # reads per call. It PERFORMS the swap and then DISCLOSES whether the arm is a real boundary
+    # or merely advisory, because that is a question of file ownership rather than of code (same
+    # honesty the CONTAIN breaker gets in SECURITY.md). It grants nothing new: anyone who can run
+    # this could already `cp` the arm source into place. The mint-and-revoke deployment has no
+    # write token at rest to swap — that one uses `proximo mint --write`.
+    if len(sys.argv) > 1 and sys.argv[1] in ("arm", "disarm"):
+        import argparse
+        import json
+
+        from proximo.arm import ArmError, as_dict, do_arm, do_disarm
+        from proximo.arm import render_text as render_arm_text
+        verb = sys.argv[1]
+        parser = argparse.ArgumentParser(prog=f"proximo {verb}")
+        parser.add_argument("--session", default=None,
+                            help="session key to scope this toggle to (default: "
+                                 "$PROXIMO_SESSION_KEY, else the global token path)")
+        parser.add_argument("--json", action="store_true",
+                            help="emit the result as structured JSON (mirrors doctor/mint)")
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            result = (do_arm(session=args.session) if verb == "arm"
+                      else do_disarm(session=args.session))
+        except ArmError as e:
+            print(f"proximo {verb}: {e}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(json.dumps(as_dict(result), indent=2) if args.json else render_arm_text(result))
+        return
+    # `proximo reap` — put the write key back for sessions that ENDED while armed. Liveness is the
+    # KERNEL's answer: a serving process holds a shared flock for its whole life, so an exclusive
+    # try succeeds only once every holder is gone. No age heuristic, nothing client-specific.
+    if len(sys.argv) > 1 and sys.argv[1] == "reap":
+        import argparse
+        import json
+
+        from proximo.arm import reap_as_dict, reap_stale_arms, render_reap
+        parser = argparse.ArgumentParser(prog="proximo reap")
+        parser.add_argument("--dry-run", action="store_true",
+                            help="report the decisions and change nothing")
+        parser.add_argument("--json", action="store_true",
+                            help="emit the decisions as structured JSON (mirrors doctor/mint)")
+        args = parser.parse_args(sys.argv[2:])
+        decisions = reap_stale_arms(dry_run=args.dry_run)
+        print(json.dumps(reap_as_dict(decisions, dry_run=args.dry_run), indent=2) if args.json
+              else render_reap(decisions, dry_run=args.dry_run))
+        return
     # `proximo hello` — the print-only agent front door: the six-move welcome, sharp
     # edges first, the ask last. Makes NO API call, sends nothing, never starts the
     # server.
@@ -1412,6 +1651,15 @@ def main() -> None:
         greeting = build_greeting()
         print(json.dumps(greeting, indent=2) if args.json else render_hello(greeting))
         return
+    # Register as a live holder of this session's arm, if it has one. This is the entire liveness
+    # signal `proximo reap` reads: the kernel drops this lock on exit, crash or kill, so a session
+    # that ENDED while armed becomes visible without any heartbeat, TTL, or client-specific probe.
+    # Best-effort by contract (see arm.hold_session_lock) — it must never keep the server from
+    # starting, and an arm that goes unheld only ever ends up disarmed, never over-privileged.
+    from proximo.arm import hold_session_lock
+    _arm_lock = hold_session_lock()
+    if _arm_lock:
+        print(f"proximo: holding the session arm lock ({_arm_lock})", file=sys.stderr)
     print(BANNER, file=sys.stderr)
     mcp.run()
 
@@ -1422,6 +1670,10 @@ def main() -> None:
 # and (b) the existing `server.<tool_name>` surface (direct-call tests, CLI, introspection
 # sweeps that do `getattr(server, name)`) keeps working unchanged. ---
 from proximo import prompts as _prompts  # noqa: E402,F401  # safe-runbook MCP prompts (registration side effect)
+from proximo.tools.memory_tools import (  # noqa: E402,F401
+    proximo_baseline,
+    proximo_recall,
+)
 from proximo.tools.pbs import (  # noqa: E402,F401
     pbs_apt_changelog,
     pbs_apt_repositories_get,
@@ -2393,6 +2645,10 @@ from proximo.tools.pve_sdn_routing import (  # noqa: E402,F401
     pve_sdn_route_map_entry_get,
     pve_sdn_route_map_entry_update,
     pve_sdn_route_maps_list,
+)
+from proximo.tools.wiki_tools import (  # noqa: E402,F401
+    proximo_wiki,
+    proximo_wiki_read,
 )
 
 # Every tool is registered by now (registration is an import side effect of the blocks above), so

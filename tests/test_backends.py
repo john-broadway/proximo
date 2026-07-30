@@ -89,6 +89,13 @@ def test_exec_enforces_allowlist():
         ExecBackend(_cfg(ct_allowlist=frozenset({"100"}))).run("999", ["true"])
 
 
+def test_exec_allowlist_denial_names_env_var():
+    # 1.7: "not permitted by allowlist (fail-closed)" named no remedy. The message must
+    # name PROXIMO_CT_ALLOWLIST (the actual source of the allowlist) and how to add an entry.
+    with pytest.raises(ProximoError, match="PROXIMO_CT_ALLOWLIST"):
+        ExecBackend(_cfg(ct_allowlist=frozenset({"100"}))).run("999", ["true"])
+
+
 def test_exec_disabled_raises_even_with_allowlist(monkeypatch):
     # Defense-in-depth (M-3): ExecBackend.run() must enforce the PROXIMO_ENABLE_EXEC opt-in
     # itself — a permissive allowlist does NOT grant exec when the gate is off.
@@ -103,6 +110,16 @@ def test_apibackend_refuses_unverified_tls(monkeypatch, tmp_path):
     tok.write_text("u@pam!t=secret")
     with pytest.raises(ProximoError, match="unverified TLS"):
         ApiBackend(_cfg(token_path=str(tok), verify_tls=False, ca_bundle=None))
+
+
+def test_apibackend_fingerprint_refusal_names_env_var(tmp_path):
+    # 1.6: a garbled PROXIMO_FINGERPRINT must not forward the validator's raw ValueError —
+    # the message must name the exact env var and the expected shape (64-char SHA-256 hex).
+    tok = tmp_path / "t"
+    tok.write_text("u@pam!t=secret")
+    with pytest.raises(ProximoError, match="PROXIMO_FINGERPRINT") as exc_info:
+        ApiBackend(_cfg(token_path=str(tok), fingerprint="not-a-fingerprint"))
+    assert "64" in str(exc_info.value)
 
 
 def test_apibackend_ok_with_verified_tls(tmp_path):
@@ -365,6 +382,14 @@ def _agent_cfg(**kw) -> ProximoConfig:
     )
     base.update(kw)
     return ProximoConfig(**base)
+
+
+def test_agent_gate_denial_names_env_var():
+    # 1.7: the qemu-agent allowlist refusal must name PROXIMO_AGENT_ALLOWLIST, mirroring the
+    # CT-allowlist fix — same jargon-with-no-remedy shape at backends.py's other allowlist site.
+    api = ApiBackend(_agent_cfg(agent_allowlist=frozenset({"200"})))
+    with pytest.raises(ProximoError, match="PROXIMO_AGENT_ALLOWLIST"):
+        api._agent_gate("999", None)
 
 
 # -- _check_file_path unit tests --

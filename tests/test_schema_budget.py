@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from proximo import server
 from proximo.targets import _TARGET_DESC
 
@@ -34,13 +36,19 @@ def _schema(tool) -> dict:
     return {}
 
 
-def _payload_bytes(names) -> int:
-    """Serialized size of what `tools/list` actually hands the client for `names`."""
+def _payload_bytes(names, registry=None) -> int:
+    """Serialized size of what `tools/list` actually hands the client for `names`.
+
+    `registry` defaults to the module's own full-catalog REGISTRY; callers measuring a
+    registry that doesn't share tool objects with it (e.g. a lean/dynamic facade, whose
+    three search tools don't exist in the full catalog) pass their own.
+    """
+    reg = REGISTRY if registry is None else registry
     return len(json.dumps([
         {
             "name": n,
-            "description": getattr(REGISTRY[n], "description", "") or "",
-            "inputSchema": _schema(REGISTRY[n]),
+            "description": getattr(reg[n], "description", "") or "",
+            "inputSchema": _schema(reg[n]),
         }
         for n in names
     ]))
@@ -136,4 +144,59 @@ def test_average_tool_cost_within_budget():
     assert average <= PER_TOOL_AVERAGE_BUDGET, (
         f"average tool costs {average:,} B (~{average // 4} tokens), "
         f"over the {PER_TOOL_AVERAGE_BUDGET:,} B budget"
+    )
+
+
+# --- doc-printed token figures, pinned against a live measurement -------------------------
+#
+# docs/SETUP.md and CHANGELOG.md print a table of "if you scope like this, it costs about
+# that many tokens" figures. Nothing compared them to a live measurement, so a surface
+# addition could silently invalidate every row (this is exactly how 1.11/1.13 in the
+# 0.27.0 arena verdict were found — by hand, not by a gate). +/-10% tolerance: tight enough
+# that real growth trips it, loose enough that the bytes//4 heuristic's own rounding and the
+# doc's own "~" hedge don't.
+
+def _lean_facade_registry() -> dict:
+    """A throwaway registry carrying just the dynamic-mode facade, safe to prune.
+
+    Mirrors tests/test_lean_wiring.py's `_fresh_mcp()`: `apply_lean` mutates its argument
+    in place, and the facade tools it registers (`proximo_find_tools`, etc.) don't exist in
+    the full-catalog REGISTRY, so this must not be a bare copy of REGISTRY's keys pointed
+    back at REGISTRY's objects — it needs its own tool objects, from its own registry.
+    """
+    from mcp.server.fastmcp import FastMCP
+
+    m = FastMCP("proximo-test-schema-budget")
+    m._tool_manager._tools = dict(REGISTRY)
+    server.apply_lean(m)
+    return m._tool_manager._tools
+
+
+DOC_PRINTED_TOKEN_FIGURES = {
+    "dynamic (PROXIMO_TOOLSETS=dynamic)": 555,
+    "one domain toolset (pve.guests)": 8_900,
+    "one plane (PROXIMO_SURFACES=pve)": 97_000,
+    "full surface (nothing configured)": 276_000,
+}
+
+
+@pytest.mark.parametrize("label,doc_tokens", DOC_PRINTED_TOKEN_FIGURES.items())
+def test_doc_printed_token_figures_match_live_measurement(label, doc_tokens):
+    """Each row of SETUP.md's/CHANGELOG.md's token table, re-measured live at +/-10%."""
+    if label.startswith("dynamic"):
+        lean_registry = _lean_facade_registry()
+        names, registry = list(lean_registry), lean_registry
+    elif label.startswith("one domain toolset"):
+        names, registry = sorted(server.toolset_keep(REGISTRY.keys(), "pve.guests")), REGISTRY
+    elif label.startswith("one plane"):
+        names, registry = sorted(server.surface_keep(list(REGISTRY), "pve")), REGISTRY
+    else:
+        names, registry = list(REGISTRY), REGISTRY
+
+    measured_tokens = _payload_bytes(names, registry=registry) // 4
+    low, high = doc_tokens * 0.9, doc_tokens * 1.1
+    assert low <= measured_tokens <= high, (
+        f"{label}: docs say ~{doc_tokens:,} tokens, live measurement is "
+        f"{measured_tokens:,} across {len(names)} tools — outside +/-10%, the docs need "
+        "a re-measure"
     )

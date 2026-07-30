@@ -10,6 +10,7 @@ from typing import Annotated
 from pydantic import Field
 
 import proximo.server as _proximo_server
+from proximo import memory
 from proximo.cluster_ops import (
     cluster_resources,
     cluster_status,
@@ -90,6 +91,7 @@ def pve_cluster_resources(
     tgt = f"cluster/resources/{resource_type or 'all'}"
     rows = _audited("pve_cluster_resources", tgt,
                     lambda: cluster_resources(api, resource_type))
+    memory.observe_resources(rows)  # opportunistic Tier-1 feed; inert unless PROXIMO_MEMORY
     lean = project_rows(rows, fields,
                         ("id", "type", "node", "status", "name", "vmid", "storage", "uptime"))
     return envelope_rows(rows, lean, "resources", "type")

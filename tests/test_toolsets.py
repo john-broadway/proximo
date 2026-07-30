@@ -46,7 +46,10 @@ def test_toolsets_are_a_partition_of_their_plane():
     """A toolset's tools must all come from one plane — mixed toolsets make scoping unpredictable."""
     for name, prefixes in TOOLSETS.items():
         plane = name.split(".", 1)[0]
-        if plane in ("exec", "core"):
+        if plane in ("exec", "core", "memory", "wiki"):
+            # exec/memory/wiki are deliberately cross-plane utility sets, not plane domains.
+            # wiki indexes docs for ALL FOUR planes (that is why it is not named pve_docs),
+            # so a per-plane partition is the wrong shape for it by construction.
             continue
         for n in (x for x in REGISTRY if x.startswith(prefixes)):
             assert n.startswith(plane + "_"), f"toolset {name!r} claims cross-plane tool {n!r}"
@@ -148,7 +151,10 @@ def test_toolsets_do_not_claim_to_solve_the_8k_case():
     for an 8k window with working room. If that ever stops being true, update the copy — do not
     silently start claiming it.
     """
-    real_domains = {k: v for k, v in TOOLSETS.items() if k != "exec"}
+    real_domains = {k: v for k, v in TOOLSETS.items()
+                    if k not in ("exec", "memory", "wiki")}
+    # exec = 4 tools, memory = 1 tool, wiki = 2 tools: deliberately tiny cross-plane utility
+    # sets, not the "domain" tier the 8k docs claim is about
     smallest = min(
         _payload({n for n in REGISTRY if n.startswith(p)}) for p in real_domains.values()
     )

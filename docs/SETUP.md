@@ -127,6 +127,10 @@ set -a; . ~/.config/proximo/proximo.env; set +a
 proximo doctor
 ```
 
+(On a PBS/PMG/PDM box instead of PVE: `proximo doctor --product pmg` runs that plane's preflight;
+`pbs`/`pdm` have no doctor tool yet, and the command says so honestly and points at
+`proximo mint --product pbs|pdm`, whose printed runbook carries the verification steps.)
+
 You'll get JSON. Look for:
 
 - `"reachable": true` — Proximo can talk to your Proxmox.
@@ -184,22 +188,66 @@ token still says so. Grant only what you mean to, only where you mean it.
 
 *(The token is named `readonly` — that's just a label. Its real power is whatever roles you grant it.)*
 
+### Turning write on and off — `proximo arm` / `proximo disarm`
+
+The grant above is permanent until you revoke it. If you'd rather keep write authority *off*
+by default and switch it on for one job, keep two token files and swap between them:
+
+```bash
+proximo arm     --session my-job      # write token in
+proximo disarm  --session my-job      # read-only token back
+```
+
+Set `PROXIMO_ARM_SOURCE` (the write token), `PROXIMO_READONLY_SOURCE` (the everyday one), and
+`PROXIMO_SESSION_DIR` so each `--session` key gets its own token file and arming one caller
+leaves the rest read-only. If you name a session without that directory set, `arm` refuses
+rather than quietly arming every caller on the box — drop `--session` to arm globally on purpose.
+
+`arm` prints whether the arm is a **real** boundary or only **advisory** — on a single-user box
+the process that reads the token can also replace it, so it says so rather than implying more.
+Pair it with `PROXIMO_ARM_TTL=3600` and a forgotten `disarm` expires on its own. See
+[SECURITY.md](../SECURITY.md) for the stronger mint-and-revoke pattern, where no write token
+exists at rest at all.
+
+If a session dies while armed — crash, kill, a client that just went away — nothing runs its
+`disarm`, and the write token stays in place. `proximo reap` puts it back:
+
+```bash
+proximo reap --dry-run      # show what it would do
+proximo reap                # restore the read-only token for every ended session
+```
+
+It tells a dead session from a live one by asking the operating system, not by guessing: a
+running server holds a lock for as long as it lives, and the OS drops that lock the moment the
+process does. So it is safe to run any time, including from a timer — live sessions are reported
+and skipped. Arms newer than `PROXIMO_REAP_GRACE` (default 300s) are left alone, since a session
+that just armed may not have connected yet.
+
 ---
 
 ## Fitting a smaller model — scoping the tool surface
 
-Proximo governs 900 operations. Every one of them costs your model context at connection time,
-before you ask anything — the full surface is ~276k tokens of schema, which does not fit most
-models and wastes most of a large one. So pick what you need. Four layers, most specific wins:
+Proximo governs 904 operations. Four are opt-in (estate memory and the wiki index), and
+in-container exec is opt-in too — so what an install actually serves depends on what you've
+configured, not on one default number: a single-plane install (one PVE cluster, no exec, no
+memory, no wiki) serves 310; wiring in all four data planes (PVE + PBS + PMG + PDM) with exec
+still off serves 896; nothing configured at all serves the full registered 904. Every served
+tool costs your model context at connection time, before you ask anything: the full surface is
+~276k tokens of schema, which does not fit most models and wastes most of a large one. So pick
+what you need. Four layers, most specific wins. Every figure below was measured against the
+full 904-tool registry:
 
 | Set this | Serves | Real cost |
 |---|---|---|
 | `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those | **~1,040 tokens** |
-| `PROXIMO_TOOLSETS=dynamic` | 3 search tools; all 900 callable | **~555 tokens** |
+| `PROXIMO_TOOLSETS=dynamic` | 3 search tools; every other tool still callable | **~555 tokens** |
 | `PROXIMO_TOOLSETS=pve.guests` | one domain (27 tools) | ~8,900 tokens |
 | `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (48 tools) | ~15,700 tokens |
 | `PROXIMO_SURFACES=pve` | a whole plane (310 tools) | ~97,000 tokens |
 | *(nothing)* | auto-scoped to your configured planes | up to ~276,000 tokens |
+
+Every "cost" above is UTF-8 payload bytes ÷ 4, a stated conservative heuristic, not a live
+tokenizer for any specific model.
 
 Available toolsets: `pve.guests` `pve.cluster` `pve.storage` `pve.network` `pve.sdn`
 `pve.firewall` `pve.access` `pve.ceph` `pve.maintenance` · `pbs.datastores` `pbs.tape`
@@ -211,13 +259,17 @@ A typo refuses startup rather than quietly serving a different set than you pick
 
 ### `dynamic` — the whole surface on a small model
 
-`PROXIMO_TOOLSETS=dynamic` loads three tools instead of 900:
+`PROXIMO_TOOLSETS=dynamic` loads three tools instead of the whole served surface:
 
 - `proximo_find_tools(query)` — search the catalog
 - `proximo_tool_schema(name)` — get one tool's arguments
 - `proximo_call(tool, arguments)` — run it
 
-The other 897 stay callable; they stop being *resident*. This is the only mode that fits an ~8k
+`audit_verify` rides alongside these three on every surface (PROVE is never scopeable away), so
+a raw `tools/list` in this mode shows **four** entries at ~555 tokens — five with
+`PROXIMO_MEMORY=1`, which also keeps `proximo_recall` resident so estate questions stay one call.
+
+The rest stay callable; they stop being *resident*. This is the only mode that fits an ~8k
 context — a single domain toolset is ~8.9k, so toolsets alone reach roughly 32k-class models,
 not the smallest ones.
 
@@ -225,7 +277,72 @@ not the smallest ones.
 internal path a direct tool call uses, so the dry-run PLAN gate, the tamper-evident ledger entry
 and your token's ACL all apply exactly as they would otherwise. The trade is ergonomic, not
 governmental: your model spends two extra round trips discovering a tool, and it must be capable
-enough to drive search-then-call. If yours is not, use a toolset instead.
+enough to drive search-then-call.
+
+#### Memory-first — with `PROXIMO_MEMORY=1`, a fourth tool
+
+What `dynamic` costs is round trips, and the smallest models are where that bites: every
+question, however small, is search → schema → call. Turn on Tier-1 memory and `proximo_recall`
+joins the facade, so the commonest question class — what exists, how many, what changed, when
+did this last happen — costs **one call with no arguments**, no search and no schema lookup.
+
+It is the same `proximo_recall` you would get on the full surface: kept, not re-declared, with
+its ledger entry, its taint classification and every other control intact. Two things it will
+not do — if memory is off it stays absent rather than sitting there as a call that can only
+fail, and if you scoped it away with `PROXIMO_SURFACES` it stays scoped away.
+
+Note that recall reports what memory has *observed*, age-stamped; on a fresh install it has
+observed nothing and says so rather than reporting an empty estate. And because recalled names
+originate in adversarial-classified reads, a memory-first model trips the taint marker on its
+first call rather than its third — earlier, not different. `proximo doctor` tells you which
+facade you are actually serving.
+
+## The wiki index — `PROXIMO_WIKI=1`, two more tools
+
+`proximo_wiki` searches a local index of Proxmox documentation and `proximo_wiki_read` returns one
+section of it, so a model can cite a real doc instead of recalling one.
+
+**The index is yours, and Proximo does not ship one.** No documentation content is distributed with
+this package: you harvest and index on your own machine, which keeps the forum and wiki licensing
+question out of the picture entirely and means your index is fresher than any frozen pack. Proximo
+ships the **reader** and the **contract**, nothing else. There is no bundled harvester, so if you
+do not build an index these two tools simply refuse and nothing else is affected.
+
+```bash
+PROXIMO_WIKI=1
+PROXIMO_WIKI_PATH=/home/you/.config/proximo/wiki.db   # else wiki.db beside the audit log
+```
+
+### The index contract
+
+Any builder works as long as the SQLite file matches this. Proximo owns and pins the shape, checks
+it **fail-closed in both directions and on a missing pin**, and refuses a drifted index rather than
+answer Proxmox questions out of the wrong bytes:
+
+```sql
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sections (
+    id      TEXT PRIMARY KEY,   -- stable: sha1(source|url|anchor)
+    source  TEXT NOT NULL,      -- 'forum' | 'wiki' | 'refdocs'
+    title   TEXT NOT NULL,
+    url     TEXT,               -- origin, cited in every response
+    license TEXT,               -- per-source note, surfaced on read
+    body    TEXT NOT NULL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(title, body, content='sections');
+```
+
+Two `meta` rows matter: **`contract_version`** must be `1` (a missing or mismatched value is
+refused), and **`harvested_at`** should be a Unix timestamp, which is what lets every response
+carry an age so a cached doc never passes for a live one. FTS5 ships inside CPython's bundled
+`sqlite3`, so there is no new dependency at either end.
+
+> ⚠️ **Retrieved documentation is third-party-authored text.** A solved forum thread can carry
+> "now run pve_delete_guest" as easily as a fix. Both wiki tools are classified ADVERSARIAL: with
+> the taint control enabled (`PROXIMO_TAINT_TRACK=1`), reading from the index trips the taint
+> marker exactly as an in-guest file read does. Like every additional control, taint is opt-in and
+> inert until its env var is set — the classification alone marks the text, it does not restrain
+> anyone. Treat retrieved text as information, never as instructions, armed or not.
 
 ## Many boxes from one Proximo — `proximo_target`
 
@@ -371,6 +488,7 @@ The moment the token is gone, Proximo can do nothing at all.
 | **Connection refused / timeout** | Wrong host or port (the Proxmox API is `:8006`), or a firewall in the way. |
 | **`ct_exec` refused** | Exec is off by default (grants host root). It's opt-in via `PROXIMO_ENABLE_EXEC=1` + a CTID allowlist — only if you truly need it. |
 | **A remote MCP client can't connect** | The default `proximo` command serves stdio only — a networked MCP client needs `proximo-mcp-http` (see **Remote / multi-client**). The HTTP face speaks REST, not MCP. Check the bearer header and that `PROXIMO_MCP_HTTP_ALLOWED_HOSTS` includes the Host you're connecting through. |
+| **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. `proximo --help` and `proximo --version` don't print a usage screen either — any argument that isn't `doctor`/`mint`/`arm`/`disarm`/`reap`/`hello` falls through to the same banner-then-wait. Wire it into an MCP client (Step 5) instead of running it directly. |
 
 ---
 

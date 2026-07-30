@@ -48,6 +48,7 @@ from typing import Any
 import pytest
 
 import proximo.server as server
+from proximo import lean
 from proximo.audit import AuditLedger
 from proximo.backends import ExecResult, _check_ceph_daemon_id, _check_node
 from proximo.config import ProximoConfig
@@ -1241,6 +1242,31 @@ def test_sweep_coverage_is_honest():
     )
 
 
+def test_every_mutating_tool_has_a_mutation_marker_in_its_find_tools_summary():
+    """A small model in dynamic mode never sees the full docstring — only
+    `lean._summary_of(description)`, the one line `proximo_find_tools` returns. That helper
+    truncates at the first ". " (period-space), so a marker placed after the sentence break is
+    silently dropped from the line a tiny model actually reads. Every OTHER mutation in the
+    catalog puts its marker (`MUTATION:`, `MUTATION (LOW):`, ...) joined by a colon to the
+    description, in the same first sentence, so it always survives the truncation; a docstring
+    that instead tacks `MUTATION-CAPABLE.` on as its own trailing sentence loses the marker the
+    instant a model can't afford to read past line one.
+    """
+    catalog = dict(server.mcp._tool_manager._tools)
+    missing = []
+    for name in MUTATING_TOOLS:
+        tool = catalog.get(name)
+        assert tool is not None, f"{name}: mutating tool missing from the live tool registry"
+        summary = lean._summary_of(getattr(tool, "description", "") or "")
+        if "MUTATION" not in summary:
+            missing.append(name)
+    assert not missing, (
+        f"mutating tool(s) with no MUTATION marker in their find_tools summary: {missing} — a "
+        f"small model in dynamic mode sees only this one line and has no way to tell these are "
+        f"mutation-capable before calling them"
+    )
+
+
 # ===========================================================================
 # READ-tool sweep (best-effort secondary coverage — the task's primary ask is the mutating
 # sweep above, since a wrong READ can't fully-audited-mutate a keys-holding user's infra the
@@ -1265,6 +1291,20 @@ NOT_SHAPE_ASSERTED_READ: dict[str, str] = {
     "pve_doctor": "server.py pve_doctor(): fixed target='preflight', no identity-bearing params",
     "pmg_doctor": "server.py pmg_doctor(): connectivity/permission preflight, no identity params",
     "audit_verify": "server.py audit_verify(): verifies the ledger itself, not a per-object read",
+    "proximo_recall": "tools/memory_tools.py: opt-in Tier-1 memory — refuses (ProximoError) when "
+                      "PROXIMO_MEMORY is unset, as in this sweep's env; request/response/ledger "
+                      "seams are pinned in tests/test_memory.py",
+    "proximo_baseline": "tools/memory_tools.py: opt-in Tier-1 memory (same PROXIMO_MEMORY refusal "
+                        "as proximo_recall); request/response/ledger seams incl. the no-PVE-call "
+                        "stored path are pinned in tests/test_memory.py",
+    "proximo_wiki": "tools/wiki_tools.py: opt-in local docs index — refuses (ProximoError) when "
+                    "PROXIMO_WIKI is unset, as in this sweep's env; request/response/ledger seams "
+                    "are pinned in tests/test_wiki.py "
+                    "(test_proximo_wiki_is_a_governed_read_on_the_ledger)",
+    "proximo_wiki_read": "tools/wiki_tools.py: opt-in local docs index (same PROXIMO_WIKI refusal "
+                         "as proximo_wiki); the ledger seam INCLUDING the section-id target is "
+                         "pinned in tests/test_wiki.py "
+                         "(test_proximo_wiki_read_is_a_governed_read_carrying_its_target)",
 }
 
 

@@ -32,7 +32,15 @@ from pathlib import Path
 
 import proximo.server as server
 
-EXPECTED_TOOL_COUNT = 900  # +11 (Wave 9j — PMG quarantine + statistics remainder, the FINAL
+EXPECTED_TOOL_COUNT = 904  # +2 (wiki seam reader side, 2026-07-29): proximo_wiki +
+# proximo_wiki_read — BM25 search and one-section read over a LOCAL docs index built by
+# an operator-supplied builder (proximo/wiki.py). Opt-in via PROXIMO_WIKI; the seam is a file
+# contract, so proximo imports nothing from the builder.
+# Prior: 902  # +1 (Tier-1 memory increment 2, 2026-07-29): proximo_baseline —
+# per-guest cpu/mem distribution rollups from rrddata, stored-first (proximo/memory.py).
+# Prior: 901  # +1 (Tier-1 estate memory increment 1, 2026-07-29): proximo_recall
+# — the age-stamped local estate-map read (opt-in PROXIMO_MEMORY; proximo/memory.py).
+# Prior: 900  # +11 (Wave 9j — PMG quarantine + statistics remainder, the FINAL
 # chunk that CLOSES the PMG plane, extends pmg.py/tools/pmg_mail.py, campaign RULING 4 +
 # RULING 5): 10 reads — pmg_quarantine_users_list, pmg_quarantine_content_get (ADVERSARIAL),
 # pmg_quarantine_attachments_list (ADVERSARIAL), pmg_quarantine_link_get (RULING 4 — its return

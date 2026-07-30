@@ -15,9 +15,11 @@ fire. Lean mode must never become a second mutate path — that is the property 
 """
 from __future__ import annotations
 
+import anyio
 import pytest
 
-from proximo import lean
+from proximo import lean, server
+from proximo.backends import ProximoError
 
 
 class _FakeTool:
@@ -134,6 +136,32 @@ def test_exact_name_query_outranks_every_other_match():
     assert names[0] == "pve_guest_power"
 
 
+def test_operator_synonyms_surface_pve_delete_guest():
+    """Real operators type "delete vm", "remove vm", "destroy vm", "delete container" —
+    pve_delete_guest's name and docstring say "guest"/"delete", never "vm" or "container", so
+    all four phrasings returned zero hits against the real 904-tool catalog. Bare "delete"
+    separately buried it 68th, past the default limit, behind alphabetically-tied
+    pbs_*_delete tools.
+    """
+    from proximo import server
+
+    catalog = dict(server.mcp._tool_manager._tools)
+    for query in ("delete vm", "delete container", "remove vm", "destroy vm"):
+        names = [h["name"] for h in lean.search_tools(catalog, query)]
+        assert "pve_delete_guest" in names, f"{query!r} missed pve_delete_guest: {names}"
+
+
+def test_synonym_widens_the_match_it_does_not_replace_the_term():
+    """A synonym must ADD a match, never remove one — "vm" alone must still find a tool whose
+    own name literally says vm, even though it now also finds guest-named tools via the
+    vm->guest synonym.
+    """
+    catalog = dict(CATALOG)
+    catalog["pve_create_vm"] = _FakeTool("pve_create_vm", "MUTATION: create a new QEMU VM.")
+    names = {h["name"] for h in lean.search_tools(catalog, "vm")}
+    assert names == {"pve_create_vm", "pve_guest_power", "pve_list_guests"}
+
+
 # --- schema lookup -----------------------------------------------------------------------
 
 def test_tool_schema_returns_the_full_input_schema():
@@ -153,3 +181,47 @@ def test_tool_schema_suggests_near_misses():
     with pytest.raises(KeyError) as exc:
         lean.tool_schema(CATALOG, "pve_guest_powr")
     assert "pve_guest_power" in str(exc.value)
+
+
+# --- dispatch: unknown-name fail-closed (server.dispatch_tool) ----------------------------
+#
+# `proximo_tool_schema` (above) already fails closed on a typo with did-you-mean candidates.
+# `proximo_call` -> `server.dispatch_tool` is the OTHER unknown-name path, and the one a small
+# model in dynamic mode is most likely to hit directly: its whole incentive is conserving round
+# trips, which is exactly the incentive to skip the schema-lookup step and call a remembered or
+# guessed name straight through. A bare KeyError there is a dead end with no recovery signal;
+# this pins dispatch_tool raising the SAME shape tool_schema does, as ProximoError (the type
+# every other refusal in this codebase uses), not a bare KeyError.
+
+def _fresh_mcp_mirroring_the_real_registry():
+    """A throwaway FastMCP server whose registry mirrors the real one, safe to prune in a test."""
+    from mcp.server.fastmcp import FastMCP
+
+    m = FastMCP("proximo-test-lean-dispatch")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    return m
+
+
+def test_dispatch_tool_refuses_unknown_name_as_proximo_error():
+    m = _fresh_mcp_mirroring_the_real_registry()
+    catalog = dict(m._tool_manager._tools)
+
+    async def go():
+        return await server.dispatch_tool(m, catalog, "pve_delete_gust", {})
+
+    with pytest.raises(ProximoError, match="pve_delete_gust"):
+        anyio.run(go)
+
+
+def test_dispatch_tool_unknown_name_suggests_near_matches():
+    """Same did-you-mean mechanism proximo_tool_schema already gives, so a model that calls
+    directly and skips the schema step still lands somewhere recoverable."""
+    m = _fresh_mcp_mirroring_the_real_registry()
+    catalog = dict(m._tool_manager._tools)
+
+    async def go():
+        return await server.dispatch_tool(m, catalog, "pve_delete_gust", {})
+
+    with pytest.raises(ProximoError) as exc:
+        anyio.run(go)
+    assert "pve_delete_guest" in str(exc.value)

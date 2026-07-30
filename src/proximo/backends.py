@@ -715,6 +715,30 @@ def _check_file_path(path: str) -> str:
     return path
 
 
+# Cert-pin env var per plane — the one thing fingerprint_refused() cannot derive from the
+# plane name alone (PVE's own var has no plane infix, unlike PBS/PMG/PDM's).
+_FINGERPRINT_ENV_VARS = {
+    "PVE": "PROXIMO_FINGERPRINT",
+    "PBS": "PROXIMO_PBS_FINGERPRINT",
+    "PMG": "PROXIMO_PMG_FINGERPRINT",
+    "PDM": "PROXIMO_PDM_FINGERPRINT",
+}
+
+
+def fingerprint_refused(plane: str, error: ValueError) -> ProximoError:
+    """Translate a garbled cert-pin ValueError (from fingerprint_pinned_context) into a
+    remedy-naming refusal. Shared by all four backend __init__ methods (PVE here, PBS/PMG/PDM
+    import this) so the message names the exact env var for that plane and the expected shape,
+    instead of forwarding the validator's raw ValueError with no pointer to the fix.
+    """
+    env_var = _FINGERPRINT_ENV_VARS[plane]
+    return ProximoError(
+        f"invalid {plane} fingerprint for {env_var} — expected the 64-char SHA-256 hex "
+        f"digest (e.g. from `openssl x509 -fingerprint -sha256 -noout -in cert.pem`), "
+        f"got: {error}"
+    )
+
+
 @dataclass
 class ExecResult:
     ctid: str
@@ -742,7 +766,11 @@ class ExecBackend:
             raise ProximoError("in-container exec is disabled (set PROXIMO_ENABLE_EXEC=1 to enable)")
         _check_vmid(ctid)  # defense-in-depth: validate before allowlist/quoting, like ApiBackend
         if not self.config.ct_permitted(ctid):
-            raise ProximoError(f"CTID {ctid} not permitted by allowlist (fail-closed)")
+            raise ProximoError(
+                f"CTID {ctid} is not on the exec allowlist (fail-closed: an empty or "
+                "non-matching PROXIMO_CT_ALLOWLIST denies everything) — add it via "
+                "PROXIMO_CT_ALLOWLIST (comma-separated CTIDs, or '*' for all)"
+            )
         if self.config.is_local:
             # On the PVE host: call pct directly — no ssh, no quote layer.
             argv = ["pct", "exec", str(ctid), "--", *command]
@@ -776,7 +804,7 @@ class ApiBackend:
             try:
                 ctx = fingerprint_pinned_context(config.fingerprint)
             except ValueError as e:
-                raise ProximoError(f"PVE fingerprint refused: {e}") from e
+                raise fingerprint_refused("PVE", e) from e
             self._client = httpx.Client(base_url=config.api_base_url, verify=ctx, timeout=30)
             return
         verify: bool | str = config.ca_bundle if config.ca_bundle else config.verify_tls
@@ -932,7 +960,9 @@ class ApiBackend:
         vmid = _check_vmid(vmid)
         if not self.config.agent_permitted(vmid):
             raise ProximoError(
-                f"VMID {vmid} not permitted by agent allowlist (fail-closed)"
+                f"VMID {vmid} is not on the agent allowlist (fail-closed: an empty or "
+                "non-matching PROXIMO_AGENT_ALLOWLIST denies everything) — add it via "
+                "PROXIMO_AGENT_ALLOWLIST (comma-separated VMIDs, or '*' for all)"
             )
         return vmid, self._resolve_node(node)
 
