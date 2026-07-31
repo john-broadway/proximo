@@ -29,6 +29,7 @@ from proximo.planning import (
     plan_pdm_snapshot_rollback,
     undo_snapname,
 )
+from proximo.principal import ledger_principal
 from proximo.provenance import enforce_scope
 from proximo.server import _audited, _ledger, _plan, tool
 from proximo.targets import ledger_remote
@@ -84,7 +85,8 @@ def _pdm_auto_undo(action: str, target: str, pdm, remote: str, kind: str, vmid: 
         _pdm_wait_task(pdm, remote, upid)
     except Exception as e:
         audit.record(action, target=target, mutation=True, outcome="blocked:undo_unavailable",
-                     detail={"error": type(e).__name__}, remote=ledger_remote())
+                     detail={"error": type(e).__name__},
+                     principal=ledger_principal(), remote=ledger_remote())
         return {
             "status": "blocked:undo_unavailable",
             "message": ("Requested a safety snapshot before rollback but it could not be "
@@ -93,7 +95,8 @@ def _pdm_auto_undo(action: str, target: str, pdm, remote: str, kind: str, vmid: 
             "error": type(e).__name__,
         }
     audit.record(action, target=target, mutation=True, outcome="undo_point",
-                 detail={"snapshot": snapname, "task": upid}, remote=ledger_remote())
+                 detail={"snapshot": snapname, "task": upid},
+                 principal=ledger_principal(), remote=ledger_remote())
     return {"snapshot": snapname, "task": upid}
 
 

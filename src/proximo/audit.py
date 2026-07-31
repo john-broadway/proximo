@@ -34,7 +34,8 @@ chain from a point forward. Detection is the guarantee, not prevention.
 
 The PVE API token is never written here. Callers pass non-sensitive detail, with ONE documented
 exception: ``ct_psql`` records the SQL body and ``ct_exec`` the command argv it runs (the operator's own
-input, on a 0600 log) — set ``PROXIMO_LEDGER_REDACT=1`` for a fingerprint (sha256 + kind + length) instead.
+input, on a 0600 log) — redaction is ON by default (a sha256 + kind + length fingerprint);
+set ``PROXIMO_LEDGER_REDACT=0`` to record the full body instead.
 """
 
 from __future__ import annotations
@@ -214,6 +215,7 @@ def seal_and_rotate(log_path: str, key: bytes) -> tuple[str, str]:
             if detect_mode(log_path) != "unkeyed":
                 return "", AuditLedger(log_path, key=key).head()
             old = AuditLedger(log_path)  # unkeyed
+            # ledger-lifecycle housekeeping — intentionally no principal= (not a caller-attributable action)
             old.record("audit_rotate", target="ledger",
                        detail={"reason": "keyed-default upgrade", "sealed": True})
             sealed_head = old.head()
@@ -232,6 +234,7 @@ def seal_and_rotate(log_path: str, key: bytes) -> tuple[str, str]:
             # forever — flock can't help, as it binds to the inode, not the freshly-created path).
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(log_path) or ".", prefix=".audit-new-")
             os.close(fd)
+            # ledger-lifecycle housekeeping — intentionally no principal= (not a caller-attributable action)
             AuditLedger(tmp, key=key).record(
                 "audit_rotate", target="ledger",
                 detail={"prev_log": os.path.basename(archive_path),
@@ -281,6 +284,7 @@ def seal_keyed_and_rotate(log_path: str) -> tuple[str, str]:
             # pattern as seal_and_rotate to prevent a racer from creating log_path in this window.
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(log_path) or ".", prefix=".audit-new-")
             os.close(fd)
+            # ledger-lifecycle housekeeping — intentionally no principal= (not a caller-attributable action)
             AuditLedger(tmp).record(
                 "audit_rotate", target="ledger",
                 detail={"prev_log": os.path.basename(archive_path),
@@ -354,7 +358,7 @@ class AuditLedger:
 
     def record(self, action: str, *, target: str, mutation: bool = False,
                outcome: str = "ok", detail: dict[str, Any] | None = None,
-               remote: str | None = None) -> dict[str, Any]:
+               remote: str | None = None, principal: dict[str, Any] | None = None) -> dict[str, Any]:
         self._refuse_if_symlinked_dir()
         target = _sanitize_target(target)
         body = {
@@ -370,6 +374,14 @@ class AuditLedger:
         # verify() rehashes from all non-_CHAIN_FIELDS keys, so a present `remote` is covered.
         if remote is not None:
             body["remote"] = _sanitize_target(remote)
+        # Principal (who asked): omitted when unconfigured so default-path entry bodies — and
+        # their hashes — stay byte-identical to before (same contract as `remote` above).
+        if principal is not None:
+            body["principal"] = {
+                "id": _sanitize_target(str(principal.get("id", ""))),
+                "via": str(principal.get("via", "")),
+                "face": str(principal.get("face", "")),
+            }
         # Reject non-finite JSON (NaN/Infinity) at write time: they serialize to non-RFC8259 tokens
         # that strict external audit parsers (Go/Rust/jq) can't read. Caught loudly here rather than
         # silently corrupting the log; verify() stays lenient for any pre-existing entry.

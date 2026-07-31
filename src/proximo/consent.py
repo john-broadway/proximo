@@ -69,6 +69,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, NoReturn
 
 from .backends import ProximoError
+from .principal import ledger_principal
 from .taint import is_tainted, require_consent_when_tainted
 from .targets import ledger_remote
 
@@ -129,7 +130,7 @@ def _refuse(action: str, target: str, audit: AuditLedger, outcome: str,
     find/approve it) and raise — BEFORE the caller's real mutating backend call can fire."""
     audit.record(action, target=target, mutation=True, outcome=outcome,
                  detail={**(detail or {}), **({"consent_id": consent_id} if consent_id else {})},
-                 remote=ledger_remote())
+                 principal=ledger_principal(), remote=ledger_remote())
     raise ProximoError(f"consent required: mutation {action!r} refused ({outcome}) — {why}")
 
 

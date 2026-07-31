@@ -524,7 +524,7 @@ wheels = [
 
 [[package]]
 name = "proximo-proxmox"
-version = "0.28.0"
+version = "0.29.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -549,10 +549,12 @@ dev = [
     { name = "uvicorn" },
 ]
 http = [
+    { name = "cryptography" },
     { name = "starlette" },
     { name = "uvicorn" },
 ]
 mcp-http = [
+    { name = "cryptography" },
     { name = "mcp" },
     { name = "starlette" },
     { name = "uvicorn" },
@@ -564,6 +566,8 @@ requires-dist = [
     { name = "a2a-sdk", extras = ["signing"], marker = "extra == 'dev'", specifier = ">=1.1" },
     { name = "cryptography", marker = "extra == 'a2a'", specifier = ">=49.0.0,<50" },
     { name = "cryptography", marker = "extra == 'dev'", specifier = ">=49.0.0" },
+    { name = "cryptography", marker = "extra == 'http'", specifier = ">=49.0.0,<50" },
+    { name = "cryptography", marker = "extra == 'mcp-http'", specifier = ">=49.0.0,<50" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "mcp", specifier = ">=1.2.0,<2" },
     { name = "mcp", marker = "extra == 'mcp-http'", specifier = ">=1.8.0,<2" },

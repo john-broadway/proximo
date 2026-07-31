@@ -886,3 +886,30 @@ def test_audit_verify_works_on_a_box_with_no_pve_env(monkeypatch, tmp_path):
         assert out["ok"] and out["head"] == led.head()
     finally:
         server._svc_cache_clear()
+
+
+def test_record_principal_present_and_verifies(tmp_path):
+    led = _ledger(tmp_path)
+    e = led.record("pve_version", target="cluster", mutation=False,
+                   principal={"id": "fleet-7", "via": "verified", "face": "http"})
+    assert e["principal"] == {"id": "fleet-7", "via": "verified", "face": "http"}
+    assert led.verify().ok
+
+
+def test_record_no_principal_body_byte_identical(tmp_path):
+    """The compat guarantee: principal=None leaves the raw line without the key at all."""
+    led = _ledger(tmp_path)
+    led.record("pve_version", target="cluster")
+    raw = (tmp_path / "audit.log").read_text()
+    assert '"principal"' not in raw
+    assert led.verify().ok
+
+
+def test_record_principal_tamper_detected(tmp_path):
+    p = tmp_path / "audit.log"
+    led = _ledger(tmp_path)
+    led.record("pve_version", target="cluster",
+               principal={"id": "fleet-7", "via": "verified", "face": "http"})
+    tampered = p.read_text().replace('"fleet-7"', '"mallory"')
+    p.write_text(tampered)
+    assert not AuditLedger(str(p)).verify().ok

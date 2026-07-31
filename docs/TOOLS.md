@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.28.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.29.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -35,10 +35,9 @@ Returns status="running" with pid when the poll deadline is reached before exit.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VMID of the target QEMU guest (allowlist-scoped). |
 | `command` | array<string> | yes | Argv list to run in the guest via the qemu-agent. |
-| `node` | string (nullable) | no | PVE node the guest runs on; omit to resolve automatically. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on; omit to resolve automatically. (default: `null`) |
 | `timeout` | integer | no | Seconds to poll for exit before returning status='running'. (default: `30`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; true executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_agent_file_read`
 
@@ -53,8 +52,7 @@ the ledger records only the file path, never the content.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VM ID of the guest to read from via the qemu-agent. |
 | `file` | string | yes | Absolute path of the file to read inside the guest. |
-| `node` | string (nullable) | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
 
 #### `pve_agent_file_write`
 
@@ -72,9 +70,8 @@ round-trips byte-identical, binary/encoded content is unconfirmed.
 | `vmid` | string | yes | Numeric VM ID of the guest to write to via the qemu-agent. |
 | `file` | string | yes | Absolute path of the file to write inside the guest. |
 | `content` | string | yes | File content to write; unconditionally redacted from the ledger (fingerprint only). |
-| `node` | string (nullable) | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the write. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_agent_fs`
 
@@ -90,9 +87,8 @@ primitive on this plane.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VM ID of the guest to operate on via the qemu-agent. |
 | `command` | string | yes | Filesystem operation: fsfreeze-freeze, fsfreeze-thaw, or fstrim. |
-| `node` | string (nullable) | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the command. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_agent_info`
 
@@ -107,9 +103,8 @@ returned pid here to poll for completion.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VM ID of the guest to query via the qemu-agent. |
 | `command` | string | no | qemu-agent query: ping, info, get-fsinfo, get-host-name, get-osinfo, get-time, get-timezone, get-users, get-vcpus, network-get-interfaces, get-memory-blocks, fsfreeze-status, or exec-status. (default: `"info"`) |
-| `pid` | integer (nullable) | no | Process id returned by pve_agent_exec; required only when command='exec-status'. (default: `null`) |
-| `node` | string (nullable) | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pid` | ['integer', 'null'] | no | Process id returned by pve_agent_exec; required only when command='exec-status'. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
 
 #### `pve_agent_set_password`
 
@@ -126,9 +121,8 @@ primitive on this plane.
 | `vmid` | string | yes | Numeric VM ID of the guest whose OS user password is being set. |
 | `username` | string | yes | Guest OS username whose password will be changed. |
 | `password` | string | yes | New password for the guest OS user; unconditionally redacted from the ledger. |
-| `node` | string (nullable) | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node name hosting the guest; auto-detected if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the password change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 ## Proxmox VE (PVE)
 
@@ -139,9 +133,7 @@ scope), roleid (privilege set), principal (user/group/token), type, and propagat
 pve_acl_modify to grant/revoke; use pve_overbroad_grants to flag Administrator or root-path
 grants.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_acl_modify`
 
@@ -163,7 +155,6 @@ kind='user' (default), 'group', or 'token'. delete=False = grant; delete=True = 
 | `propagate` | boolean | no | Whether the grant propagates to child paths below `path`. (default: `true`) |
 | `delete` | boolean | no | False to grant the roles, True to revoke them. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acl_prune`
 
@@ -180,10 +171,9 @@ access, never widens it. Synchronous. roleid = the over-broad role to remove (fr
 | `target` | string | yes | Principal the over-broad grant belongs to: userid, groupid, or tokenid depending on kind. |
 | `kind` | string | no | Principal type of target: 'user', 'group', or 'token'. (default: `"user"`) |
 | `roleid` | string | no | The over-broad role id to remove, as identified by pve_overbroad_grants. (default: `""`) |
-| `narrow_role` | string (nullable) | no | Optional narrower role id to re-grant in place of the removed one. (default: `null`) |
-| `narrow_path` | string (nullable) | no | Optional narrower path to scope the re-grant to, instead of the original path. (default: `null`) |
+| `narrow_role` | ['string', 'null'] | no | Optional narrower role id to re-grant in place of the removed one. (default: `null`) |
+| `narrow_path` | ['string', 'null'] | no | Optional narrower path to scope the re-grant to, instead of the original path. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_account_create`
 
@@ -199,10 +189,9 @@ shape (name in body) against a live PVE instance.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name to register the new ACME account under (cluster/acme/account/{name}). |
 | `contact` | string | yes | Contact email address for the ACME account (CA renewal/expiry notices). |
-| `tos_url` | string (nullable) | no | URL of the CA's terms-of-service to accept; omit to accept the CA's default ToS. (default: `null`) |
-| `directory` | string (nullable) | no | ACME directory URL of the CA to register with; omit to use PVE's default CA. (default: `null`) |
+| `tos_url` | ['string', 'null'] | no | URL of the CA's terms-of-service to accept; omit to accept the CA's default ToS. (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL of the CA to register with; omit to use PVE's default CA. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the account registration. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_account_delete`
 
@@ -217,7 +206,6 @@ confirm=True executes and returns {"status": "ok"}.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the ACME account to deactivate and delete from the CA. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_account_update`
 
@@ -230,9 +218,8 @@ directory, tos); confirm=True executes and returns {"status": "ok"}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing ACME account to update. |
-| `contact` | string (nullable) | no | New contact email address for the ACME account; omit to leave unchanged. (default: `null`) |
+| `contact` | ['string', 'null'] | no | New contact email address for the ACME account; omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_cert_order`
 
@@ -247,10 +234,9 @@ Smoke-confirm: POST shape + async UPID against a live PVE instance.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
 | `force` | boolean | no | Overwrite an existing custom certificate on the node if one is already installed. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME order task. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_cert_renew`
 
@@ -263,10 +249,9 @@ UPID against a live PVE instance.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
 | `force` | boolean | no | Renew now even if the current certificate has more than 30 days left before expiry. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME renewal task. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_cert_revoke`
 
@@ -278,9 +263,8 @@ PVE instance.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the irreversible revocation task. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_plugin_create`
 
@@ -296,11 +280,10 @@ shape (id in body) against a live PVE instance.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier for the new ACME DNS challenge plugin (cluster/acme/plugins/{plugin_id}). |
 | `plugin_type` | string | yes | ACME challenge plugin type, e.g. 'dns' for a DNS-01 challenge plugin. |
-| `dns_api` | string (nullable) | no | DNS provider API name for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PVE's 'api' field. (default: `null`) |
-| `data` | string (nullable) | no | Plugin-specific credential/config data (e.g. API tokens) required by the DNS provider. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | DNS provider API name for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PVE's 'api' field. (default: `null`) |
+| `data` | ['string', 'null'] | no | Plugin-specific credential/config data (e.g. API tokens) required by the DNS provider. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the plugin creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_plugin_delete`
 
@@ -316,7 +299,6 @@ returns {"status": "ok"}.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the ACME DNS challenge plugin to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_acme_plugin_update`
 
@@ -330,12 +312,11 @@ executes and returns {"status": "ok"}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the existing ACME DNS challenge plugin to update. |
-| `dns_api` | string (nullable) | no | New DNS provider API name for a DNS-01 challenge; maps to PVE's 'api' field. Omit to leave unchanged. (default: `null`) |
-| `data` | string (nullable) | no | New plugin-specific credential/config data; omit to leave unchanged. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | New DNS provider API name for a DNS-01 challenge; maps to PVE's 'api' field. Omit to leave unchanged. (default: `null`) |
+| `data` | ['string', 'null'] | no | New plugin-specific credential/config data; omit to leave unchanged. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_apt_changelog`
 
@@ -350,9 +331,8 @@ console. This tool governs visibility only.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Package name to fetch the changelog for (e.g. as listed by pve_apt_updates_list). |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `version` | string (nullable) | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
+| `version` | ['string', 'null'] | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
 
 #### `pve_apt_repositories_get`
 
@@ -366,8 +346,7 @@ the upgrade itself happens at your console. This tool governs visibility and rep
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_apt_repository_add`
 
@@ -385,10 +364,9 @@ default (returns a PLAN); confirm=True executes (PUT, Smoke-confirm) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `handle` | string | yes | Handle identifying the standard repository to add (as returned by pve_apt_repositories_get's standard-repos list, e.g. 'no-subscription'). |
-| `node` | string (nullable) | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
-| `digest` | string (nullable) | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the addition. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_apt_repository_set`
 
@@ -405,11 +383,10 @@ Smoke-confirm) and returns {"status": "ok", "result": None}.
 | --- | --- | --- | --- |
 | `path` | string | yes | Absolute path of the sources file containing the repository entry (as returned by pve_apt_repositories_get). |
 | `index` | integer | yes | 0-based index of the repository entry within that file (as returned by pve_apt_repositories_get). |
-| `node` | string (nullable) | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
-| `enabled` | boolean (nullable) | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
+| `enabled` | ['boolean', 'null'] | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_apt_update_refresh`
 
@@ -423,11 +400,10 @@ Smoke-confirm) and returns {"status": "submitted"|"ok", "result": <task UPID | N
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to refresh; defaults to the configured node if omitted. (default: `null`) |
-| `notify` | boolean (nullable) | no | If True, ask Proxmox to send a notification email about newly available packages. (default: `null`) |
-| `quiet` | boolean (nullable) | no | If True, ask Proxmox to omit progress output suitable only for interactive logging. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to refresh; defaults to the configured node if omitted. (default: `null`) |
+| `notify` | ['boolean', 'null'] | no | If True, ask Proxmox to send a notification email about newly available packages. (default: `null`) |
+| `quiet` | ['boolean', 'null'] | no | If True, ask Proxmox to omit progress output suitable only for interactive logging. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the index refresh. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_apt_updates_list`
 
@@ -441,8 +417,7 @@ pve_apt_update_refresh.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_apt_versions`
 
@@ -455,8 +430,7 @@ This tool governs visibility only.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_backup`
 
@@ -471,9 +445,8 @@ This is a one-off run; for a recurring schedule use pve_backup_job_create instea
 | `mode` | string | no | Backup mode: snapshot (online, brief) \| suspend (RAM-quiesced pause) \| stop (HALTS the guest). (default: `"snapshot"`) |
 | `compress` | string | no | Compression algorithm for the archive, e.g. zstd, gzip, lzo, or 0 (no compression). (default: `"zstd"`) |
 | `kind` | string | no | Guest type: lxc or qemu. (default: `"lxc"`) |
-| `node` | string (nullable) | no | Proxmox node hosting the guest; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node hosting the guest; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the backup. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_delete`
 
@@ -486,9 +459,8 @@ pve_backup_list. Async — may return a task UPID or null depending on storage.
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID holding the backup archive. |
 | `volid` | string | yes | Volume ID of the backup archive to delete (as returned by pve_backup_list). |
-| `node` | string (nullable) | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_freshness`
 
@@ -501,9 +473,8 @@ pve_backup_list; for job configuration use pve_backup_job_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `max_age_hours` | number (nullable) | no | Override for max acceptable backup age in hours; if omitted, age expectation is derived from each guest's backup job schedule. (default: `null`) |
+| `max_age_hours` | ['number', 'null'] | no | Override for max acceptable backup age in hours; if omitted, age expectation is derived from each guest's backup job schedule. (default: `null`) |
 | `grace_hours` | number | no | Hours of slack padded onto each job's parsed cadence before a backup is flagged stale. (default: `6.0`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_job_create`
 
@@ -518,16 +489,15 @@ modify an existing job use pve_backup_job_update; to remove one use pve_backup_j
 | `job_id` | string | yes | Unique ID for the new PVE backup job. |
 | `schedule` | string | yes | Proxmox calendar-event schedule string, e.g. 'sat 02:00' or a systemd.time-style spec. |
 | `storage` | string | yes | Storage ID the job writes backups to. |
-| `mode` | string (nullable) | no | Backup mode: snapshot \| suspend \| stop; defaults to Proxmox's own default if omitted. (default: `null`) |
-| `compress` | string (nullable) | no | Compression algorithm for archives, e.g. zstd, gzip, lzo, or 0 (no compression). (default: `null`) |
-| `vmid` | string (nullable) | no | CSV of guest IDs to include; mutually exclusive with all_guests and pool. (default: `null`) |
-| `all_guests` | boolean (nullable) | no | If true, back up every guest on the cluster; mutually exclusive with vmid and pool. (default: `null`) |
-| `pool` | string (nullable) | no | Resource pool of guests to back up; mutually exclusive with vmid and all_guests. (default: `null`) |
-| `exclude` | string (nullable) | no | CSV of guest IDs to exclude when all_guests=True. (default: `null`) |
-| `enabled` | boolean (nullable) | no | Whether the job is active; defaults to enabled if omitted. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text note stored on the job. (default: `null`) |
+| `mode` | ['string', 'null'] | no | Backup mode: snapshot \| suspend \| stop; defaults to Proxmox's own default if omitted. (default: `null`) |
+| `compress` | ['string', 'null'] | no | Compression algorithm for archives, e.g. zstd, gzip, lzo, or 0 (no compression). (default: `null`) |
+| `vmid` | ['string', 'null'] | no | CSV of guest IDs to include; mutually exclusive with all_guests and pool. (default: `null`) |
+| `all_guests` | ['boolean', 'null'] | no | If true, back up every guest on the cluster; mutually exclusive with vmid and pool. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Resource pool of guests to back up; mutually exclusive with vmid and all_guests. (default: `null`) |
+| `exclude` | ['string', 'null'] | no | CSV of guest IDs to exclude when all_guests=True. (default: `null`) |
+| `enabled` | ['boolean', 'null'] | no | Whether the job is active; defaults to enabled if omitted. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text note stored on the job. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_job_delete`
 
@@ -540,7 +510,6 @@ Schedule removed; existing backups are NOT deleted.
 | --- | --- | --- | --- |
 | `job_id` | string | yes | ID of the PVE backup job to delete. |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_job_list`
 
@@ -549,9 +518,7 @@ Returns {jobs: [...], unprotected_guests: [...]}. For the actual archives on sto
 pve_backup_list; for a per-guest freshness verdict against these jobs' promises use
 pve_backup_freshness.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_backup_job_update`
 
@@ -563,15 +530,14 @@ pve_backup_job_create; to remove one use pve_backup_job_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `job_id` | string | yes | ID of the existing PVE backup job to update. |
-| `schedule` | string (nullable) | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
-| `storage` | string (nullable) | no | New storage ID for the job's backups; omit to leave unchanged. (default: `null`) |
-| `mode` | string (nullable) | no | New backup mode: snapshot \| suspend \| stop; omit to leave unchanged. (default: `null`) |
-| `compress` | string (nullable) | no | New compression algorithm, e.g. zstd, gzip, lzo, or 0 (no compression); omit to leave unchanged. (default: `null`) |
-| `vmid` | string (nullable) | no | New CSV of guest IDs the job covers; omit to leave unchanged. (default: `null`) |
-| `enabled` | boolean (nullable) | no | Whether the job is active; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text note; omit to leave unchanged. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
+| `storage` | ['string', 'null'] | no | New storage ID for the job's backups; omit to leave unchanged. (default: `null`) |
+| `mode` | ['string', 'null'] | no | New backup mode: snapshot \| suspend \| stop; omit to leave unchanged. (default: `null`) |
+| `compress` | ['string', 'null'] | no | New compression algorithm, e.g. zstd, gzip, lzo, or 0 (no compression); omit to leave unchanged. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | New CSV of guest IDs the job covers; omit to leave unchanged. (default: `null`) |
+| `enabled` | ['boolean', 'null'] | no | Whether the job is active; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text note; omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_backup_list`
 
@@ -582,8 +548,7 @@ still shows here. Returns a list of dicts (volid, size, ctime, …).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID to list backup archives from. |
-| `node` | string (nullable) | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_cfg_db`
 
@@ -595,8 +560,7 @@ ceph.conf text use pve_ceph_cfg_raw; for specific keys only use pve_ceph_cfg_val
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_cfg_raw`
 
@@ -607,8 +571,7 @@ INI-style text. For the parsed config-database view use pve_ceph_cfg_db.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_cfg_value`
 
@@ -621,8 +584,7 @@ names are normalised to hyphens in the response, regardless of how they're writt
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `config_keys` | string | yes | One or more '<section>:<config key>' items separated by semicolon, comma, or space (e.g. 'global:fsid;osd:osd_memory_target'), max 4096 chars. |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_cmd_safety`
 
@@ -640,8 +602,7 @@ human-readable reason when NOT safe; absent when Ceph returned no message).
 | `action` | string | yes | Action to check: 'stop' or 'destroy'. |
 | `service` | string | yes | Service type: 'osd', 'mon', or 'mds'. |
 | `service_id` | string | yes | ID of the service instance to check (e.g. an OSD number, or a mon/mds name). |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_crush`
 
@@ -652,8 +613,7 @@ plaintext `crushtool -d`-style output.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_flag_get`
 
@@ -665,7 +625,6 @@ boolean per schema truth.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `flag` | string | yes | Flag name: one of nobackfill, nodeep-scrub, nodown, noin, noout, norebalance, norecover, noscrub, notieragent, noup, pause. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_flag_set`
 
@@ -684,7 +643,6 @@ re-applying the captured prior value with this same tool.
 | `flag` | string | yes | Flag name: one of nobackfill, nodeep-scrub, nodown, noin, noout, norebalance, norecover, noscrub, notieragent, noup, pause. |
 | `value` | boolean | yes | True sets the flag; False clears (unsets) it. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_flags_list`
 
@@ -695,9 +653,7 @@ GET /cluster/ceph/flags. Smoke-confirm: shape not live-verified — expected
 [{name, value, description}, ...] per schema truth. To change flags use pve_ceph_flags_set
 (bulk) or pve_ceph_flag_set (single).
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_ceph_flags_set`
 
@@ -715,19 +671,18 @@ this same tool.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `nobackfill` | boolean (nullable) | no | True suspends PG backfilling; False resumes it; omit to leave untouched. (default: `null`) |
-| `nodeep_scrub` | boolean (nullable) | no | True disables deep scrubbing; False re-enables it; omit to leave untouched. (default: `null`) |
-| `nodown` | boolean (nullable) | no | True makes monitors ignore OSD failure reports (won't mark OSDs down); False resumes normal marking; omit to leave untouched. (default: `null`) |
-| `noin` | boolean (nullable) | no | True keeps previously-out OSDs from being marked back in on start; False resumes normal marking; omit to leave untouched. (default: `null`) |
-| `noout` | boolean (nullable) | no | True stops OSDs from being auto-marked out after the configured interval; False resumes normal marking; omit to leave untouched. (default: `null`) |
-| `norebalance` | boolean (nullable) | no | True suspends PG rebalancing; False resumes it; omit to leave untouched. (default: `null`) |
-| `norecover` | boolean (nullable) | no | True suspends PG recovery; False resumes it; omit to leave untouched. (default: `null`) |
-| `noscrub` | boolean (nullable) | no | True disables (light) scrubbing; False re-enables it; omit to leave untouched. (default: `null`) |
-| `notieragent` | boolean (nullable) | no | True suspends cache-tiering activity; False resumes it; omit to leave untouched. (default: `null`) |
-| `noup` | boolean (nullable) | no | True prevents OSDs from starting; False allows them to start; omit to leave untouched. (default: `null`) |
-| `pause` | boolean (nullable) | no | True PAUSES reads and writes cluster-wide (halts ALL client I/O); False resumes; omit to leave untouched. (default: `null`) |
+| `nobackfill` | ['boolean', 'null'] | no | True suspends PG backfilling; False resumes it; omit to leave untouched. (default: `null`) |
+| `nodeep_scrub` | ['boolean', 'null'] | no | True disables deep scrubbing; False re-enables it; omit to leave untouched. (default: `null`) |
+| `nodown` | ['boolean', 'null'] | no | True makes monitors ignore OSD failure reports (won't mark OSDs down); False resumes normal marking; omit to leave untouched. (default: `null`) |
+| `noin` | ['boolean', 'null'] | no | True keeps previously-out OSDs from being marked back in on start; False resumes normal marking; omit to leave untouched. (default: `null`) |
+| `noout` | ['boolean', 'null'] | no | True stops OSDs from being auto-marked out after the configured interval; False resumes normal marking; omit to leave untouched. (default: `null`) |
+| `norebalance` | ['boolean', 'null'] | no | True suspends PG rebalancing; False resumes it; omit to leave untouched. (default: `null`) |
+| `norecover` | ['boolean', 'null'] | no | True suspends PG recovery; False resumes it; omit to leave untouched. (default: `null`) |
+| `noscrub` | ['boolean', 'null'] | no | True disables (light) scrubbing; False re-enables it; omit to leave untouched. (default: `null`) |
+| `notieragent` | ['boolean', 'null'] | no | True suspends cache-tiering activity; False resumes it; omit to leave untouched. (default: `null`) |
+| `noup` | ['boolean', 'null'] | no | True prevents OSDs from starting; False allows them to start; omit to leave untouched. (default: `null`) |
+| `pause` | ['boolean', 'null'] | no | True PAUSES reads and writes cluster-wide (halts ALL client I/O); False resumes; omit to leave untouched. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_fs_create`
 
@@ -744,12 +699,11 @@ rollback primitive on this plane — revert with pve_ceph_fs_destroy(name=...).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to create the filesystem on; defaults to the configured node if omitted. (default: `null`) |
-| `name` | string (nullable) | no | Filesystem name; defaults to 'cephfs' if omitted. No ':', '/', or whitespace. (default: `null`) |
-| `add_storage` | boolean (nullable) | no | Configure the created CephFS as PVE storage for this cluster. Schema-defaults False. (default: `null`) |
-| `pg_num` | integer (nullable) | no | Number of placement groups for the backing data pool (8-32768, default 128). The metadata pool uses a quarter of this. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the filesystem on; defaults to the configured node if omitted. (default: `null`) |
+| `name` | ['string', 'null'] | no | Filesystem name; defaults to 'cephfs' if omitted. No ':', '/', or whitespace. (default: `null`) |
+| `add_storage` | ['boolean', 'null'] | no | Configure the created CephFS as PVE storage for this cluster. Schema-defaults False. (default: `null`) |
+| `pg_num` | ['integer', 'null'] | no | Number of placement groups for the backing data pool (8-32768, default 128). The metadata pool uses a quarter of this. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_fs_destroy`
 
@@ -767,11 +721,10 @@ returns {"status": "submitted", "result": <UPID>}. No rollback primitive on this
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the Ceph filesystem to destroy. |
-| `node` | string (nullable) | no | PVE node the filesystem is on; defaults to the configured node if omitted. (default: `null`) |
-| `remove_pools` | boolean (nullable) | no | Also remove the underlying metadata and data pools used by this filesystem. Schema-defaults False. (default: `null`) |
-| `remove_storages` | boolean (nullable) | no | Remove pveceph-managed PVE storage entries configured for this filesystem. REQUIRED if a 'cephfs' storage entry still references it (see docstring). Schema-defaults False. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the filesystem is on; defaults to the configured node if omitted. (default: `null`) |
+| `remove_pools` | ['boolean', 'null'] | no | Also remove the underlying metadata and data pools used by this filesystem. Schema-defaults False. (default: `null`) |
+| `remove_storages` | ['boolean', 'null'] | no | Remove pveceph-managed PVE storage entries configured for this filesystem. REQUIRED if a 'cephfs' storage entry still references it (see docstring). Schema-defaults False. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_fs_list`
 
@@ -791,8 +744,7 @@ the FULL set for a multi-data-pool filesystem).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_init`
 
@@ -808,15 +760,14 @@ confirm=True executes (POST /nodes/{node}/ceph/init) and returns {"status": "ok"
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to initialize; defaults to the configured node if omitted. (default: `null`) |
-| `cluster_network` | string (nullable) | no | Separate cluster network (CIDR) for OSD heartbeat/replication/recovery traffic; REQUIRES network to also be set. (default: `null`) |
-| `disable_cephx` | boolean (nullable) | no | Disable cephx authentication. WARNING: cephx protects against man-in-the-middle attacks; only consider disabling on a private network. (default: `null`) |
-| `min_size` | integer (nullable) | no | Minimum number of available replicas per object to allow I/O (1-7, default 2). (default: `null`) |
-| `network` | string (nullable) | no | Network (CIDR) to use for all Ceph-related traffic. (default: `null`) |
-| `pg_bits` | integer (nullable) | no | Placement-group bits (6-14, default 6). Deprecated in recent Ceph versions. (default: `null`) |
-| `size` | integer (nullable) | no | Targeted number of replicas per object (1-7, default 3). (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to initialize; defaults to the configured node if omitted. (default: `null`) |
+| `cluster_network` | ['string', 'null'] | no | Separate cluster network (CIDR) for OSD heartbeat/replication/recovery traffic; REQUIRES network to also be set. (default: `null`) |
+| `disable_cephx` | ['boolean', 'null'] | no | Disable cephx authentication. WARNING: cephx protects against man-in-the-middle attacks; only consider disabling on a private network. (default: `null`) |
+| `min_size` | ['integer', 'null'] | no | Minimum number of available replicas per object to allow I/O (1-7, default 2). (default: `null`) |
+| `network` | ['string', 'null'] | no | Network (CIDR) to use for all Ceph-related traffic. (default: `null`) |
+| `pg_bits` | ['integer', 'null'] | no | Placement-group bits (6-14, default 6). Deprecated in recent Ceph versions. (default: `null`) |
+| `size` | ['integer', 'null'] | no | Targeted number of replicas per object (1-7, default 3). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the init. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_log`
 
@@ -829,10 +780,9 @@ expected [{n, t}, ...] (line number + text) per schema truth.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `limit` | integer (nullable) | no | Maximum number of log lines to return; defaults to the dump_logfile limit (typically 50) when omitted. (default: `null`) |
-| `start` | integer (nullable) | no | Offset of the first log line to return (0-based); omit to start at the server-side default offset. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Maximum number of log lines to return; defaults to the dump_logfile limit (typically 50) when omitted. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Offset of the first log line to return (0-based); omit to start at the server-side default offset. (default: `null`) |
 
 #### `pve_ceph_mds_create`
 
@@ -846,11 +796,10 @@ No rollback primitive on this plane — revert with pve_ceph_mds_destroy(name=..
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to create the MDS on; defaults to the configured node if omitted. (default: `null`) |
-| `name` | string (nullable) | no | ID for the new MDS; defaults to the nodename if omitted. (default: `null`) |
-| `hotstandby` | boolean (nullable) | no | If True, the daemon polls and replays an active MDS's log for faster failover, at the cost of more idle resources (default False). (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the MDS on; defaults to the configured node if omitted. (default: `null`) |
+| `name` | ['string', 'null'] | no | ID for the new MDS; defaults to the nodename if omitted. (default: `null`) |
+| `hotstandby` | ['boolean', 'null'] | no | If True, the daemon polls and replays an active MDS's log for faster failover, at the cost of more idle resources (default False). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mds_destroy`
 
@@ -868,9 +817,8 @@ byte-for-byte restore).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | ID (name) of the MDS to destroy. |
-| `node` | string (nullable) | no | PVE node the MDS is on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the MDS is on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mds_list`
 
@@ -886,8 +834,7 @@ pve_ceph_mds_create/pve_ceph_mds_destroy.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_metadata`
 
@@ -903,8 +850,7 @@ by node name (node), with osd as a flat list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `scope` | string (nullable) | no | 'all' (default) enriches per-daemon metadata with PVE-side service state (unit presence, data directory); 'versions' returns only per-node Ceph binary version data. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `scope` | ['string', 'null'] | no | 'all' (default) enriches per-daemon metadata with PVE-side service state (unit presence, data directory); 'versions' returns only per-node Ceph binary version data. (default: `null`) |
 
 #### `pve_ceph_mgr_create`
 
@@ -920,10 +866,9 @@ rollback primitive on this plane — revert with pve_ceph_mgr_destroy(mgr_id=...
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to create the manager on; defaults to the configured node if omitted. (default: `null`) |
-| `mgr_id` | string (nullable) | no | ID for the new manager; defaults to the nodename if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the manager on; defaults to the configured node if omitted. (default: `null`) |
+| `mgr_id` | ['string', 'null'] | no | ID for the new manager; defaults to the nodename if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mgr_destroy`
 
@@ -941,9 +886,8 @@ pve_ceph_mgr_create (a NEW manager, not a byte-for-byte restore).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mgr_id` | string | yes | ID of the manager to destroy. |
-| `node` | string (nullable) | no | PVE node the manager is on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the manager is on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mgr_list`
 
@@ -958,8 +902,7 @@ To create/destroy a manager use pve_ceph_mgr_create/pve_ceph_mgr_destroy.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_mon_create`
 
@@ -975,11 +918,10 @@ pve_ceph_mon_destroy(monid=...).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to create the monitor on; defaults to the configured node if omitted. (default: `null`) |
-| `monid` | string (nullable) | no | ID for the new monitor; defaults to the nodename if omitted. (default: `null`) |
-| `mon_address` | string (nullable) | no | Overrides the autodetected monitor IP address(es); must be in Ceph's public network(s). (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the monitor on; defaults to the configured node if omitted. (default: `null`) |
+| `monid` | ['string', 'null'] | no | ID for the new monitor; defaults to the nodename if omitted. (default: `null`) |
+| `mon_address` | ['string', 'null'] | no | Overrides the autodetected monitor IP address(es); must be in Ceph's public network(s). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mon_destroy`
 
@@ -998,9 +940,8 @@ byte-for-byte restore).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `monid` | string | yes | ID of the monitor to destroy. |
-| `node` | string (nullable) | no | PVE node the monitor is on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the monitor is on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_mon_list`
 
@@ -1016,8 +957,7 @@ schema truth. To create/destroy a monitor use pve_ceph_mon_create/pve_ceph_mon_d
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_osd_create`
 
@@ -1033,16 +973,15 @@ the new OSD with pve_ceph_osd_destroy once its id is known.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `dev` | string | yes | Block device to consume as a NEW Ceph OSD (e.g. '/dev/sdb'). ALL existing data on this device is destroyed. |
-| `node` | string (nullable) | no | PVE node to create the OSD on; defaults to the configured node if omitted. (default: `null`) |
-| `crush_device_class` | string (nullable) | no | Override the OSD's CRUSH device class (e.g. 'ssd', 'hdd', 'nvme'). (default: `null`) |
-| `db_dev` | string (nullable) | no | Dedicated block device for block.db (RocksDB metadata). Mutually exclusive with osds_per_device. (default: `null`) |
-| `db_dev_size` | number (nullable) | no | Size in GiB for block.db (>=1). REQUIRES db_dev to also be set. (default: `null`) |
-| `wal_dev` | string (nullable) | no | Dedicated block device for block.wal (write-ahead log). Mutually exclusive with osds_per_device. (default: `null`) |
-| `wal_dev_size` | number (nullable) | no | Size in GiB for block.wal (>=0.5). REQUIRES wal_dev to also be set. (default: `null`) |
-| `encrypted` | boolean (nullable) | no | Enable OSD encryption (LUKS/dm-crypt). Default False. (default: `null`) |
-| `osds_per_device` | integer (nullable) | no | OSD services per physical device (>=1) — for fast NVMe devices only. Mutually exclusive with db_dev/wal_dev. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the OSD on; defaults to the configured node if omitted. (default: `null`) |
+| `crush_device_class` | ['string', 'null'] | no | Override the OSD's CRUSH device class (e.g. 'ssd', 'hdd', 'nvme'). (default: `null`) |
+| `db_dev` | ['string', 'null'] | no | Dedicated block device for block.db (RocksDB metadata). Mutually exclusive with osds_per_device. (default: `null`) |
+| `db_dev_size` | ['number', 'null'] | no | Size in GiB for block.db (>=1). REQUIRES db_dev to also be set. (default: `null`) |
+| `wal_dev` | ['string', 'null'] | no | Dedicated block device for block.wal (write-ahead log). Mutually exclusive with osds_per_device. (default: `null`) |
+| `wal_dev_size` | ['number', 'null'] | no | Size in GiB for block.wal (>=0.5). REQUIRES wal_dev to also be set. (default: `null`) |
+| `encrypted` | ['boolean', 'null'] | no | Enable OSD encryption (LUKS/dm-crypt). Default False. (default: `null`) |
+| `osds_per_device` | ['integer', 'null'] | no | OSD services per physical device (>=1) — for fast NVMe devices only. Mutually exclusive with db_dev/wal_dev. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_osd_destroy`
 
@@ -1060,10 +999,9 @@ id, not a byte-for-byte restore of this one's data).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID to destroy (0 is a valid id). |
-| `node` | string (nullable) | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
-| `cleanup` | boolean (nullable) | no | If True, also destroy the underlying logical volumes (ceph-volume lvm zap --destroy + pvremove) and wipe leftover journal/block.db/block.wal partitions. Without this, LVs/partitions are left intact for inspection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
+| `cleanup` | ['boolean', 'null'] | no | If True, also destroy the underlying logical volumes (ceph-volume lvm zap --destroy + pvremove) and wipe leftover journal/block.db/block.wal partitions. Without this, LVs/partitions are left intact for inspection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_osd_in`
 
@@ -1080,9 +1018,8 @@ pve_ceph_osd_out.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID to mark in (0 is a valid id). |
-| `node` | string (nullable) | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_osd_lv_info`
 
@@ -1097,9 +1034,8 @@ expected {creation_time, lv_name, lv_path, lv_size, lv_uuid, vg_name} per schema
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID (0 is a valid id — the first OSD ever created). |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `lv_type` | string (nullable) | no | OSD device type to inspect: 'block' (default), 'db', or 'wal'. Named to avoid shadowing the `type` builtin — the wire query param is still the schema's literal `type`. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
+| `lv_type` | ['string', 'null'] | no | OSD device type to inspect: 'block' (default), 'db', or 'wal'. Named to avoid shadowing the `type` builtin — the wire query param is still the schema's literal `type`. (default: `null`) |
 
 #### `pve_ceph_osd_metadata`
 
@@ -1115,8 +1051,7 @@ expected {devices: [...], osd: {...}} per schema truth.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID (0 is a valid id — the first OSD ever created). |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_osd_out`
 
@@ -1134,9 +1069,8 @@ pve_ceph_osd_in.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID to mark out (0 is a valid id). |
-| `node` | string (nullable) | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_osd_scrub`
 
@@ -1151,10 +1085,9 @@ rollback primitive on this plane — scrubbing is not revertible (re-issue if ne
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `osdid` | integer | yes | OSD ID to scrub (0 is a valid id). |
-| `node` | string (nullable) | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
-| `deep` | boolean (nullable) | no | If True, instructs a deep scrub (reads every object's full data, I/O-heavy) instead of a light one (metadata only). Default False. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the OSD is on; defaults to the configured node if omitted. (default: `null`) |
+| `deep` | ['boolean', 'null'] | no | If True, instructs a deep scrub (reads every object's full data, I/O-heavy) instead of a light one (metadata only). Default False. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the scrub. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_osd_tree`
 
@@ -1170,8 +1103,7 @@ a valid id — the first OSD ever created).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_pool_create`
 
@@ -1189,20 +1121,19 @@ pve_ceph_pool_destroy(name=...).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the new pool. Must be unique; no ':', '/', or whitespace. |
-| `node` | string (nullable) | no | PVE node to create the pool on; defaults to the configured node if omitted. (default: `null`) |
-| `add_storages` | boolean (nullable) | no | Register a PVE storage entry using the new pool. Schema-defaults False for replicated pools, True for erasure-coded pools; omit to let PVE apply that default. (default: `null`) |
-| `application` | string (nullable) | no | Pool application: 'rbd' (default), 'cephfs', or 'rgw'. (default: `null`) |
-| `crush_rule` | string (nullable) | no | CRUSH rule NAME to use for object placement (a string — NOT the numeric id pve_ceph_pool_list returns for this same field; pve_ceph_pool_status's crush_rule is ALREADY the same string type, no divergence there). (default: `null`) |
-| `erasure_coding` | string (nullable) | no | Create an erasure-coded pool instead of replicated: a PVE propertyString 'k=<int>,m=<int>[,device-class=<class>][,failure-domain=<domain>][,profile=<profile>]' (k>=2 data chunks, m>=1 coding chunks required). Also creates an accompanying replicated metadata pool. (default: `null`) |
-| `min_size` | integer (nullable) | no | Minimum number of replicas per object to allow I/O (1-7, default 2). (default: `null`) |
-| `pg_autoscale_mode` | string (nullable) | no | PG autoscaler mode: 'on', 'off', or 'warn' (default). (default: `null`) |
-| `pg_num` | integer (nullable) | no | Number of placement groups (1-32768, default 128). (default: `null`) |
-| `pg_num_min` | integer (nullable) | no | Minimum placement-group count the autoscaler may choose (<=32768, no declared lower bound). (default: `null`) |
-| `size` | integer (nullable) | no | Number of replicas per object (1-7, default 3). (default: `null`) |
-| `target_size` | string (nullable) | no | Estimated target size for the PG autoscaler: a number optionally suffixed with K/M/G/T (e.g. '10G'). (default: `null`) |
-| `target_size_ratio` | number (nullable) | no | Estimated target ratio of total pool capacity, for the PG autoscaler. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the pool on; defaults to the configured node if omitted. (default: `null`) |
+| `add_storages` | ['boolean', 'null'] | no | Register a PVE storage entry using the new pool. Schema-defaults False for replicated pools, True for erasure-coded pools; omit to let PVE apply that default. (default: `null`) |
+| `application` | ['string', 'null'] | no | Pool application: 'rbd' (default), 'cephfs', or 'rgw'. (default: `null`) |
+| `crush_rule` | ['string', 'null'] | no | CRUSH rule NAME to use for object placement (a string — NOT the numeric id pve_ceph_pool_list returns for this same field; pve_ceph_pool_status's crush_rule is ALREADY the same string type, no divergence there). (default: `null`) |
+| `erasure_coding` | ['string', 'null'] | no | Create an erasure-coded pool instead of replicated: a PVE propertyString 'k=<int>,m=<int>[,device-class=<class>][,failure-domain=<domain>][,profile=<profile>]' (k>=2 data chunks, m>=1 coding chunks required). Also creates an accompanying replicated metadata pool. (default: `null`) |
+| `min_size` | ['integer', 'null'] | no | Minimum number of replicas per object to allow I/O (1-7, default 2). (default: `null`) |
+| `pg_autoscale_mode` | ['string', 'null'] | no | PG autoscaler mode: 'on', 'off', or 'warn' (default). (default: `null`) |
+| `pg_num` | ['integer', 'null'] | no | Number of placement groups (1-32768, default 128). (default: `null`) |
+| `pg_num_min` | ['integer', 'null'] | no | Minimum placement-group count the autoscaler may choose (<=32768, no declared lower bound). (default: `null`) |
+| `size` | ['integer', 'null'] | no | Number of replicas per object (1-7, default 3). (default: `null`) |
+| `target_size` | ['string', 'null'] | no | Estimated target size for the PG autoscaler: a number optionally suffixed with K/M/G/T (e.g. '10G'). (default: `null`) |
+| `target_size_ratio` | ['number', 'null'] | no | Estimated target ratio of total pool capacity, for the PG autoscaler. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_pool_destroy`
 
@@ -1219,12 +1150,11 @@ confirm=True executes (DELETE /nodes/{node}/ceph/pool/{name}) and returns {"stat
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the pool to destroy. |
-| `node` | string (nullable) | no | PVE node the pool is on; defaults to the configured node if omitted. (default: `null`) |
-| `force` | boolean (nullable) | no | If True, destroys the pool EVEN IF IN USE. NEVER defaulted on — only forwarded when explicitly set. (default: `null`) |
-| `remove_ecprofile` | boolean (nullable) | no | Remove the erasure-code profile too, if applicable. Schema-defaults True. (default: `null`) |
-| `remove_storages` | boolean (nullable) | no | Remove all pveceph-managed PVE storage entries configured for this pool. Schema-defaults False. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the pool is on; defaults to the configured node if omitted. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | If True, destroys the pool EVEN IF IN USE. NEVER defaulted on — only forwarded when explicitly set. (default: `null`) |
+| `remove_ecprofile` | ['boolean', 'null'] | no | Remove the erasure-code profile too, if applicable. Schema-defaults True. (default: `null`) |
+| `remove_storages` | ['boolean', 'null'] | no | Remove all pveceph-managed PVE storage entries configured for this pool. Schema-defaults False. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_pool_list`
 
@@ -1247,8 +1177,7 @@ one pool's full current settings.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_pool_set`
 
@@ -1267,18 +1196,17 @@ this same tool.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the pool to change. |
-| `node` | string (nullable) | no | PVE node the pool is on; defaults to the configured node if omitted. (default: `null`) |
-| `application` | string (nullable) | no | Pool application: 'rbd', 'cephfs', or 'rgw'. (default: `null`) |
-| `crush_rule` | string (nullable) | no | CRUSH rule NAME to use for object placement (a string — NOT the numeric id pve_ceph_pool_list returns for this same field; pve_ceph_pool_status's crush_rule is ALREADY the same string type, no divergence there). (default: `null`) |
-| `min_size` | integer (nullable) | no | Minimum number of replicas per object to allow I/O (1-7). (default: `null`) |
-| `pg_autoscale_mode` | string (nullable) | no | PG autoscaler mode: 'on', 'off', or 'warn'. (default: `null`) |
-| `pg_num` | integer (nullable) | no | Number of placement groups (1-32768). CAUTION: changing this triggers cluster rebalance. (default: `null`) |
-| `pg_num_min` | integer (nullable) | no | Minimum placement-group count the autoscaler may choose (<=32768). (default: `null`) |
-| `size` | integer (nullable) | no | Number of replicas per object (1-7). (default: `null`) |
-| `target_size` | string (nullable) | no | Estimated target size for the PG autoscaler: a number optionally suffixed with K/M/G/T (e.g. '10G'). (default: `null`) |
-| `target_size_ratio` | number (nullable) | no | Estimated target ratio of total pool capacity, for the PG autoscaler. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the pool is on; defaults to the configured node if omitted. (default: `null`) |
+| `application` | ['string', 'null'] | no | Pool application: 'rbd', 'cephfs', or 'rgw'. (default: `null`) |
+| `crush_rule` | ['string', 'null'] | no | CRUSH rule NAME to use for object placement (a string — NOT the numeric id pve_ceph_pool_list returns for this same field; pve_ceph_pool_status's crush_rule is ALREADY the same string type, no divergence there). (default: `null`) |
+| `min_size` | ['integer', 'null'] | no | Minimum number of replicas per object to allow I/O (1-7). (default: `null`) |
+| `pg_autoscale_mode` | ['string', 'null'] | no | PG autoscaler mode: 'on', 'off', or 'warn'. (default: `null`) |
+| `pg_num` | ['integer', 'null'] | no | Number of placement groups (1-32768). CAUTION: changing this triggers cluster rebalance. (default: `null`) |
+| `pg_num_min` | ['integer', 'null'] | no | Minimum placement-group count the autoscaler may choose (<=32768). (default: `null`) |
+| `size` | ['integer', 'null'] | no | Number of replicas per object (1-7). (default: `null`) |
+| `target_size` | ['string', 'null'] | no | Estimated target size for the PG autoscaler: a number optionally suffixed with K/M/G/T (e.g. '10G'). (default: `null`) |
+| `target_size_ratio` | ['number', 'null'] | no | Estimated target ratio of total pool capacity, for the PG autoscaler. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_pool_status`
 
@@ -1303,9 +1231,8 @@ string), THIS tool's `crush_rule` is ALREADY a string (title "Crush Rule Name," 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Pool name. |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `verbose` | boolean (nullable) | no | If True, also includes usage/IO statistics for the pool. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
+| `verbose` | ['boolean', 'null'] | no | If True, also includes usage/IO statistics for the pool. (default: `null`) |
 
 #### `pve_ceph_rules`
 
@@ -1316,8 +1243,7 @@ GET /nodes/{node}/ceph/rules. Smoke-confirm: shape not live-verified — expecte
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_ceph_service_restart`
 
@@ -1330,10 +1256,9 @@ confirm=True executes (POST /nodes/{node}/ceph/restart) and returns {"status": "
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
-| `service` | string (nullable) | no | Ceph service to restart: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
+| `service` | ['string', 'null'] | no | Ceph service to restart: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restart. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_service_start`
 
@@ -1346,10 +1271,9 @@ primitive on this plane — revert with pve_ceph_service_stop for the same servi
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
-| `service` | string (nullable) | no | Ceph service to start: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
+| `service` | ['string', 'null'] | no | Ceph service to start: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the start. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_service_stop`
 
@@ -1366,10 +1290,9 @@ primitive on this plane — revert with pve_ceph_service_start for the same serv
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
-| `service` | string (nullable) | no | Ceph service to stop: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to act on; defaults to the configured node if omitted. (default: `null`) |
+| `service` | ['string', 'null'] | no | Ceph service to stop: '(ceph\|mon\|mds\|osd\|mgr)[.<id>]', e.g. 'mon.pve1'. Defaults to 'ceph.target' (the whole stack) if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the stop. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ceph_status`
 
@@ -1380,9 +1303,7 @@ GET /cluster/ceph/status. Smoke-confirm: shape not live-verified — expected a 
 /nodes/{node}/ceph/status is a documented IDENTICAL alias per schema truth — not built as a
 separate tool; use this cluster form regardless of which node you'd otherwise target.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_clone`
 
@@ -1397,13 +1318,12 @@ on a full clone). To create a guest from scratch instead use pve_create_vm / pve
 | `vmid` | string | yes | Numeric ID of the source guest to clone — VMID for a QEMU VM or CTID for an LXC container. |
 | `newid` | string | yes | Numeric ID to assign to the new cloned guest. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the source guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `name` | string (nullable) | no | Name to give the new cloned guest. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the source guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `name` | ['string', 'null'] | no | Name to give the new cloned guest. (default: `null`) |
 | `full` | boolean | no | If true, make a full independent copy of the disks; if false (default), make a space-saving linked clone. (default: `false`) |
-| `pool` | string (nullable) | no | Resource pool to place the new guest in — needed when the calling token is pool-scoped. (default: `null`) |
-| `storage` | string (nullable) | no | Target storage for the full clone's disks (full=True only); keeps the clone off the source storage. Refused for a linked clone. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Resource pool to place the new guest in — needed when the calling token is pool-scoped. (default: `null`) |
+| `storage` | ['string', 'null'] | no | Target storage for the full clone's disks (full=True only); keeps the clone off the source storage. Refused for a linked clone. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the clone. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_cloudinit_get`
 
@@ -1415,9 +1335,8 @@ rollback.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VMID of the QEMU guest to read cloud-init config from. |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `kind` | string | no | Guest type; cloud-init applies to `qemu` guests. (default: `"qemu"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_cloudinit_set`
 
@@ -1431,10 +1350,9 @@ values with pve_cloudinit_get.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VMID of the QEMU guest to set cloud-init config on. |
 | `changes` | object | yes | Cloud-init fields to change, e.g. {'ciuser': 'admin', 'sshkeys': '...', 'ipconfig0': 'ip=dhcp'}. |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `kind` | string | no | Guest type; cloud-init applies to `qemu` guests. (default: `"qemu"`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN with secrets masked; set `true` to execute. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_cluster_resources`
 
@@ -1450,9 +1368,8 @@ pve_list_guests.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `resource_type` | string (nullable) | no | Optional filter: 'vm', 'storage', 'node', or 'sdn'; omit to list all resource types. (default: `null`) |
-| `fields` | string (nullable) | no | Response fields: omit for the lean default (id/type/node/status/name/vmid/storage/uptime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `resource_type` | ['string', 'null'] | no | Optional filter: 'vm', 'storage', 'node', or 'sdn'; omit to list all resource types. (default: `null`) |
+| `fields` | ['string', 'null'] | no | Response fields: omit for the lean default (id/type/node/status/name/vmid/storage/uptime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pve_cluster_status`
 
@@ -1460,9 +1377,7 @@ Retrieve the cluster's overall status: nodes, quorum state, and the corosync
 config version (read-only). Returns a list of status dicts with node names, types, online
 status, and quorum info. Use pve_cluster_resources to list all resources across the cluster.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_create_container`
 
@@ -1476,10 +1391,9 @@ use pve_clone.
 | `vmid` | string | yes | Numeric CTID to assign to the new LXC container. |
 | `ostemplate` | string | yes | Storage volume ID of the OS template to install, e.g. `local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst`. |
 | `storage` | string | yes | Storage backend name to place the container's root filesystem on. |
-| `node` | string (nullable) | no | PVE node to create the container on. Omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the container on. Omit to use the configured default node. (default: `null`) |
 | `options` | object (nullable) | no | Extra Proxmox create params (e.g. cores, memory, net0, rootfs, password) merged into the request. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_create_vm`
 
@@ -1491,10 +1405,9 @@ instead use pve_clone.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VMID to assign to the new QEMU VM. |
-| `node` | string (nullable) | no | PVE node to create the VM on. Omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to create the VM on. Omit to use the configured default node. (default: `null`) |
 | `options` | object (nullable) | no | Extra Proxmox create params (e.g. cores, memory, net0, scsi0, ostype) merged into the request. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_delete_guest`
 
@@ -1507,11 +1420,10 @@ pve_task_status. No undo once confirmed.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest to destroy — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `purge` | boolean | no | If true, also remove the guest from replication/backup jobs and HA resources referencing it. (default: `false`) |
 | `force` | boolean | no | Force removal even if the guest is still running or the backend reports an inconsistent state. (default: `false`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN naming exactly what will be destroyed; set `true` to execute. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_diagnose`
 
@@ -1524,8 +1436,7 @@ ct_diagnose. Returns a dict of the gathered sections; omit `node` to use the con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node to gather health evidence for. Omit to use the configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node to gather health evidence for. Omit to use the configured default node. (default: `null`) |
 
 #### `pve_disk_move`
 
@@ -1540,10 +1451,9 @@ grow a disk in place instead of relocating it use pve_disk_resize.
 | `disk` | string | yes | Disk key to move, e.g. `scsi0` or `rootfs`. |
 | `target_storage` | string | yes | Storage backend name to move the disk to. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `delete_source` | boolean | no | If true, delete the source copy after the move (HIGH risk); if false (default), keep it. (default: `false`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the move. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_disk_resize`
 
@@ -1558,9 +1468,8 @@ verified first. Dry-run by default; confirm=True to execute. Async — returns a
 | `disk` | string | yes | Disk key to resize, e.g. `scsi0` or `rootfs`. |
 | `size` | string | yes | New size, as a grow-only delta like `+10G` (shrinking is refused as destructive). |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the resize. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_doctor`
 
@@ -1569,9 +1478,7 @@ report what this token CAN and CANNOT do — with the privilege + role to grant 
 this FIRST after install to verify your config/token before wiring Proximo into an MCP client.
 Returns a dict with reachable/version, the can/cannot capability map, config, and advisory flags.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_firewall_alias_create`
 
@@ -1587,12 +1494,11 @@ alias instead, use pve_firewall_alias_update.
 | `name` | string | yes | Name for the new alias, referenced by rules as this name. |
 | `cidr` | string | yes | IP address or CIDR network the alias resolves to. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope aliases in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment stored with the alias. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the alias. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_alias_delete`
 
@@ -1605,12 +1511,11 @@ pve_firewall_alias_create to revert. Synchronous — confirm=True returns
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the alias to delete. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope aliases in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest forwarded to PVE to abort if the alias changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest forwarded to PVE to abort if the alias changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_alias_list`
 
@@ -1624,10 +1529,9 @@ pve_firewall_alias_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope aliases in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 
 #### `pve_firewall_alias_update`
 
@@ -1642,15 +1546,14 @@ value; to create a new alias instead use pve_firewall_alias_create.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing alias to update. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope aliases in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `cidr` | string (nullable) | no | New IP address/CIDR the alias should resolve to; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text comment; omit to leave unchanged. (default: `null`) |
-| `rename` | string (nullable) | no | New name to rename the alias to; omit to keep the current name. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest forwarded to PVE to abort if the alias changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `cidr` | ['string', 'null'] | no | New IP address/CIDR the alias should resolve to; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment; omit to leave unchanged. (default: `null`) |
+| `rename` | ['string', 'null'] | no | New name to rename the alias to; omit to keep the current name. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest forwarded to PVE to abort if the alias changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_ipset_create`
 
@@ -1665,12 +1568,11 @@ No UNDO: revert by deleting it with pve_firewall_ipset_delete.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new IP set, referenced by rules as '+name'. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope ipsets in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment stored with the IP set. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the IP set. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_ipset_delete`
 
@@ -1684,12 +1586,11 @@ No UNDO: re-create it with pve_firewall_ipset_create and re-add members to rever
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the IP set to delete. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope ipsets in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 | `force` | boolean | no | If True, wipe all member entries so the (now-empty) IP set can be deleted. (default: `false`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_ipset_entry_add`
 
@@ -1704,13 +1605,12 @@ No UNDO: revert by removing the entry with pve_firewall_ipset_entry_remove.
 | `name` | string | yes | Name of the IP set to add the entry to. |
 | `cidr` | string | yes | IP address or CIDR network to add as a member entry. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope ipsets in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment stored with the entry. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the entry. (default: `null`) |
 | `nomatch` | boolean | no | If True, this entry is an exclusion (negative match) rather than an inclusion. (default: `false`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_ipset_entry_remove`
 
@@ -1725,12 +1625,11 @@ No UNDO: revert by re-adding the entry with pve_firewall_ipset_entry_add.
 | `name` | string | yes | Name of the IP set to remove the entry from. |
 | `cidr` | string | yes | IP address or CIDR network of the member entry to remove. |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope ipsets in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest forwarded to PVE to abort if the set changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest forwarded to PVE to abort if the set changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_options_get`
 
@@ -1744,10 +1643,9 @@ and `kind` ('qemu'|'lxc'). Returns the option block as a dict.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 
 #### `pve_firewall_options_set`
 
@@ -1762,14 +1660,13 @@ the focused pve_firewall_set_enabled. No UNDO — revert by setting the prior va
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 | `options` | object (nullable) | no | Key-value bag of firewall options to set, e.g. policy_in, policy_out, log_ratelimit, enable, ebtables. (default: `null`) |
 | `delete` | array<string> (nullable) | no | List of option keys to unset/remove. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest forwarded to PVE to abort if the options changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest forwarded to PVE to abort if the options changed; this tool's PLAN does not surface a digest to copy (only the rule tools do). (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_rule_add`
 
@@ -1786,18 +1683,17 @@ removing it with pve_firewall_rule_remove.
 | `action` | string | yes | Rule action: 'ACCEPT', 'DROP', or 'REJECT'. |
 | `direction` | string | no | Traffic direction the rule matches: 'in' or 'out'. (default: `"in"`) |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `source` | string (nullable) | no | Source address/CIDR/alias to match, or None for any. (default: `null`) |
-| `dest` | string (nullable) | no | Destination address/CIDR/alias to match, or None for any. (default: `null`) |
-| `proto` | string (nullable) | no | IP protocol to match, e.g. 'tcp', 'udp', 'icmp'. (default: `null`) |
-| `dport` | string (nullable) | no | Destination port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
-| `sport` | string (nullable) | no | Source port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment stored with the rule. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `source` | ['string', 'null'] | no | Source address/CIDR/alias to match, or None for any. (default: `null`) |
+| `dest` | ['string', 'null'] | no | Destination address/CIDR/alias to match, or None for any. (default: `null`) |
+| `proto` | ['string', 'null'] | no | IP protocol to match, e.g. 'tcp', 'udp', 'icmp'. (default: `null`) |
+| `dport` | ['string', 'null'] | no | Destination port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
+| `sport` | ['string', 'null'] | no | Source port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the rule. (default: `null`) |
 | `enable` | boolean | no | Whether the rule is active immediately (True) or created disabled (False). (default: `true`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_rule_remove`
 
@@ -1814,12 +1710,11 @@ pve_firewall_rule_add.
 | --- | --- | --- | --- |
 | `pos` | integer | yes | Rule position (0-based index) in the target scope's rule list. |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest from the PLAN preview; pass on confirm to abort if the rule list changed since. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest from the PLAN preview; pass on confirm to abort if the rule list changed since. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_rule_update`
 
@@ -1836,21 +1731,20 @@ by updating the rule back to its prior values, or remove it with pve_firewall_ru
 | --- | --- | --- | --- |
 | `pos` | integer | yes | Rule position (0-based index) in the target scope's rule list. |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `action` | string (nullable) | no | New rule action: 'ACCEPT', 'DROP', or 'REJECT'; omit to leave unchanged. (default: `null`) |
-| `direction` | string (nullable) | no | New traffic direction: 'in' or 'out'; omit to leave unchanged. (default: `null`) |
-| `source` | string (nullable) | no | New source address/CIDR/alias to match; omit to leave unchanged. (default: `null`) |
-| `dest` | string (nullable) | no | New destination address/CIDR/alias to match; omit to leave unchanged. (default: `null`) |
-| `proto` | string (nullable) | no | New IP protocol to match, e.g. 'tcp'/'udp'/'icmp'; omit to leave unchanged. (default: `null`) |
-| `dport` | string (nullable) | no | New destination port or port range; omit to leave unchanged. (default: `null`) |
-| `sport` | string (nullable) | no | New source port or port range; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text comment; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | New enabled state for the rule; omit to leave unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest from the PLAN preview; pass on confirm to abort if the rule list changed since. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `action` | ['string', 'null'] | no | New rule action: 'ACCEPT', 'DROP', or 'REJECT'; omit to leave unchanged. (default: `null`) |
+| `direction` | ['string', 'null'] | no | New traffic direction: 'in' or 'out'; omit to leave unchanged. (default: `null`) |
+| `source` | ['string', 'null'] | no | New source address/CIDR/alias to match; omit to leave unchanged. (default: `null`) |
+| `dest` | ['string', 'null'] | no | New destination address/CIDR/alias to match; omit to leave unchanged. (default: `null`) |
+| `proto` | ['string', 'null'] | no | New IP protocol to match, e.g. 'tcp'/'udp'/'icmp'; omit to leave unchanged. (default: `null`) |
+| `dport` | ['string', 'null'] | no | New destination port or port range; omit to leave unchanged. (default: `null`) |
+| `sport` | ['string', 'null'] | no | New source port or port range; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | New enabled state for the rule; omit to leave unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest from the PLAN preview; pass on confirm to abort if the rule list changed since. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_rules_list`
 
@@ -1863,10 +1757,9 @@ and address/port fields. Use pve_firewall_options_get to read firewall settings
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 
 #### `pve_firewall_security_group_create`
 
@@ -1879,9 +1772,8 @@ No UNDO: revert by deleting it with pve_firewall_security_group_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `group` | string | yes | Name for the new cluster security group. |
-| `comment` | string (nullable) | no | Free-text comment stored with the group. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the group. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_security_group_delete`
 
@@ -1895,7 +1787,6 @@ No UNDO: re-create it with pve_firewall_security_group_create and re-add its rul
 | --- | --- | --- | --- |
 | `group` | string | yes | Name of the cluster security group to delete. |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_firewall_set_enabled`
 
@@ -1911,11 +1802,10 @@ pve_firewall_options_set. No UNDO — re-toggle manually to revert.
 | --- | --- | --- | --- |
 | `enabled` | boolean | yes | Desired firewall state: True to turn on, False to turn off. |
 | `scope` | string | no | Firewall scope: 'cluster', 'node', or 'guest'. (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='node' or scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_group_create`
 
@@ -1926,9 +1816,8 @@ added (pve_user_update/pve_user_create with groups=) or pve_acl_modify grants it
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `groupid` | string | yes | New group id. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_group_delete`
 
@@ -1940,7 +1829,6 @@ dict; synchronous, no UPID. Use pve_group_get first to see current members.
 | --- | --- | --- | --- |
 | `groupid` | string | yes | Group id to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_group_get`
 
@@ -1951,7 +1839,6 @@ ACL entries referencing this group.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `groupid` | string | yes | Group id to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_group_update`
 
@@ -1962,18 +1849,15 @@ pve_user_update (groups=) to add/remove members, or pve_group_get to see current
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `groupid` | string | yes | Group id to update. |
-| `comment` | string (nullable) | no | New free-text comment. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_groups_list`
 
 List all Proxmox groups (read-only). Returns each group's id, comment, and member count.
 Use pve_group_get for full member list; use pve_group_create/update/delete to manage groups.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_guest_config_get`
 
@@ -1986,8 +1870,7 @@ pve_guest_config_revert.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 
 #### `pve_guest_config_revert`
 
@@ -2001,9 +1884,8 @@ silently skipped rather than rejected.
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `prior_config` | object | yes | The prior config dict previously returned by pve_guest_config_set, to re-apply. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the revert. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_guest_config_set`
 
@@ -2017,9 +1899,8 @@ pve_guest_config_revert.
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `changes` | object | yes | Config keys to change, e.g. {'cores': 4, 'memory': 2048, 'onboot': 1}. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN with the per-key diff; set `true` to execute. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_guest_migrate`
 
@@ -2034,10 +1915,9 @@ the same move through PDM instead, use pdm_pve_lxc_migrate or pdm_pve_qemu_migra
 | `vmid` | string | yes | Numeric VMID/CTID of the guest to migrate. |
 | `target` | string | yes | Destination node name to migrate the guest to. |
 | `kind` | string | no | Guest type: 'lxc' or 'qemu'. (default: `"lxc"`) |
-| `node` | string (nullable) | no | Source node name; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Source node name; defaults to the configured node. (default: `null`) |
 | `online` | boolean | no | QEMU: live migration (zero-downtime, needs shared storage). LXC: stop-move-start restart migration (real downtime). False = offline migration. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the migration. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_guest_power`
 
@@ -2053,9 +1933,8 @@ and returns the task UPID — poll it with pve_task_status.
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `action` | string | yes | Power action to perform: `start`, `stop`, `reboot`, or `shutdown`. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN with blast radius; set `true` to execute the action. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_guest_status`
 
@@ -2068,8 +1947,7 @@ Use pve_guest_config_get for the full configuration.
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 
 #### `pve_ha_groups_list`
 
@@ -2078,9 +1956,7 @@ READ-ONLY: list all HA resource groups. PVE-8 only — PVE 9 migrated groups to 
 of a raw 500. No state change. Returns a list of group dicts (group, nodes, restricted,
 comment) on PVE 8.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_ha_resource_add`
 
@@ -2093,12 +1969,11 @@ typically returns null, not a UPID. To remove HA management use pve_ha_resource_
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric VMID/CTID of the guest to add to HA management. |
 | `kind` | string | no | Guest type: 'lxc' or 'qemu'. (default: `"lxc"`) |
-| `group` | string (nullable) | no | HA group to assign (PVE 8 only; PVE 9 removed groups in favor of HA rules — omit on PVE 9). (default: `null`) |
-| `state` | string (nullable) | no | Desired HA state, e.g. 'started', 'stopped', 'disabled' ('stopped' has the CRM stop the guest). (default: `null`) |
-| `max_restart` | integer (nullable) | no | Max number of restart attempts the CRM makes before giving up. (default: `null`) |
-| `max_relocate` | integer (nullable) | no | Max number of relocation attempts the CRM makes before giving up. (default: `null`) |
+| `group` | ['string', 'null'] | no | HA group to assign (PVE 8 only; PVE 9 removed groups in favor of HA rules — omit on PVE 9). (default: `null`) |
+| `state` | ['string', 'null'] | no | Desired HA state, e.g. 'started', 'stopped', 'disabled' ('stopped' has the CRM stop the guest). (default: `null`) |
+| `max_restart` | ['integer', 'null'] | no | Max number of restart attempts the CRM makes before giving up. (default: `null`) |
+| `max_relocate` | ['integer', 'null'] | no | Max number of relocation attempts the CRM makes before giving up. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ha_resource_remove`
 
@@ -2112,7 +1987,6 @@ UPID. To re-add HA management use pve_ha_resource_add.
 | `vmid` | string | yes | Numeric VMID/CTID of the guest to remove from HA management. |
 | `kind` | string | no | Guest type: 'lxc' or 'qemu'. (default: `"lxc"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ha_resources_list`
 
@@ -2121,9 +1995,7 @@ List all guests managed by HA (High Availability) with their current HA settings
 settings. Use pve_ha_groups_list or pve_ha_rules_list to view HA placement rules, not for
 resource enumeration.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_ha_rule_create`
 
@@ -2138,13 +2010,12 @@ CRM placement. View rules with pve_ha_rules_list; change one with pve_ha_rule_up
 | `rule` | string | yes | New HA rule ID (name used to reference this rule). |
 | `rule_type` | string | yes | Rule type: 'node-affinity' (requires nodes) or 'resource-affinity' (requires affinity). |
 | `resources` | string | yes | Comma-separated HA resource SIDs the rule applies to, e.g. 'vm:100,ct:101'. |
-| `comment` | string (nullable) | no | Free-text comment stored with the rule. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the rule. (default: `null`) |
 | `disable` | boolean | no | If True, the rule is created disabled (no effect until enabled). (default: `false`) |
-| `nodes` | string (nullable) | no | Comma-separated node list with optional priority, e.g. 'pve1:2,pve2' — required for rule_type='node-affinity'. (default: `null`) |
+| `nodes` | ['string', 'null'] | no | Comma-separated node list with optional priority, e.g. 'pve1:2,pve2' — required for rule_type='node-affinity'. (default: `null`) |
 | `strict` | boolean | no | node-affinity only: if True, resources may run ONLY on the listed nodes (availability risk if all are down). (default: `false`) |
-| `affinity` | string (nullable) | no | 'positive' (keep resources together) or 'negative' (keep resources apart) — required for rule_type='resource-affinity'. (default: `null`) |
+| `affinity` | ['string', 'null'] | no | 'positive' (keep resources together) or 'negative' (keep resources apart) — required for rule_type='resource-affinity'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ha_rule_delete`
 
@@ -2157,7 +2028,6 @@ revert. RISK_MEDIUM.
 | --- | --- | --- | --- |
 | `rule` | string | yes | HA rule ID to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ha_rule_update`
 
@@ -2169,17 +2039,16 @@ To create a new rule use pve_ha_rule_create; to remove one use pve_ha_rule_delet
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `rule` | string | yes | HA rule ID to update. |
-| `comment` | string (nullable) | no | New free-text comment for the rule. (default: `null`) |
-| `disable` | boolean (nullable) | no | True to disable the rule, False to enable it, omit to leave unchanged. (default: `null`) |
-| `resources` | string (nullable) | no | New comma-separated HA resource SIDs the rule applies to, e.g. 'vm:100,ct:101'. (default: `null`) |
-| `rule_type` | string (nullable) | no | New rule type: 'node-affinity' or 'resource-affinity'. (default: `null`) |
-| `nodes` | string (nullable) | no | New comma-separated node list with optional priority, e.g. 'pve1:2,pve2' (node-affinity rules). (default: `null`) |
-| `strict` | boolean (nullable) | no | node-affinity only: True restricts resources to ONLY the listed nodes. (default: `null`) |
-| `affinity` | string (nullable) | no | 'positive' or 'negative' (resource-affinity rules). (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment for the rule. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | True to disable the rule, False to enable it, omit to leave unchanged. (default: `null`) |
+| `resources` | ['string', 'null'] | no | New comma-separated HA resource SIDs the rule applies to, e.g. 'vm:100,ct:101'. (default: `null`) |
+| `rule_type` | ['string', 'null'] | no | New rule type: 'node-affinity' or 'resource-affinity'. (default: `null`) |
+| `nodes` | ['string', 'null'] | no | New comma-separated node list with optional priority, e.g. 'pve1:2,pve2' (node-affinity rules). (default: `null`) |
+| `strict` | ['boolean', 'null'] | no | node-affinity only: True restricts resources to ONLY the listed nodes. (default: `null`) |
+| `affinity` | ['string', 'null'] | no | 'positive' or 'negative' (resource-affinity rules). (default: `null`) |
 | `delete` | array<string> (nullable) | no | List of field names to unset on the rule, e.g. ['strict', 'nodes']. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-locking; PUT is rejected if the stored digest differs. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-locking; PUT is rejected if the stored digest differs. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ha_rules_list`
 
@@ -2188,9 +2057,7 @@ READ-ONLY: list High-Availability rules on the cluster (PVE 9+).
 No state change. PVE 9 replaced HA groups with rules; on PVE 8 use pve_ha_groups_list instead.
 Returns a list of rule dicts. To see which guests are actually HA-managed use pve_ha_resources_list.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_hardware_list`
 
@@ -2205,7 +2072,6 @@ distinct from the cluster-scope passthrough mappings that VMs actually reference
 | --- | --- | --- | --- |
 | `node` | string | yes | PVE node name to list physical hardware devices on |
 | `hw_type` | string | no | Device class to list: 'pci' (default) or 'usb' (default: `"pci"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_ipset_list`
 
@@ -2219,10 +2085,9 @@ pve_firewall_ipset_entry_add/pve_firewall_ipset_entry_remove.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `scope` | string | no | Firewall scope: 'cluster' or 'guest' (no node-scope ipsets in the PVE API). (default: `"cluster"`) |
-| `node` | string (nullable) | no | Node name, required for scope='guest'. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
-| `kind` | string (nullable) | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name, required for scope='guest'. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID, required for scope='guest'. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Guest kind for scope='guest': 'qemu' or 'lxc'. (default: `null`) |
 
 #### `pve_list_guests`
 
@@ -2236,9 +2101,8 @@ pve_guest_config_get.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to list guests on. Omit to list guests across the whole cluster. (default: `null`) |
-| `fields` | string (nullable) | no | Response fields: omit for the lean default (vmid/name/type/status/uptime/tags), `all` for the full payload, or a comma-separated field list. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to list guests on. Omit to list guests across the whole cluster. (default: `null`) |
+| `fields` | ['string', 'null'] | no | Response fields: omit for the lean default (vmid/name/type/status/uptime/tags), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pve_mapping_pci_create`
 
@@ -2251,10 +2115,9 @@ pve_mapping_pci_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | Unique ID for the new PCI cluster passthrough mapping |
-| `description` | string (nullable) | no | Optional free-text description stored with the mapping (default: `null`) |
-| `map` | string (nullable) | no | PCI device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text description stored with the mapping (default: `null`) |
+| `map` | ['string', 'null'] | no | PCI device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_mapping_pci_delete`
 
@@ -2267,7 +2130,6 @@ primitive — re-create with pve_mapping_pci_create to restore.
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | ID of the PCI cluster mapping to delete |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_mapping_pci_list`
 
@@ -2279,9 +2141,7 @@ mapping ID, device list, and description. To see the
 raw physical devices on a node use pve_hardware_list; to create a mapping use
 pve_mapping_pci_create.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_mapping_pci_update`
 
@@ -2294,11 +2154,10 @@ pve_mapping_pci_delete to remove the mapping outright.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | ID of the existing PCI cluster mapping to update |
-| `description` | string (nullable) | no | Optional free-text description to set on the mapping (default: `null`) |
-| `map` | string (nullable) | no | PCI device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest for optimistic-concurrency check against the current config (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text description to set on the mapping (default: `null`) |
+| `map` | ['string', 'null'] | no | PCI device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest for optimistic-concurrency check against the current config (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_mapping_usb_create`
 
@@ -2311,10 +2170,9 @@ pve_mapping_usb_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | Unique ID for the new USB cluster passthrough mapping |
-| `description` | string (nullable) | no | Optional free-text description stored with the mapping (default: `null`) |
-| `map` | string (nullable) | no | USB device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text description stored with the mapping (default: `null`) |
+| `map` | ['string', 'null'] | no | USB device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_mapping_usb_delete`
 
@@ -2327,7 +2185,6 @@ primitive — re-create with pve_mapping_usb_create to restore.
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | ID of the USB cluster mapping to delete |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_mapping_usb_list`
 
@@ -2338,9 +2195,7 @@ assignable to VMs/LXCs, each with mapping ID, device list, and description. To s
 raw physical devices on a node use pve_hardware_list; to create a mapping use
 pve_mapping_usb_create.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_mapping_usb_update`
 
@@ -2353,11 +2208,10 @@ pve_mapping_usb_delete to remove the mapping outright.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mapping_id` | string | yes | ID of the existing USB cluster mapping to update |
-| `description` | string (nullable) | no | Optional free-text description to set on the mapping (default: `null`) |
-| `map` | string (nullable) | no | USB device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest for optimistic-concurrency check against the current config (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text description to set on the mapping (default: `null`) |
+| `map` | ['string', 'null'] | no | USB device map string(s) defining the physical device(s) covered by this mapping (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest for optimistic-concurrency check against the current config (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_metrics_server_delete`
 
@@ -2369,7 +2223,6 @@ server ceases; no data loss, and config is re-creatable with pve_metrics_server_
 | --- | --- | --- | --- |
 | `metrics_id` | string | yes | ID of the metrics server definition to delete |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_metrics_server_list`
 
@@ -2379,9 +2232,7 @@ No state change. Returns a list of dicts for each configured metrics forwarding 
 (InfluxDB, Graphite, etc.), with id, type, server address, and port. To create or update
 one use pve_metrics_server_set; to remove one use pve_metrics_server_delete.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_metrics_server_set`
 
@@ -2394,13 +2245,12 @@ pve_metrics_server_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `metrics_id` | string | yes | Unique ID of the metrics server definition to create or update |
-| `metrics_type` | string (nullable) | no | Metrics backend type, e.g. 'influxdb' or 'graphite' (default: `null`) |
-| `server` | string (nullable) | no | Hostname or IP address of the metrics server (default: `null`) |
-| `port` | integer (nullable) | no | TCP/UDP port the metrics server listens on (default: `null`) |
-| `disable` | boolean (nullable) | no | True disables forwarding to this metrics server without deleting the definition (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the metrics server definition (default: `null`) |
+| `metrics_type` | ['string', 'null'] | no | Metrics backend type, e.g. 'influxdb' or 'graphite' (default: `null`) |
+| `server` | ['string', 'null'] | no | Hostname or IP address of the metrics server (default: `null`) |
+| `port` | ['integer', 'null'] | no | TCP/UDP port the metrics server listens on (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | True disables forwarding to this metrics server without deleting the definition (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the metrics server definition (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create/update (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_network_apply`
 
@@ -2415,9 +2265,8 @@ in either case.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Node to apply staged network config on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to apply staged network config on; defaults to the configured node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True applies the staged config to the live network stack. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_network_iface_create`
 
@@ -2432,10 +2281,9 @@ result is often None. RISK_MEDIUM (staged change, reversible before apply).
 | --- | --- | --- | --- |
 | `iface` | string | yes | New interface name to create, e.g. vmbr1 or eth0.100. |
 | `iface_type` | string | yes | Interface type: bridge, bond, vlan, eth, or alias. |
-| `node` | string (nullable) | no | Node to create the interface on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to create the interface on; defaults to the configured node. (default: `null`) |
 | `options` | object (nullable) | no | Type-dependent fields: address, netmask, gateway, bridge_ports, etc. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True stages the interface (still not live until pve_network_apply). (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_network_iface_update`
 
@@ -2449,10 +2297,9 @@ returns {status, result} — result is often None. RISK_MEDIUM (staged change, r
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `iface` | string | yes | Existing interface name to update, e.g. vmbr1 or eth0.100. |
-| `node` | string (nullable) | no | Node the interface lives on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node the interface lives on; defaults to the configured node. (default: `null`) |
 | `options` | object (nullable) | no | Fields to update: address, netmask, bridge_ports, etc. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True stages the update (still not live until pve_network_apply). (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_network_list`
 
@@ -2464,9 +2311,8 @@ pve_sdn_zones_list / pve_sdn_vnets_list instead — that's a separate, cluster-s
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Node name to list interfaces on; defaults to the configured node. (default: `null`) |
-| `iface_type` | string (nullable) | no | Filter to one interface type: bridge, bond, vlan, eth, or alias. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node name to list interfaces on; defaults to the configured node. (default: `null`) |
+| `iface_type` | ['string', 'null'] | no | Filter to one interface type: bridge, bond, vlan, eth, or alias. (default: `null`) |
 
 #### `pve_node_acme_domains_set`
 
@@ -2484,10 +2330,9 @@ node-config body shape against a live PVE instance.
 | --- | --- | --- | --- |
 | `account` | string | yes | Name of the ACME account (created via pve_acme_account_create) to associate with the node. |
 | `domains` | array<string> | yes | Domain names to request a certificate for; replaces any existing acmedomainN entries on the node. |
-| `node` | string (nullable) | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
-| `plugin` | string (nullable) | no | ACME DNS plugin ID for a DNS-01 challenge; omit to use standalone http-01 instead. (default: `null`) |
+| `node` | ['string', 'null'] | no | Target PVE node name; omit to use the configured default node. (default: `null`) |
+| `plugin` | ['string', 'null'] | no | ACME DNS plugin ID for a DNS-01 challenge; omit to use standalone http-01 instead. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the node config change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_cert_delete`
 
@@ -2500,10 +2345,9 @@ reloads pveproxy after deletion. Dry-run by default (returns a PLAN); confirm=Tr
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to delete the custom certificate from; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to delete the custom certificate from; defaults to the configured node if omitted. (default: `null`) |
 | `restart` | boolean | no | If True, reload pveproxy after deletion to apply the reverted self-signed certificate immediately. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_cert_upload`
 
@@ -2525,12 +2369,11 @@ returns {"status": "ok", "result": <dict | None>}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `certificates` | string | yes | PEM-encoded certificate chain (public, may appear in plans/logs). |
-| `key` | string (nullable) | no | PEM-encoded TLS private key matching the certificate; a secret, unconditionally redacted in all output. (default: `null`) |
-| `node` | string (nullable) | no | PVE node name to upload the certificate to; defaults to the configured node if omitted. (default: `null`) |
+| `key` | ['string', 'null'] | no | PEM-encoded TLS private key matching the certificate; a secret, unconditionally redacted in all output. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to upload the certificate to; defaults to the configured node if omitted. (default: `null`) |
 | `force` | boolean | no | If True, overwrite an existing custom certificate without requiring it be replaced explicitly. (default: `false`) |
 | `restart` | boolean | no | If True, reload pveproxy after upload to apply the new certificate immediately (brief service interruption). (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the certificate upload. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_certificates`
 
@@ -2542,8 +2385,7 @@ certificate use pve_node_cert_upload; to remove one use pve_node_cert_delete.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 
 #### `pve_node_disk_initgpt`
 
@@ -2557,9 +2399,8 @@ Smoke-confirm) and returns {"status": "submitted", "result": <task UPID | None>}
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `disk` | string | yes | Device path/identifier of the disk to initialize with a new GPT partition table (e.g. /dev/sda); overwrites the existing partition table. |
-| `node` | string (nullable) | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible GPT init. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_disk_smart`
 
@@ -2572,8 +2413,7 @@ To list all disks first use pve_node_disks_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `disk` | string | yes | Device path/identifier of the disk to query (e.g. /dev/sda), as listed by pve_node_disks_list. |
-| `node` | string (nullable) | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_node_disk_wipe`
 
@@ -2587,9 +2427,8 @@ Smoke-confirm) and returns {"status": "submitted", "result": <task UPID | None>}
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `disk` | string | yes | Device path/identifier of the disk to wipe (e.g. /dev/sda); ALL data and the partition table are destroyed. |
-| `node` | string (nullable) | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name the disk lives on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible wipe. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_disks_list`
 
@@ -2601,8 +2440,7 @@ pve_node_disk_smart.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_node_dns`
 
@@ -2612,8 +2450,7 @@ to change it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 
 #### `pve_node_dns_set`
 
@@ -2626,13 +2463,12 @@ PLAN); confirm=True executes (PUT, Smoke-confirm) and returns {"status": "ok", "
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `search` | string (nullable) | no | DNS search domain to set on the node. (default: `null`) |
-| `dns1` | string (nullable) | no | Primary DNS resolver IP address. (default: `null`) |
-| `dns2` | string (nullable) | no | Secondary DNS resolver IP address. (default: `null`) |
-| `dns3` | string (nullable) | no | Tertiary DNS resolver IP address. (default: `null`) |
-| `node` | string (nullable) | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
+| `search` | ['string', 'null'] | no | DNS search domain to set on the node. (default: `null`) |
+| `dns1` | ['string', 'null'] | no | Primary DNS resolver IP address. (default: `null`) |
+| `dns2` | ['string', 'null'] | no | Secondary DNS resolver IP address. (default: `null`) |
+| `dns3` | ['string', 'null'] | no | Tertiary DNS resolver IP address. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the DNS change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_hosts_get`
 
@@ -2643,8 +2479,7 @@ digest is used for optimistic-concurrency on a follow-up pve_node_hosts_set.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_node_hosts_set`
 
@@ -2658,10 +2493,9 @@ executes (POST, Smoke-confirm) and returns {"status": "ok", "result": None}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `data` | string | yes | Full replacement content for the node's /etc/hosts file. |
-| `node` | string (nullable) | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
-| `digest` | string (nullable) | no | Expected content digest of the current /etc/hosts, for optimistic-concurrency conflict detection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected content digest of the current /etc/hosts, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the replacement. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_journal`
 
@@ -2674,11 +2508,10 @@ use pve_node_syslog; for one service's current state use pve_node_service_status
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 | `lastentries` | integer | no | Number of most-recent journal lines to return, max 5000 (values above are rejected) (default: `100`) |
-| `since` | string (nullable) | no | Only return entries at or after this timestamp (journalctl-compatible format) (default: `null`) |
-| `until` | string (nullable) | no | Only return entries at or before this timestamp (journalctl-compatible format) (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `since` | ['string', 'null'] | no | Only return entries at or after this timestamp (journalctl-compatible format) (default: `null`) |
+| `until` | ['string', 'null'] | no | Only return entries at or before this timestamp (journalctl-compatible format) (default: `null`) |
 
 #### `pve_node_migrateall`
 
@@ -2693,11 +2526,10 @@ For a single guest instead of the whole node use pve_guest_migrate. Dry-run by d
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `target` | string | yes | Destination PVE node name to migrate guests to. |
-| `node` | string (nullable) | no | Source PVE node name whose guests to migrate; defaults to the configured node if omitted. (default: `null`) |
-| `vms` | string (nullable) | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to migrate all guests on the node. (default: `null`) |
-| `maxworkers` | integer (nullable) | no | Maximum number of parallel migration workers to run. (default: `null`) |
+| `node` | ['string', 'null'] | no | Source PVE node name whose guests to migrate; defaults to the configured node if omitted. (default: `null`) |
+| `vms` | ['string', 'null'] | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to migrate all guests on the node. (default: `null`) |
+| `maxworkers` | ['integer', 'null'] | no | Maximum number of parallel migration workers to run. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the bulk migration. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_rrddata`
 
@@ -2716,10 +2548,9 @@ hours and give the real bounds.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 | `timeframe` | string | no | Rolling RRD window ENDING NOW: 'hour', 'day', 'week', 'month', or 'year'. 'day' is the last ~24 hours, NOT the calendar day (default: `"hour"`) |
-| `cf` | string (nullable) | no | RRD consolidation function: 'AVERAGE' or 'MAX'; defaults to server-side default (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `cf` | ['string', 'null'] | no | RRD consolidation function: 'AVERAGE' or 'MAX'; defaults to server-side default (default: `null`) |
 
 #### `pve_node_service_control`
 
@@ -2734,9 +2565,8 @@ current state first with pve_node_service_status.
 | --- | --- | --- | --- |
 | `service` | string | yes | systemd service name to control, e.g. 'pveproxy' or 'sshd' |
 | `action` | string | yes | Control action: 'start', 'stop', 'restart', or 'reload' |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the service control (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_service_status`
 
@@ -2749,8 +2579,7 @@ use pve_node_service_control.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | systemd service name, e.g. 'pveproxy' or 'sshd' |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 
 #### `pve_node_services_list`
 
@@ -2762,8 +2591,7 @@ pve_node_service_status; to change a service's run state use pve_node_service_co
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 
 #### `pve_node_startall`
 
@@ -2776,10 +2604,9 @@ vms param format) and returns {"status": "submitted", "result": <task UPID | Non
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name whose guests to start; defaults to the configured node if omitted. (default: `null`) |
-| `vms` | string (nullable) | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to start all guests on the node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name whose guests to start; defaults to the configured node if omitted. (default: `null`) |
+| `vms` | ['string', 'null'] | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to start all guests on the node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the bulk start. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_status`
 
@@ -2789,8 +2616,7 @@ for detailed per-node diagnostics including failed tasks.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query. Omit to use the configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query. Omit to use the configured default node. (default: `null`) |
 
 #### `pve_node_stopall`
 
@@ -2804,10 +2630,9 @@ executes (POST, Smoke-confirm on the vms param format) and returns
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name whose guests to stop; defaults to the configured node if omitted. (default: `null`) |
-| `vms` | string (nullable) | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to stop ALL guests on the node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name whose guests to stop; defaults to the configured node if omitted. (default: `null`) |
+| `vms` | ['string', 'null'] | no | Optional comma-separated list of VMIDs/CTIDs to limit the scope; omit to stop ALL guests on the node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the bulk stop. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_storage_backend_create`
 
@@ -2828,10 +2653,9 @@ confirm=True executes (POST, Smoke-confirm) and returns
 | --- | --- | --- | --- |
 | `backend` | string | yes | Storage backend type to create: one of lvm, lvmthin, zfs, directory. |
 | `name` | string | yes | Name to assign to the new storage backend. |
-| `devices` | string (nullable) | no | Disk device(s) consumed by the new backend: comma-separated list for zfs, a single disk path for lvm/lvmthin/directory. (default: `null`) |
-| `node` | string (nullable) | no | PVE node name to create the backend on; defaults to the configured node if omitted. (default: `null`) |
+| `devices` | ['string', 'null'] | no | Disk device(s) consumed by the new backend: comma-separated list for zfs, a single disk path for lvm/lvmthin/directory. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to create the backend on; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 | `kw` | any | yes |  |
 
 #### `pve_node_storage_backend_delete`
@@ -2852,10 +2676,9 @@ executes (DELETE, Smoke-confirm) and returns
 | --- | --- | --- | --- |
 | `backend` | string | yes | Storage backend type to destroy: one of lvm, lvmthin, zfs, directory. |
 | `name` | string | yes | Name of the storage backend to destroy. |
-| `node` | string (nullable) | no | PVE node name the backend lives on; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name the backend lives on; defaults to the configured node if omitted. (default: `null`) |
 | `cleanup` | boolean | no | If True, also removes the underlying disk data/partitions during backend removal. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_storage_backend_list`
 
@@ -2869,8 +2692,7 @@ pve_node_storage_backend_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `backend` | string | yes | Storage backend type to list: one of lvm, lvmthin, zfs, directory. |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_node_subscription`
 
@@ -2881,8 +2703,7 @@ date, and subscription level.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 
 #### `pve_node_syslog`
 
@@ -2893,9 +2714,8 @@ For the systemd journal (with since/until filtering) use pve_node_journal instea
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name; defaults to the configured node (default: `null`) |
 | `limit` | integer | no | Maximum number of syslog entries to return, max 5000 (values above are rejected) (default: `100`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_node_time_get`
 
@@ -2906,8 +2726,7 @@ GET /nodes/{node}/time. VERIFIED live (PVE 9.2): returns a dict
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to query; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_node_time_set`
 
@@ -2921,9 +2740,8 @@ and returns {"status": "ok", "result": None}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `timezone` | string | yes | IANA timezone name to set on the node (e.g. America/Chicago, UTC). |
-| `node` | string (nullable) | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node name to configure; defaults to the configured node if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the timezone change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_endpoint_create`
 
@@ -2937,10 +2755,9 @@ payload). To modify an existing endpoint instead use pve_notification_endpoint_u
 | --- | --- | --- | --- |
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'smtp', 'sendmail', or 'webhook' |
 | `name` | string | yes | Unique name for the new notification endpoint |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the endpoint (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the endpoint (default: `null`) |
 | `options` | object (nullable) | no | Endpoint-specific config fields, e.g. sendmail: {'mailto-user':'root@pam'}; gotify: {'server':.., 'token':..}; webhook: {'url':..} (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_endpoint_delete`
 
@@ -2954,7 +2771,6 @@ endpoint silently fail until it is re-created with pve_notification_endpoint_cre
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'smtp', 'sendmail', or 'webhook' |
 | `name` | string | yes | Name of the notification endpoint to delete |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_endpoint_list`
 
@@ -2964,9 +2780,7 @@ No state change. Returns a list of dicts for each configured delivery channel (g
 smtp, sendmail, webhook) with type, name, and endpoint-specific config. To add one use
 pve_notification_endpoint_create; to remove one use pve_notification_endpoint_delete.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_notification_endpoint_update`
 
@@ -2980,10 +2794,9 @@ config to revert, or use pve_notification_endpoint_create to make a new one inst
 | --- | --- | --- | --- |
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'smtp', 'sendmail', or 'webhook' |
 | `name` | string | yes | Name of the existing notification endpoint to update |
-| `comment` | string (nullable) | no | Optional free-text comment to set on the endpoint (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment to set on the endpoint (default: `null`) |
 | `options` | object (nullable) | no | Endpoint-specific fields to change, same shape as create (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_matcher_delete`
 
@@ -2995,7 +2808,6 @@ matching this filter go un-routed until re-created with pve_notification_matcher
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification matcher to delete |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_matcher_set`
 
@@ -3007,9 +2819,8 @@ deletion. To remove a matcher use pve_notification_matcher_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification matcher (alert routing rule) to create or update |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the matcher (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the matcher (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create/update (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_notification_test`
 
@@ -3022,7 +2833,6 @@ endpoint or matcher name — see pve_notification_endpoint_list for endpoint nam
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification target to send a test notification to |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True sends a real test notification (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_overbroad_grants`
 
@@ -3032,9 +2842,7 @@ root '/' path — as a least-privilege diagnostic.
 No state change; this only reports, it does not revoke anything. Returns a list of the flagged ACL
 entries (empty when none). Use pve_acl_list for the full ACL and pve_acl_modify to tighten a finding.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_pool_create`
 
@@ -3045,9 +2853,8 @@ guests/storage with pve_pool_update.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `poolid` | string | yes | New pool ID to create. |
-| `comment` | string (nullable) | no | Free-text comment stored with the pool. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the pool. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_pool_delete`
 
@@ -3059,7 +2866,6 @@ pve_pool_update). confirm=True to execute. Synchronous — returns null.
 | --- | --- | --- | --- |
 | `poolid` | string | yes | Pool ID to delete; the pool must be empty first. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_pool_get`
 
@@ -3070,7 +2876,6 @@ Use pve_pools_list to enumerate all pools.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `poolid` | string | yes | Pool ID to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_pool_update`
 
@@ -3082,11 +2887,10 @@ pve_pool_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `poolid` | string | yes | Pool ID to update. |
-| `vms` | string (nullable) | no | Comma-separated VMID/CTID list to add or remove from the pool. (default: `null`) |
-| `storage` | string (nullable) | no | Comma-separated storage ID list to add or remove from the pool. (default: `null`) |
+| `vms` | ['string', 'null'] | no | Comma-separated VMID/CTID list to add or remove from the pool. (default: `null`) |
+| `storage` | ['string', 'null'] | no | Comma-separated storage ID list to add or remove from the pool. (default: `null`) |
 | `delete` | boolean | no | False (default) adds the given vms/storage as members; True removes them instead. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_pools_list`
 
@@ -3094,9 +2898,7 @@ List all resource pools defined cluster-wide (read-only). Returns a list of pool
 with pool IDs and optional comments. Use pve_pool_get to fetch a pool's detailed
 configuration and complete member list.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_realm_create`
 
@@ -3109,10 +2911,9 @@ PVE validates them. Use pve_realms_list to see configured realms first.
 | --- | --- | --- | --- |
 | `realm` | string | yes | New realm id/name. |
 | `realm_type` | string | yes | Realm type: 'pam', 'pve', 'ldap', 'ad', or 'openid'. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
 | `options` | object (nullable) | no | Type-specific config fields passed verbatim to PVE (e.g. ldap: server1/base_dn/user_attr; ad: domain/server1; openid: issuer-url/client-id). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_realm_delete`
 
@@ -3125,7 +2926,6 @@ authenticates through the realm first.
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm id to delete (built-in 'pam'/'pve' are refused). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_realm_get`
 
@@ -3136,7 +2936,6 @@ for openid). Use pve_realm_create/update/delete to manage realms.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm id to look up, e.g. 'pam', 'pve', or a configured ldap/ad/openid realm name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_realm_update`
 
@@ -3148,10 +2947,9 @@ validates them. Use pve_realm_get to see current config first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm id to update. |
-| `comment` | string (nullable) | no | New free-text comment; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment; omit to leave unchanged. (default: `null`) |
 | `options` | object (nullable) | no | Type-specific config fields to update, passed verbatim to PVE (e.g. server1/base_dn/etc.). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_realms_list`
 
@@ -3159,9 +2957,7 @@ List authentication realms/domains configured in Proxmox (read-only). Returns ea
 type (pam/pve/ldap/ad/openid), comment, TFA setting, and default flag. Use pve_realm_get for
 type-specific config; use pve_realm_create/update/delete to manage realms.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_replication_create`
 
@@ -3175,12 +2971,11 @@ pve_replication_delete.
 | `rep_id` | string | yes | Unique ID for the new replication job. |
 | `rep_type` | string | yes | Replication job type, typically 'local'. |
 | `target` | string | yes | Target node (or node/storage) to replicate to. |
-| `schedule` | string (nullable) | no | Proxmox calendar-event schedule string; omit for the default cadence. (default: `null`) |
-| `rate` | number (nullable) | no | Bandwidth limit in MB/s; omit for unlimited. (default: `null`) |
-| `disable` | boolean (nullable) | no | If true, create the job in a disabled state. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text note stored on the job. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | Proxmox calendar-event schedule string; omit for the default cadence. (default: `null`) |
+| `rate` | ['number', 'null'] | no | Bandwidth limit in MB/s; omit for unlimited. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | If true, create the job in a disabled state. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text note stored on the job. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_replication_delete`
 
@@ -3193,7 +2988,6 @@ replicated data on the target is NOT removed.
 | --- | --- | --- | --- |
 | `rep_id` | string | yes | ID of the replication job to delete. |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_replication_update`
 
@@ -3205,12 +2999,11 @@ pve_replication_create; to remove one use pve_replication_delete.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `rep_id` | string | yes | ID of the existing replication job to update. |
-| `schedule` | string (nullable) | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
-| `rate` | number (nullable) | no | New bandwidth limit in MB/s; omit to leave unchanged. (default: `null`) |
-| `disable` | boolean (nullable) | no | Whether the job is disabled; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text note; omit to leave unchanged. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
+| `rate` | ['number', 'null'] | no | New bandwidth limit in MB/s; omit to leave unchanged. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Whether the job is disabled; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text note; omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_restore`
 
@@ -3225,11 +3018,10 @@ first with pve_backup_list.
 | `archive` | string | yes | Volume ID of the backup archive to restore from. |
 | `storage` | string | yes | Storage ID to restore the guest's disks onto (LXC only; ignored for QEMU). |
 | `kind` | string | no | Guest type: lxc or qemu. (default: `"lxc"`) |
-| `node` | string (nullable) | no | Proxmox node to restore onto; defaults to the configured node if omitted. (default: `null`) |
+| `node` | ['string', 'null'] | no | Proxmox node to restore onto; defaults to the configured node if omitted. (default: `null`) |
 | `force` | boolean | no | If vmid already exists, overwrite/destroy the existing guest instead of failing. (default: `false`) |
-| `pool` | string (nullable) | no | Resource pool to place the restored guest in. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Resource pool to place the restored guest in. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the restore. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_role_create`
 
@@ -3241,9 +3033,8 @@ synchronous with no UPID. privs format: comma-separated privilege names (e.g.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `roleid` | string | yes | New role id. |
-| `privs` | string (nullable) | no | Comma-separated privilege names for the role, e.g. 'VM.PowerMgmt,VM.Config.Disk'. (default: `null`) |
+| `privs` | ['string', 'null'] | no | Comma-separated privilege names for the role, e.g. 'VM.PowerMgmt,VM.Config.Disk'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_role_delete`
 
@@ -3255,7 +3046,6 @@ returns a dict; synchronous, no UPID. Use pve_acl_list to see which grants refer
 | --- | --- | --- | --- |
 | `roleid` | string | yes | Role id to delete (built-in roles are refused). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_role_update`
 
@@ -3267,10 +3057,9 @@ and privileges first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `roleid` | string | yes | Role id to update. |
-| `privs` | string (nullable) | no | Comma-separated privilege names to set (or add, if append=True). (default: `null`) |
-| `append` | boolean (nullable) | no | If True, add `privs` to the role's existing privileges instead of replacing them. (default: `null`) |
+| `privs` | ['string', 'null'] | no | Comma-separated privilege names to set (or add, if append=True). (default: `null`) |
+| `append` | ['boolean', 'null'] | no | If True, add `privs` to the role's existing privileges instead of replacing them. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_roles_list`
 
@@ -3278,9 +3067,7 @@ List all Proxmox roles and their privileges (read-only). Returns each role's id,
 set, and whether it is built-in. Use pve_role_create/update/delete to modify roles; use
 pve_acl_list to see which principals hold which roles at which paths.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_rollback`
 
@@ -3294,9 +3081,8 @@ pve_snapshot_create.
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `snapname` | string | yes | Name of the snapshot to roll the guest back to. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN with blast radius; set `true` to execute the rollback. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_apply`
 
@@ -3317,10 +3103,9 @@ lock_token is never written to the audit ledger (see network.py module docstring
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held (from pve_sdn_lock_acquire). (default: `null`) |
-| `release_lock` | boolean (nullable) | no | Whether PVE releases the lock automatically after a successful commit (only relevant when lock_token is given; PVE's own default is True — omit to use it). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held (from pve_sdn_lock_acquire). (default: `null`) |
+| `release_lock` | ['boolean', 'null'] | no | Whether PVE releases the lock automatically after a successful commit (only relevant when lock_token is given; PVE's own default is True — omit to use it). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True applies pending SDN config cluster-wide. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_controller_create`
 
@@ -3337,9 +3122,8 @@ default (returns a PLAN); confirm=True creates the pending controller, returning
 | `controller` | string | yes | New SDN controller id to create. |
 | `controller_type` | string | yes | Controller type: bgp, evpn, faucet, or isis. |
 | `options` | object (nullable) | no | Type-specific fields (asn, peers, isis-domain, fabric, node, nodes, ...); PVE validates per type server-side. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_controller_delete`
 
@@ -3355,9 +3139,8 @@ enact).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `controller` | string | yes | Existing SDN controller id to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_controller_get`
 
@@ -3367,9 +3150,8 @@ enumerate controller ids first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `controller` | string | yes | Existing SDN controller id to read. |
-| `pending` | boolean (nullable) | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
-| `running` | boolean (nullable) | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
 
 #### `pve_sdn_controller_update`
 
@@ -3385,10 +3167,9 @@ edit and returns {status, result}. RISK_LOW (staging; inert until pve_sdn_apply)
 | `controller` | string | yes | Existing SDN controller id to update. |
 | `options` | object (nullable) | no | Controller fields to set (type-specific — asn, peers, isis-domain, ...). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Controller option keys to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_controllers_list`
 
@@ -3397,8 +3178,7 @@ and pve_sdn_apply to commit.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `controller_type` | string (nullable) | no | Filter to one controller type: bgp, evpn, faucet, or isis. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `controller_type` | ['string', 'null'] | no | Filter to one controller type: bgp, evpn, faucet, or isis. (default: `null`) |
 
 #### `pve_sdn_dns_create`
 
@@ -3417,13 +3197,12 @@ RISK_LOW (staging, no live network effect).
 | `url` | string | yes | PowerDNS API base URL. |
 | `key` | string | yes | PowerDNS API key — a SECRET, masked in plans/the ledger; forwarded raw on the wire so the create actually works. |
 | `dns_type` | string | no | Dns plugin type — only 'powerdns' exists today. (default: `"powerdns"`) |
-| `fingerprint` | string (nullable) | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
-| `reversemaskv6` | integer (nullable) | no | IPv6 reverse-zone mask length. (default: `null`) |
-| `reversev6mask` | integer (nullable) | no | IPv6 reverse-zone mask length (create-only field — not accepted on update; schema asymmetry, see module docstring). (default: `null`) |
-| `dns_ttl` | integer (nullable) | no | DNS record TTL in seconds (wire key 'ttl' — named dns_ttl here because this codebase reserves the bare 'ttl' parameter name for the out-of-band arm-lease mechanism). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
+| `reversemaskv6` | ['integer', 'null'] | no | IPv6 reverse-zone mask length. (default: `null`) |
+| `reversev6mask` | ['integer', 'null'] | no | IPv6 reverse-zone mask length (create-only field — not accepted on update; schema asymmetry, see module docstring). (default: `null`) |
+| `dns_ttl` | ['integer', 'null'] | no | DNS record TTL in seconds (wire key 'ttl' — named dns_ttl here because this codebase reserves the bare 'ttl' parameter name for the out-of-band arm-lease mechanism). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_dns_delete`
 
@@ -3437,9 +3216,8 @@ integration (re-supplying the key) to revert. RISK_MEDIUM.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `dns` | string | yes | Existing SDN dns integration id to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_dns_get`
 
@@ -3454,7 +3232,6 @@ audit ledger for pve_sdn_dns_update/pve_sdn_dns_delete, never here.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `dns` | string | yes | Existing SDN dns integration id to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_dns_list`
 
@@ -3463,8 +3240,7 @@ and pve_sdn_apply to commit.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `dns_type` | string (nullable) | no | Filter to one dns type (only 'powerdns' exists today). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `dns_type` | ['string', 'null'] | no | Filter to one dns type (only 'powerdns' exists today). (default: `null`) |
 
 #### `pve_sdn_dns_update`
 
@@ -3481,16 +3257,15 @@ RISK_LOW (staging).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `dns` | string | yes | Existing SDN dns integration id to update. |
-| `url` | string (nullable) | no | New PowerDNS API base URL. (default: `null`) |
-| `key` | string (nullable) | no | New PowerDNS API key — a SECRET, masked in plans/the ledger; forwarded raw on the wire. (default: `null`) |
-| `fingerprint` | string (nullable) | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
-| `reversemaskv6` | integer (nullable) | no | IPv6 reverse-zone mask length. (default: `null`) |
-| `dns_ttl` | integer (nullable) | no | DNS record TTL in seconds (wire key 'ttl' — see pve_sdn_dns_create's own note on the param-name split). (default: `null`) |
+| `url` | ['string', 'null'] | no | New PowerDNS API base URL. (default: `null`) |
+| `key` | ['string', 'null'] | no | New PowerDNS API key — a SECRET, masked in plans/the ledger; forwarded raw on the wire. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
+| `reversemaskv6` | ['integer', 'null'] | no | IPv6 reverse-zone mask length. (default: `null`) |
+| `dns_ttl` | ['integer', 'null'] | no | DNS record TTL in seconds (wire key 'ttl' — see pve_sdn_dns_create's own note on the param-name split). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field names to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_dry_run`
 
@@ -3503,8 +3278,7 @@ not a cluster-wide guarantee every node agrees.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Node to render the preview against; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to render the preview against; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_fabric_create`
 
@@ -3519,10 +3293,9 @@ pending fabric, returning {status, result}. RISK_LOW (staging, no live network e
 | `fabric` | string | yes | New SDN fabric id to create (2-8 chars, alnum + hyphen). |
 | `protocol` | string | yes | Fabric routing protocol: openfabric, ospf, wireguard, or bgp. |
 | `options` | object (nullable) | no | Protocol-conditional fields (area, csnp_interval, hello_interval, ip_prefix, ip6_prefix, persistent_keepalive, redistribute, route_filter); PVE validates per protocol server-side. redistribute is schema-required for every protocol but only meaningful for ospf/bgp — omitting it for openfabric/wireguard is UNTESTED, Smoke-confirm. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (one of three exceptions on this SDN plane to the 'digest never on create' convention). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (one of three exceptions on this SDN plane to the 'digest never on create' convention). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_delete`
 
@@ -3541,7 +3314,6 @@ returns {status, result}; no config UNDO — re-create the fabric to revert. RIS
 | --- | --- | --- | --- |
 | `fabric` | string | yes | Existing SDN fabric id to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_get`
 
@@ -3553,7 +3325,6 @@ the list tool above).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fabric` | string | yes | Existing SDN fabric id to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_node_create`
 
@@ -3569,10 +3340,9 @@ pending node, returning {status, result}. RISK_LOW (staging, no live network eff
 | `node_id` | string | yes | Fabric node id to create (a PVE cluster node hostname). |
 | `protocol` | string | yes | Fabric routing protocol: openfabric, ospf, wireguard, or bgp — must match the fabric's own configured protocol. |
 | `options` | object (nullable) | no | Protocol-conditional fields (interfaces, ip, ip6, peers, allowed_ips, endpoint, public_key, role); PVE validates per protocol server-side. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (one of three exceptions on this SDN plane to the 'digest never on create' convention). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (one of three exceptions on this SDN plane to the 'digest never on create' convention). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_node_delete`
 
@@ -3589,7 +3359,6 @@ revert. RISK_MEDIUM (staging a removal an apply would enact).
 | `fabric_id` | string | yes | Existing SDN fabric id. |
 | `node_id` | string | yes | Existing fabric node id to remove. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_node_get`
 
@@ -3600,7 +3369,6 @@ this single-object endpoint (schema-verified absence, unlike the list tools abov
 | --- | --- | --- | --- |
 | `fabric_id` | string | yes | Existing SDN fabric id. |
 | `node_id` | string | yes | Existing fabric node id (a PVE cluster node hostname) to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_node_update`
 
@@ -3616,10 +3384,9 @@ RISK_LOW (staging; inert until pve_sdn_apply).
 | `protocol` | string | yes | Fabric routing protocol — REQUIRED on update too (the schema requires restating it). Whether passing a DIFFERENT protocol re-types the node or is rejected is undocumented — forwarded verbatim. |
 | `options` | object (nullable) | no | Protocol-conditional fields to set (interfaces, ip, ip6, peers, allowed_ips, endpoint, public_key, role). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field name(s) to unset — the valid enum is protocol-conditional (interfaces/ip/ip6 for bgp/openfabric/ospf; allowed_ips/endpoint/interfaces/ip/ip6/peers for wireguard). (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabric_nodes_list`
 
@@ -3628,9 +3395,8 @@ READ-ONLY: list the nodes belonging to ONE SDN fabric.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fabric_id` | string | yes | Existing SDN fabric id whose nodes to list. |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_fabric_nodes_list_all`
 
@@ -3639,9 +3405,8 @@ fabric. Use pve_sdn_fabric_nodes_list to scope to one fabric_id.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_fabric_status_interfaces`
 
@@ -3651,8 +3416,7 @@ OWN locally-rendered network interfaces, not peer-controlled).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fabric` | string | yes | Existing SDN fabric id. |
-| `node` | string (nullable) | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
 
 #### `pve_sdn_fabric_status_neighbors`
 
@@ -3663,8 +3427,7 @@ compromised/malicious peer controls these bytes.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fabric` | string | yes | Existing SDN fabric id. |
-| `node` | string (nullable) | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
 
 #### `pve_sdn_fabric_status_routes`
 
@@ -3675,8 +3438,7 @@ over the running routing protocol.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fabric` | string | yes | Existing SDN fabric id. |
-| `node` | string (nullable) | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Cluster node to query. Omit to use Proximo's configured default node. (default: `null`) |
 
 #### `pve_sdn_fabric_update`
 
@@ -3691,10 +3453,9 @@ pve_sdn_fabric_create; to remove one use pve_sdn_fabric_delete. Dry-run by defau
 | `protocol` | string | yes | Fabric routing protocol — REQUIRED on update too (the schema requires restating it; unlike controller/dns/ipam, where type is immutable and absent from PUT). Whether passing a DIFFERENT protocol than the fabric's current one re-types it or is rejected is undocumented — forwarded verbatim. |
 | `options` | object (nullable) | no | Protocol-conditional fields to set (area, csnp_interval, hello_interval, ip_prefix, ip6_prefix, persistent_keepalive, redistribute, route_filter). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field name(s) to unset — the valid enum is protocol-conditional (e.g. ip_prefix/ip6_prefix/hello_interval/csnp_interval/route_filter for openfabric; area/redistribute/route_filter for ospf; ip_prefix/ip6_prefix/redistribute/route_filter/route_map_in/route_map_out for bgp; persistent_keepalive for wireguard). (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_fabrics_all`
 
@@ -3705,9 +3466,8 @@ cheap N+1-avoidance value.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_fabrics_list`
 
@@ -3716,9 +3476,8 @@ to add and pve_sdn_apply to commit.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_ipam_create`
 
@@ -3736,13 +3495,12 @@ returning {status, result}. RISK_LOW (staging, no live network effect).
 | --- | --- | --- | --- |
 | `ipam` | string | yes | New SDN ipam integration id to create. |
 | `ipam_type` | string | yes | Ipam type: netbox, phpipam, or pve. |
-| `url` | string (nullable) | no | Ipam API base URL (netbox/phpipam). (default: `null`) |
-| `token` | string (nullable) | no | Ipam API token — a SECRET, masked in plans/the ledger; forwarded raw on the wire so the create actually works. (default: `null`) |
-| `section` | integer (nullable) | no | Phpipam section id. (default: `null`) |
-| `fingerprint` | string (nullable) | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `url` | ['string', 'null'] | no | Ipam API base URL (netbox/phpipam). (default: `null`) |
+| `token` | ['string', 'null'] | no | Ipam API token — a SECRET, masked in plans/the ledger; forwarded raw on the wire so the create actually works. (default: `null`) |
+| `section` | ['integer', 'null'] | no | Phpipam section id. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_ipam_delete`
 
@@ -3756,9 +3514,8 @@ integration (re-supplying the token) to revert. RISK_MEDIUM.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ipam` | string | yes | Existing SDN ipam integration id to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_ipam_get`
 
@@ -3773,7 +3530,6 @@ audit ledger for pve_sdn_ipam_update/pve_sdn_ipam_delete, never here.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ipam` | string | yes | Existing SDN ipam integration id to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_ipam_status`
 
@@ -3788,7 +3544,6 @@ untrusted content, not instructions.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ipam` | string | yes | Existing SDN ipam integration id whose tracked address entries to list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_ipam_update`
 
@@ -3803,15 +3558,14 @@ RISK_LOW (staging).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ipam` | string | yes | Existing SDN ipam integration id to update. |
-| `url` | string (nullable) | no | New ipam API base URL. (default: `null`) |
-| `token` | string (nullable) | no | New ipam API token — a SECRET, masked in plans/the ledger; forwarded raw on the wire. (default: `null`) |
-| `section` | integer (nullable) | no | New phpipam section id. (default: `null`) |
-| `fingerprint` | string (nullable) | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
+| `url` | ['string', 'null'] | no | New ipam API base URL. (default: `null`) |
+| `token` | ['string', 'null'] | no | New ipam API token — a SECRET, masked in plans/the ledger; forwarded raw on the wire. (default: `null`) |
+| `section` | ['integer', 'null'] | no | New phpipam section id. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | Certificate SHA-256 fingerprint (colon-separated hex byte pairs). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field names to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_ipams_list`
 
@@ -3820,8 +3574,7 @@ and pve_sdn_apply to commit.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `ipam_type` | string (nullable) | no | Filter to one ipam type: netbox, phpipam, or pve. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ipam_type` | ['string', 'null'] | no | Filter to one ipam type: netbox, phpipam, or pve. (default: `null`) |
 
 #### `pve_sdn_lock_acquire`
 
@@ -3843,9 +3596,8 @@ without proof of ownership.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `allow_pending` | boolean (nullable) | no | True bypasses PVE's own default refusal to lock over already-dirty pending state. Never default this on. (default: `null`) |
+| `allow_pending` | ['boolean', 'null'] | no | True bypasses PVE's own default refusal to lock over already-dirty pending state. Never default this on. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True acquires the lock. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_lock_release`
 
@@ -3856,10 +3608,9 @@ in-flight operation). Dry-run by default (returns a PLAN); confirm=True releases
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `lock_token` | string (nullable) | no | Lock token from pve_sdn_lock_acquire to release your own held lock. (default: `null`) |
-| `force` | boolean (nullable) | no | True releases WITHOUT the token — can break a DIFFERENT caller's in-flight operation. Never default this on. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | Lock token from pve_sdn_lock_acquire to release your own held lock. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | True releases WITHOUT the token — can break a DIFFERENT caller's in-flight operation. Never default this on. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True releases the lock. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_create`
 
@@ -3875,10 +3626,9 @@ pending list, returning {status, result}. RISK_LOW (staging, no live network eff
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | New SDN prefix list id to create. |
 | `entries` | array<object> (nullable) | no | Optional bulk seed: a list of {action, prefix, ge?, le?, seq?} entry objects, created in the SAME call. PVE validates each item server-side. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (a real exception to the plane-wide 'digest never on create' convention). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (a real exception to the plane-wide 'digest never on create' convention). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_delete`
 
@@ -3894,9 +3644,8 @@ removal an apply would enact).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_entries_list`
 
@@ -3906,7 +3655,6 @@ one and pve_sdn_apply to commit.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id whose entries to list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_entry_create`
 
@@ -3923,12 +3671,11 @@ Dry-run by default (returns a PLAN); confirm=True creates the pending entry, ret
 | `prefix_list` | string | yes | Existing SDN prefix list id to add an entry to. |
 | `action` | string | yes | Matching policy: 'permit' or 'deny'. |
 | `prefix` | string | yes | CIDR network to match (e.g. 10.0.0.0/8, ::/0). |
-| `ge` | integer (nullable) | no | Lower bound on matched prefix length (0-128). (default: `null`) |
-| `le` | integer (nullable) | no | Upper bound on matched prefix length (0-128). (default: `null`) |
-| `seq` | integer (nullable) | no | Explicit sequence number (1-4294967295) — omit to let PVE assign one. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `ge` | ['integer', 'null'] | no | Lower bound on matched prefix length (0-128). (default: `null`) |
+| `le` | ['integer', 'null'] | no | Upper bound on matched prefix length (0-128). (default: `null`) |
+| `seq` | ['integer', 'null'] | no | Explicit sequence number (1-4294967295) — omit to let PVE assign one. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_entry_delete`
 
@@ -3941,9 +3688,8 @@ the entry to revert. RISK_MEDIUM.
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id. |
 | `entry_id` | string \| integer | yes | OPAQUE entry path token (the schema's {url_seq}) — capture from a prior list/get read. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_entry_get`
 
@@ -3955,7 +3701,6 @@ methods (GET/PUT/DELETE), unlike route-map's own {order}.
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id. |
 | `entry_id` | string \| integer | yes | OPAQUE entry path token (the schema's {url_seq}) — capture from a prior pve_sdn_prefix_list_entries_list/entry_get read; NOT guaranteed to be a plain integer even though it usually matches the entry's own 'seq' field. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_entry_update`
 
@@ -3968,16 +3713,15 @@ stages the edit and returns {status, result}. RISK_LOW (staging).
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id. |
 | `entry_id` | string \| integer | yes | OPAQUE entry path token (the schema's {url_seq}) — capture from a prior list/get read. |
-| `action` | string (nullable) | no | New matching policy: 'permit' or 'deny'. (default: `null`) |
-| `prefix` | string (nullable) | no | New CIDR network to match. (default: `null`) |
-| `ge` | integer (nullable) | no | New lower bound on matched prefix length (0-128). (default: `null`) |
-| `le` | integer (nullable) | no | New upper bound on matched prefix length (0-128). (default: `null`) |
-| `seq` | integer (nullable) | no | New sequence number (1-4294967295). (default: `null`) |
+| `action` | ['string', 'null'] | no | New matching policy: 'permit' or 'deny'. (default: `null`) |
+| `prefix` | ['string', 'null'] | no | New CIDR network to match. (default: `null`) |
+| `ge` | ['integer', 'null'] | no | New lower bound on matched prefix length (0-128). (default: `null`) |
+| `le` | ['integer', 'null'] | no | New upper bound on matched prefix length (0-128). (default: `null`) |
+| `seq` | ['integer', 'null'] | no | New sequence number (1-4294967295). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field names to unset — only 'le', 'ge', 'seq' are valid values on this endpoint. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking — accepted here (unlike this same entry's own CREATE, which has none). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking — accepted here (unlike this same entry's own CREATE, which has none). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_get`
 
@@ -3987,7 +3731,6 @@ Use pve_sdn_prefix_lists_list to enumerate prefix-list ids first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `prefix_list` | string | yes | Existing SDN prefix list id to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_list_update`
 
@@ -4001,10 +3744,9 @@ RISK_LOW (staging; inert until pve_sdn_apply).
 | `prefix_list` | string | yes | Existing SDN prefix list id to update. |
 | `entries` | array<object> (nullable) | no | Replacement entries array (whether this REPLACES or MERGES with existing entries by seq is undocumented in the schema — treat conservatively as a full REPLACE). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field(s) to unset — only 'entries' is a valid value on this endpoint. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_prefix_lists_list`
 
@@ -4013,10 +3755,9 @@ and pve_sdn_apply to commit.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `verbose` | boolean (nullable) | no | False returns id-only summaries; omit/True for the fuller per-item shape. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
+| `verbose` | ['boolean', 'null'] | no | False returns id-only summaries; omit/True for the fuller per-item shape. (default: `null`) |
 
 #### `pve_sdn_rollback`
 
@@ -4035,10 +3776,9 @@ from scratch). lock_token is never written to the audit ledger (see network.py m
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
-| `release_lock` | boolean (nullable) | no | Whether PVE releases the lock automatically after a successful rollback (only relevant when lock_token is given; PVE's own default is True — omit to use it). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `release_lock` | ['boolean', 'null'] | no | Whether PVE releases the lock automatically after a successful rollback (only relevant when lock_token is given; PVE's own default is True — omit to use it). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True discards all pending SDN config cluster-wide. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_route_map_entries_list`
 
@@ -4047,9 +3787,8 @@ READ-ONLY: list every entry belonging to ONE route map.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `route_map_id` | string | yes | Existing SDN route map id whose entries to list. |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_route_map_entries_list_all`
 
@@ -4058,9 +3797,8 @@ pve_sdn_route_map_entries_list to scope to one route-map id.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pending` | boolean (nullable) | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | Display pending (staged, not-yet-applied) config. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead. (default: `null`) |
 
 #### `pve_sdn_route_map_entry_create`
 
@@ -4081,11 +3819,10 @@ network effect).
 | `match` | array<object> (nullable) | no | Array of {key, value} match-clause objects (route-type, vni, ip-address-prefix-list, metric, local-preference, peer, tag, ...); PVE validates each item's key server-side. (default: `null`) |
 | `set_clauses` | array<object> (nullable) | no | Array of {key, value} set-clause objects (ip-next-hop, local-preference, weight, metric, ...) — wire key is 'set'; renamed here to avoid shadowing the 'set' builtin. (default: `null`) |
 | `exit_action` | object (nullable) | no | Single {key, value} object: key is one of on-match-goto/on-match-next/continue. (default: `null`) |
-| `call` | string (nullable) | no | Another route-map id to invoke as a sub-routine. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (unlike prefix-list's own entry create, which has none). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `call` | ['string', 'null'] | no | Another route-map id to invoke as a sub-routine. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking — accepted on CREATE for this endpoint (unlike prefix-list's own entry create, which has none). (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_route_map_entry_delete`
 
@@ -4099,9 +3836,8 @@ config UNDO — re-create the entry to revert. RISK_MEDIUM.
 | --- | --- | --- | --- |
 | `route_map_id` | string | yes | Existing SDN route map id. |
 | `order` | integer | yes | Entry position to delete (0-65535, required). |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_route_map_entry_get`
 
@@ -4111,7 +3847,6 @@ READ-ONLY: read a single route-map entry by its (route_map_id, order) pair.
 | --- | --- | --- | --- |
 | `route_map_id` | string | yes | Existing SDN route map id. |
 | `order` | integer | yes | Entry position (0-65535) — a properly-typed, schema-required integer (unlike prefix-list's opaque entry token). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_route_map_entry_update`
 
@@ -4124,16 +3859,15 @@ stages the edit and returns {status, result}. RISK_LOW (staging).
 | --- | --- | --- | --- |
 | `route_map_id` | string | yes | Existing SDN route map id. |
 | `order` | integer | yes | Entry position to update (0-65535, required — identifies WHICH entry; not itself changeable via this call). |
-| `action` | string (nullable) | no | New matching policy: 'permit' or 'deny'. (default: `null`) |
+| `action` | ['string', 'null'] | no | New matching policy: 'permit' or 'deny'. (default: `null`) |
 | `match` | array<object> (nullable) | no | Replacement array of {key, value} match-clause objects. (default: `null`) |
 | `set_clauses` | array<object> (nullable) | no | Replacement array of {key, value} set-clause objects (wire key 'set'). (default: `null`) |
 | `exit_action` | object (nullable) | no | Replacement {key, value} exit-action object. (default: `null`) |
-| `call` | string (nullable) | no | New route-map id to invoke as a sub-routine. (default: `null`) |
+| `call` | ['string', 'null'] | no | New route-map id to invoke as a sub-routine. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Field names to unset — only 'set', 'match', 'call', 'exit-action' are valid values on this endpoint (NOT action or order). (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_route_maps_list`
 
@@ -4144,8 +3878,7 @@ no container-level create for a route map itself.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `running` | boolean (nullable) | no | Display the currently-APPLIED (running) config instead of the default staged-merged view. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | Display the currently-APPLIED (running) config instead of the default staged-merged view. (default: `null`) |
 
 #### `pve_sdn_subnet_create`
 
@@ -4161,9 +3894,8 @@ Dry-run by default (returns a PLAN); confirm=True creates the pending subnet and
 | `vnet` | string | yes | SDN vnet name the subnet belongs to. |
 | `subnet` | string | yes | Subnet CIDR to create, e.g. 10.0.0.0/24. |
 | `options` | object (nullable) | no | Subnet options such as gateway, snat, and dhcp. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_subnet_delete`
 
@@ -4177,9 +3909,8 @@ subnet to revert. RISK_MEDIUM (staging a removal an apply would enact).
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name the subnet belongs to. |
 | `subnet` | string | yes | Subnet id (CIDR) from pve_sdn_subnet_list to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_subnet_get`
 
@@ -4190,9 +3921,8 @@ subnets LIST existed before). Use pve_sdn_subnet_list to enumerate subnet ids fi
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name the subnet belongs to. |
 | `subnet` | string | yes | Subnet id (CIDR or PVE-derived id) from pve_sdn_subnet_list to read. |
-| `pending` | boolean (nullable) | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
-| `running` | boolean (nullable) | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
 
 #### `pve_sdn_subnet_list`
 
@@ -4203,7 +3933,6 @@ add one and pve_sdn_apply to commit.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name whose subnets to list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_subnet_update`
 
@@ -4219,10 +3948,9 @@ RISK_LOW (staging).
 | `subnet` | string | yes | Subnet id (CIDR) from pve_sdn_subnet_list to update. |
 | `options` | object (nullable) | no | Subnet fields to set (gateway, snat, dhcp, etc). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Subnet option keys to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_create`
 
@@ -4237,9 +3965,8 @@ Dry-run by default (returns a PLAN); confirm=True creates the pending vnet and r
 | `vnet` | string | yes | New SDN vnet name to create. |
 | `zone` | string | yes | SDN zone id the vnet belongs to. |
 | `options` | object (nullable) | no | Vnet options such as tag, alias, and vlanaware. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_delete`
 
@@ -4252,9 +3979,8 @@ vnet to revert. RISK_MEDIUM.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | Existing SDN vnet name to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_options_get`
 
@@ -4269,7 +3995,6 @@ change these.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_options_set`
 
@@ -4294,9 +4019,8 @@ setting the prior values back.
 | `vnet` | string | yes | SDN vnet name. |
 | `options` | object (nullable) | no | Key-value bag of options to set: enable (bool), log_level_forward, policy_forward (ACCEPT/DROP). (default: `null`) |
 | `delete` | array<string> (nullable) | no | List of option keys to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest forwarded to PVE to abort if the options changed since a prior read. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest forwarded to PVE to abort if the options changed since a prior read. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_rule_add`
 
@@ -4316,21 +4040,20 @@ pve_sdn_vnet_firewall_rule_remove.
 | `vnet` | string | yes | SDN vnet name. |
 | `action` | string | yes | Rule action: 'ACCEPT', 'DROP', or 'REJECT'. |
 | `fw_type` | string | no | Rule type: 'in', 'out', 'forward', or 'group' (richer than the guest/cluster/node firewall's in/out-only direction). (default: `"in"`) |
-| `source` | string (nullable) | no | Source address/CIDR/alias to match, or None for any. (default: `null`) |
-| `dest` | string (nullable) | no | Destination address/CIDR/alias to match, or None for any. (default: `null`) |
-| `proto` | string (nullable) | no | IP protocol to match, e.g. 'tcp', 'udp', 'icmp'. (default: `null`) |
-| `dport` | string (nullable) | no | Destination port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
-| `sport` | string (nullable) | no | Source port or port range to match. (default: `null`) |
-| `icmp_type` | string (nullable) | no | ICMP type, only valid when proto is icmp/icmpv6/ipv6-icmp. (default: `null`) |
-| `iface` | string (nullable) | no | Network interface name to match. (default: `null`) |
-| `log` | string (nullable) | no | Log level for this rule, e.g. 'info', 'nolog'. (default: `null`) |
-| `macro` | string (nullable) | no | Predefined standard macro name. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment stored with the rule. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the rule is active immediately; omit to use PVE's own default (enabled). (default: `null`) |
-| `pos` | integer (nullable) | no | Position to insert at — Smoke-confirm: this endpoint's schema declares 'pos' on CREATE with description text copy-pasted from its PUT sibling; actual create-time effect (insert-at-pos vs. append vs. ignored) is unconfirmed. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock digest — schema-declared on this endpoint's CREATE (a platform inconsistency vs. the shipped guest/cluster/node rule_add, which accepts none); forwarded when given. (default: `null`) |
+| `source` | ['string', 'null'] | no | Source address/CIDR/alias to match, or None for any. (default: `null`) |
+| `dest` | ['string', 'null'] | no | Destination address/CIDR/alias to match, or None for any. (default: `null`) |
+| `proto` | ['string', 'null'] | no | IP protocol to match, e.g. 'tcp', 'udp', 'icmp'. (default: `null`) |
+| `dport` | ['string', 'null'] | no | Destination port or port range to match, e.g. '22' or '8000:8010'. (default: `null`) |
+| `sport` | ['string', 'null'] | no | Source port or port range to match. (default: `null`) |
+| `icmp_type` | ['string', 'null'] | no | ICMP type, only valid when proto is icmp/icmpv6/ipv6-icmp. (default: `null`) |
+| `iface` | ['string', 'null'] | no | Network interface name to match. (default: `null`) |
+| `log` | ['string', 'null'] | no | Log level for this rule, e.g. 'info', 'nolog'. (default: `null`) |
+| `macro` | ['string', 'null'] | no | Predefined standard macro name. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment stored with the rule. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the rule is active immediately; omit to use PVE's own default (enabled). (default: `null`) |
+| `pos` | ['integer', 'null'] | no | Position to insert at — Smoke-confirm: this endpoint's schema declares 'pos' on CREATE with description text copy-pasted from its PUT sibling; actual create-time effect (insert-at-pos vs. append vs. ignored) is unconfirmed. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock digest — schema-declared on this endpoint's CREATE (a platform inconsistency vs. the shipped guest/cluster/node rule_add, which accepts none); forwarded when given. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_rule_get`
 
@@ -4343,7 +4066,6 @@ pve_sdn_vnet_firewall_rules_list to find the current position before editing/rem
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name. |
 | `pos` | integer | yes | Rule position (0-based index) in this vnet's rule list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_rule_remove`
 
@@ -4363,9 +4085,8 @@ rule with pve_sdn_vnet_firewall_rule_add.
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name. |
 | `pos` | integer | yes | Rule position (0-based index) to delete. |
-| `digest` | string (nullable) | no | OPTIONAL optimistic-lock passthrough, forwarded verbatim when given. NEVER required, NEVER derived: this endpoint's reads (rules list / rule get) expose no digest field on this schema at all (schema-verified), so the PLAN cannot supply one — pass a digest only if you obtained one out-of-band. (default: `null`) |
+| `digest` | ['string', 'null'] | no | OPTIONAL optimistic-lock passthrough, forwarded verbatim when given. NEVER required, NEVER derived: this endpoint's reads (rules list / rule get) expose no digest field on this schema at all (schema-verified), so the PLAN cannot supply one — pass a digest only if you obtained one out-of-band. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_rule_update`
 
@@ -4387,23 +4108,22 @@ UNDO — revert by updating it back, or remove it with pve_sdn_vnet_firewall_rul
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name. |
 | `pos` | integer | yes | Rule position (0-based index) to update. |
-| `action` | string (nullable) | no | New rule action; omit to leave unchanged. (default: `null`) |
-| `fw_type` | string (nullable) | no | New rule type: in/out/forward/group; omit to leave unchanged. (default: `null`) |
-| `source` | string (nullable) | no | New source address/CIDR/alias; omit to leave unchanged. (default: `null`) |
-| `dest` | string (nullable) | no | New destination address/CIDR/alias; omit to leave unchanged. (default: `null`) |
-| `proto` | string (nullable) | no | New IP protocol; omit to leave unchanged. (default: `null`) |
-| `dport` | string (nullable) | no | New destination port/range; omit to leave unchanged. (default: `null`) |
-| `sport` | string (nullable) | no | New source port/range; omit to leave unchanged. (default: `null`) |
-| `icmp_type` | string (nullable) | no | New ICMP type; omit to leave unchanged. (default: `null`) |
-| `iface` | string (nullable) | no | New interface name; omit to leave unchanged. (default: `null`) |
-| `log` | string (nullable) | no | New log level; omit to leave unchanged. (default: `null`) |
-| `macro` | string (nullable) | no | New macro name; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text comment; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | New enabled state; omit to leave unchanged. (default: `null`) |
-| `moveto` | integer (nullable) | no | Move the rule to this new position instead — PVE IGNORES every other argument in this same call when moveto is given (schema-documented). Do the move and the field edit in two separate calls if you need both. (default: `null`) |
-| `digest` | string (nullable) | no | OPTIONAL optimistic-lock passthrough, forwarded verbatim when given. NEVER required, NEVER derived: this endpoint's reads (rules list / rule get) expose no digest field on this schema at all (schema-verified), so the PLAN cannot supply one — pass a digest only if you obtained one out-of-band. (default: `null`) |
+| `action` | ['string', 'null'] | no | New rule action; omit to leave unchanged. (default: `null`) |
+| `fw_type` | ['string', 'null'] | no | New rule type: in/out/forward/group; omit to leave unchanged. (default: `null`) |
+| `source` | ['string', 'null'] | no | New source address/CIDR/alias; omit to leave unchanged. (default: `null`) |
+| `dest` | ['string', 'null'] | no | New destination address/CIDR/alias; omit to leave unchanged. (default: `null`) |
+| `proto` | ['string', 'null'] | no | New IP protocol; omit to leave unchanged. (default: `null`) |
+| `dport` | ['string', 'null'] | no | New destination port/range; omit to leave unchanged. (default: `null`) |
+| `sport` | ['string', 'null'] | no | New source port/range; omit to leave unchanged. (default: `null`) |
+| `icmp_type` | ['string', 'null'] | no | New ICMP type; omit to leave unchanged. (default: `null`) |
+| `iface` | ['string', 'null'] | no | New interface name; omit to leave unchanged. (default: `null`) |
+| `log` | ['string', 'null'] | no | New log level; omit to leave unchanged. (default: `null`) |
+| `macro` | ['string', 'null'] | no | New macro name; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | New enabled state; omit to leave unchanged. (default: `null`) |
+| `moveto` | ['integer', 'null'] | no | Move the rule to this new position instead — PVE IGNORES every other argument in this same call when moveto is given (schema-documented). Do the move and the field edit in two separate calls if you need both. (default: `null`) |
+| `digest` | ['string', 'null'] | no | OPTIONAL optimistic-lock passthrough, forwarded verbatim when given. NEVER required, NEVER derived: this endpoint's reads (rules list / rule get) expose no digest field on this schema at all (schema-verified), so the PLAN cannot supply one — pass a digest only if you obtained one out-of-band. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_firewall_rules_list`
 
@@ -4415,7 +4135,6 @@ pve_sdn_vnet_firewall_rule_get to read one rule by position.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_get`
 
@@ -4425,9 +4144,8 @@ vnets LIST existed before). Use pve_sdn_vnets_list to enumerate vnet names first
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | Existing SDN vnet name to read. |
-| `pending` | boolean (nullable) | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
-| `running` | boolean (nullable) | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
 
 #### `pve_sdn_vnet_ip_create`
 
@@ -4446,9 +4164,8 @@ pve_sdn_vnet_ip_delete.
 | `vnet` | string | yes | SDN vnet name. |
 | `zone` | string | yes | SDN zone the vnet belongs to. |
 | `ip` | string | yes | IP address to associate with the given MAC address. |
-| `mac` | string (nullable) | no | Unicast MAC address, XX:XX:XX:XX:XX:XX. (default: `null`) |
+| `mac` | ['string', 'null'] | no | Unicast MAC address, XX:XX:XX:XX:XX:XX. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_ip_delete`
 
@@ -4465,9 +4182,8 @@ pve_sdn_vnet_ip_create to revert.
 | `vnet` | string | yes | SDN vnet name. |
 | `zone` | string | yes | SDN zone the vnet belongs to. |
 | `ip` | string | yes | IP address of the mapping to delete. |
-| `mac` | string (nullable) | no | MAC address of the mapping to delete, if disambiguation is needed. (default: `null`) |
+| `mac` | ['string', 'null'] | no | MAC address of the mapping to delete, if disambiguation is needed. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_ip_update`
 
@@ -4484,10 +4200,9 @@ mac/vmid.
 | `vnet` | string | yes | SDN vnet name. |
 | `zone` | string | yes | SDN zone the vnet belongs to. |
 | `ip` | string | yes | IP address of the mapping to update. |
-| `mac` | string (nullable) | no | New unicast MAC address, XX:XX:XX:XX:XX:XX. (default: `null`) |
-| `vmid` | string (nullable) | no | Guest VMID/CTID to associate with the mapping for tracking/audit purposes (PUT-only — not accepted on create/delete). (default: `null`) |
+| `mac` | ['string', 'null'] | no | New unicast MAC address, XX:XX:XX:XX:XX:XX. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Guest VMID/CTID to associate with the mapping for tracking/audit purposes (PUT-only — not accepted on create/delete). (default: `null`) |
 | `confirm` | boolean | no | Set True to execute the mutation; False (default) only returns a dry-run PLAN. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnet_mac_vrf`
 
@@ -4498,8 +4213,7 @@ genuinely mixed local/wire-learned channel.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vnet` | string | yes | SDN vnet name in an EVPN zone. |
-| `node` | string (nullable) | no | Node to read the MAC VRF on; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to read the MAC VRF on; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_vnet_update`
 
@@ -4515,10 +4229,9 @@ network effect).
 | `vnet` | string | yes | Existing SDN vnet name to update. |
 | `options` | object (nullable) | no | Vnet fields to set (tag, alias, vlanaware, etc). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Vnet option keys to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_vnets_list`
 
@@ -4526,9 +4239,7 @@ List SDN vnets in the cluster (read-only). Returns vnet name, zone, tag,
 alias, and vlanaware state. Use pve_sdn_vnet_create to add and pve_sdn_apply
 to commit.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_sdn_zone_bridges`
 
@@ -4538,8 +4249,7 @@ member ports (name, vmid/index for guest-attached ports, VLAN info on VLAN-aware
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `zone` | string | yes | SDN zone id, or the reserved pseudo-zone name "localnetwork". |
-| `node` | string (nullable) | no | Node to read bridge membership on; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to read bridge membership on; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_zone_content`
 
@@ -4549,8 +4259,7 @@ READ-ONLY: list the vnets inside a zone with their per-vnet apply status on one 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `zone` | string | yes | Existing SDN zone id. |
-| `node` | string (nullable) | no | Node to read zone content on; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to read zone content on; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_zone_create`
 
@@ -4566,9 +4275,8 @@ RISK_LOW (staging, no live network effect).
 | `zone` | string | yes | New SDN zone id to create. |
 | `zone_type` | string | yes | Zone type: simple, vlan, qinq, vxlan, evpn, or faucet. |
 | `options` | object (nullable) | no | Type-specific zone options (e.g. bridge, mtu, controller). (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_zone_delete`
 
@@ -4581,9 +4289,8 @@ zone to revert. RISK_MEDIUM (staging a removal an apply would enact).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `zone` | string | yes | Existing SDN zone id to delete. |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_zone_get`
 
@@ -4593,9 +4300,8 @@ zones LIST existed before). Use pve_sdn_zones_list to enumerate zone ids first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `zone` | string | yes | Existing SDN zone id to read. |
-| `pending` | boolean (nullable) | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
-| `running` | boolean (nullable) | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pending` | ['boolean', 'null'] | no | True nests staged-but-unapplied fields under a 'pending' key. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | True returns the currently-APPLIED config instead of the default staged-merged view. (default: `null`) |
 
 #### `pve_sdn_zone_ip_vrf`
 
@@ -4606,8 +4312,7 @@ protocol — a compromised BGP/EVPN peer controls these bytes.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `zone` | string | yes | Name of an EVPN zone. |
-| `node` | string (nullable) | no | Node to read the IP VRF on; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to read the IP VRF on; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_zone_status_list`
 
@@ -4616,8 +4321,7 @@ node-scoped, distinct from pve_sdn_zones_list (which lists CONFIG, not per-node 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Node to read zone apply-status on; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to read zone apply-status on; defaults to the configured node. (default: `null`) |
 
 #### `pve_sdn_zone_update`
 
@@ -4632,10 +4336,9 @@ RISK_LOW (staging; inert until pve_sdn_apply).
 | `zone` | string | yes | Existing SDN zone id to update. |
 | `options` | object (nullable) | no | Zone fields to set (type-specific, e.g. bridge, mtu, controller). (default: `null`) |
 | `delete` | array<string> (nullable) | no | Zone option keys to unset. (default: `null`) |
-| `digest` | string (nullable) | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
-| `lock_token` | string (nullable) | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected config digest for optimistic-concurrency checking. (default: `null`) |
+| `lock_token` | ['string', 'null'] | no | SDN cluster lock token to use for this write, if one is held. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the staged mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_sdn_zones_list`
 
@@ -4643,9 +4346,7 @@ List SDN zones in the cluster (read-only). Returns zone id, type
 (simple/vlan/qinq/vxlan/evpn/faucet), and state. Use pve_sdn_zone_create to add and
 pve_sdn_apply to commit.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_security_groups_list`
 
@@ -4655,9 +4356,7 @@ Returns each group's id (keyed `group`), comment, and digest. A security group i
 named rule set you attach to a VM/node firewall; use pve_firewall_rules_list to read
 a specific scope's active rules.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_snapshot_create`
 
@@ -4671,10 +4370,9 @@ use pve_snapshot_list.
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `snapname` | string | yes | Name for the new snapshot. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `description` | string (nullable) | no | Optional free-text description stored on the snapshot. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text description stored on the snapshot. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the snapshot creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_snapshot_delete`
 
@@ -4687,10 +4385,9 @@ pve_task_status. To create a snapshot instead of removing one use pve_snapshot_c
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `snapname` | string | yes | Name of the snapshot to delete. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `force` | boolean | no | Force removal even if the snapshot has children or the backend reports an inconsistent state. (default: `false`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_snapshot_list`
 
@@ -4702,8 +4399,7 @@ and containers (kind='qemu' or 'lxc'). Use pve_snapshot_create / pve_rollback to
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 
 #### `pve_storage_config_get`
 
@@ -4714,7 +4410,6 @@ settings. Use pve_storage_config_list to enumerate all storages.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_storage_config_list`
 
@@ -4722,9 +4417,7 @@ READ-ONLY: list all storage definitions from storage.cfg cluster-wide. No state 
 Returns a list of storage dicts with IDs, types, paths, and server addresses. Use
 pve_storage_config_get to fetch a single storage's complete configuration.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_storage_content`
 
@@ -4737,9 +4430,8 @@ restore/clone tools. To *define* a new storage use pve_storage_create.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage backend name to list content from. |
-| `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
-| `content` | string (nullable) | no | Filter by content type: `iso`, `vztmpl`, or `backup`. Omit to list all content. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
+| `content` | ['string', 'null'] | no | Filter by content type: `iso`, `vztmpl`, or `backup`. Omit to list all content. (default: `null`) |
 
 #### `pve_storage_content_delete`
 
@@ -4752,9 +4444,8 @@ find a volid first.
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage backend name the content volume lives on. |
 | `volid` | string | yes | Volume ID of the content to delete (ISO, template, or backup), e.g. `local:vztmpl/debian-12.tar.zst`. |
-| `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN — HIGH risk for a backup volume; set `true` to execute the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_storage_create`
 
@@ -4771,15 +4462,14 @@ confirm=True writes storage.cfg (the confirm result payload is typically null).
 | --- | --- | --- | --- |
 | `storage` | string | yes | New storage ID (name used across the cluster). |
 | `storage_type` | string | yes | PVE storage driver type, e.g. 'dir', 'nfs', 'pbs'. |
-| `content` | string (nullable) | no | Comma-separated content types to allow, e.g. 'iso,backup,images'. (default: `null`) |
-| `path` | string (nullable) | no | Filesystem path (required for storage_type='dir'). (default: `null`) |
-| `server` | string (nullable) | no | Remote host address (required for nfs/cifs/pbs). (default: `null`) |
-| `export` | string (nullable) | no | NFS export path (required for storage_type='nfs'). (default: `null`) |
-| `nodes` | string (nullable) | no | Comma-separated node list this storage is available on; omit for all nodes. (default: `null`) |
+| `content` | ['string', 'null'] | no | Comma-separated content types to allow, e.g. 'iso,backup,images'. (default: `null`) |
+| `path` | ['string', 'null'] | no | Filesystem path (required for storage_type='dir'). (default: `null`) |
+| `server` | ['string', 'null'] | no | Remote host address (required for nfs/cifs/pbs). (default: `null`) |
+| `export` | ['string', 'null'] | no | NFS export path (required for storage_type='nfs'). (default: `null`) |
+| `nodes` | ['string', 'null'] | no | Comma-separated node list this storage is available on; omit for all nodes. (default: `null`) |
 | `disable` | boolean | no | If True, storage is created in a disabled state. (default: `false`) |
 | `shared` | boolean | no | If True, marks storage as shared across all nodes. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_storage_delete`
 
@@ -4792,7 +4482,6 @@ same config.
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID to remove cluster-wide (definition only; data on disk is not erased). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_storage_download`
 
@@ -4807,11 +4496,10 @@ fetches. Use pve_storage_content to see what's already on a storage.
 | `content` | string | yes | Content type of the downloaded file: `iso` or `vztmpl`. |
 | `url` | string | yes | Source URL to download the ISO or CT template from. |
 | `filename` | string | yes | Filename to save the downloaded content as on the storage. |
-| `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
-| `checksum` | string (nullable) | no | Expected checksum of the downloaded file, used to verify integrity. (default: `null`) |
-| `checksum_algorithm` | string (nullable) | no | Algorithm the checksum was computed with (e.g. `sha256`). Required if checksum is given. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
+| `checksum` | ['string', 'null'] | no | Expected checksum of the downloaded file, used to verify integrity. (default: `null`) |
+| `checksum_algorithm` | ['string', 'null'] | no | Algorithm the checksum was computed with (e.g. `sha256`). Required if checksum is given. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN; set `true` to execute the download. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_storage_status`
 
@@ -4822,8 +4510,7 @@ and backups stored on it.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage backend name to read capacity and state for. |
-| `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
 
 #### `pve_storage_update`
 
@@ -4835,13 +4522,12 @@ pve_storage_delete then pve_storage_create instead.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID to update. |
-| `content` | string (nullable) | no | New comma-separated content type list, e.g. 'iso,backup,images'. (default: `null`) |
-| `nodes` | string (nullable) | no | New comma-separated node restriction list. (default: `null`) |
-| `disable` | boolean (nullable) | no | True to disable, False to enable, omit to leave unchanged. (default: `null`) |
-| `shared` | boolean (nullable) | no | True/False to set sharedness; omit to leave unchanged (must stay None for network-backed types like nfs/cifs/pbs, which reject an explicit shared flag). (default: `null`) |
-| `delete` | string (nullable) | no | Comma-separated list of config fields to unset on the storage definition. (default: `null`) |
+| `content` | ['string', 'null'] | no | New comma-separated content type list, e.g. 'iso,backup,images'. (default: `null`) |
+| `nodes` | ['string', 'null'] | no | New comma-separated node restriction list. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | True to disable, False to enable, omit to leave unchanged. (default: `null`) |
+| `shared` | ['boolean', 'null'] | no | True/False to set sharedness; omit to leave unchanged (must stay None for network-backed types like nfs/cifs/pbs, which reject an explicit shared flag). (default: `null`) |
+| `delete` | ['string', 'null'] | no | Comma-separated list of config fields to unset on the storage definition. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_task_log`
 
@@ -4852,10 +4538,9 @@ pve_tasks_list to find a UPID.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string returned by an async operation. |
-| `node` | string (nullable) | no | Node the task ran on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node the task ran on; defaults to the configured node. (default: `null`) |
 | `start` | integer | no | Line offset to start returning log output from (for pagination). (default: `0`) |
 | `limit` | integer | no | Max number of log lines to return. (default: `50`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_task_status`
 
@@ -4870,8 +4555,7 @@ non-default node; omitting it falls back to the configured default node (the UPI
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | Proxmox task UPID (unique process ID) returned by an async operation. |
-| `node` | string (nullable) | no | PVE node the task is running on. Omit to resolve it automatically. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the task is running on. Omit to resolve it automatically. (default: `null`) |
 
 #### `pve_task_stop`
 
@@ -4883,9 +4567,8 @@ the task may run briefly before it sees the signal. Find UPIDs to stop via pve_t
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string to cancel. |
-| `node` | string (nullable) | no | Node the task is running on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node the task is running on; defaults to the configured node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the cancellation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_task_wait`
 
@@ -4903,10 +4586,9 @@ timeout is clamped 1..600s, interval 1..60s. Use pve_task_log for the full log.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string to poll for completion. |
-| `node` | string (nullable) | no | Node the task ran on; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node the task ran on; defaults to the configured node. (default: `null`) |
 | `timeout` | integer | no | Max seconds to wait for the task to reach a terminal state, clamped to 1-600. (default: `120`) |
 | `interval` | integer | no | Seconds between status polls, clamped to 1-60. (default: `2`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_tasks_list`
 
@@ -4920,13 +4602,12 @@ against pve_backup_list or pbs_snapshots_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | Node to list tasks from; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | Node to list tasks from; defaults to the configured node. (default: `null`) |
 | `limit` | integer | no | Max number of most-recent tasks to return, max 1000 (0 or negative is rejected). (default: `50`) |
 | `errors` | boolean | no | If True, only return tasks that ended in error. (default: `false`) |
-| `vmid` | string (nullable) | no | Optional VMID/CTID to filter tasks to a single guest. (default: `null`) |
-| `typefilter` | string (nullable) | no | Optional task-type filter, e.g. 'vzdump', 'qmigrate' (PVE task type string). (default: `null`) |
-| `statusfilter` | string (nullable) | no | Optional status filter, e.g. 'running', 'stopped'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `vmid` | ['string', 'null'] | no | Optional VMID/CTID to filter tasks to a single guest. (default: `null`) |
+| `typefilter` | ['string', 'null'] | no | Optional task-type filter, e.g. 'vzdump', 'qmigrate' (PVE task type string). (default: `null`) |
+| `statusfilter` | ['string', 'null'] | no | Optional status filter, e.g. 'running', 'stopped'. (default: `null`) |
 
 #### `pve_template_convert`
 
@@ -4938,10 +4619,9 @@ already a template); confirm=True executes, recorded as submitted (async).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest to convert into a template. |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"qemu"`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN flagging this as HIGH/irreversible; set `true` to execute. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_tfa_delete`
 
@@ -4958,9 +4638,8 @@ so this delete will 403 on PVE; the read tools (pve_tfa_get/pve_tfa_list) work n
 | --- | --- | --- | --- |
 | `userid` | string | yes | User id whose TFA factor to delete, format 'user@realm'. |
 | `tfa_id` | string | yes | Id of the TFA factor to delete. |
-| `password` | string (nullable) | no | The user's current password, if PVE requires re-authentication for this mutation; never logged. (default: `null`) |
+| `password` | ['string', 'null'] | no | The user's current password, if PVE requires re-authentication for this mutation; never logged. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_tfa_get`
 
@@ -4971,8 +4650,7 @@ Use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH — can lock the
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | User id whose TFA entries to read, format 'user@realm'. |
-| `tfa_id` | string (nullable) | no | Specific TFA entry id to return; omit to return all of the user's entries. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `tfa_id` | ['string', 'null'] | no | Specific TFA entry id to return; omit to return all of the user's entries. (default: `null`) |
 
 #### `pve_tfa_list`
 
@@ -4981,9 +4659,7 @@ configured TFA entries; the exact shape varies by PVE version (typically per-use
 nested `entries` list of factor type/id). Use pve_tfa_get
 for one user's entries; use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH).
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pve_token_create`
 
@@ -4999,10 +4675,9 @@ pve_tokens_list to see a user's existing tokens, or pve_token_revoke to remove o
 | `userid` | string | yes | Owning user, format 'user@realm'. |
 | `tokenid` | string | yes | Name for the new API token, unique per user. |
 | `privsep` | boolean | no | Privilege separation: True (default) restricts the token to its own ACL grants; False lets it inherit ALL owner permissions. (default: `true`) |
-| `comment` | string (nullable) | no | Optional free-text comment describing the token's purpose. (default: `null`) |
-| `expire` | integer (nullable) | no | Optional token expiry as a Unix timestamp; None means no expiry. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment describing the token's purpose. (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Optional token expiry as a Unix timestamp; None means no expiry. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_token_revoke`
 
@@ -5017,7 +4692,6 @@ user's tokens first, or pve_token_create to issue a new one instead.
 | `userid` | string | yes | Owning user, format 'user@realm'. |
 | `tokenid` | string | yes | Name of the API token to revoke. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_tokens_list`
 
@@ -5028,7 +4702,6 @@ format: 'user@realm'. Use pve_token_create/revoke to manage tokens.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning user, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_user_create`
 
@@ -5039,15 +4712,14 @@ Use pve_user_update to change it afterward, or pve_user_delete to remove it.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | New user id, format 'user@realm'. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; None defers to PVE's default (enabled). (default: `null`) |
-| `expire` | integer (nullable) | no | Optional account expiry as a Unix timestamp; None means no expiry. (default: `null`) |
-| `groups` | string (nullable) | no | Comma-separated list of group ids to add the user to. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; None defers to PVE's default (enabled). (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Optional account expiry as a Unix timestamp; None means no expiry. (default: `null`) |
+| `groups` | ['string', 'null'] | no | Comma-separated list of group ids to add the user to. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_user_delete`
 
@@ -5060,7 +4732,6 @@ pve_user_update (enable=False) instead.
 | --- | --- | --- | --- |
 | `userid` | string | yes | User id to delete, format 'user@realm'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_user_get`
 
@@ -5072,7 +4743,6 @@ per-user effective-permission view).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | User id to look up, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_user_update`
 
@@ -5083,16 +4753,15 @@ pve_user_get to see current state first, or pve_user_delete to remove the user i
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | User id to update, format 'user@realm'. |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
-| `expire` | integer (nullable) | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
-| `groups` | string (nullable) | no | Comma-separated list of group ids; replaces membership unless append=True. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name; omit to leave unchanged. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name; omit to leave unchanged. (default: `null`) |
-| `append` | boolean (nullable) | no | If True, add `groups` to existing membership instead of replacing it. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `groups` | ['string', 'null'] | no | Comma-separated list of group ids; replaces membership unless append=True. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name; omit to leave unchanged. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name; omit to leave unchanged. (default: `null`) |
+| `append` | ['boolean', 'null'] | no | If True, add `groups` to existing membership instead of replacing it. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pve_users_list`
 
@@ -5100,9 +4769,7 @@ List all Proxmox users across every realm (read-only). Returns each user's id (u
 enabled flag, expiry, group membership, email, and comment. Use pve_user_get for one user's
 full config, tokens, and effective ACL.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 ## Proxmox Backup Server (PBS)
 
@@ -5115,9 +4782,8 @@ PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string (nullable) | no | ACL path to filter by; omit to return every entry on the server. (default: `null`) |
-| `exact` | boolean (nullable) | no | If True (with path set), return only entries at the exact path, not the subtree. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `path` | ['string', 'null'] | no | ACL path to filter by; omit to return every entry on the server. (default: `null`) |
+| `exact` | ['boolean', 'null'] | no | If True (with path set), return only entries at the exact path, not the subtree. (default: `null`) |
 
 #### `pbs_acl_update`
 
@@ -5138,13 +4804,12 @@ pbs_roles_list to see PBS's fixed set of built-in roles. Needs PROXIMO_PBS_* con
 | --- | --- | --- | --- |
 | `path` | string | yes | ACL path the entry applies to, e.g. '/datastore/ds1' or '/'. |
 | `role` | string | yes | A single PBS role id to grant or revoke, e.g. 'DatastoreAdmin'. |
-| `auth_id` | string (nullable) | no | User or token principal ('user@realm' or 'user@realm!token-name'). Exactly one of auth_id/group is required. (default: `null`) |
-| `group` | string (nullable) | no | Group principal. Exactly one of auth_id/group is required. (default: `null`) |
-| `propagate` | boolean (nullable) | no | Whether the grant propagates to child paths below `path`; omit for PBS's default (true). (default: `null`) |
+| `auth_id` | ['string', 'null'] | no | User or token principal ('user@realm' or 'user@realm!token-name'). Exactly one of auth_id/group is required. (default: `null`) |
+| `group` | ['string', 'null'] | no | Group principal. Exactly one of auth_id/group is required. (default: `null`) |
+| `propagate` | ['boolean', 'null'] | no | Whether the grant propagates to child paths below `path`; omit for PBS's default (true). (default: `null`) |
 | `delete` | boolean | no | False to grant the role, True to revoke it. (default: `false`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_account_create`
 
@@ -5159,13 +4824,12 @@ PLAN dict. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `contact` | string | yes | Contact email address for the ACME account (CA renewal/expiry notices). |
-| `name` | string (nullable) | no | Name to register the account under; omit to let PBS assign a default name. (default: `null`) |
-| `directory` | string (nullable) | no | ACME directory URL of the CA to register with; omit to use PBS's default CA. (default: `null`) |
-| `eab_hmac_key` | string (nullable) | no | HMAC key for External Account Binding (required by some CAs, e.g. ZeroSSL). Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
-| `eab_kid` | string (nullable) | no | Key identifier for External Account Binding; pairs with eab_hmac_key. (default: `null`) |
-| `tos_url` | string (nullable) | no | URL of the CA's terms-of-service to accept; omit to accept the CA's default ToS. (default: `null`) |
+| `name` | ['string', 'null'] | no | Name to register the account under; omit to let PBS assign a default name. (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL of the CA to register with; omit to use PBS's default CA. (default: `null`) |
+| `eab_hmac_key` | ['string', 'null'] | no | HMAC key for External Account Binding (required by some CAs, e.g. ZeroSSL). Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
+| `eab_kid` | ['string', 'null'] | no | Key identifier for External Account Binding; pairs with eab_hmac_key. (default: `null`) |
+| `tos_url` | ['string', 'null'] | no | URL of the CA's terms-of-service to accept; omit to accept the CA's default ToS. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the account registration. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_account_delete`
 
@@ -5184,7 +4848,6 @@ returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config.
 | `name` | string | yes | Name of the ACME account to deactivate and delete from the CA. |
 | `force` | boolean | no | Delete the local account record even if the CA refuses to deactivate it. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_account_get`
 
@@ -5194,7 +4857,6 @@ NOT include eab_hmac_key — PBS never returns it on read. Needs PROXIMO_PBS_* c
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the ACME account. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_account_list`
 
@@ -5202,9 +4864,7 @@ READ-ONLY: list registered PBS ACME account NAMES (the schema's own response ite
 `{"name": str}` only — use pbs_acme_account_get for full account detail). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_acme_account_update`
 
@@ -5218,9 +4878,8 @@ pbs_acme_account_delete. confirm=True executes (synchronous — PBS returns null
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing ACME account to update. |
-| `contact` | string (nullable) | no | New contact email address for the ACME account; omit to leave unchanged. (default: `null`) |
+| `contact` | ['string', 'null'] | no | New contact email address for the ACME account; omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_cert_order`
 
@@ -5240,7 +4899,6 @@ Needs PROXIMO_PBS_* config.
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `force` | boolean | no | Overwrite existing certificate files on the node if already present. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME order. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_cert_renew`
 
@@ -5258,7 +4916,6 @@ certificate) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* c
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `force` | boolean | no | Renew even if the current certificate is not yet within its renewal lead time. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME renewal. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_challenge_schema`
 
@@ -5266,18 +4923,14 @@ READ-ONLY: list the catalog of known ACME challenge plugin types (id/name/schema
 entry) — the parameter schema each plugin `type`+`data` pairing must satisfy. No params.
 Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_acme_directories`
 
 READ-ONLY: list PBS's built-in catalog of known ACME CA directory endpoints (name + URL
 pairs, e.g. Let's Encrypt production/staging). No params. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_acme_plugin_create`
 
@@ -5293,12 +4946,11 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier for the new ACME DNS challenge plugin (1-32 chars, alnum/_/./- ; config/acme/plugins/{plugin_id}). |
 | `plugin_type` | string | yes | ACME challenge plugin type (e.g. 'dns' or 'standalone'). PBS's own schema declares no enum here — validated defensively by charset only; see pbs_acme_challenge_schema for the live catalog of known types. |
-| `dns_api` | string (nullable) | no | DNS provider API name for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PBS's 'api' field. (default: `null`) |
-| `data` | string (nullable) | no | Base64-encoded plugin credential/config data (e.g. DNS provider API tokens) required by the challenge type. Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
-| `validation_delay` | integer (nullable) | no | Extra delay in seconds (0-172800) to wait before requesting validation — copes with long DNS TTLs. (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | DNS provider API name for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PBS's 'api' field. (default: `null`) |
+| `data` | ['string', 'null'] | no | Base64-encoded plugin credential/config data (e.g. DNS provider API tokens) required by the challenge type. Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
+| `validation_delay` | ['integer', 'null'] | no | Extra delay in seconds (0-172800) to wait before requesting validation — copes with long DNS TTLs. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the plugin creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_plugin_delete`
 
@@ -5315,7 +4967,6 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the ACME DNS challenge plugin to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_plugin_get`
 
@@ -5326,7 +4977,6 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | ID of the ACME DNS challenge plugin. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_plugin_update`
 
@@ -5342,14 +4992,13 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the existing ACME DNS challenge plugin to update. |
-| `dns_api` | string (nullable) | no | New DNS provider API name; maps to PBS's 'api' field. Omit to leave unchanged. (default: `null`) |
-| `data` | string (nullable) | no | New base64-encoded plugin credential/config data; omit to leave unchanged. Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
-| `validation_delay` | integer (nullable) | no | New validation-delay in seconds (0-172800); omit to leave unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | New DNS provider API name; maps to PBS's 'api' field. Omit to leave unchanged. (default: `null`) |
+| `data` | ['string', 'null'] | no | New base64-encoded plugin credential/config data; omit to leave unchanged. Redacted from the PLAN preview and the audit ledger, but IS sent to PBS on confirm=True. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
+| `validation_delay` | ['integer', 'null'] | no | New validation-delay in seconds (0-172800); omit to leave unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: 'disable' and/or 'validation-delay' (the only two the schema allows). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_acme_plugins_list`
 
@@ -5357,9 +5006,7 @@ READ-ONLY: list all configured PBS ACME DNS challenge plugins, INCLUDING the raw
 credential blob for each (PBS does not strip it on read). Handle the result as sensitive.
 Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_acme_tos`
 
@@ -5370,8 +5017,7 @@ ADVERSARIAL in the taint control for exactly that reason. Needs PROXIMO_PBS_* co
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `directory` | string (nullable) | no | ACME directory URL to look up the Terms of Service for; omit to use PBS's default CA. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL to look up the Terms of Service for; omit to use PBS's default CA. (default: `null`) |
 
 #### `pbs_admin_gc_jobs_list`
 
@@ -5385,8 +5031,7 @@ module docstring fact #1). REVIEWED_TRUSTED. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `store` | string (nullable) | no | Filter to one PBS datastore's GC job. Omit to list all. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `store` | ['string', 'null'] | no | Filter to one PBS datastore's GC job. Omit to list all. (default: `null`) |
 
 #### `pbs_admin_prune_jobs_list`
 
@@ -5396,8 +5041,7 @@ Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `store` | string (nullable) | no | Filter to one PBS datastore's prune jobs. Omit to list all. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `store` | ['string', 'null'] | no | Filter to one PBS datastore's prune jobs. Omit to list all. (default: `null`) |
 
 #### `pbs_admin_sync_jobs_list`
 
@@ -5406,9 +5050,8 @@ pbs_job_run(job_type='sync', ...) to trigger one manually. Needs PROXIMO_PBS_* c
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `store` | string (nullable) | no | Filter to one PBS datastore's sync jobs. Omit to list all. (default: `null`) |
-| `sync_direction` | string (nullable) | no | Filter by direction: 'push', 'pull', or 'all'. PBS defaults 'pull' if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `store` | ['string', 'null'] | no | Filter to one PBS datastore's sync jobs. Omit to list all. (default: `null`) |
+| `sync_direction` | ['string', 'null'] | no | Filter by direction: 'push', 'pull', or 'all'. PBS defaults 'pull' if omitted. (default: `null`) |
 
 #### `pbs_admin_traffic_control_status`
 
@@ -5417,9 +5060,7 @@ the rule's own config. Distinct from the already-shipped pbs_traffic_controls_li
 CONFIG-CRUD view — use pbs_traffic_control_upsert there to create/modify rules).
 REVIEWED_TRUSTED (counters + operator config). Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_admin_verify_jobs_list`
 
@@ -5428,8 +5069,7 @@ pbs_job_run(job_type='verify', ...) to trigger one manually. Needs PROXIMO_PBS_*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `store` | string (nullable) | no | Filter to one PBS datastore's verification jobs. Omit to list all. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `store` | ['string', 'null'] | no | Filter to one PBS datastore's verification jobs. Omit to list all. (default: `null`) |
 
 #### `pbs_apt_changelog`
 
@@ -5445,8 +5085,7 @@ itself happens at your console. This tool governs visibility only. Needs PROXIMO
 | --- | --- | --- | --- |
 | `name` | string | yes | Package name to fetch the changelog for (e.g. as listed by pbs_apt_updates_list). |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `version` | string (nullable) | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `version` | ['string', 'null'] | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
 
 #### `pbs_apt_repositories_get`
 
@@ -5462,7 +5101,6 @@ only. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_apt_repository_add`
 
@@ -5481,9 +5119,8 @@ default (returns a PLAN); confirm=True executes (PUT, Smoke-confirm) and returns
 | --- | --- | --- | --- |
 | `handle` | string | yes | Handle identifying the standard repository to add (as returned by pbs_apt_repositories_get's standard-repos list, e.g. 'no-subscription'). PBS requires a lowercase-leading handle. |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `digest` | string (nullable) | no | Expected SHA-256 content digest (64 hex chars) of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected SHA-256 content digest (64 hex chars) of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the addition. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_apt_repository_set`
 
@@ -5501,10 +5138,9 @@ Smoke-confirm) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_*
 | `path` | string | yes | Absolute path of the sources file containing the repository entry (as returned by pbs_apt_repositories_get). |
 | `index` | integer | yes | 0-based index of the repository entry within that file (as returned by pbs_apt_repositories_get). |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `enabled` | boolean (nullable) | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Expected SHA-256 content digest (64 hex chars) of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `enabled` | ['boolean', 'null'] | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected SHA-256 content digest (64 hex chars) of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_apt_update_refresh`
 
@@ -5520,10 +5156,9 @@ Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `notify` | boolean (nullable) | no | If True, ask PBS to send a notification email about newly available packages. (default: `null`) |
-| `quiet` | boolean (nullable) | no | If True, ask PBS to omit progress output suitable only for interactive logging. (default: `null`) |
+| `notify` | ['boolean', 'null'] | no | If True, ask PBS to send a notification email about newly available packages. (default: `null`) |
+| `quiet` | ['boolean', 'null'] | no | If True, ask PBS to omit progress output suitable only for interactive logging. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the index refresh. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_apt_updates_list`
 
@@ -5538,7 +5173,6 @@ pbs_apt_update_refresh. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_apt_versions`
 
@@ -5552,7 +5186,6 @@ visibility only. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_active_operations`
 
@@ -5564,7 +5197,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_create`
 
@@ -5582,12 +5214,11 @@ Smoke-confirm: gc-schedule / prune-schedule / notification-mode param names; syn
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new PBS datastore. |
 | `path` | string | yes | Filesystem path on the PBS node where the datastore will be created. |
-| `gc_schedule` | string (nullable) | no | Garbage-collection schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
-| `prune_schedule` | string (nullable) | no | Prune-job schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
-| `notification_mode` | string (nullable) | no | Notification delivery mode for this datastore (PBS notification-mode value). (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment/description for the datastore. (default: `null`) |
+| `gc_schedule` | ['string', 'null'] | no | Garbage-collection schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
+| `prune_schedule` | ['string', 'null'] | no | Prune-job schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | Notification delivery mode for this datastore (PBS notification-mode value). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment/description for the datastore. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_delete`
 
@@ -5611,7 +5242,6 @@ Smoke-confirm: destroy-data / keep-job-configs param names; sync-vs-async.
 | `destroy_data` | boolean | no | If True, destroys all backup data (HIGH, no undo); default only detaches config. (default: `false`) |
 | `keep_job_configs` | boolean | no | If True, keep job configs referencing this datastore instead of removing them. (default: `false`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_get`
 
@@ -5621,7 +5251,6 @@ For runtime usage stats use pbs_datastore_status instead. Needs PROXIMO_PBS_* co
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | PBS datastore name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_mount`
 
@@ -5636,7 +5265,6 @@ pbs_datastore_unmount. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `store` | string | yes | Removable PBS datastore name to mount. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the mount. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_prune`
 
@@ -5655,17 +5283,16 @@ Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `keep_last` | integer (nullable) | no | Number of backups to keep (>=1). (default: `null`) |
-| `keep_hourly` | integer (nullable) | no | Number of hourly backups to keep (>=1). NOT available on the single-group pbs_prune — this endpoint alone exposes it. (default: `null`) |
-| `keep_daily` | integer (nullable) | no | Number of daily backups to keep (>=1). (default: `null`) |
-| `keep_weekly` | integer (nullable) | no | Number of weekly backups to keep (>=1). (default: `null`) |
-| `keep_monthly` | integer (nullable) | no | Number of monthly backups to keep (>=1). (default: `null`) |
-| `keep_yearly` | integer (nullable) | no | Number of yearly backups to keep (>=1). (default: `null`) |
-| `ns` | string (nullable) | no | Namespace to scope the prune to; omit for the root namespace. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Namespace recursion depth 0-7; omit for automatic full recursion. (default: `null`) |
+| `keep_last` | ['integer', 'null'] | no | Number of backups to keep (>=1). (default: `null`) |
+| `keep_hourly` | ['integer', 'null'] | no | Number of hourly backups to keep (>=1). NOT available on the single-group pbs_prune — this endpoint alone exposes it. (default: `null`) |
+| `keep_daily` | ['integer', 'null'] | no | Number of daily backups to keep (>=1). (default: `null`) |
+| `keep_weekly` | ['integer', 'null'] | no | Number of weekly backups to keep (>=1). (default: `null`) |
+| `keep_monthly` | ['integer', 'null'] | no | Number of monthly backups to keep (>=1). (default: `null`) |
+| `keep_yearly` | ['integer', 'null'] | no | Number of yearly backups to keep (>=1). (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace to scope the prune to; omit for the root namespace. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Namespace recursion depth 0-7; omit for automatic full recursion. (default: `null`) |
 | `dry_run` | boolean | no | True (THIS TOOL'S default — the schema's own default is false): report what would be pruned without deleting. Set False to actually delete. (default: `true`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes (which, with dry_run=True, still deletes nothing). (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_rrd`
 
@@ -5679,7 +5306,6 @@ config.
 | `store` | string | yes | PBS datastore name. |
 | `cf` | string | yes | RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default. |
 | `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_s3_refresh`
 
@@ -5694,7 +5320,6 @@ null return records "ok"). No undo — the cache is rebuilt. Needs PROXIMO_PBS_*
 | --- | --- | --- | --- |
 | `store` | string | yes | S3-backed PBS datastore name to refresh. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the refresh. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_status`
 
@@ -5705,7 +5330,6 @@ datastores (with backend type) or pbs_gc_status for garbage-collection state.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_unmount`
 
@@ -5721,7 +5345,6 @@ config.
 | --- | --- | --- | --- |
 | `store` | string | yes | Removable PBS datastore name to unmount. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the unmount. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastore_update`
 
@@ -5739,12 +5362,11 @@ Smoke-confirm: accepted param names (hyphenated vs underscored).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | PBS datastore name to update. |
-| `gc_schedule` | string (nullable) | no | Garbage-collection schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
-| `prune_schedule` | string (nullable) | no | Prune-job schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
-| `notification_mode` | string (nullable) | no | Notification delivery mode for this datastore (PBS notification-mode value). (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment/description for the datastore. (default: `null`) |
+| `gc_schedule` | ['string', 'null'] | no | Garbage-collection schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
+| `prune_schedule` | ['string', 'null'] | no | Prune-job schedule as a PBS calendar-event string (e.g. 'daily'). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | Notification delivery mode for this datastore (PBS notification-mode value). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment/description for the datastore. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_datastores_list`
 
@@ -5752,9 +5374,7 @@ List all PBS datastores (read-only). Returns datastore objects with store name,
 backend type, and mount status. Use pbs_datastore_status for runtime usage statistics
 or pbs_datastore_get for full configuration. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_datastores_usage`
 
@@ -5763,9 +5383,7 @@ estimated-full-date via linear regression over the last month's RRD data, gc-sta
 Distinct from pbs_metrics_status (performance samples) — this is capacity planning. Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_encryption_key_create`
 
@@ -5782,9 +5400,8 @@ executes (POST /config/encryption-keys, synchronous) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key_id` | string | yes | New encryption key id (3-32 chars, alnum/underscore start, then alnum/./_/-). CALLER-CHOSEN — PBS does not generate it. |
-| `key` | string (nullable) | no | Optional: import this key material instead of having PBS generate a fresh one. No length bound (unlike the tape-encryption-keys plane's 300-600 char requirement). (default: `null`) |
+| `key` | ['string', 'null'] | no | Optional: import this key material instead of having PBS generate a fresh one. No length bound (unlike the tape-encryption-keys plane's 300-600 char requirement). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_encryption_key_delete`
 
@@ -5802,9 +5419,8 @@ pbs_encryption_key_list yourself first); confirm=True executes (DELETE
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key_id` | string | yes | Id of the encryption key to delete. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_encryption_key_list`
 
@@ -5816,7 +5432,6 @@ this plane — this list is the only read. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `include_archived` | boolean | no | Also list archived keys. Defaults False, matching PBS's own upstream default. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_encryption_key_toggle_archive`
 
@@ -5833,9 +5448,8 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key_id` | string | yes | Id of the encryption key to toggle. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the toggle. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_gc_start`
 
@@ -5847,7 +5461,6 @@ UPID (async task) — check progress with pbs_gc_status or pbs_tasks_list.
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name to run garbage collection on. |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_gc_status`
 
@@ -5859,7 +5472,6 @@ Use pbs_gc_start to execute garbage collection or pbs_datastore_status for capac
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_group_change_owner`
 
@@ -5879,9 +5491,8 @@ Smoke-confirm: exact path + new-owner vs owner param name.
 | `backup_type` | string | yes | Backup type of the group: 'vm', 'ct', or 'host'. |
 | `backup_id` | string | yes | Backup group ID (e.g. VMID/CTID or host name). |
 | `new_owner` | string | yes | PBS auth ID (user@realm or api-token) to become the new owner of the backup group. |
-| `ns` | string (nullable) | no | Namespace path the backup group lives in; omit for the root namespace. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path the backup group lives in; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_group_delete`
 
@@ -5902,10 +5513,9 @@ PARTIAL delete). Needs PROXIMO_PBS_* config.
 | `store` | string | yes | PBS datastore name. |
 | `backup_type` | string | yes | Backup type: vm, ct, or host. |
 | `backup_id` | string | yes | Backup group ID whose ENTIRE group (all snapshots) will be deleted. |
-| `ns` | string (nullable) | no | Namespace; omit for the root namespace. (default: `null`) |
-| `error_on_protected` | boolean (nullable) | no | Upstream default TRUE: fail if the group contains any protected snapshot. False = delete all UNPROTECTED snapshots, keep protected ones, and SUCCEED as a partial delete. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace; omit for the root namespace. (default: `null`) |
+| `error_on_protected` | ['boolean', 'null'] | no | Upstream default TRUE: fail if the group contains any protected snapshot. False = delete all UNPROTECTED snapshots, keep protected ones, and SUCCEED as a partial delete. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_group_move`
 
@@ -5923,11 +5533,10 @@ with pbs_tasks_list. Reverse with a second pbs_group_move. Needs PROXIMO_PBS_* c
 | `store` | string | yes | PBS datastore name (source and target — same datastore). |
 | `backup_type` | string | yes | Backup type: vm, ct, or host. |
 | `backup_id` | string | yes | Backup group ID to move. |
-| `ns` | string (nullable) | no | SOURCE namespace; omit for the root namespace. (default: `null`) |
-| `target_ns` | string (nullable) | no | TARGET namespace; omit for the root namespace. (default: `null`) |
-| `merge_group` | boolean (nullable) | no | Upstream default TRUE: if the group already exists in the target namespace, merge snapshots into it (requires matching ownership and non-overlapping snapshot times). False = fail instead. (default: `null`) |
+| `ns` | ['string', 'null'] | no | SOURCE namespace; omit for the root namespace. (default: `null`) |
+| `target_ns` | ['string', 'null'] | no | TARGET namespace; omit for the root namespace. (default: `null`) |
+| `merge_group` | ['boolean', 'null'] | no | Upstream default TRUE: if the group already exists in the target namespace, merge snapshots into it (requires matching ownership and non-overlapping snapshot times). False = fail instead. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the move. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_group_notes_get`
 
@@ -5940,8 +5549,7 @@ snapshot-level pbs_snapshot_notes_set/get pair (group vs. individual snapshot). 
 | `store` | string | yes | PBS datastore name. |
 | `backup_type` | string | yes | Backup type: vm, ct, or host. |
 | `backup_id` | string | yes | Backup group ID (e.g. VMID/CTID or host name). |
-| `ns` | string (nullable) | no | Namespace; omit for the root namespace. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace; omit for the root namespace. (default: `null`) |
 
 #### `pbs_group_notes_set`
 
@@ -5960,9 +5568,8 @@ PROXIMO_PBS_* config.
 | `backup_type` | string | yes | Backup type: vm, ct, or host. |
 | `backup_id` | string | yes | Backup group ID. |
 | `notes` | string | yes | The notes body (multiline text; the first line becomes the group's 'comment' in listings). |
-| `ns` | string (nullable) | no | Namespace; omit for the root namespace. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_groups_list`
 
@@ -5975,8 +5582,7 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `ns` | string (nullable) | no | Namespace to list groups in; omit for the root namespace. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace to list groups in; omit for the root namespace. (default: `null`) |
 
 #### `pbs_job_create`
 
@@ -5989,12 +5595,11 @@ pbs_job_delete, or to run it once immediately (bypassing the schedule) use pbs_j
 | --- | --- | --- | --- |
 | `job_type` | string | yes | PBS job type: sync \| verify \| prune. |
 | `job_id` | string | yes | Unique ID for the new PBS scheduled job. |
-| `store` | string (nullable) | no | PBS datastore the job operates on. (default: `null`) |
-| `schedule` | string (nullable) | no | Proxmox calendar-event schedule string for the job. (default: `null`) |
-| `ns` | string (nullable) | no | PBS namespace the job operates on; omit for the root namespace. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text note stored on the job. (default: `null`) |
+| `store` | ['string', 'null'] | no | PBS datastore the job operates on. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | Proxmox calendar-event schedule string for the job. (default: `null`) |
+| `ns` | ['string', 'null'] | no | PBS namespace the job operates on; omit for the root namespace. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text note stored on the job. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_job_delete`
 
@@ -6008,7 +5613,6 @@ removed, backup data NOT deleted. Needs PROXIMO_PBS_* config.
 | `job_type` | string | yes | PBS job type: sync \| verify \| prune. |
 | `job_id` | string | yes | ID of the PBS scheduled job to delete. |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_job_run`
 
@@ -6027,7 +5631,6 @@ config.
 | `job_type` | string | yes | PBS job type: sync \| verify \| prune. |
 | `job_id` | string | yes | ID of the PBS scheduled job to trigger immediately. |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the run. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_job_update`
 
@@ -6040,11 +5643,10 @@ PROXIMO_PBS_* config. To create use pbs_job_create; to remove use pbs_job_delete
 | --- | --- | --- | --- |
 | `job_type` | string | yes | PBS job type: sync \| verify \| prune. |
 | `job_id` | string | yes | ID of the existing PBS scheduled job to update. |
-| `schedule` | string (nullable) | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
-| `ns` | string (nullable) | no | New PBS namespace the job operates on; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text note; omit to leave unchanged. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | New Proxmox calendar-event schedule string; omit to leave unchanged. (default: `null`) |
+| `ns` | ['string', 'null'] | no | New PBS namespace the job operates on; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text note; omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_jobs_list`
 
@@ -6055,7 +5657,6 @@ pbs_job_update, or pbs_job_delete to manage one. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `job_type` | string | yes | Scheduled-job type to list: 'sync', 'verify', or 'prune'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_http_create`
 
@@ -6075,15 +5676,14 @@ executes (POST /config/metrics/influxdb-http, synchronous — PBS returns null) 
 | --- | --- | --- | --- |
 | `name` | string | yes | New Metrics Server ID (3-32 chars, alnum/underscore start, then alnum/./_/-). |
 | `url` | string | yes | HTTP(s) url with optional port, e.g. 'https://influx.example.com:8086'. |
-| `bucket` | string (nullable) | no | InfluxDB Bucket (1-32 chars). Defaults to 'proxmox' server-side if omitted. (default: `null`) |
-| `comment` | string (nullable) | no | Comment (<=128 chars, no control chars). (default: `null`) |
-| `enable` | boolean (nullable) | no | Enables or disables the metrics server. Defaults True server-side if omitted. (default: `null`) |
-| `max_body_size` | integer (nullable) | no | Maximum body size in bytes. Defaults to 25000000 server-side if omitted; no upper bound stated by the schema. (default: `null`) |
-| `organization` | string (nullable) | no | InfluxDB Organization (1-32 chars). Defaults to 'proxmox' server-side if omitted. (default: `null`) |
-| `token` | string (nullable) | no | API token. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
-| `verify_tls` | boolean (nullable) | no | If true, the endpoint's certificate is validated. Defaults True server-side if omitted. (default: `null`) |
+| `bucket` | ['string', 'null'] | no | InfluxDB Bucket (1-32 chars). Defaults to 'proxmox' server-side if omitted. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Comment (<=128 chars, no control chars). (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enables or disables the metrics server. Defaults True server-side if omitted. (default: `null`) |
+| `max_body_size` | ['integer', 'null'] | no | Maximum body size in bytes. Defaults to 25000000 server-side if omitted; no upper bound stated by the schema. (default: `null`) |
+| `organization` | ['string', 'null'] | no | InfluxDB Organization (1-32 chars). Defaults to 'proxmox' server-side if omitted. (default: `null`) |
+| `token` | ['string', 'null'] | no | API token. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
+| `verify_tls` | ['boolean', 'null'] | no | If true, the endpoint's certificate is validated. Defaults True server-side if omitted. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_http_delete`
 
@@ -6100,9 +5700,8 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Id of the InfluxDB http metrics server to delete. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_http_get`
 
@@ -6113,7 +5712,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Metrics Server ID (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_http_list`
 
@@ -6122,9 +5720,7 @@ live schema's response shape (unlike pbs_s3's config reads, which are documented
 — stripped here at the READ layer; this strip is REQUIRED, not merely defensive (see
 proximo.pbs_metrics module docstring fact #1). Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_metrics_influxdb_http_update`
 
@@ -6140,18 +5736,17 @@ PLAN, redacted again defensively); confirm=True executes (PUT
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Id of the existing InfluxDB http metrics server to update. |
-| `bucket` | string (nullable) | no | New InfluxDB Bucket (1-32 chars). (default: `null`) |
-| `comment` | string (nullable) | no | New comment (<=128 chars, no control chars). (default: `null`) |
-| `enable` | boolean (nullable) | no | Enable or disable the metrics server. (default: `null`) |
-| `max_body_size` | integer (nullable) | no | New maximum body size in bytes. (default: `null`) |
-| `organization` | string (nullable) | no | New InfluxDB Organization (1-32 chars). (default: `null`) |
-| `token` | string (nullable) | no | New API token. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
-| `url` | string (nullable) | no | New HTTP(s) url with optional port. (default: `null`) |
-| `verify_tls` | boolean (nullable) | no | Validate the endpoint's certificate. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `bucket` | ['string', 'null'] | no | New InfluxDB Bucket (1-32 chars). (default: `null`) |
+| `comment` | ['string', 'null'] | no | New comment (<=128 chars, no control chars). (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enable or disable the metrics server. (default: `null`) |
+| `max_body_size` | ['integer', 'null'] | no | New maximum body size in bytes. (default: `null`) |
+| `organization` | ['string', 'null'] | no | New InfluxDB Organization (1-32 chars). (default: `null`) |
+| `token` | ['string', 'null'] | no | New API token. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
+| `url` | ['string', 'null'] | no | New HTTP(s) url with optional port. (default: `null`) |
+| `verify_tls` | ['boolean', 'null'] | no | Validate the endpoint's certificate. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: any of enable/token/bucket/organization/max-body-size/verify-tls/comment. name/url are NOT deletable — rotate them with a new value instead. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_udp_create`
 
@@ -6166,11 +5761,10 @@ executes (POST /config/metrics/influxdb-udp, synchronous — PBS returns null) a
 | --- | --- | --- | --- |
 | `name` | string | yes | New Metrics Server ID (3-32 chars, alnum/underscore start, then alnum/./_/-). |
 | `host` | string | yes | host:port combination (host can be a DNS name or IP address; port REQUIRED), e.g. '192.0.2.10:8089'. |
-| `comment` | string (nullable) | no | Comment (<=128 chars, no control chars). (default: `null`) |
-| `enable` | boolean (nullable) | no | Enables or disables the metrics server. Defaults True server-side if omitted. (default: `null`) |
-| `mtu` | integer (nullable) | no | The MTU. Defaults to 1500 server-side if omitted; no upper bound stated by the schema. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Comment (<=128 chars, no control chars). (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enables or disables the metrics server. Defaults True server-side if omitted. (default: `null`) |
+| `mtu` | ['integer', 'null'] | no | The MTU. Defaults to 1500 server-side if omitted; no upper bound stated by the schema. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_udp_delete`
 
@@ -6185,9 +5779,8 @@ pbs_metrics_influxdb_udp_create. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Id of the InfluxDB udp metrics server to delete. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_udp_get`
 
@@ -6197,7 +5790,6 @@ sub-plane (module docstring fact #2). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Metrics Server ID (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_influxdb_udp_list`
 
@@ -6205,9 +5797,7 @@ READ-ONLY: list configured PBS InfluxDB udp metric servers. No secret field exis
 sub-plane at all (verified field-by-field — module docstring fact #2); no read-layer strip is
 needed. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_metrics_influxdb_udp_update`
 
@@ -6222,14 +5812,13 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Id of the existing InfluxDB udp metrics server to update. |
-| `comment` | string (nullable) | no | New comment (<=128 chars, no control chars). (default: `null`) |
-| `enable` | boolean (nullable) | no | Enable or disable the metrics server. (default: `null`) |
-| `host` | string (nullable) | no | New host:port combination (port REQUIRED). (default: `null`) |
-| `mtu` | integer (nullable) | no | New MTU. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New comment (<=128 chars, no control chars). (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enable or disable the metrics server. (default: `null`) |
+| `host` | ['string', 'null'] | no | New host:port combination (port REQUIRED). (default: `null`) |
+| `mtu` | ['integer', 'null'] | no | New MTU. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: any of enable/mtu/comment. name/host are NOT deletable — rotate them with a new value instead. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_metrics_servers_list`
 
@@ -6237,9 +5826,7 @@ READ-ONLY: list ALL configured PBS metric servers (both influxdb-http and influx
 one unified view. Response is schema-enforced secret-free — no token field can appear here per
 the schema's own closed shape. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_metrics_status`
 
@@ -6253,8 +5840,7 @@ quirk (Wave 5a). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `history` | boolean | no | Include historic values (last 30 minutes). (default: `false`) |
-| `start_time` | integer (nullable) | no | Only return values with a timestamp > start_time. Only has an effect if history is also set. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start_time` | ['integer', 'null'] | no | Only return values with a timestamp > start_time. Only has an effect if history is also set. (default: `null`) |
 
 #### `pbs_namespace_create`
 
@@ -6266,9 +5852,8 @@ name collisions first, or pbs_namespace_delete to remove one.
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
 | `name` | string | yes | Namespace name/segment to create. |
-| `parent` | string (nullable) | no | Parent namespace path to create under; omit for the root namespace. (default: `null`) |
+| `parent` | ['string', 'null'] | no | Parent namespace path to create under; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_namespace_delete`
 
@@ -6283,7 +5868,6 @@ or pbs_namespace_create to recreate an empty namespace afterward.
 | `ns` | string | yes | Namespace path to delete. |
 | `delete_groups` | boolean | no | If True, deletes groups/snapshots in namespace (HIGH, no undo); else must be empty. (default: `false`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_namespace_move`
 
@@ -6304,11 +5888,10 @@ single-call undo. Needs PROXIMO_PBS_* config.
 | `store` | string | yes | PBS datastore name (source and target — same datastore). |
 | `ns` | string | yes | SOURCE namespace to move. Must be non-empty — the root namespace cannot be relocated. |
 | `target_ns` | string | yes | TARGET parent namespace. Empty string = move into the root namespace. |
-| `delete_source` | boolean (nullable) | no | Upstream default TRUE: the source namespace tree is REMOVED after the move. False = keep the (now-empty) source tree. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Recursion depth 0-7. Upstream default 7 = FULL recursion — omitting it moves EVERYTHING under ns. (default: `null`) |
-| `merge_groups` | boolean (nullable) | no | Upstream default TRUE: same-name groups already in the target get the moved snapshots merged in. False = fail on conflict. (default: `null`) |
+| `delete_source` | ['boolean', 'null'] | no | Upstream default TRUE: the source namespace tree is REMOVED after the move. False = keep the (now-empty) source tree. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Recursion depth 0-7. Upstream default 7 = FULL recursion — omitting it moves EVERYTHING under ns. (default: `null`) |
+| `merge_groups` | ['boolean', 'null'] | no | Upstream default TRUE: same-name groups already in the target get the moved snapshots merged in. False = fail on conflict. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the move. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_namespaces_list`
 
@@ -6319,9 +5902,8 @@ parent namespace or limit recursion depth. Use pbs_namespace_create to add names
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `parent` | string (nullable) | no | Parent namespace path to list children of; omit for the root namespace. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Maximum recursion depth below the parent namespace. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `parent` | ['string', 'null'] | no | Parent namespace path to list children of; omit for the root namespace. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Maximum recursion depth below the parent namespace. (default: `null`) |
 
 #### `pbs_node_cert_delete`
 
@@ -6335,7 +5917,6 @@ by re-uploading (pbs_node_cert_upload). Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_cert_upload`
 
@@ -6354,11 +5935,10 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `certificates` | string | yes | PEM-encoded certificate chain (public, may appear in plans/logs). |
-| `key` | string (nullable) | no | PEM-encoded TLS private key matching the certificate; a secret, unconditionally redacted in all output. (default: `null`) |
+| `key` | ['string', 'null'] | no | PEM-encoded TLS private key matching the certificate; a secret, unconditionally redacted in all output. (default: `null`) |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `force` | boolean | no | If True, overwrite an existing custom certificate. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the certificate upload. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_certificates_list`
 
@@ -6369,7 +5949,6 @@ pbs_node_cert_delete to remove. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_config_get`
 
@@ -6382,7 +5961,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_config_set`
 
@@ -6401,25 +5979,24 @@ current config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `acme` | string (nullable) | no | ACME account assignment, pre-formatted per PBS's compound syntax, e.g. 'account=myaccount'. (default: `null`) |
-| `acmedomain0` | string (nullable) | no | ACME domain 0, pre-formatted e.g. 'domain=example.com,alias=other.com,plugin=cf'. (default: `null`) |
-| `acmedomain1` | string (nullable) | no | ACME domain 1, same compound format as acmedomain0. (default: `null`) |
-| `acmedomain2` | string (nullable) | no | ACME domain 2, same compound format as acmedomain0. (default: `null`) |
-| `acmedomain3` | string (nullable) | no | ACME domain 3, same compound format as acmedomain0. (default: `null`) |
-| `acmedomain4` | string (nullable) | no | ACME domain 4, same compound format as acmedomain0. (default: `null`) |
-| `ciphers_tls_1_2` | string (nullable) | no | OpenSSL cipher list for TLS <= 1.2. Misconfiguration can break ALL TLS connections to the API/web proxy. (default: `null`) |
-| `ciphers_tls_1_3` | string (nullable) | no | OpenSSL ciphersuite list for TLS 1.3. Misconfiguration can break ALL TLS connections to the API/web proxy. (default: `null`) |
-| `consent_text` | string (nullable) | no | Consent banner text (<=65536 chars). (default: `null`) |
-| `default_lang` | string (nullable) | no | UI language code (closed enum, e.g. 'en', 'de', 'fr'). (default: `null`) |
-| `description` | string (nullable) | no | Node comment (multiple lines allowed). (default: `null`) |
-| `email_from` | string (nullable) | no | From-address for node-generated e-mail (2-64 chars). (default: `null`) |
-| `http_proxy` | string (nullable) | no | HTTP proxy configuration '[http://]<host>[:port]'. May embed 'user:pass@' credentials per standard URL syntax — masked defensively in the returned Plan. (default: `null`) |
-| `location` | string (nullable) | no | Free-text location label for this PBS instance. (default: `null`) |
-| `task_log_max_days` | integer (nullable) | no | Maximum days to keep task logs (>=0). (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `acme` | ['string', 'null'] | no | ACME account assignment, pre-formatted per PBS's compound syntax, e.g. 'account=myaccount'. (default: `null`) |
+| `acmedomain0` | ['string', 'null'] | no | ACME domain 0, pre-formatted e.g. 'domain=example.com,alias=other.com,plugin=cf'. (default: `null`) |
+| `acmedomain1` | ['string', 'null'] | no | ACME domain 1, same compound format as acmedomain0. (default: `null`) |
+| `acmedomain2` | ['string', 'null'] | no | ACME domain 2, same compound format as acmedomain0. (default: `null`) |
+| `acmedomain3` | ['string', 'null'] | no | ACME domain 3, same compound format as acmedomain0. (default: `null`) |
+| `acmedomain4` | ['string', 'null'] | no | ACME domain 4, same compound format as acmedomain0. (default: `null`) |
+| `ciphers_tls_1_2` | ['string', 'null'] | no | OpenSSL cipher list for TLS <= 1.2. Misconfiguration can break ALL TLS connections to the API/web proxy. (default: `null`) |
+| `ciphers_tls_1_3` | ['string', 'null'] | no | OpenSSL ciphersuite list for TLS 1.3. Misconfiguration can break ALL TLS connections to the API/web proxy. (default: `null`) |
+| `consent_text` | ['string', 'null'] | no | Consent banner text (<=65536 chars). (default: `null`) |
+| `default_lang` | ['string', 'null'] | no | UI language code (closed enum, e.g. 'en', 'de', 'fr'). (default: `null`) |
+| `description` | ['string', 'null'] | no | Node comment (multiple lines allowed). (default: `null`) |
+| `email_from` | ['string', 'null'] | no | From-address for node-generated e-mail (2-64 chars). (default: `null`) |
+| `http_proxy` | ['string', 'null'] | no | HTTP proxy configuration '[http://]<host>[:port]'. May embed 'user:pass@' credentials per standard URL syntax — masked defensively in the returned Plan. (default: `null`) |
+| `location` | ['string', 'null'] | no | Free-text location label for this PBS instance. (default: `null`) |
+| `task_log_max_days` | ['integer', 'null'] | no | Maximum days to keep task logs (>=0). (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: any of acme/acmedomain0-4/http-proxy/email-from/ciphers-tls-1.3/ciphers-tls-1.2/default-lang/description/task-log-max-days/consent-text/location. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_directory_create`
 
@@ -6437,11 +6014,10 @@ wipes the disk). Dry-run by default (returns a PLAN); confirm=True executes (POS
 | `disk` | string | yes | Bare whole-disk name to format (e.g. 'sda') — NOT a /dev/ path. |
 | `name` | string | yes | Datastore name to create (3-32 chars, alnum/underscore start). |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `filesystem` | string (nullable) | no | Filesystem to format with: 'ext4' or 'xfs'. PBS default is ext4 if omitted. (default: `null`) |
-| `add_datastore` | boolean (nullable) | no | If True, also register a PBS datastore using this directory. (default: `null`) |
-| `removable_datastore` | boolean (nullable) | no | If True, mark the datastore as removable media. (default: `null`) |
+| `filesystem` | ['string', 'null'] | no | Filesystem to format with: 'ext4' or 'xfs'. PBS default is ext4 if omitted. (default: `null`) |
+| `add_datastore` | ['boolean', 'null'] | no | If True, also register a PBS datastore using this directory. (default: `null`) |
+| `removable_datastore` | ['boolean', 'null'] | no | If True, mark the datastore as removable media. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_directory_delete`
 
@@ -6458,7 +6034,6 @@ version): confirm=True executes (DELETE /nodes/{node}/disks/directory/{name}) an
 | `name` | string | yes | Datastore name (directory backend) to remove. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the removal. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_directory_list`
 
@@ -6469,7 +6044,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_initgpt`
 
@@ -6485,9 +6059,8 @@ partition target. Dry-run by default (returns a PLAN); confirm=True executes (PO
 | --- | --- | --- | --- |
 | `disk` | string | yes | Bare WHOLE-disk name to initialize with a new GPT partition table (e.g. 'sda', 'nvme0n1') — NOT a /dev/ path and NOT a partition; overwrites the existing partition table. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `uuid` | string (nullable) | no | Optional UUID to assign to the new GPT table. (default: `null`) |
+| `uuid` | ['string', 'null'] | no | Optional UUID to assign to the new GPT table. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible GPT init. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_smart`
 
@@ -6499,8 +6072,7 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `disk` | string | yes | Bare block device name (e.g. 'sda', 'nvme0n1') — NOT a /dev/ path. As listed by pbs_node_disks_list. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `healthonly` | boolean (nullable) | no | If True, returns only the health status (not the full attribute table). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `healthonly` | ['boolean', 'null'] | no | If True, returns only the health status (not the full attribute table). (default: `null`) |
 
 #### `pbs_node_disk_wipe`
 
@@ -6517,7 +6089,6 @@ PLAN); confirm=True executes (PUT /nodes/{node}/disks/wipedisk, Smoke-confirm) a
 | `disk` | string | yes | Bare block device or partition name to wipe (e.g. 'sda', 'sda1', 'nvme0n1p1') — NOT a /dev/ path. ALL data on the target is destroyed. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible wipe. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_zfs_create`
 
@@ -6536,11 +6107,10 @@ confirm=True executes (POST /nodes/{node}/disks/zfs, Smoke-confirm) and returns
 | `name` | string | yes | Datastore name to create (3-32 chars, alnum/underscore start). |
 | `raidlevel` | string | yes | ZFS RAID level: single, mirror, raid10, raidz, raidz2, or raidz3. (No dRAID — PBS's schema doesn't offer it, unlike PVE.) |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `ashift` | integer (nullable) | no | Pool sector size exponent, 9-16 (PBS default 12 if omitted). (default: `null`) |
-| `compression` | string (nullable) | no | ZFS compression algorithm: gzip, lz4, lzjb, zle, zstd, on, or off. (default: `null`) |
-| `add_datastore` | boolean (nullable) | no | If True, also register a PBS datastore using this zpool. (default: `null`) |
+| `ashift` | ['integer', 'null'] | no | Pool sector size exponent, 9-16 (PBS default 12 if omitted). (default: `null`) |
+| `compression` | ['string', 'null'] | no | ZFS compression algorithm: gzip, lz4, lzjb, zle, zstd, on, or off. (default: `null`) |
+| `add_datastore` | ['boolean', 'null'] | no | If True, also register a PBS datastore using this zpool. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_zfs_get`
 
@@ -6552,7 +6122,6 @@ Proximo's own PVE coverage, not a PBS-only feature. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | ZFS pool name (must start with a letter). |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disk_zfs_list`
 
@@ -6563,7 +6132,6 @@ pbs_node_disk_zfs_get). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_disks_list`
 
@@ -6574,10 +6142,9 @@ pbs_node_disk_smart. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `include_partitions` | boolean (nullable) | no | Also include partitions in the result. (default: `null`) |
-| `skipsmart` | boolean (nullable) | no | Skip SMART checks (faster, less detail). (default: `null`) |
-| `usage_type` | string (nullable) | no | Filter by usage: one of unused, mounted, lvm, zfs, devicemapper, partitions, filesystem. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `include_partitions` | ['boolean', 'null'] | no | Also include partitions in the result. (default: `null`) |
+| `skipsmart` | ['boolean', 'null'] | no | Skip SMART checks (faster, less detail). (default: `null`) |
+| `usage_type` | ['string', 'null'] | no | Filter by usage: one of unused, mounted, lvm, zfs, devicemapper, partitions, filesystem. (default: `null`) |
 
 #### `pbs_node_dns_get`
 
@@ -6587,7 +6154,6 @@ dns3, digest}. Use pbs_node_dns_set to change it. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost', the standard single-node PBS hostname). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_dns_set`
 
@@ -6599,14 +6165,13 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `search` | string (nullable) | no | DNS search domain to set. (default: `null`) |
-| `dns1` | string (nullable) | no | Primary DNS resolver IP address. (default: `null`) |
-| `dns2` | string (nullable) | no | Secondary DNS resolver IP address. (default: `null`) |
-| `dns3` | string (nullable) | no | Tertiary DNS resolver IP address. (default: `null`) |
+| `search` | ['string', 'null'] | no | DNS search domain to set. (default: `null`) |
+| `dns1` | ['string', 'null'] | no | Primary DNS resolver IP address. (default: `null`) |
+| `dns2` | ['string', 'null'] | no | Secondary DNS resolver IP address. (default: `null`) |
+| `dns3` | ['string', 'null'] | no | Tertiary DNS resolver IP address. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the DNS change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_identity`
 
@@ -6616,7 +6181,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). OPTIONAL on the live schema — the only one of this module's four node-scoped reads where that's true. (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_journal`
 
@@ -6628,12 +6192,11 @@ classic syslog view use pbs_node_syslog. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `lastentries` | integer (nullable) | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
-| `since` | integer (nullable) | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
-| `until` | integer (nullable) | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
-| `startcursor` | string (nullable) | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
-| `endcursor` | string (nullable) | no | End before this journal cursor token; conflicts with until. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `lastentries` | ['integer', 'null'] | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
+| `since` | ['integer', 'null'] | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
+| `until` | ['integer', 'null'] | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
+| `startcursor` | ['string', 'null'] | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
+| `endcursor` | ['string', 'null'] | no | End before this journal cursor token; conflicts with until. (default: `null`) |
 
 #### `pbs_node_network_iface_create`
 
@@ -6647,10 +6210,9 @@ discard with pbs_node_network_revert. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `iface` | string | yes | New network interface name. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `iface_type` | string (nullable) | no | Interface type: one of loopback, eth, bridge, bond, vlan, alias, unknown. PBS marks this OPTIONAL even on create. (default: `null`) |
+| `iface_type` | ['string', 'null'] | no | Interface type: one of loopback, eth, bridge, bond, vlan, alias, unknown. PBS marks this OPTIONAL even on create. (default: `null`) |
 | `options` | object (nullable) | no | Additional interface fields (cidr, gateway, bridge_ports, bond_mode, mtu, autostart, comments, ...) forwarded verbatim. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_iface_delete`
 
@@ -6663,9 +6225,8 @@ config. confirm=True executes (DELETE /nodes/{node}/network/{iface}) and returns
 | --- | --- | --- | --- |
 | `iface` | string | yes | Network interface name to remove. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the removal. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_iface_get`
 
@@ -6676,7 +6237,6 @@ config.
 | --- | --- | --- | --- |
 | `iface` | string | yes | Network interface name, e.g. 'eth0' or 'vmbr0'. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_iface_update`
 
@@ -6691,12 +6251,11 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `iface` | string | yes | Existing network interface name to update. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `iface_type` | string (nullable) | no | Interface type: one of loopback, eth, bridge, bond, vlan, alias, unknown; omit to leave unchanged. (default: `null`) |
+| `iface_type` | ['string', 'null'] | no | Interface type: one of loopback, eth, bridge, bond, vlan, alias, unknown; omit to leave unchanged. (default: `null`) |
 | `options` | object (nullable) | no | Interface fields to change (cidr, gateway, bridge_ports, mtu, autostart, comments, ...) forwarded verbatim. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_list`
 
@@ -6706,7 +6265,6 @@ pbs_node_network_iface_get for one interface's full config. Needs PROXIMO_PBS_* 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_reload`
 
@@ -6721,7 +6279,6 @@ pbs_node_network_revert. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True applies the staged changes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_network_revert`
 
@@ -6734,7 +6291,6 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True discards the staged changes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_report`
 
@@ -6746,7 +6302,6 @@ pbs_node_journal/pbs_node_task_log). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_rrd`
 
@@ -6760,7 +6315,6 @@ pmg_node_rrddata/pbs_metrics_status precedent). Needs PROXIMO_PBS_* config.
 | `cf` | string | yes | RRD consolidation function: 'MAX' or 'AVERAGE'. REQUIRED — no server-side default. |
 | `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour, day, week, month, year, or decade. REQUIRED — no server-side default. 'day' is the last ~24 hours, NOT the calendar day; no start/end is accepted, so a specific date is not available. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_service_control`
 
@@ -6777,7 +6331,6 @@ pbs_node_service_status. Needs PROXIMO_PBS_* config.
 | `action` | string | yes | Control action: 'start', 'stop', 'restart', or 'reload'. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the service control. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_service_status`
 
@@ -6789,7 +6342,6 @@ Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `service` | string | yes | systemd service name, e.g. 'proxmox-backup-proxy' or 'sshd'. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_services_list`
 
@@ -6800,7 +6352,6 @@ pbs_node_service_control to change a service's run state. Needs PROXIMO_PBS_* co
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_status`
 
@@ -6813,7 +6364,6 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_subscription_check`
 
@@ -6827,7 +6377,6 @@ Needs PROXIMO_PBS_* config.
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `force` | boolean | no | If True, always re-check even if the cached status is fresh. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the check. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_subscription_delete`
 
@@ -6840,7 +6389,6 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_subscription_get`
 
@@ -6851,7 +6399,6 @@ pbs_node_subscription_delete to remove the record. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_subscription_set`
 
@@ -6865,7 +6412,6 @@ PROXIMO_PBS_* config.
 | `key` | string | yes | Subscription key to install. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the installation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_syslog`
 
@@ -6876,12 +6422,11 @@ instead. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `limit` | integer (nullable) | no | Max number of syslog entries to return. (default: `null`) |
-| `start` | integer (nullable) | no | Start line number. (default: `null`) |
-| `since` | string (nullable) | no | Display log since this date-time string. (default: `null`) |
-| `until` | string (nullable) | no | Display log until this date-time string. (default: `null`) |
-| `service` | string (nullable) | no | Filter to one systemd service's lines. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Max number of syslog entries to return. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Start line number. (default: `null`) |
+| `since` | ['string', 'null'] | no | Display log since this date-time string. (default: `null`) |
+| `until` | ['string', 'null'] | no | Display log until this date-time string. (default: `null`) |
+| `service` | ['string', 'null'] | no | Filter to one systemd service's lines. (default: `null`) |
 
 #### `pbs_node_task_log`
 
@@ -6895,7 +6440,6 @@ PROXIMO_PBS_* config.
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `start` | integer | no | Line offset to start returning log output from (for pagination). (default: `0`) |
 | `limit` | integer | no | Max number of log lines to return. (default: `50`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_task_status`
 
@@ -6907,7 +6451,6 @@ config.
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_task_stop`
 
@@ -6922,7 +6465,6 @@ signal, not immediate. Find UPIDs via pbs_tasks_list. Needs PROXIMO_PBS_* config
 | `upid` | string | yes | The task's Unique Process ID (UPID) string to cancel. |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the cancellation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_time_get`
 
@@ -6932,7 +6474,6 @@ timezone}. Use pbs_node_time_set to change the timezone. Needs PROXIMO_PBS_* con
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_node_time_set`
 
@@ -6945,7 +6486,6 @@ timezone first (also readable via pbs_node_time_get). confirm=True executes (PUT
 | `timezone` | string | yes | IANA timezone name to set on the node (e.g. UTC, America/Chicago). |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the timezone change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_endpoint_create`
 
@@ -6960,11 +6500,10 @@ pbs_notification_endpoint_update. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'sendmail', 'smtp', or 'webhook'. |
 | `name` | string | yes | Unique name for the new notification endpoint (2-32 chars, alnum start). |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the endpoint. (default: `null`) |
-| `disable` | boolean (nullable) | no | If True, create the endpoint disabled. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the endpoint. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | If True, create the endpoint disabled. (default: `null`) |
 | `options` | object (nullable) | no | Type-specific config fields, e.g. gotify: {'server':.., 'token':..}; sendmail: {'mailto':[..]}; smtp: {'server':.., 'port':.., 'mailto':[..]}; webhook: {'url':.., 'method':.., 'header':[..], 'secret':[..]}. Credential-shaped keys (token/password/secret/header) are redacted from the PLAN preview and the audit ledger, but ARE sent to PBS on confirm=True. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_endpoint_delete`
 
@@ -6980,7 +6519,6 @@ PROXIMO_PBS_* config.
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'sendmail', 'smtp', or 'webhook'. |
 | `name` | string | yes | Name of the notification endpoint to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_endpoint_get`
 
@@ -6991,7 +6529,6 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'sendmail', 'smtp', or 'webhook'. |
 | `name` | string | yes | Name of the notification endpoint. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_endpoint_list`
 
@@ -7002,8 +6539,7 @@ tagged with its 'type' (the per-type responses don't carry one). Needs PROXIMO_P
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `ep_type` | string (nullable) | no | Optional filter: one of gotify, sendmail, smtp, webhook. Omit to aggregate all 4 types. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ep_type` | ['string', 'null'] | no | Optional filter: one of gotify, sendmail, smtp, webhook. Omit to aggregate all 4 types. (default: `null`) |
 
 #### `pbs_notification_endpoint_update`
 
@@ -7018,12 +6554,11 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `ep_type` | string | yes | Notification endpoint type: 'gotify', 'sendmail', 'smtp', or 'webhook'. |
 | `name` | string | yes | Name of the existing notification endpoint to update. |
-| `comment` | string (nullable) | no | Optional free-text comment to set on the endpoint. (default: `null`) |
-| `disable` | boolean (nullable) | no | True disables the endpoint; False re-enables it. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment to set on the endpoint. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | True disables the endpoint; False re-enables it. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
 | `options` | object (nullable) | no | Type-specific fields to change, same shape as create. Credential-shaped keys (token/password/secret/header) are redacted from the PLAN preview and the audit ledger, but ARE sent to PBS on confirm=True. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_matcher_delete`
 
@@ -7036,25 +6571,20 @@ un-routed until re-created with pbs_notification_matcher_set. Needs PROXIMO_PBS_
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification matcher to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_matcher_field_values`
 
 READ-ONLY: list all known (field, value) pairs the system currently recognizes for
 matcher rules. No params. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_notification_matcher_fields`
 
 READ-ONLY: list all known metadata field NAMES a matcher's match-field rule can target
 (e.g. 'type', 'datastore'). No params. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_notification_matcher_get`
 
@@ -7063,7 +6593,6 @@ READ-ONLY: get one PBS notification matcher's full config. Needs PROXIMO_PBS_* c
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification matcher. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_matcher_set`
 
@@ -7078,27 +6607,24 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification matcher (alert routing rule) to create or update (2-32 chars, alnum start). |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the matcher. (default: `null`) |
-| `mode` | string (nullable) | no | How match-* filters combine: 'all' (default on PBS) or 'any'. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the matcher. (default: `null`) |
+| `mode` | ['string', 'null'] | no | How match-* filters combine: 'all' (default on PBS) or 'any'. (default: `null`) |
 | `match_severity` | array<string> (nullable) | no | Severity levels to match (e.g. ['error','warning']). (default: `null`) |
 | `match_field` | array<string> (nullable) | no | Metadata field filters to match (see pbs_notification_matcher_fields for known names). (default: `null`) |
 | `match_calendar` | array<string> (nullable) | no | Calendar-event time-window filters to match. (default: `null`) |
-| `invert_match` | boolean (nullable) | no | If True, invert the whole filter's match result. (default: `null`) |
+| `invert_match` | ['boolean', 'null'] | no | If True, invert the whole filter's match result. (default: `null`) |
 | `target` | array<string> (nullable) | no | Names of endpoints/targets to notify when this matcher fires. (default: `null`) |
-| `disable` | boolean (nullable) | no | If True, disable this matcher without deleting it. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock (update only): 64-char lowercase hex SHA-256 of the config PBS last returned. Ignored on create — PBS's own create schema has no digest field. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | If True, disable this matcher without deleting it. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock (update only): 64-char lowercase hex SHA-256 of the config PBS last returned. Ignored on create — PBS's own create schema has no digest field. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Update only: property names to clear (e.g. ['comment','target']). Ignored on create. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the create/update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_matchers_list`
 
 READ-ONLY: list all PBS notification matchers (alert routing rules). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_notification_target_test`
 
@@ -7112,7 +6638,6 @@ pbs_notification_targets_list for target names. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the notification target (endpoint or matcher) to send a test notification to. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True SENDS A REAL test notification. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_notification_targets_list`
 
@@ -7120,9 +6645,7 @@ READ-ONLY: list all PBS notification targets (the unified list — name, type, c
 disable, origin — across every endpoint type). For an endpoint's full type-specific config
 use pbs_notification_endpoint_get. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_permissions_get`
 
@@ -7133,9 +6656,8 @@ Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `auth_id` | string (nullable) | no | User or token to resolve permissions for ('user@realm' or 'user@realm!token-name'); omit for the calling credential's own permissions. (default: `null`) |
-| `path` | string (nullable) | no | ACL path to scope the result to; omit for every path the principal has any privilege on. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `auth_id` | ['string', 'null'] | no | User or token to resolve permissions for ('user@realm' or 'user@realm!token-name'); omit for the calling credential's own permissions. (default: `null`) |
+| `path` | ['string', 'null'] | no | ACL path to scope the result to; omit for every path the principal has any privilege on. (default: `null`) |
 
 #### `pbs_prune`
 
@@ -7148,17 +6670,16 @@ pbs_snapshot_delete instead.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name to prune. |
-| `keep_last` | integer (nullable) | no | Number of most-recent backups to always keep. (default: `null`) |
-| `keep_daily` | integer (nullable) | no | Number of daily backups to keep. (default: `null`) |
-| `keep_weekly` | integer (nullable) | no | Number of weekly backups to keep. (default: `null`) |
-| `keep_monthly` | integer (nullable) | no | Number of monthly backups to keep. (default: `null`) |
-| `keep_yearly` | integer (nullable) | no | Number of yearly backups to keep. (default: `null`) |
-| `ns` | string (nullable) | no | Namespace path to scope pruning to; omit for the root namespace. (default: `null`) |
-| `backup_type` | string (nullable) | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
-| `backup_id` | string (nullable) | no | Backup group ID (e.g. VMID/CTID or host name) to scope pruning to. (default: `null`) |
+| `keep_last` | ['integer', 'null'] | no | Number of most-recent backups to always keep. (default: `null`) |
+| `keep_daily` | ['integer', 'null'] | no | Number of daily backups to keep. (default: `null`) |
+| `keep_weekly` | ['integer', 'null'] | no | Number of weekly backups to keep. (default: `null`) |
+| `keep_monthly` | ['integer', 'null'] | no | Number of monthly backups to keep. (default: `null`) |
+| `keep_yearly` | ['integer', 'null'] | no | Number of yearly backups to keep. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path to scope pruning to; omit for the root namespace. (default: `null`) |
+| `backup_type` | ['string', 'null'] | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
+| `backup_id` | ['string', 'null'] | no | Backup group ID (e.g. VMID/CTID or host name) to scope pruning to. (default: `null`) |
 | `dry_run` | boolean | no | PBS-side preview: True (default) previews only; False actually deletes snapshots. (default: `true`) |
 | `confirm` | boolean | no | Proximo dry-run gate: True executes (subject to dry_run); default only plans. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_pull`
 
@@ -7177,24 +6698,23 @@ relying on it for a large sync. No rollback primitive. Needs PROXIMO_PBS_* confi
 | --- | --- | --- | --- |
 | `store` | string | yes | LOCAL PBS datastore name to pull backups INTO. REQUIRED. |
 | `remote_store` | string | yes | Datastore name on the remote PBS to pull FROM. REQUIRED. |
-| `remote` | string (nullable) | no | Remote ID identifying the source PBS. OPTIONAL per the live schema (Smoke-confirm what PBS does when omitted). (default: `null`) |
-| `remote_ns` | string (nullable) | no | Namespace on the REMOTE datastore to pull from. Defaults to root. (default: `null`) |
-| `ns` | string (nullable) | no | Namespace on the LOCAL datastore to pull into. Defaults to root. (default: `null`) |
-| `burst_in` | string (nullable) | no | Inbound burst limit as a byte size with unit, e.g. '10MB'. (default: `null`) |
-| `burst_out` | string (nullable) | no | Outbound burst limit as a byte size with unit. (default: `null`) |
+| `remote` | ['string', 'null'] | no | Remote ID identifying the source PBS. OPTIONAL per the live schema (Smoke-confirm what PBS does when omitted). (default: `null`) |
+| `remote_ns` | ['string', 'null'] | no | Namespace on the REMOTE datastore to pull from. Defaults to root. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace on the LOCAL datastore to pull into. Defaults to root. (default: `null`) |
+| `burst_in` | ['string', 'null'] | no | Inbound burst limit as a byte size with unit, e.g. '10MB'. (default: `null`) |
+| `burst_out` | ['string', 'null'] | no | Outbound burst limit as a byte size with unit. (default: `null`) |
 | `decryption_keys` | array<string> (nullable) | no | IDs of already-registered client encryption keys (pbs_encryption_key_*) to use for decrypting remote content. NOT the raw key material. (default: `null`) |
-| `encrypted_only` | boolean (nullable) | no | Only synchronize encrypted backup snapshots, exclude others. (default: `null`) |
+| `encrypted_only` | ['boolean', 'null'] | no | Only synchronize encrypted backup snapshots, exclude others. (default: `null`) |
 | `group_filter` | array<string> (nullable) | no | Group filters, e.g. '[exclude:]type:vm' or 'group:GROUP' or 'regex:RE'. Omit to pull EVERY group in scope. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Namespace recursion depth, 0-7 (0 = no recursion; empty/omitted = automatic full recursion). (default: `null`) |
-| `rate_in` | string (nullable) | no | Inbound rate limit as a byte size with unit. (default: `null`) |
-| `rate_out` | string (nullable) | no | Outbound rate limit as a byte size with unit. (default: `null`) |
-| `remove_vanished` | boolean (nullable) | no | DELETE local snapshots that no longer exist on the remote. Escalates this call's risk to HIGH — no dry-run preview exists. (default: `null`) |
-| `resync_corrupt` | boolean (nullable) | no | Re-pull local snapshots that previously failed verification, overwriting them. (default: `null`) |
-| `transfer_last` | integer (nullable) | no | Limit transfer to the last N snapshots per group, skipping older ones (>=1). (default: `null`) |
-| `verified_only` | boolean (nullable) | no | Only synchronize verified backup snapshots, exclude others. (default: `null`) |
-| `worker_threads` | integer (nullable) | no | Number of worker threads to process groups in parallel, 1-32. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Namespace recursion depth, 0-7 (0 = no recursion; empty/omitted = automatic full recursion). (default: `null`) |
+| `rate_in` | ['string', 'null'] | no | Inbound rate limit as a byte size with unit. (default: `null`) |
+| `rate_out` | ['string', 'null'] | no | Outbound rate limit as a byte size with unit. (default: `null`) |
+| `remove_vanished` | ['boolean', 'null'] | no | DELETE local snapshots that no longer exist on the remote. Escalates this call's risk to HIGH — no dry-run preview exists. (default: `null`) |
+| `resync_corrupt` | ['boolean', 'null'] | no | Re-pull local snapshots that previously failed verification, overwriting them. (default: `null`) |
+| `transfer_last` | ['integer', 'null'] | no | Limit transfer to the last N snapshots per group, skipping older ones (>=1). (default: `null`) |
+| `verified_only` | ['boolean', 'null'] | no | Only synchronize verified backup snapshots, exclude others. (default: `null`) |
+| `worker_threads` | ['integer', 'null'] | no | Number of worker threads to process groups in parallel, 1-32. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the pull. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_push`
 
@@ -7214,22 +6734,21 @@ whether this call blocks synchronously for the full transfer duration. No rollba
 | `store` | string | yes | LOCAL PBS datastore name to push backups FROM. REQUIRED. |
 | `remote` | string | yes | Remote ID identifying the destination PBS. REQUIRED (unlike pbs_pull's optional remote). |
 | `remote_store` | string | yes | Datastore name on the remote PBS to push TO. REQUIRED. |
-| `remote_ns` | string (nullable) | no | Namespace on the REMOTE datastore to push into. Defaults to root. (default: `null`) |
-| `ns` | string (nullable) | no | Namespace on the LOCAL datastore to push from. Defaults to root. (default: `null`) |
-| `burst_in` | string (nullable) | no | Inbound burst limit as a byte size with unit. (default: `null`) |
-| `burst_out` | string (nullable) | no | Outbound burst limit as a byte size with unit. (default: `null`) |
-| `encrypted_only` | boolean (nullable) | no | Only synchronize encrypted backup snapshots, exclude others. (default: `null`) |
-| `encryption_key` | string (nullable) | no | ID of an already-registered client encryption key (pbs_encryption_key_*) to encrypt content toward the remote. NOT the raw key material. (default: `null`) |
+| `remote_ns` | ['string', 'null'] | no | Namespace on the REMOTE datastore to push into. Defaults to root. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace on the LOCAL datastore to push from. Defaults to root. (default: `null`) |
+| `burst_in` | ['string', 'null'] | no | Inbound burst limit as a byte size with unit. (default: `null`) |
+| `burst_out` | ['string', 'null'] | no | Outbound burst limit as a byte size with unit. (default: `null`) |
+| `encrypted_only` | ['boolean', 'null'] | no | Only synchronize encrypted backup snapshots, exclude others. (default: `null`) |
+| `encryption_key` | ['string', 'null'] | no | ID of an already-registered client encryption key (pbs_encryption_key_*) to encrypt content toward the remote. NOT the raw key material. (default: `null`) |
 | `group_filter` | array<string> (nullable) | no | Group filters, e.g. '[exclude:]type:vm' or 'group:GROUP' or 'regex:RE'. Omit to push EVERY group in scope. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Namespace recursion depth, 0-7. (default: `null`) |
-| `rate_in` | string (nullable) | no | Inbound rate limit as a byte size with unit. (default: `null`) |
-| `rate_out` | string (nullable) | no | Outbound rate limit as a byte size with unit. (default: `null`) |
-| `remove_vanished` | boolean (nullable) | no | DELETE remote snapshots that no longer exist locally. Escalates this call's risk to HIGH — no dry-run preview exists. (default: `null`) |
-| `transfer_last` | integer (nullable) | no | Limit transfer to the last N snapshots per group (>=1). (default: `null`) |
-| `verified_only` | boolean (nullable) | no | Only synchronize verified backup snapshots, exclude others. (default: `null`) |
-| `worker_threads` | integer (nullable) | no | Number of worker threads to process groups in parallel, 1-32. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Namespace recursion depth, 0-7. (default: `null`) |
+| `rate_in` | ['string', 'null'] | no | Inbound rate limit as a byte size with unit. (default: `null`) |
+| `rate_out` | ['string', 'null'] | no | Outbound rate limit as a byte size with unit. (default: `null`) |
+| `remove_vanished` | ['boolean', 'null'] | no | DELETE remote snapshots that no longer exist locally. Escalates this call's risk to HIGH — no dry-run preview exists. (default: `null`) |
+| `transfer_last` | ['integer', 'null'] | no | Limit transfer to the last N snapshots per group (>=1). (default: `null`) |
+| `verified_only` | ['boolean', 'null'] | no | Only synchronize verified backup snapshots, exclude others. (default: `null`) |
+| `worker_threads` | ['integer', 'null'] | no | Number of worker threads to process groups in parallel, 1-32. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the push. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ad_create`
 
@@ -7245,22 +6764,21 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `realm` | string | yes | New AD realm name. |
 | `server1` | string | yes | Primary AD server address. |
-| `base_dn` | string (nullable) | no | LDAP base DN to search under; optional for AD. (default: `null`) |
-| `bind_dn` | string (nullable) | no | LDAP bind DN for the service account. (default: `null`) |
-| `capath` | string (nullable) | no | Path to a CA certificate file or directory to trust for TLS. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `default` | boolean (nullable) | no | True to make this the default realm preselected on login. (default: `null`) |
-| `filter` | string (nullable) | no | Custom LDAP search filter for user sync. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP connection type: 'ldap', 'ldap+starttls', or 'ldaps'. (default: `null`) |
-| `password` | string (nullable) | no | AD bind password for the service account; redacted from all plans/logs/ledger. (default: `null`) |
-| `port` | integer (nullable) | no | AD server port. (default: `null`) |
-| `server2` | string (nullable) | no | Fallback AD server address. (default: `null`) |
-| `sync_attributes` | string (nullable) | no | Comma-separated key=value LDAP-attribute-to-PBS-field sync map, forwarded verbatim. (default: `null`) |
-| `sync_defaults_options` | string (nullable) | no | Default sync-run options string, forwarded verbatim (exact syntax not live-verified). (default: `null`) |
-| `user_classes` | string (nullable) | no | Comma-separated allowed objectClass values for user sync. (default: `null`) |
-| `verify` | boolean (nullable) | no | Whether to verify the AD server's TLS certificate. (default: `null`) |
+| `base_dn` | ['string', 'null'] | no | LDAP base DN to search under; optional for AD. (default: `null`) |
+| `bind_dn` | ['string', 'null'] | no | LDAP bind DN for the service account. (default: `null`) |
+| `capath` | ['string', 'null'] | no | Path to a CA certificate file or directory to trust for TLS. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | True to make this the default realm preselected on login. (default: `null`) |
+| `filter` | ['string', 'null'] | no | Custom LDAP search filter for user sync. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP connection type: 'ldap', 'ldap+starttls', or 'ldaps'. (default: `null`) |
+| `password` | ['string', 'null'] | no | AD bind password for the service account; redacted from all plans/logs/ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | AD server port. (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback AD server address. (default: `null`) |
+| `sync_attributes` | ['string', 'null'] | no | Comma-separated key=value LDAP-attribute-to-PBS-field sync map, forwarded verbatim. (default: `null`) |
+| `sync_defaults_options` | ['string', 'null'] | no | Default sync-run options string, forwarded verbatim (exact syntax not live-verified). (default: `null`) |
+| `user_classes` | ['string', 'null'] | no | Comma-separated allowed objectClass values for user sync. (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | Whether to verify the AD server's TLS certificate. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ad_delete`
 
@@ -7271,9 +6789,8 @@ confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PB
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | AD realm name to delete. |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ad_get`
 
@@ -7282,16 +6799,13 @@ READ-ONLY: get one AD realm's config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | AD realm name to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ad_list`
 
 READ-ONLY: list configured AD realms. Use pbs_realm_ad_get for one realm's full config.
 Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_realm_ad_update`
 
@@ -7303,25 +6817,24 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | AD realm name to update. |
-| `base_dn` | string (nullable) | no | LDAP base DN; omit to leave unchanged. (default: `null`) |
-| `bind_dn` | string (nullable) | no | LDAP bind DN; omit to leave unchanged. (default: `null`) |
-| `capath` | string (nullable) | no | CA certificate path; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
-| `filter` | string (nullable) | no | Custom LDAP search filter; omit to leave unchanged. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP connection type; omit to leave unchanged. (default: `null`) |
-| `password` | string (nullable) | no | New AD bind password; redacted from all plans/logs/ledger. (default: `null`) |
-| `port` | integer (nullable) | no | AD server port; omit to leave unchanged. (default: `null`) |
-| `server1` | string (nullable) | no | Primary AD server address; omit to leave unchanged. (default: `null`) |
-| `server2` | string (nullable) | no | Fallback AD server address; omit to leave unchanged. (default: `null`) |
-| `sync_attributes` | string (nullable) | no | Sync-attribute map string; omit to leave unchanged. (default: `null`) |
-| `sync_defaults_options` | string (nullable) | no | Sync-defaults options string; omit to leave unchanged. (default: `null`) |
-| `user_classes` | string (nullable) | no | Allowed objectClass values; omit to leave unchanged. (default: `null`) |
-| `verify` | boolean (nullable) | no | TLS verification flag; omit to leave unchanged. (default: `null`) |
+| `base_dn` | ['string', 'null'] | no | LDAP base DN; omit to leave unchanged. (default: `null`) |
+| `bind_dn` | ['string', 'null'] | no | LDAP bind DN; omit to leave unchanged. (default: `null`) |
+| `capath` | ['string', 'null'] | no | CA certificate path; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `filter` | ['string', 'null'] | no | Custom LDAP search filter; omit to leave unchanged. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP connection type; omit to leave unchanged. (default: `null`) |
+| `password` | ['string', 'null'] | no | New AD bind password; redacted from all plans/logs/ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | AD server port; omit to leave unchanged. (default: `null`) |
+| `server1` | ['string', 'null'] | no | Primary AD server address; omit to leave unchanged. (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback AD server address; omit to leave unchanged. (default: `null`) |
+| `sync_attributes` | ['string', 'null'] | no | Sync-attribute map string; omit to leave unchanged. (default: `null`) |
+| `sync_defaults_options` | ['string', 'null'] | no | Sync-defaults options string; omit to leave unchanged. (default: `null`) |
+| `user_classes` | ['string', 'null'] | no | Allowed objectClass values; omit to leave unchanged. (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | TLS verification flag; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ldap_create`
 
@@ -7338,21 +6851,20 @@ PROXIMO_PBS_* config.
 | `server1` | string | yes | Primary LDAP server address. |
 | `base_dn` | string | yes | LDAP base DN to search under (required for LDAP, unlike AD). |
 | `user_attr` | string | yes | Username attribute used to map a userid to an LDAP dn (required for LDAP). |
-| `bind_dn` | string (nullable) | no | LDAP bind DN for the service account. (default: `null`) |
-| `capath` | string (nullable) | no | Path to a CA certificate file or directory to trust for TLS. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `default` | boolean (nullable) | no | True to make this the default realm preselected on login. (default: `null`) |
-| `filter` | string (nullable) | no | Custom LDAP search filter for user sync. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP connection type: 'ldap', 'ldap+starttls', or 'ldaps'. (default: `null`) |
-| `password` | string (nullable) | no | LDAP bind password for the service account; redacted from all plans/logs/ledger. (default: `null`) |
-| `port` | integer (nullable) | no | LDAP server port. (default: `null`) |
-| `server2` | string (nullable) | no | Fallback LDAP server address. (default: `null`) |
-| `sync_attributes` | string (nullable) | no | Comma-separated key=value LDAP-attribute-to-PBS-field sync map, forwarded verbatim. (default: `null`) |
-| `sync_defaults_options` | string (nullable) | no | Default sync-run options string, forwarded verbatim (exact syntax not live-verified). (default: `null`) |
-| `user_classes` | string (nullable) | no | Comma-separated allowed objectClass values for user sync. (default: `null`) |
-| `verify` | boolean (nullable) | no | Whether to verify the LDAP server's TLS certificate. (default: `null`) |
+| `bind_dn` | ['string', 'null'] | no | LDAP bind DN for the service account. (default: `null`) |
+| `capath` | ['string', 'null'] | no | Path to a CA certificate file or directory to trust for TLS. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | True to make this the default realm preselected on login. (default: `null`) |
+| `filter` | ['string', 'null'] | no | Custom LDAP search filter for user sync. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP connection type: 'ldap', 'ldap+starttls', or 'ldaps'. (default: `null`) |
+| `password` | ['string', 'null'] | no | LDAP bind password for the service account; redacted from all plans/logs/ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | LDAP server port. (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback LDAP server address. (default: `null`) |
+| `sync_attributes` | ['string', 'null'] | no | Comma-separated key=value LDAP-attribute-to-PBS-field sync map, forwarded verbatim. (default: `null`) |
+| `sync_defaults_options` | ['string', 'null'] | no | Default sync-run options string, forwarded verbatim (exact syntax not live-verified). (default: `null`) |
+| `user_classes` | ['string', 'null'] | no | Comma-separated allowed objectClass values for user sync. (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | Whether to verify the LDAP server's TLS certificate. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ldap_delete`
 
@@ -7363,9 +6875,8 @@ confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PB
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | LDAP realm name to delete. |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ldap_get`
 
@@ -7374,16 +6885,13 @@ READ-ONLY: get one LDAP realm's config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | LDAP realm name to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_ldap_list`
 
 READ-ONLY: list configured LDAP realms. Use pbs_realm_ldap_get for one realm's full
 config. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_realm_ldap_update`
 
@@ -7395,26 +6903,25 @@ Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | LDAP realm name to update. |
-| `base_dn` | string (nullable) | no | LDAP base DN; omit to leave unchanged. (default: `null`) |
-| `bind_dn` | string (nullable) | no | LDAP bind DN; omit to leave unchanged. (default: `null`) |
-| `capath` | string (nullable) | no | CA certificate path; omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
-| `filter` | string (nullable) | no | Custom LDAP search filter; omit to leave unchanged. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP connection type; omit to leave unchanged. (default: `null`) |
-| `password` | string (nullable) | no | New LDAP bind password; redacted from all plans/logs/ledger. (default: `null`) |
-| `port` | integer (nullable) | no | LDAP server port; omit to leave unchanged. (default: `null`) |
-| `server1` | string (nullable) | no | Primary LDAP server address; omit to leave unchanged. (default: `null`) |
-| `server2` | string (nullable) | no | Fallback LDAP server address; omit to leave unchanged. (default: `null`) |
-| `sync_attributes` | string (nullable) | no | Sync-attribute map string; omit to leave unchanged. (default: `null`) |
-| `sync_defaults_options` | string (nullable) | no | Sync-defaults options string; omit to leave unchanged. (default: `null`) |
-| `user_attr` | string (nullable) | no | Username attribute; omit to leave unchanged. (default: `null`) |
-| `user_classes` | string (nullable) | no | Allowed objectClass values; omit to leave unchanged. (default: `null`) |
-| `verify` | boolean (nullable) | no | TLS verification flag; omit to leave unchanged. (default: `null`) |
+| `base_dn` | ['string', 'null'] | no | LDAP base DN; omit to leave unchanged. (default: `null`) |
+| `bind_dn` | ['string', 'null'] | no | LDAP bind DN; omit to leave unchanged. (default: `null`) |
+| `capath` | ['string', 'null'] | no | CA certificate path; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `filter` | ['string', 'null'] | no | Custom LDAP search filter; omit to leave unchanged. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP connection type; omit to leave unchanged. (default: `null`) |
+| `password` | ['string', 'null'] | no | New LDAP bind password; redacted from all plans/logs/ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | LDAP server port; omit to leave unchanged. (default: `null`) |
+| `server1` | ['string', 'null'] | no | Primary LDAP server address; omit to leave unchanged. (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback LDAP server address; omit to leave unchanged. (default: `null`) |
+| `sync_attributes` | ['string', 'null'] | no | Sync-attribute map string; omit to leave unchanged. (default: `null`) |
+| `sync_defaults_options` | ['string', 'null'] | no | Sync-defaults options string; omit to leave unchanged. (default: `null`) |
+| `user_attr` | ['string', 'null'] | no | Username attribute; omit to leave unchanged. (default: `null`) |
+| `user_classes` | ['string', 'null'] | no | Allowed objectClass values; omit to leave unchanged. (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | TLS verification flag; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_openid_create`
 
@@ -7431,17 +6938,16 @@ this plane (token-auth-shaped tools only) — see module docstring. Needs PROXIM
 | `realm` | string | yes | New OpenID realm name. |
 | `issuer_url` | string | yes | OpenID issuer URL. |
 | `client_id` | string | yes | OpenID client id. |
-| `client_key` | string (nullable) | no | OpenID client secret; redacted from all plans/logs/ledger. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `default` | boolean (nullable) | no | True to make this the default realm preselected on login. (default: `null`) |
-| `acr_values` | string (nullable) | no | OpenID ACR list string, forwarded verbatim. (default: `null`) |
-| `audiences` | string (nullable) | no | OpenID audience list string, forwarded verbatim. (default: `null`) |
-| `autocreate` | boolean (nullable) | no | Automatically create PBS users on first login if they don't exist. (default: `null`) |
-| `prompt` | string (nullable) | no | OpenID prompt parameter. (default: `null`) |
-| `scopes` | string (nullable) | no | OpenID scope list, SPACE-separated (schema default: 'email profile'). (default: `null`) |
-| `username_claim` | string (nullable) | no | Claim to use as the unique username; the identity provider must guarantee uniqueness. (default: `null`) |
+| `client_key` | ['string', 'null'] | no | OpenID client secret; redacted from all plans/logs/ledger. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | True to make this the default realm preselected on login. (default: `null`) |
+| `acr_values` | ['string', 'null'] | no | OpenID ACR list string, forwarded verbatim. (default: `null`) |
+| `audiences` | ['string', 'null'] | no | OpenID audience list string, forwarded verbatim. (default: `null`) |
+| `autocreate` | ['boolean', 'null'] | no | Automatically create PBS users on first login if they don't exist. (default: `null`) |
+| `prompt` | ['string', 'null'] | no | OpenID prompt parameter. (default: `null`) |
+| `scopes` | ['string', 'null'] | no | OpenID scope list, SPACE-separated (schema default: 'email profile'). (default: `null`) |
+| `username_claim` | ['string', 'null'] | no | Claim to use as the unique username; the identity provider must guarantee uniqueness. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_openid_delete`
 
@@ -7452,9 +6958,8 @@ confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PB
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | OpenID realm name to delete. |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_openid_get`
 
@@ -7464,16 +6969,13 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | OpenID realm name to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_openid_list`
 
 READ-ONLY: list configured OpenID realms. Use pbs_realm_openid_get for one realm's full
 config. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_realm_openid_update`
 
@@ -7488,29 +6990,26 @@ here would only hard-fail the whole update server-side. Needs PROXIMO_PBS_* conf
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | OpenID realm name to update. |
-| `issuer_url` | string (nullable) | no | OpenID issuer URL; omit to leave unchanged. (default: `null`) |
-| `client_id` | string (nullable) | no | OpenID client id; omit to leave unchanged. (default: `null`) |
-| `client_key` | string (nullable) | no | New OpenID client secret; redacted from all plans/logs/ledger. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
-| `acr_values` | string (nullable) | no | OpenID ACR list string; omit to leave unchanged. (default: `null`) |
-| `audiences` | string (nullable) | no | OpenID audience list string; omit to leave unchanged. (default: `null`) |
-| `autocreate` | boolean (nullable) | no | Autocreate-on-login flag; omit to leave unchanged. (default: `null`) |
-| `prompt` | string (nullable) | no | OpenID prompt parameter; omit to leave unchanged. (default: `null`) |
-| `scopes` | string (nullable) | no | OpenID scope list, SPACE-separated; omit to leave unchanged. (default: `null`) |
+| `issuer_url` | ['string', 'null'] | no | OpenID issuer URL; omit to leave unchanged. (default: `null`) |
+| `client_id` | ['string', 'null'] | no | OpenID client id; omit to leave unchanged. (default: `null`) |
+| `client_key` | ['string', 'null'] | no | New OpenID client secret; redacted from all plans/logs/ledger. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `acr_values` | ['string', 'null'] | no | OpenID ACR list string; omit to leave unchanged. (default: `null`) |
+| `audiences` | ['string', 'null'] | no | OpenID audience list string; omit to leave unchanged. (default: `null`) |
+| `autocreate` | ['boolean', 'null'] | no | Autocreate-on-login flag; omit to leave unchanged. (default: `null`) |
+| `prompt` | ['string', 'null'] | no | OpenID prompt parameter; omit to leave unchanged. (default: `null`) |
+| `scopes` | ['string', 'null'] | no | OpenID scope list, SPACE-separated; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_pam_get`
 
 READ-ONLY: get the built-in PAM realm's config (comment/default only). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_realm_pam_set`
 
@@ -7521,21 +7020,18 @@ PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_pbs_get`
 
 READ-ONLY: get the built-in PBS-auth realm's config (comment/default only). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_realm_pbs_set`
 
@@ -7546,12 +7042,11 @@ synchronous, no UPID. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_realm_sync`
 
@@ -7564,10 +7059,9 @@ param was dropped — PBS /sync has no such field.)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | PBS LDAP/AD auth realm ID to sync users from. |
-| `remove_vanished` | boolean (nullable) | no | If true, also delete PBS users no longer present in the directory. (default: `null`) |
-| `dry_run` | boolean (nullable) | no | If true, ask PBS itself to preview the sync without applying it (separate from the tool's own confirm gate). (default: `null`) |
+| `remove_vanished` | ['boolean', 'null'] | no | If true, also delete PBS users no longer present in the directory. (default: `null`) |
+| `dry_run` | ['boolean', 'null'] | no | If true, ask PBS itself to preview the sync without applying it (separate from the tool's own confirm gate). (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the sync. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_create`
 
@@ -7592,11 +7086,10 @@ Smoke-confirm: auth-id vs authid param name; port param name.
 | `host` | string | yes | Hostname or IP address of the remote PBS server. |
 | `auth_id` | string | yes | PBS auth ID (user@realm or api-token) used to authenticate to the remote. |
 | `password` | string | yes | Password or API token secret for auth_id; redacted from all plans/logs/ledger. |
-| `fingerprint` | string (nullable) | no | TLS cert fingerprint of the remote PBS server (public data, not redacted). (default: `null`) |
-| `port` | integer (nullable) | no | TCP port of the remote PBS API; defaults to the standard PBS port if omitted. (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment/description for the remote. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | TLS cert fingerprint of the remote PBS server (public data, not redacted). (default: `null`) |
+| `port` | ['integer', 'null'] | no | TCP port of the remote PBS API; defaults to the standard PBS port if omitted. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment/description for the remote. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_delete`
 
@@ -7613,7 +7106,6 @@ Smoke-confirm: response shape on success.
 | --- | --- | --- | --- |
 | `name` | string | yes | PBS remote sync-source name to delete. |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_get`
 
@@ -7624,7 +7116,6 @@ change this one. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | PBS remote sync-source name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_scan`
 
@@ -7637,7 +7128,6 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Remote ID (a configured remote.cfg entry — see pbs_remotes_list). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_scan_groups`
 
@@ -7649,8 +7139,7 @@ transfer (or what a pbs_push group_filter should target) before running it. ADVE
 | --- | --- | --- | --- |
 | `name` | string | yes | Remote ID. |
 | `store` | string | yes | Datastore name on the remote. |
-| `namespace` | string (nullable) | no | Namespace on the remote datastore to list groups in. NOTE: this endpoint's wire param is 'namespace', not 'ns' — a schema divergence from the /admin/datastore siblings. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `namespace` | ['string', 'null'] | no | Namespace on the remote datastore to list groups in. NOTE: this endpoint's wire param is 'namespace', not 'ns' — a schema divergence from the /admin/datastore siblings. (default: `null`) |
 
 #### `pbs_remote_scan_namespaces`
 
@@ -7662,7 +7151,6 @@ comments). Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | Remote ID. |
 | `store` | string | yes | Datastore name on the remote. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remote_update`
 
@@ -7684,14 +7172,13 @@ Smoke-confirm: auth-id param name; whether partial PUT is accepted.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | PBS remote sync-source name to update. |
-| `host` | string (nullable) | no | New hostname or IP address of the remote PBS server. (default: `null`) |
-| `auth_id` | string (nullable) | no | New PBS auth ID (user@realm or api-token) used to authenticate to the remote. (default: `null`) |
-| `password` | string (nullable) | no | New password or API token secret; redacted from plans/logs/ledger. (default: `null`) |
-| `fingerprint` | string (nullable) | no | New TLS cert fingerprint of the remote PBS server (public data, not redacted). (default: `null`) |
-| `port` | integer (nullable) | no | New TCP port of the remote PBS API. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text comment/description for the remote. (default: `null`) |
+| `host` | ['string', 'null'] | no | New hostname or IP address of the remote PBS server. (default: `null`) |
+| `auth_id` | ['string', 'null'] | no | New PBS auth ID (user@realm or api-token) used to authenticate to the remote. (default: `null`) |
+| `password` | ['string', 'null'] | no | New password or API token secret; redacted from plans/logs/ledger. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | New TLS cert fingerprint of the remote PBS server (public data, not redacted). (default: `null`) |
+| `port` | ['integer', 'null'] | no | New TCP port of the remote PBS API. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment/description for the remote. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_remotes_list`
 
@@ -7699,9 +7186,7 @@ READ-ONLY: list all PBS remote sync-sources. Returns a list of remote config dic
 passwords are never included (PBS never returns them, and this strips defensively too).
 Use pbs_remote_get for one remote's config. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_roles_list`
 
@@ -7710,9 +7195,7 @@ comment. PBS roles are a FIXED enum (Admin, Audit, NoAccess, Datastore*/Remote*/
 — unlike PVE, there is no create/update/delete endpoint for PBS roles. Use pbs_acl_update to
 assign a role to a principal. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_s3_check`
 
@@ -7733,9 +7216,8 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | S3 client config id to check. |
 | `bucket` | string | yes | Bucket name for the S3 object store (3-63 chars). REQUIRED. |
-| `store_prefix` | string (nullable) | no | Store prefix within the bucket for S3 object keys (commonly a datastore name). (default: `null`) |
+| `store_prefix` | ['string', 'null'] | no | Store prefix within the bucket for S3 object keys (commonly a datastore name). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True runs the live check. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_client_create`
 
@@ -7755,17 +7237,16 @@ executes (POST /config/s3, synchronous — PBS returns null) and returns
 | `endpoint` | string | yes | Endpoint hostname/IPv4/IPv6 to access the S3 object store (may use {{bucket}}./{{region}} templating). |
 | `access_key` | string | yes | Access key for the S3 object store. NOT treated as secret — PBS itself returns this unredacted on every read (AWS convention: identifies the credential pair, is not itself the credential). |
 | `secret_key` | string | yes | Secret key for the S3 object store. SECRET — never written to the audit ledger or the dry-run PLAN. |
-| `region` | string (nullable) | no | Region to access the S3 object store (lowercase alnum/underscore/hyphen, <=32 chars). (default: `null`) |
-| `fingerprint` | string (nullable) | no | X509 certificate fingerprint (sha256, 32 colon-separated hex byte-pairs) to pin the endpoint's TLS cert. (default: `null`) |
-| `port` | integer (nullable) | no | Port to access the S3 object store (1-65535). (default: `null`) |
-| `path_style` | boolean (nullable) | no | Use path-style bucket addressing instead of vhost-style. (default: `null`) |
+| `region` | ['string', 'null'] | no | Region to access the S3 object store (lowercase alnum/underscore/hyphen, <=32 chars). (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | X509 certificate fingerprint (sha256, 32 colon-separated hex byte-pairs) to pin the endpoint's TLS cert. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Port to access the S3 object store (1-65535). (default: `null`) |
+| `path_style` | ['boolean', 'null'] | no | Use path-style bucket addressing instead of vhost-style. (default: `null`) |
 | `provider_quirks` | array<string> (nullable) | no | Provider-specific implementation quirks: 'skip-if-none-match-header' and/or 'delete-objects-via-delete-object'. (default: `null`) |
-| `rate_in` | string (nullable) | no | Inbound rate limit as a byte size with unit, e.g. '10MB' (1-64 chars). (default: `null`) |
-| `rate_out` | string (nullable) | no | Outbound rate limit as a byte size with unit (1-64 chars). (default: `null`) |
-| `burst_in` | string (nullable) | no | Inbound burst limit as a byte size with unit (1-64 chars). (default: `null`) |
-| `burst_out` | string (nullable) | no | Outbound burst limit as a byte size with unit (1-64 chars). (default: `null`) |
+| `rate_in` | ['string', 'null'] | no | Inbound rate limit as a byte size with unit, e.g. '10MB' (1-64 chars). (default: `null`) |
+| `rate_out` | ['string', 'null'] | no | Outbound rate limit as a byte size with unit (1-64 chars). (default: `null`) |
+| `burst_in` | ['string', 'null'] | no | Inbound burst limit as a byte size with unit (1-64 chars). (default: `null`) |
+| `burst_out` | ['string', 'null'] | no | Outbound burst limit as a byte size with unit (1-64 chars). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_client_delete`
 
@@ -7781,9 +7262,8 @@ with pbs_s3_client_create (a fresh secret-key is required). Needs PROXIMO_PBS_* 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | Id of the S3 client config to delete. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_client_get`
 
@@ -7793,7 +7273,6 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | S3 client config id (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_client_list`
 
@@ -7801,9 +7280,7 @@ READ-ONLY: list all PBS S3 client configurations. Responses are "without secret"
 live schema — access-key present unredacted, secret-key never returned. Needs PROXIMO_PBS_*
 config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_s3_client_update`
 
@@ -7819,22 +7296,21 @@ with pbs_s3_check after rotating credentials. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | Id of the existing S3 client config to update. |
-| `access_key` | string (nullable) | no | New access key. NOT treated as secret. (default: `null`) |
-| `secret_key` | string (nullable) | no | New secret key. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
-| `endpoint` | string (nullable) | no | New endpoint hostname/IPv4/IPv6. (default: `null`) |
-| `region` | string (nullable) | no | New region. (default: `null`) |
-| `fingerprint` | string (nullable) | no | New X509 certificate fingerprint. (default: `null`) |
-| `port` | integer (nullable) | no | New port (1-65535). (default: `null`) |
-| `path_style` | boolean (nullable) | no | Use path-style bucket addressing. (default: `null`) |
+| `access_key` | ['string', 'null'] | no | New access key. NOT treated as secret. (default: `null`) |
+| `secret_key` | ['string', 'null'] | no | New secret key. SECRET — never written to the audit ledger or the dry-run PLAN. (default: `null`) |
+| `endpoint` | ['string', 'null'] | no | New endpoint hostname/IPv4/IPv6. (default: `null`) |
+| `region` | ['string', 'null'] | no | New region. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | New X509 certificate fingerprint. (default: `null`) |
+| `port` | ['integer', 'null'] | no | New port (1-65535). (default: `null`) |
+| `path_style` | ['boolean', 'null'] | no | Use path-style bucket addressing. (default: `null`) |
 | `provider_quirks` | array<string> (nullable) | no | New provider-specific implementation quirks. (default: `null`) |
-| `rate_in` | string (nullable) | no | New inbound rate limit (byte size with unit). (default: `null`) |
-| `rate_out` | string (nullable) | no | New outbound rate limit (byte size with unit). (default: `null`) |
-| `burst_in` | string (nullable) | no | New inbound burst limit (byte size with unit). (default: `null`) |
-| `burst_out` | string (nullable) | no | New outbound burst limit (byte size with unit). (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `rate_in` | ['string', 'null'] | no | New inbound rate limit (byte size with unit). (default: `null`) |
+| `rate_out` | ['string', 'null'] | no | New outbound rate limit (byte size with unit). (default: `null`) |
+| `burst_in` | ['string', 'null'] | no | New inbound burst limit (byte size with unit). (default: `null`) |
+| `burst_out` | ['string', 'null'] | no | New outbound burst limit (byte size with unit). (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: any of port/region/fingerprint/path-style/rate-in/burst-in/rate-out/burst-out/provider-quirks. access-key/secret-key/endpoint/id are NOT deletable — rotate them with a new value instead. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_list_buckets`
 
@@ -7847,7 +7323,6 @@ argument against the pbs_acme_tos precedent). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | S3 client config id to probe. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_s3_reset_counters`
 
@@ -7862,9 +7337,8 @@ Dry-run by default (returns a PLAN); confirm=True executes
 | --- | --- | --- | --- |
 | `s3_id` | string | yes | S3 client config id whose counters to reset. |
 | `bucket` | string | yes | Bucket name for the S3 object store (3-63 chars). REQUIRED. |
-| `store_prefix` | string (nullable) | no | Store prefix within the bucket (commonly a datastore name) to scope the reset. (default: `null`) |
+| `store_prefix` | ['string', 'null'] | no | Store prefix within the bucket (commonly a datastore name) to scope the reset. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the reset. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_snapshot_delete`
 
@@ -7879,9 +7353,8 @@ for bulk retention-based deletion use pbs_prune.
 | `backup_type` | string | yes | Backup type of the snapshot: 'vm', 'ct', or 'host'. |
 | `backup_id` | string | yes | Backup group ID (e.g. VMID/CTID or host name). |
 | `backup_time` | integer | yes | Snapshot timestamp as a Unix epoch integer, identifying the exact backup run. |
-| `ns` | string (nullable) | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_snapshot_notes_set`
 
@@ -7902,9 +7375,8 @@ Smoke-confirm: exact endpoint path + param names (backup-type, backup-id, backup
 | `backup_id` | string | yes | Backup group ID (e.g. VMID/CTID or host name). |
 | `backup_time` | integer | yes | Snapshot timestamp as a Unix epoch integer, identifying the exact backup run. |
 | `notes` | string | yes | Free-text notes to attach to the snapshot, replacing any existing notes. |
-| `ns` | string (nullable) | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_snapshot_protected_get`
 
@@ -7919,8 +7391,7 @@ paired PUT sets) — passed through as-is. Needs PROXIMO_PBS_* config.
 | `backup_type` | string | yes | Backup type: vm, ct, or host. |
 | `backup_id` | string | yes | Backup group ID. |
 | `backup_time` | integer | yes | Snapshot timestamp (Unix epoch). |
-| `ns` | string (nullable) | no | Namespace; omit for the root namespace. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace; omit for the root namespace. (default: `null`) |
 
 #### `pbs_snapshot_protected_set`
 
@@ -7944,9 +7415,8 @@ Smoke-confirm: exact path + param names (backup-type, backup-id, backup-time, pr
 | `backup_id` | string | yes | Backup group ID (e.g. VMID/CTID or host name). |
 | `backup_time` | integer | yes | Snapshot timestamp as a Unix epoch integer, identifying the exact backup run. |
 | `protected` | boolean | yes | True shields the snapshot from pruning/GC (LOW); False allows auto-deletion (HIGH). |
-| `ns` | string (nullable) | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path the snapshot lives in; omit for the root namespace. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_snapshots_list`
 
@@ -7959,10 +7429,9 @@ or pbs_snapshot_notes_set.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name. |
-| `ns` | string (nullable) | no | Namespace path to filter by; omit for the root namespace. (default: `null`) |
-| `backup_type` | string (nullable) | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
-| `backup_id` | string (nullable) | no | Backup group ID (e.g. VMID/CTID or host name) to filter by. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path to filter by; omit for the root namespace. (default: `null`) |
+| `backup_type` | ['string', 'null'] | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
+| `backup_id` | ['string', 'null'] | no | Backup group ID (e.g. VMID/CTID or host name) to filter by. (default: `null`) |
 
 #### `pbs_tape_backup`
 
@@ -7978,18 +7447,17 @@ default (returns a PLAN); confirm=True executes (POST /tape/backup) and returns
 | `drive` | string | yes | Drive identifier (3-32 chars). |
 | `pool` | string | yes | Media pool name (2-32 chars). |
 | `store` | string | yes | Datastore name to back up (3-32 chars, a single identifier — NOT the comma-separated mapping shape pbs_tape_restore's store uses). |
-| `eject_media` | boolean (nullable) | no | Eject media upon completion. (default: `null`) |
-| `export_media_set` | boolean (nullable) | no | Export media set upon completion. (default: `null`) |
-| `force_media_set` | boolean (nullable) | no | Ignore the pool's allocation policy and start a new media-set. (default: `null`) |
+| `eject_media` | ['boolean', 'null'] | no | Eject media upon completion. (default: `null`) |
+| `export_media_set` | ['boolean', 'null'] | no | Export media set upon completion. (default: `null`) |
+| `force_media_set` | ['boolean', 'null'] | no | Ignore the pool's allocation policy and start a new media-set. (default: `null`) |
 | `group_filter` | array<string> (nullable) | no | Group filters. (default: `null`) |
-| `latest_only` | boolean (nullable) | no | Back up latest snapshots only. (default: `null`) |
-| `max_depth` | integer (nullable) | no | Namespace depth (0-7). (default: `null`) |
-| `notification_mode` | string (nullable) | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
-| `notify_user` | string (nullable) | no | Notify-user (user@realm). (default: `null`) |
-| `ns` | string (nullable) | no | Namespace to back up. (default: `null`) |
-| `worker_threads` | integer (nullable) | no | Worker-thread count (1-32). (default: `null`) |
+| `latest_only` | ['boolean', 'null'] | no | Back up latest snapshots only. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | Namespace depth (0-7). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
+| `notify_user` | ['string', 'null'] | no | Notify-user (user@realm). (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace to back up. (default: `null`) |
+| `worker_threads` | ['integer', 'null'] | no | Worker-thread count (1-32). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the backup. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_backup_job_create`
 
@@ -8005,19 +7473,18 @@ returns null) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* 
 | `drive` | string | yes | Drive identifier (3-32 chars). |
 | `pool` | string | yes | Media pool name (2-32 chars). |
 | `store` | string | yes | Datastore name (3-32 chars). |
-| `comment` | string (nullable) | no | Optional comment (<=128 chars). (default: `null`) |
-| `eject_media` | boolean (nullable) | no | Eject media upon job completion. (default: `null`) |
-| `export_media_set` | boolean (nullable) | no | Export media set upon job completion. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional comment (<=128 chars). (default: `null`) |
+| `eject_media` | ['boolean', 'null'] | no | Eject media upon job completion. (default: `null`) |
+| `export_media_set` | ['boolean', 'null'] | no | Export media set upon job completion. (default: `null`) |
 | `group_filter` | array<string> (nullable) | no | Group filters, e.g. 'type:vm', 'group:GROUP', 'regex:RE', optionally prefixed 'exclude:'/'include:'. (default: `null`) |
-| `latest_only` | boolean (nullable) | no | Back up latest snapshots only. (default: `null`) |
-| `max_depth` | integer (nullable) | no | How many namespace levels to operate on (0-7, default 7). (default: `null`) |
-| `notification_mode` | string (nullable) | no | 'legacy-sendmail' or 'notification-system' (default). (default: `null`) |
-| `notify_user` | string (nullable) | no | User ID to notify (user@realm). (default: `null`) |
-| `ns` | string (nullable) | no | Namespace to operate on. (default: `null`) |
-| `schedule` | string (nullable) | no | Calendar-event schedule string for automatic runs. (default: `null`) |
-| `worker_threads` | integer (nullable) | no | Number of worker threads (1-32, default 1). (default: `null`) |
+| `latest_only` | ['boolean', 'null'] | no | Back up latest snapshots only. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | How many namespace levels to operate on (0-7, default 7). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | 'legacy-sendmail' or 'notification-system' (default). (default: `null`) |
+| `notify_user` | ['string', 'null'] | no | User ID to notify (user@realm). (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace to operate on. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | Calendar-event schedule string for automatic runs. (default: `null`) |
+| `worker_threads` | ['integer', 'null'] | no | Number of worker threads (1-32, default 1). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_backup_job_delete`
 
@@ -8034,7 +7501,6 @@ pbs_tape_backup_job_create. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `job_id` | string | yes | ID of the tape backup job to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_backup_job_get`
 
@@ -8044,16 +7510,13 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `job_id` | string | yes | Tape backup job ID (3-32 chars). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_backup_job_list`
 
 READ-ONLY: list configured PBS tape backup jobs. REVIEWED_TRUSTED: operator-authored
 scheduled-job config. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_backup_job_run`
 
@@ -8069,7 +7532,6 @@ never "submitted". Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `job_id` | string | yes | ID of the tape backup job to run manually. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the run. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_backup_job_update`
 
@@ -8083,24 +7545,23 @@ next run. Dry-run by default (captures current config into the PLAN); confirm=Tr
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `job_id` | string | yes | ID of the existing tape backup job to update. |
-| `drive` | string (nullable) | no | New drive identifier. (default: `null`) |
-| `pool` | string (nullable) | no | New media pool name. (default: `null`) |
-| `store` | string (nullable) | no | New datastore name. (default: `null`) |
-| `comment` | string (nullable) | no | New comment. (default: `null`) |
-| `eject_media` | boolean (nullable) | no | Eject media upon job completion. (default: `null`) |
-| `export_media_set` | boolean (nullable) | no | Export media set upon job completion. (default: `null`) |
+| `drive` | ['string', 'null'] | no | New drive identifier. (default: `null`) |
+| `pool` | ['string', 'null'] | no | New media pool name. (default: `null`) |
+| `store` | ['string', 'null'] | no | New datastore name. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New comment. (default: `null`) |
+| `eject_media` | ['boolean', 'null'] | no | Eject media upon job completion. (default: `null`) |
+| `export_media_set` | ['boolean', 'null'] | no | Export media set upon job completion. (default: `null`) |
 | `group_filter` | array<string> (nullable) | no | New group filters. (default: `null`) |
-| `latest_only` | boolean (nullable) | no | Back up latest snapshots only. (default: `null`) |
-| `max_depth` | integer (nullable) | no | New namespace depth (0-7). (default: `null`) |
-| `notification_mode` | string (nullable) | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
-| `notify_user` | string (nullable) | no | New notify-user (user@realm). (default: `null`) |
-| `ns` | string (nullable) | no | New namespace. (default: `null`) |
-| `schedule` | string (nullable) | no | New calendar-event schedule. (default: `null`) |
-| `worker_threads` | integer (nullable) | no | New worker-thread count (1-32). (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `latest_only` | ['boolean', 'null'] | no | Back up latest snapshots only. (default: `null`) |
+| `max_depth` | ['integer', 'null'] | no | New namespace depth (0-7). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
+| `notify_user` | ['string', 'null'] | no | New notify-user (user@realm). (default: `null`) |
+| `ns` | ['string', 'null'] | no | New namespace. (default: `null`) |
+| `schedule` | ['string', 'null'] | no | New calendar-event schedule. (default: `null`) |
+| `worker_threads` | ['integer', 'null'] | no | New worker-thread count (1-32). (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_changer_create`
 
@@ -8115,10 +7576,9 @@ returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | New tape changer identifier (3-32 chars, alnum/underscore start, then alnum/./_/-). |
 | `path` | string | yes | Path to the Linux generic SCSI device, e.g. '/dev/sg4'. |
-| `eject_before_unload` | boolean (nullable) | no | If True, tapes are ejected manually before unloading. (default: `null`) |
-| `export_slots` | string (nullable) | no | Comma-separated slot numbers reserved for Import/Export (e.g. '1,2,3') — media in those slots is considered offline. (default: `null`) |
+| `eject_before_unload` | ['boolean', 'null'] | no | If True, tapes are ejected manually before unloading. (default: `null`) |
+| `export_slots` | ['string', 'null'] | no | Comma-separated slot numbers reserved for Import/Export (e.g. '1,2,3') — media in those slots is considered offline. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_changer_delete`
 
@@ -8135,7 +7595,6 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the tape changer to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_changer_get`
 
@@ -8144,16 +7603,13 @@ READ-ONLY: get one PBS tape changer's config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Tape changer identifier (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_changer_list`
 
 READ-ONLY: list configured PBS SCSI tape changers (with config digest). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_changer_status`
 
@@ -8165,8 +7621,7 @@ read-label/inventory (see module docstring's Taint section for why this diverges
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Tape changer identifier. |
-| `cache` | boolean (nullable) | no | Use a cached value (default True per PBS) instead of re-querying the changer hardware. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `cache` | ['boolean', 'null'] | no | Use a cached value (default True per PBS) instead of re-querying the changer hardware. (default: `null`) |
 
 #### `pbs_tape_changer_transfer`
 
@@ -8184,7 +7639,6 @@ Needs PROXIMO_PBS_* config.
 | `from_slot` | integer | yes | Source slot number (>= 1). |
 | `to_slot` | integer | yes | Destination slot number (>= 1). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the transfer. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_changer_update`
 
@@ -8200,13 +7654,12 @@ revert. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing tape changer to update. |
-| `path` | string (nullable) | no | New device path, e.g. '/dev/sg4'. (default: `null`) |
-| `eject_before_unload` | boolean (nullable) | no | If True, tapes are ejected manually before unloading. (default: `null`) |
-| `export_slots` | string (nullable) | no | Comma-separated slot numbers reserved for Import/Export. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
+| `path` | ['string', 'null'] | no | New device path, e.g. '/dev/sg4'. (default: `null`) |
+| `eject_before_unload` | ['boolean', 'null'] | no | If True, tapes are ejected manually before unloading. (default: `null`) |
+| `export_slots` | ['string', 'null'] | no | Comma-separated slot numbers reserved for Import/Export. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: 'export-slots' and/or 'eject-before-unload'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_barcode_label_media`
 
@@ -8221,9 +7674,8 @@ executes (POST /tape/drive/{drive}/barcode-label-media) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `pool` | string (nullable) | no | Media pool to assign the newly-labeled media to. Omit to assign it to the free-media pool. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Media pool to assign the newly-labeled media to. Omit to assign it to the free-media pool. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the label write. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_cartridge_memory`
 
@@ -8234,7 +7686,6 @@ pattern/enum constraint anywhere in the schema. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_catalog`
 
@@ -8249,11 +7700,10 @@ and returns {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* con
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `force` | boolean (nullable) | no | Force overriding an existing catalog index for this media. (default: `null`) |
-| `scan` | boolean (nullable) | no | Re-read the whole tape to reconstruct the catalog, instead of restoring saved catalog versions. (default: `null`) |
-| `verbose` | boolean (nullable) | no | Verbose mode — log all found chunks. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | Force overriding an existing catalog index for this media. (default: `null`) |
+| `scan` | ['boolean', 'null'] | no | Re-read the whole tape to reconstruct the catalog, instead of restoring saved catalog versions. (default: `null`) |
+| `verbose` | ['boolean', 'null'] | no | Verbose mode — log all found chunks. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the catalog scan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_clean`
 
@@ -8268,7 +7718,6 @@ by default (returns a PLAN); confirm=True executes (PUT /tape/drive/{drive}/clea
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the cleaning cycle. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_create`
 
@@ -8283,10 +7732,9 @@ confirm=True executes (POST /config/drive, synchronous — PBS returns null) and
 | --- | --- | --- | --- |
 | `name` | string | yes | New drive identifier (3-32 chars, alnum/underscore start, then alnum/./_/-). |
 | `path` | string | yes | Path to the LTO SCSI-generic tape device, e.g. '/dev/sg0'. |
-| `changer` | string (nullable) | no | Optional tape changer identifier this drive is loaded by. (default: `null`) |
-| `changer_drivenum` | integer (nullable) | no | Optional changer drive slot number (0-255, default 0; only meaningful with 'changer' set). (default: `null`) |
+| `changer` | ['string', 'null'] | no | Optional tape changer identifier this drive is loaded by. (default: `null`) |
+| `changer_drivenum` | ['integer', 'null'] | no | Optional changer drive slot number (0-255, default 0; only meaningful with 'changer' set). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_delete`
 
@@ -8302,7 +7750,6 @@ pbs_tape_drive_create. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the tape drive to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_eject`
 
@@ -8317,7 +7764,6 @@ a PLAN); confirm=True executes (POST /tape/drive/{drive}/eject-media) and return
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the eject. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_format`
 
@@ -8332,11 +7778,10 @@ Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `fast` | boolean (nullable) | no | Use fast erase (PBS default: True if omitted). (default: `null`) |
-| `label_text` | string (nullable) | no | If given, PBS cancels the format when the MOUNTED tape's own current label doesn't match this value — protects against formatting the wrong cartridge. Omit and PBS formats unconditionally. (default: `null`) |
-| `load_barcode` | string (nullable) | no | If given, PBS first loads the cartridge carrying this barcode from the changer, THEN formats it (implicit load-then-format). (default: `null`) |
+| `fast` | ['boolean', 'null'] | no | Use fast erase (PBS default: True if omitted). (default: `null`) |
+| `label_text` | ['string', 'null'] | no | If given, PBS cancels the format when the MOUNTED tape's own current label doesn't match this value — protects against formatting the wrong cartridge. Omit and PBS formats unconditionally. (default: `null`) |
+| `load_barcode` | ['string', 'null'] | no | If given, PBS first loads the cartridge carrying this barcode from the changer, THEN formats it (implicit load-then-format). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the format. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_get`
 
@@ -8345,7 +7790,6 @@ READ-ONLY: get one PBS tape drive's config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Drive identifier (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_inventory`
 
@@ -8357,7 +7801,6 @@ constraint. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_inventory_update`
 
@@ -8372,10 +7815,9 @@ PLAN); confirm=True executes (PUT /tape/drive/{drive}/inventory) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `catalog` | boolean (nullable) | no | If True, also try to restore the PBS catalog from tape for newly-inventoried media. (default: `null`) |
-| `read_all_labels` | boolean (nullable) | no | If True, load ALL tapes and re-read labels even if already inventoried. (default: `null`) |
+| `catalog` | ['boolean', 'null'] | no | If True, also try to restore the PBS catalog from tape for newly-inventoried media. (default: `null`) |
+| `read_all_labels` | ['boolean', 'null'] | no | If True, load ALL tapes and re-read labels even if already inventoried. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the inventory update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_label_media`
 
@@ -8393,18 +7835,15 @@ enforced. Call pbs_tape_drive_read_label first if unsure what's mounted. Dry-run
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
 | `label_text` | string | yes | The NEW label text to write (2-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `pool` | string (nullable) | no | Media pool to assign the newly-labeled media to. Omit to assign it to the free-media pool. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Media pool to assign the newly-labeled media to. Omit to assign it to the free-media pool. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the label write. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_list`
 
 READ-ONLY: list configured PBS tape drives (LTO SCSI, with config digest). Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_drive_load_media`
 
@@ -8421,7 +7860,6 @@ pbs_tape_drive_unload. Needs PROXIMO_PBS_* config.
 | `drive` | string | yes | Drive identifier. |
 | `label_text` | string | yes | Media Label/Barcode of the cartridge to mount (2-32 chars, alnum/underscore start, then alnum/./_/-). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the load. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_load_slot`
 
@@ -8438,7 +7876,6 @@ pbs_tape_drive_unload. Needs PROXIMO_PBS_* config.
 | `drive` | string | yes | Drive identifier. |
 | `source_slot` | integer | yes | Source changer slot number (>= 1). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the load. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_read_label`
 
@@ -8450,8 +7887,7 @@ Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `inventorize` | boolean (nullable) | no | If True, also record this media into the inventory/media database. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `inventorize` | ['boolean', 'null'] | no | If True, also record this media into the inventory/media database. (default: `null`) |
 
 #### `pbs_tape_drive_restore_key`
 
@@ -8468,7 +7904,6 @@ confirm=True executes (POST /tape/drive/{drive}/restore-key, synchronous) and re
 | `drive` | string | yes | Drive identifier. |
 | `password` | string | yes | The password the tape encryption key was protected with. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restore attempt. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_rewind`
 
@@ -8483,7 +7918,6 @@ confirm=True executes (POST /tape/drive/{drive}/rewind) and returns
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the rewind. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_status`
 
@@ -8494,7 +7928,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier (3-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_unload`
 
@@ -8508,9 +7941,8 @@ pbs_tape_drive_load_slot. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `target_slot` | integer (nullable) | no | Target changer slot number (>= 1). If omitted, PBS defaults to the slot the drive was loaded from. (default: `null`) |
+| `target_slot` | ['integer', 'null'] | no | Target changer slot number (>= 1). If omitted, PBS defaults to the slot the drive was loaded from. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the unload. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_update`
 
@@ -8525,13 +7957,12 @@ primitive; re-apply the captured config to revert. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing tape drive to update. |
-| `path` | string (nullable) | no | New device path, e.g. '/dev/sg0'. (default: `null`) |
-| `changer` | string (nullable) | no | New tape changer identifier association. (default: `null`) |
-| `changer_drivenum` | integer (nullable) | no | New changer drive slot number (0-255). (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
+| `path` | ['string', 'null'] | no | New device path, e.g. '/dev/sg0'. (default: `null`) |
+| `changer` | ['string', 'null'] | no | New tape changer identifier association. (default: `null`) |
+| `changer_drivenum` | ['integer', 'null'] | no | New changer drive slot number (0-255). (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. If set and stale, PBS rejects the update. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: 'changer' and/or 'changer-drivenum'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_drive_volume_statistics`
 
@@ -8542,7 +7973,6 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `drive` | string | yes | Drive identifier. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_key_create`
 
@@ -8559,11 +7989,10 @@ to actually encrypt future tape writes. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `password` | string | yes | A secret password protecting the new key (min 5 chars). REQUIRED. |
-| `hint` | string (nullable) | no | Optional password hint (no control characters, 1-64 chars). (default: `null`) |
-| `kdf` | string (nullable) | no | Key derivation function: 'none', 'scrypt' (default), or 'pbkdf2'. (default: `null`) |
-| `key` | string (nullable) | no | Optional: restore/re-create a key from this exported JSON string (300-600 chars) instead of generating a new one. (default: `null`) |
+| `hint` | ['string', 'null'] | no | Optional password hint (no control characters, 1-64 chars). (default: `null`) |
+| `kdf` | ['string', 'null'] | no | Key derivation function: 'none', 'scrypt' (default), or 'pbkdf2'. (default: `null`) |
+| `key` | ['string', 'null'] | no | Optional: restore/re-create a key from this exported JSON string (300-600 chars) instead of generating a new one. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_key_delete`
 
@@ -8579,9 +8008,8 @@ current public metadata); confirm=True executes (DELETE
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fingerprint` | string | yes | Fingerprint of the tape encryption key to delete. |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_key_get`
 
@@ -8592,7 +8020,6 @@ endpoint). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `fingerprint` | string | yes | Tape encryption key fingerprint — 32 colon-separated hex byte-pairs (a formatted SHA-256), e.g. from pbs_tape_key_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_key_list`
 
@@ -8600,9 +8027,7 @@ READ-ONLY: list existing PBS tape encryption keys — PUBLIC metadata only (crea
 fingerprint/hint/kdf/modified/path; PBS never returns the key material or password on this
 endpoint). Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_key_update_password`
 
@@ -8621,12 +8046,11 @@ written to the audit ledger or the dry-run PLAN. confirm=True executes (PUT
 | `fingerprint` | string | yes | Fingerprint of the existing tape encryption key to update. |
 | `hint` | string | yes | New password hint (no control characters, 1-64 chars). REQUIRED by PBS — cannot change the password alone. |
 | `new_password` | string | yes | The new password (min 5 chars). REQUIRED. |
-| `password` | string (nullable) | no | The CURRENT password — required unless force=True (which resets via PBS's root-only accessible copy). (default: `null`) |
-| `kdf` | string (nullable) | no | Key derivation function: 'none', 'scrypt' (default), or 'pbkdf2'. (default: `null`) |
-| `force` | boolean (nullable) | no | Reset the passphrase using the root-only accessible copy, bypassing the current-password check. (default: `null`) |
-| `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
+| `password` | ['string', 'null'] | no | The CURRENT password — required unless force=True (which resets via PBS's root-only accessible copy). (default: `null`) |
+| `kdf` | ['string', 'null'] | no | Key derivation function: 'none', 'scrypt' (default), or 'pbkdf2'. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | Reset the passphrase using the root-only accessible copy, bypassing the current-password check. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_media_content`
 
@@ -8636,13 +8060,12 @@ pbs_snapshots_list precedent. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `backup_id` | string (nullable) | no | Filter to one backup ID. (default: `null`) |
-| `backup_type` | string (nullable) | no | Filter to one backup type: 'vm', 'ct', or 'host'. (default: `null`) |
-| `label_text` | string (nullable) | no | Filter to one media label/barcode (2-32 chars). (default: `null`) |
-| `media` | string (nullable) | no | Filter to one media UUID. (default: `null`) |
-| `media_set` | string (nullable) | no | Filter to one media-set UUID. (default: `null`) |
-| `pool` | string (nullable) | no | Filter to one media pool (2-32 chars). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `backup_id` | ['string', 'null'] | no | Filter to one backup ID. (default: `null`) |
+| `backup_type` | ['string', 'null'] | no | Filter to one backup type: 'vm', 'ct', or 'host'. (default: `null`) |
+| `label_text` | ['string', 'null'] | no | Filter to one media label/barcode (2-32 chars). (default: `null`) |
+| `media` | ['string', 'null'] | no | Filter to one media UUID. (default: `null`) |
+| `media_set` | ['string', 'null'] | no | Filter to one media-set UUID. (default: `null`) |
+| `pool` | ['string', 'null'] | no | Filter to one media pool (2-32 chars). (default: `null`) |
 
 #### `pbs_tape_media_destroy`
 
@@ -8658,11 +8081,10 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `label_text` | string (nullable) | no | Media label/barcode identifying which medium to destroy (2-32 chars). At least one of label_text/uuid is required. (default: `null`) |
-| `uuid` | string (nullable) | no | Media UUID identifying which medium to destroy. At least one of label_text/uuid is required. (default: `null`) |
-| `force` | boolean (nullable) | no | Force removal even if this media is used in a media set. (default: `null`) |
+| `label_text` | ['string', 'null'] | no | Media label/barcode identifying which medium to destroy (2-32 chars). At least one of label_text/uuid is required. (default: `null`) |
+| `uuid` | ['string', 'null'] | no | Media UUID identifying which medium to destroy. At least one of label_text/uuid is required. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | Force removal even if this media is used in a media set. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the destroy. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_media_list`
 
@@ -8672,10 +8094,9 @@ Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pool` | string (nullable) | no | Filter to one media pool (2-32 chars). (default: `null`) |
+| `pool` | ['string', 'null'] | no | Filter to one media pool (2-32 chars). (default: `null`) |
 | `update_status` | boolean | no | If True, ask PBS to refresh tape library status (may contact the changer) before listing. DEFAULTS FALSE here — PBS's own upstream default is True; this tool never triggers that refresh unless explicitly asked. (default: `false`) |
-| `update_status_changer` | string (nullable) | no | Scope the status refresh to one changer (only meaningful with update_status=True). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `update_status_changer` | ['string', 'null'] | no | Scope the status refresh to one changer (only meaningful with update_status=True). (default: `null`) |
 
 #### `pbs_tape_media_move`
 
@@ -8689,11 +8110,10 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `label_text` | string (nullable) | no | Media label/barcode identifying which medium to move. At least one of label_text/uuid is required. (default: `null`) |
-| `uuid` | string (nullable) | no | Media UUID identifying which medium to move. At least one of label_text/uuid is required. (default: `null`) |
-| `vault_name` | string (nullable) | no | Vault to move the medium's location to (3-32 chars). OMIT to set location to OFFLINE instead — not a no-op. (default: `null`) |
+| `label_text` | ['string', 'null'] | no | Media label/barcode identifying which medium to move. At least one of label_text/uuid is required. (default: `null`) |
+| `uuid` | ['string', 'null'] | no | Media UUID identifying which medium to move. At least one of label_text/uuid is required. (default: `null`) |
+| `vault_name` | ['string', 'null'] | no | Vault to move the medium's location to (3-32 chars). OMIT to set location to OFFLINE instead — not a no-op. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the location change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_media_sets`
 
@@ -8702,9 +8122,7 @@ READ-ONLY: list media sets. REVIEWED_TRUSTED: no label-text field in this respon
 physical-media content (a deliberate divergence from a naive "media_list/media_sets both
 carry labels" reading — see module docstring's Taint section). Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_media_status_get`
 
@@ -8716,7 +8134,6 @@ shape). Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `uuid` | string | yes | Media UUID (from pbs_tape_media_list). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_media_status_set`
 
@@ -8730,9 +8147,8 @@ PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `uuid` | string | yes | Media UUID. |
-| `status` | string (nullable) | no | New status: 'full', 'damaged', or 'retired'. Omit to CLEAR the manual override (revert to PBS's internally-managed writable/unknown state). 'writable'/'unknown' are rejected — PBS manages those internally. (default: `null`) |
+| `status` | ['string', 'null'] | no | New status: 'full', 'damaged', or 'retired'. Omit to CLEAR the manual override (revert to PBS's internally-managed writable/unknown state). 'writable'/'unknown' are rejected — PBS manages those internally. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the status change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_pool_create`
 
@@ -8745,13 +8161,12 @@ returns null) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | New media pool name (2-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `allocation` | string (nullable) | no | Media set allocation policy: 'continue', 'always', or a calendar event. (default: `null`) |
-| `comment` | string (nullable) | no | Optional comment (no control characters, <=128 chars). (default: `null`) |
-| `encrypt` | string (nullable) | no | Optional tape encryption key fingerprint (32 colon-separated hex byte-pairs) — future writes into this pool are encrypted with it. (default: `null`) |
-| `retention` | string (nullable) | no | Media retention policy: 'overwrite', 'keep', or a time span. (default: `null`) |
-| `template` | string (nullable) | no | Media set naming template (may contain strftime() specs, 2-64 chars). (default: `null`) |
+| `allocation` | ['string', 'null'] | no | Media set allocation policy: 'continue', 'always', or a calendar event. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional comment (no control characters, <=128 chars). (default: `null`) |
+| `encrypt` | ['string', 'null'] | no | Optional tape encryption key fingerprint (32 colon-separated hex byte-pairs) — future writes into this pool are encrypted with it. (default: `null`) |
+| `retention` | ['string', 'null'] | no | Media retention policy: 'overwrite', 'keep', or a time span. (default: `null`) |
+| `template` | ['string', 'null'] | no | Media set naming template (may contain strftime() specs, 2-64 chars). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_pool_delete`
 
@@ -8768,7 +8183,6 @@ primitive — re-create with pbs_tape_pool_create. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the media pool to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_pool_get`
 
@@ -8777,15 +8191,12 @@ READ-ONLY: get one PBS tape media pool's config. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Media pool name (2-32 chars, alnum/underscore start, then alnum/./_/-). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_pool_list`
 
 READ-ONLY: list configured PBS tape media pools. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_pool_update`
 
@@ -8802,14 +8213,13 @@ config to revert. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name of the existing media pool to update. |
-| `allocation` | string (nullable) | no | New allocation policy: 'continue', 'always', or a calendar event. (default: `null`) |
-| `comment` | string (nullable) | no | New comment (no control characters, <=128 chars). (default: `null`) |
-| `encrypt` | string (nullable) | no | New tape encryption key fingerprint association. (default: `null`) |
-| `retention` | string (nullable) | no | New retention policy: 'overwrite', 'keep', or a time span. (default: `null`) |
-| `template` | string (nullable) | no | New media set naming template. (default: `null`) |
+| `allocation` | ['string', 'null'] | no | New allocation policy: 'continue', 'always', or a calendar event. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New comment (no control characters, <=128 chars). (default: `null`) |
+| `encrypt` | ['string', 'null'] | no | New tape encryption key fingerprint association. (default: `null`) |
+| `retention` | ['string', 'null'] | no | New retention policy: 'overwrite', 'keep', or a time span. (default: `null`) |
+| `template` | ['string', 'null'] | no | New media set naming template. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear: any of allocation/retention/template/encrypt/comment. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_restore`
 
@@ -8828,12 +8238,11 @@ confirm=True executes (POST /tape/restore) and returns
 | `media_set` | string | yes | Media set UUID to restore from. |
 | `store` | string | yes | Datastore MAPPING — comma-separated (<source>=)?<target> entries, e.g. 'a=b,e' maps source 'a' to target 'b' and everything else to default 'e'. NOT the same shape as pbs_tape_backup's plain single-identifier store. |
 | `namespaces` | array<string> (nullable) | no | Namespace mappings: 'store=<name>[,max-depth=<int>][,source=<ns>][,target=<ns>]' entries. Omit to restore into default namespaces (auto-created as needed). (default: `null`) |
-| `notification_mode` | string (nullable) | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
-| `notify_user` | string (nullable) | no | Notify-user (user@realm). (default: `null`) |
-| `owner` | string (nullable) | no | Authentication ID to own restored snapshots (user@realm or user@realm!token-name). (default: `null`) |
+| `notification_mode` | ['string', 'null'] | no | 'legacy-sendmail' or 'notification-system'. (default: `null`) |
+| `notify_user` | ['string', 'null'] | no | Notify-user (user@realm). (default: `null`) |
+| `owner` | ['string', 'null'] | no | Authentication ID to own restored snapshots (user@realm or user@realm!token-name). (default: `null`) |
 | `snapshots` | array<string> (nullable) | no | Selective restore: specific snapshots as 'store:[ns/namespace/...]type/id/time'. Omit to restore the WHOLE media-set. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restore. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tape_scan_changers`
 
@@ -8841,9 +8250,7 @@ READ-ONLY: autodetect SCSI tape changers attached to the PBS host. Same response
 pbs_tape_scan_drives — device-reported, not operator config. No params. Needs PROXIMO_PBS_*
 config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tape_scan_drives`
 
@@ -8852,9 +8259,7 @@ nodes). Returns kind/major/minor/model/path/serial/vendor per device — device-
 operator config (same taint posture as pve_hardware_list / pbs_node_disks_list). No params.
 Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tasks_list`
 
@@ -8866,10 +8271,9 @@ pbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
-| `limit` | integer (nullable) | no | Maximum number of tasks to return. (default: `null`) |
-| `running` | boolean (nullable) | no | If True, return only currently-running tasks. (default: `null`) |
-| `errors` | boolean (nullable) | no | If True, return only tasks that ended in error. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Maximum number of tasks to return. (default: `null`) |
+| `running` | ['boolean', 'null'] | no | If True, return only currently-running tasks. (default: `null`) |
+| `errors` | ['boolean', 'null'] | no | If True, return only tasks that ended in error. (default: `null`) |
 
 #### `pbs_tfa_add`
 
@@ -8887,13 +8291,12 @@ returns a dict; synchronous, no UPID. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id to add a TFA entry for, format 'user@realm'. |
 | `tfa_type` | string | yes | TFA entry type: 'totp', 'u2f', 'webauthn', 'recovery', or 'yubico'. |
-| `description` | string (nullable) | no | Optional description to distinguish this entry from the user's others. (default: `null`) |
-| `password` | string (nullable) | no | The ACTING user's own current password (re-authenticates the change); redacted from all plans/logs/ledger. (default: `null`) |
-| `totp` | string (nullable) | no | For type='totp': the totp: URI the caller generated (PBS does not generate this). (default: `null`) |
-| `value` | string (nullable) | no | Registration/verification value (e.g. the current TOTP code, or a WebAuthn/U2F challenge response). (default: `null`) |
-| `challenge` | string (nullable) | no | For u2f: the original challenge string being responded to. (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional description to distinguish this entry from the user's others. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password (re-authenticates the change); redacted from all plans/logs/ledger. (default: `null`) |
+| `totp` | ['string', 'null'] | no | For type='totp': the totp: URI the caller generated (PBS does not generate this). (default: `null`) |
+| `value` | ['string', 'null'] | no | Registration/verification value (e.g. the current TOTP code, or a WebAuthn/U2F challenge response). (default: `null`) |
+| `challenge` | ['string', 'null'] | no | For u2f: the original challenge string being responded to. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_delete`
 
@@ -8907,9 +8310,8 @@ confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PB
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id to remove. |
-| `password` | string (nullable) | no | The ACTING user's own current password; redacted from all plans/logs/ledger. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password; redacted from all plans/logs/ledger. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_entry_get`
 
@@ -8919,16 +8321,13 @@ READ-ONLY: get one TFA entry. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id (from pbs_tfa_user_get). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_list`
 
 READ-ONLY: list ALL users' TFA configuration (per-user entries + lock state). Use
 pbs_tfa_user_get to scope to one user. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tfa_unlock`
 
@@ -8943,7 +8342,6 @@ Synchronous. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id to clear a TOTP lockout for, format 'user@realm'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_update`
 
@@ -8956,11 +8354,10 @@ PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id to update. |
-| `description` | string (nullable) | no | New description; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the entry is currently enabled; False disables it immediately. Omit to leave unchanged. (default: `null`) |
-| `password` | string (nullable) | no | The ACTING user's own current password; redacted from all plans/logs/ledger. (default: `null`) |
+| `description` | ['string', 'null'] | no | New description; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the entry is currently enabled; False disables it immediately. Omit to leave unchanged. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password; redacted from all plans/logs/ledger. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_user_get`
 
@@ -8969,16 +8366,13 @@ READ-ONLY: list one user's TFA entries. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_tfa_webauthn_get`
 
 READ-ONLY: get the server-wide WebAuthn relying-party config (id/origin/rp/
 allow-subdomains). Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_tfa_webauthn_set`
 
@@ -8989,14 +8383,13 @@ dict; synchronous, no UPID. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `rp_id` | string (nullable) | no | Relying party ID (the domain name, no protocol/port/path). Changing this WILL break every existing WebAuthn credential on the server. (default: `null`) |
-| `origin` | string (nullable) | no | Site origin (https:// URL, or http://localhost). Changing this MAY break existing WebAuthn credentials. (default: `null`) |
-| `rp_name` | string (nullable) | no | Relying party display name (any text identifier). Changing this MAY break existing credentials. (default: `null`) |
-| `allow_subdomains` | boolean (nullable) | no | Whether subdomains of origin are considered valid too. Defaults to true per PBS. (default: `null`) |
+| `rp_id` | ['string', 'null'] | no | Relying party ID (the domain name, no protocol/port/path). Changing this WILL break every existing WebAuthn credential on the server. (default: `null`) |
+| `origin` | ['string', 'null'] | no | Site origin (https:// URL, or http://localhost). Changing this MAY break existing WebAuthn credentials. (default: `null`) |
+| `rp_name` | ['string', 'null'] | no | Relying party display name (any text identifier). Changing this MAY break existing credentials. (default: `null`) |
+| `allow_subdomains` | ['boolean', 'null'] | no | Whether subdomains of origin are considered valid too. Defaults to true per PBS. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_token_create`
 
@@ -9014,12 +8407,11 @@ remove one. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning PBS user, format 'user@realm'. |
 | `token_name` | string | yes | Name for the new API token, unique per user. |
-| `comment` | string (nullable) | no | Optional free-text comment describing the token's purpose. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the token is usable immediately; None defers to PBS's default (enabled). (default: `null`) |
-| `expire` | integer (nullable) | no | Optional token expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment describing the token's purpose. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the token is usable immediately; None defers to PBS's default (enabled). (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Optional token expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_token_delete`
 
@@ -9033,9 +8425,8 @@ pbs_token_create to issue a new one instead. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning PBS user, format 'user@realm'. |
 | `token_name` | string | yes | Name of the API token to revoke. |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_token_update`
 
@@ -9053,14 +8444,13 @@ confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PB
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning PBS user, format 'user@realm'. |
 | `token_name` | string | yes | Name of the API token to update. |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the token is usable; False disables it immediately. Omit to leave unchanged. (default: `null`) |
-| `expire` | integer (nullable) | no | Token expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the token is usable; False disables it immediately. Omit to leave unchanged. (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Token expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
 | `regenerate` | boolean | no | If True, issue a BRAND-NEW secret and invalidate the old one immediately (RISK_HIGH — any system using the old token loses access instantly). (default: `false`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear: only 'comment' is supported by PBS on this endpoint. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_traffic_control_delete`
 
@@ -9076,7 +8466,6 @@ Smoke-confirm: response shape on success.
 | --- | --- | --- | --- |
 | `name` | string | yes | Traffic-control rule name to delete. |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_traffic_control_upsert`
 
@@ -9096,15 +8485,14 @@ Smoke-confirm: create-vs-update dispatch; rate-in/rate-out/burst-in/burst-out/ti
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Traffic-control rule name; creates it if new, updates it if it already exists. |
-| `rate_in` | integer (nullable) | no | Sustained inbound bandwidth limit in bytes/second. (default: `null`) |
-| `rate_out` | integer (nullable) | no | Sustained outbound bandwidth limit in bytes/second. (default: `null`) |
-| `network` | string (nullable) | no | Network/CIDR this rule applies to. (default: `null`) |
-| `burst_in` | integer (nullable) | no | Inbound burst bandwidth allowance in bytes. (default: `null`) |
-| `burst_out` | integer (nullable) | no | Outbound burst bandwidth allowance in bytes. (default: `null`) |
-| `timeframe` | string (nullable) | no | Time window this rule is active (PBS traffic-control timeframe format). (default: `null`) |
-| `comment` | string (nullable) | no | Free-text comment/description for the rule. (default: `null`) |
+| `rate_in` | ['integer', 'null'] | no | Sustained inbound bandwidth limit in bytes/second. (default: `null`) |
+| `rate_out` | ['integer', 'null'] | no | Sustained outbound bandwidth limit in bytes/second. (default: `null`) |
+| `network` | ['string', 'null'] | no | Network/CIDR this rule applies to. (default: `null`) |
+| `burst_in` | ['integer', 'null'] | no | Inbound burst bandwidth allowance in bytes. (default: `null`) |
+| `burst_out` | ['integer', 'null'] | no | Outbound burst bandwidth allowance in bytes. (default: `null`) |
+| `timeframe` | ['string', 'null'] | no | Time window this rule is active (PBS traffic-control timeframe format). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Free-text comment/description for the rule. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_traffic_controls_list`
 
@@ -9112,9 +8500,7 @@ READ-ONLY: list all PBS traffic-control bandwidth-limit rules. Returns active ru
 with their rate-in/rate-out limits, network targets, and comment. Use
 pbs_traffic_control_upsert to create or modify rules. Needs PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pbs_user_create`
 
@@ -9130,15 +8516,14 @@ change it afterward, or pbs_user_delete to remove it. Needs PROXIMO_PBS_* config
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | New PBS user id, format 'user@realm'. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; None defers to PBS's default (enabled). (default: `null`) |
-| `expire` | integer (nullable) | no | Optional account expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name. (default: `null`) |
-| `password` | string (nullable) | no | Optional initial password (min 8 chars per PBS); redacted from all plans/logs/ledger. Can also be set later via a separate password-change flow. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; None defers to PBS's default (enabled). (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Optional account expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name. (default: `null`) |
+| `password` | ['string', 'null'] | no | Optional initial password (min 8 chars per PBS); redacted from all plans/logs/ledger. Can also be set later via a separate password-change flow. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_user_delete`
 
@@ -9152,9 +8537,8 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id to delete, format 'user@realm'. |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_user_get`
 
@@ -9165,7 +8549,6 @@ tokens, or pbs_user_create/update/delete to manage the user. Needs PROXIMO_PBS_*
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id to look up, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_user_token_get`
 
@@ -9177,7 +8560,6 @@ tokens first. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning PBS user, format 'user@realm'. |
 | `token_name` | string | yes | Token name (the part after '!' in the full tokenid). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_user_tokens_list`
 
@@ -9189,7 +8571,6 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | Owning PBS user, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_user_update`
 
@@ -9208,16 +8589,15 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PBS user id to update, format 'user@realm'. |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
-| `expire` | integer (nullable) | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name; omit to leave unchanged. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name; omit to leave unchanged. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear: any of 'comment', 'firstname', 'lastname', 'email'. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_users_list`
 
@@ -9229,7 +8609,6 @@ dedicated token listing. Needs PROXIMO_PBS_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `include_tokens` | boolean | no | If True, embed each user's API tokens (metadata only, no secrets) in the result. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_verify_start`
 
@@ -9240,20 +8619,17 @@ UPID (async task) — check progress with pbs_tasks_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `store` | string | yes | PBS datastore name to verify. |
-| `ns` | string (nullable) | no | Namespace path to scope verification to; omit for the root namespace. (default: `null`) |
-| `backup_type` | string (nullable) | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
-| `backup_id` | string (nullable) | no | Backup group ID (e.g. VMID/CTID or host name) to scope verification to. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Namespace path to scope verification to; omit for the root namespace. (default: `null`) |
+| `backup_type` | ['string', 'null'] | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
+| `backup_id` | ['string', 'null'] | no | Backup group ID (e.g. VMID/CTID or host name) to scope verification to. (default: `null`) |
 | `confirm` | boolean | no | Set True to execute; False (default) only returns the dry-run plan. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pbs_version`
 
 READ-ONLY: PBS API version identity (release/repoid/version). REVIEWED_TRUSTED. Needs
 PROXIMO_PBS_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 ## Proxmox Mail Gateway (PMG)
 
@@ -9274,21 +8650,20 @@ remove it. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `realm` | string | yes | New realm name. |
 | `realm_type` | string | yes | Realm type: 'oidc', 'pam', or 'pmg'. PMG has NO 'ad'/'ldap' realm types (those are a separate, already-shipped LDAP-profile family) — unlike PBS. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `default` | boolean (nullable) | no | True to make this the default realm preselected on login. (default: `null`) |
-| `issuer_url` | string (nullable) | no | OIDC issuer URL (required by PMG for type='oidc'). (default: `null`) |
-| `client_id` | string (nullable) | no | OIDC client id (required by PMG for type='oidc'). (default: `null`) |
-| `client_key` | string (nullable) | no | OIDC client secret; redacted from all plans/logs/ledger. (default: `null`) |
-| `autocreate` | boolean (nullable) | no | Automatically create PMG users on first login if they don't exist. (default: `null`) |
-| `autocreate_role` | string (nullable) | no | DEPRECATED (favor autocreate_role_assignment): auto-create users at this role — one of admin/qmanager/audit/helpdesk. Can auto-provision admin-equivalent users on a FUTURE login. (default: `null`) |
-| `autocreate_role_assignment` | string (nullable) | no | Role assignment expression for auto-created users (replaces autocreate_role). (default: `null`) |
-| `acr_values` | string (nullable) | no | OIDC Authentication Context Class Reference values, forwarded verbatim. (default: `null`) |
-| `audiences` | string (nullable) | no | OIDC accepted audiences list, forwarded verbatim. (default: `null`) |
-| `prompt` | string (nullable) | no | OIDC prompt parameter. (default: `null`) |
-| `scopes` | string (nullable) | no | OIDC scopes to request, forwarded verbatim. (default: `null`) |
-| `username_claim` | string (nullable) | no | OIDC claim used to generate the unique username. CREATE-ONLY (not accepted by pmg_access_realm_update). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | True to make this the default realm preselected on login. (default: `null`) |
+| `issuer_url` | ['string', 'null'] | no | OIDC issuer URL (required by PMG for type='oidc'). (default: `null`) |
+| `client_id` | ['string', 'null'] | no | OIDC client id (required by PMG for type='oidc'). (default: `null`) |
+| `client_key` | ['string', 'null'] | no | OIDC client secret; redacted from all plans/logs/ledger. (default: `null`) |
+| `autocreate` | ['boolean', 'null'] | no | Automatically create PMG users on first login if they don't exist. (default: `null`) |
+| `autocreate_role` | ['string', 'null'] | no | DEPRECATED (favor autocreate_role_assignment): auto-create users at this role — one of admin/qmanager/audit/helpdesk. Can auto-provision admin-equivalent users on a FUTURE login. (default: `null`) |
+| `autocreate_role_assignment` | ['string', 'null'] | no | Role assignment expression for auto-created users (replaces autocreate_role). (default: `null`) |
+| `acr_values` | ['string', 'null'] | no | OIDC Authentication Context Class Reference values, forwarded verbatim. (default: `null`) |
+| `audiences` | ['string', 'null'] | no | OIDC accepted audiences list, forwarded verbatim. (default: `null`) |
+| `prompt` | ['string', 'null'] | no | OIDC prompt parameter. (default: `null`) |
+| `scopes` | ['string', 'null'] | no | OIDC scopes to request, forwarded verbatim. (default: `null`) |
+| `username_claim` | ['string', 'null'] | no | OIDC claim used to generate the unique username. CREATE-ONLY (not accepted by pmg_access_realm_update). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_realm_delete`
 
@@ -9302,7 +8677,6 @@ config.
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm name to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_realm_get`
 
@@ -9313,7 +8687,6 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm name to look up. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_realm_list`
 
@@ -9321,9 +8694,7 @@ READ-ONLY: list configured PMG auth realms. Returns each realm's comment/realm/t
 client-key (schema-confirmed absent from this list). Use pmg_access_realm_get for one realm's
 full config. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_access_realm_update`
 
@@ -9338,22 +8709,21 @@ dict (`null` per schema). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `realm` | string | yes | Realm name to update. |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `default` | boolean (nullable) | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
-| `issuer_url` | string (nullable) | no | OIDC issuer URL; omit to leave unchanged. (default: `null`) |
-| `client_id` | string (nullable) | no | OIDC client id; omit to leave unchanged. (default: `null`) |
-| `client_key` | string (nullable) | no | New OIDC client secret; redacted from all plans/logs/ledger. (default: `null`) |
-| `autocreate` | boolean (nullable) | no | Autocreate-on-login flag; omit to leave unchanged. (default: `null`) |
-| `autocreate_role` | string (nullable) | no | DEPRECATED autocreate role; omit to leave unchanged. (default: `null`) |
-| `autocreate_role_assignment` | string (nullable) | no | Autocreate role-assignment expression; omit to leave unchanged. (default: `null`) |
-| `acr_values` | string (nullable) | no | OIDC ACR values; omit to leave unchanged. (default: `null`) |
-| `audiences` | string (nullable) | no | OIDC audiences list; omit to leave unchanged. (default: `null`) |
-| `prompt` | string (nullable) | no | OIDC prompt parameter; omit to leave unchanged. (default: `null`) |
-| `scopes` | string (nullable) | no | OIDC scopes; omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `default` | ['boolean', 'null'] | no | Default-realm-on-login flag; omit to leave unchanged. (default: `null`) |
+| `issuer_url` | ['string', 'null'] | no | OIDC issuer URL; omit to leave unchanged. (default: `null`) |
+| `client_id` | ['string', 'null'] | no | OIDC client id; omit to leave unchanged. (default: `null`) |
+| `client_key` | ['string', 'null'] | no | New OIDC client secret; redacted from all plans/logs/ledger. (default: `null`) |
+| `autocreate` | ['boolean', 'null'] | no | Autocreate-on-login flag; omit to leave unchanged. (default: `null`) |
+| `autocreate_role` | ['string', 'null'] | no | DEPRECATED autocreate role; omit to leave unchanged. (default: `null`) |
+| `autocreate_role_assignment` | ['string', 'null'] | no | Autocreate role-assignment expression; omit to leave unchanged. (default: `null`) |
+| `acr_values` | ['string', 'null'] | no | OIDC ACR values; omit to leave unchanged. (default: `null`) |
+| `audiences` | ['string', 'null'] | no | OIDC audiences list; omit to leave unchanged. (default: `null`) |
+| `prompt` | ['string', 'null'] | no | OIDC prompt parameter; omit to leave unchanged. (default: `null`) |
+| `scopes` | ['string', 'null'] | no | OIDC scopes; omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_tfa_add`
 
@@ -9370,13 +8740,12 @@ synchronous. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id to add a TFA entry for, format 'user@realm'. |
 | `tfa_type` | string | yes | TFA entry type: 'totp', 'u2f', 'webauthn', or 'recovery'. PMG has NO 'yubico' TFA type (unlike PBS). |
-| `description` | string (nullable) | no | Optional description to distinguish this entry from the user's others. (default: `null`) |
-| `password` | string (nullable) | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
-| `totp` | string (nullable) | no | For type='totp': the totp: URI the caller generated (PMG does not generate this). (default: `null`) |
-| `value` | string (nullable) | no | Registration/verification value (e.g. the current TOTP code, or a WebAuthn/U2F challenge response). (default: `null`) |
-| `challenge` | string (nullable) | no | For u2f: the original challenge string being responded to. (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional description to distinguish this entry from the user's others. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
+| `totp` | ['string', 'null'] | no | For type='totp': the totp: URI the caller generated (PMG does not generate this). (default: `null`) |
+| `value` | ['string', 'null'] | no | Registration/verification value (e.g. the current TOTP code, or a WebAuthn/U2F challenge response). (default: `null`) |
+| `challenge` | ['string', 'null'] | no | For u2f: the original challenge string being responded to. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_tfa_delete`
 
@@ -9392,9 +8761,8 @@ dict (`null` per schema). Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id to remove. |
-| `password` | string (nullable) | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_tfa_get`
 
@@ -9406,16 +8774,13 @@ PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id (from pmg_access_tfa_user_list). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_tfa_list`
 
 READ-ONLY: list ALL users' TFA configuration. Use pmg_access_tfa_user_list to scope to one
 user. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_access_tfa_update`
 
@@ -9428,11 +8793,10 @@ PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id, format 'user@realm'. |
 | `tfa_id` | string | yes | TFA entry id to update. |
-| `description` | string (nullable) | no | New description; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the entry is enabled; False disables it immediately. Omit to leave unchanged. (default: `null`) |
-| `password` | string (nullable) | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
+| `description` | ['string', 'null'] | no | New description; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the entry is enabled; False disables it immediately. Omit to leave unchanged. (default: `null`) |
+| `password` | ['string', 'null'] | no | The ACTING user's own current password (step-up re-auth); redacted from all plans/logs/ledger. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_tfa_user_list`
 
@@ -9442,7 +8806,6 @@ richly typed on this plane). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_user_create`
 
@@ -9463,18 +8826,17 @@ pmg_access_user_delete to remove it. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | New PMG user id, format 'user@realm'. |
 | `role` | string | yes | REQUIRED. One of 'root' (reserved for the Unix Superuser), 'admin', 'helpdesk', 'qmanager', 'audit'. 'root'/'admin' are ADMIN-EQUIVALENT — see the risk note. |
-| `realm` | string (nullable) | no | Authentication realm; PMG defaults to its own 'pmg' realm when omitted. (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; None defers to PMG's default (enabled). (default: `null`) |
-| `expire` | integer (nullable) | no | Optional account expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name. (default: `null`) |
-| `password` | string (nullable) | no | Optional initial password (8-64 chars per PMG); redacted from all plans/logs/ledger. (default: `null`) |
-| `crypt_pass` | string (nullable) | no | Optional pre-encrypted password (crypt(3) hash shape, e.g. '$6$salt$hash'); forwarded verbatim, not locally shape-validated; redacted from all plans/logs/ledger. (default: `null`) |
-| `keys` | string (nullable) | no | Optional Yubico two-factor key material (a THIRD secret this build found on this endpoint, beyond password/crypt_pass); redacted from all plans/logs/ledger. (default: `null`) |
+| `realm` | ['string', 'null'] | no | Authentication realm; PMG defaults to its own 'pmg' realm when omitted. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; None defers to PMG's default (enabled). (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Optional account expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name. (default: `null`) |
+| `password` | ['string', 'null'] | no | Optional initial password (8-64 chars per PMG); redacted from all plans/logs/ledger. (default: `null`) |
+| `crypt_pass` | ['string', 'null'] | no | Optional pre-encrypted password (crypt(3) hash shape, e.g. '$6$salt$hash'); forwarded verbatim, not locally shape-validated; redacted from all plans/logs/ledger. (default: `null`) |
+| `keys` | ['string', 'null'] | no | Optional Yubico two-factor key material (a THIRD secret this build found on this endpoint, beyond password/crypt_pass); redacted from all plans/logs/ledger. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_user_delete`
 
@@ -9490,7 +8852,6 @@ PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id to delete, format 'user@realm'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_user_get`
 
@@ -9501,7 +8862,6 @@ the three). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id to look up, format 'user@realm'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_user_unlock_tfa`
 
@@ -9520,7 +8880,6 @@ previously locked out. Synchronous. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id to clear a TOTP lockout for, format 'user@realm'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_access_user_update`
 
@@ -9542,20 +8901,19 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `userid` | string | yes | PMG user id to update, format 'user@realm'. |
-| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
-| `email` | string (nullable) | no | Optional email address; omit to leave unchanged. (default: `null`) |
-| `enable` | boolean (nullable) | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
-| `expire` | integer (nullable) | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
-| `firstname` | string (nullable) | no | Optional first name; omit to leave unchanged. (default: `null`) |
-| `lastname` | string (nullable) | no | Optional last name; omit to leave unchanged. (default: `null`) |
-| `realm` | string (nullable) | no | Authentication realm; omit to leave unchanged. (default: `null`) |
-| `role` | string (nullable) | no | New role; omit to leave unchanged. Same admin-equivalent semantics as pmg_access_user_create's — see the risk note. (default: `null`) |
-| `password` | string (nullable) | no | New password; redacted from all plans/logs/ledger. (default: `null`) |
-| `crypt_pass` | string (nullable) | no | New pre-encrypted password (crypt(3) hash shape); forwarded verbatim; redacted from all plans/logs/ledger. (default: `null`) |
-| `keys` | string (nullable) | no | New Yubico two-factor key material; redacted from all plans/logs/ledger. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `email` | ['string', 'null'] | no | Optional email address; omit to leave unchanged. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
+| `expire` | ['integer', 'null'] | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `firstname` | ['string', 'null'] | no | Optional first name; omit to leave unchanged. (default: `null`) |
+| `lastname` | ['string', 'null'] | no | Optional last name; omit to leave unchanged. (default: `null`) |
+| `realm` | ['string', 'null'] | no | Authentication realm; omit to leave unchanged. (default: `null`) |
+| `role` | ['string', 'null'] | no | New role; omit to leave unchanged. Same admin-equivalent semantics as pmg_access_user_create's — see the risk note. (default: `null`) |
+| `password` | ['string', 'null'] | no | New password; redacted from all plans/logs/ledger. (default: `null`) |
+| `crypt_pass` | ['string', 'null'] | no | New pre-encrypted password (crypt(3) hash shape); forwarded verbatim; redacted from all plans/logs/ledger. (default: `null`) |
+| `keys` | ['string', 'null'] | no | New Yubico two-factor key material; redacted from all plans/logs/ledger. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_account_create`
 
@@ -9571,13 +8929,12 @@ detail.raw_result, no shape assumed. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `contact` | string | yes | Contact email address(es) for the ACME account (comma-separated 'email-list'; CA renewal/expiry notices). |
-| `name` | string (nullable) | no | Name to register the account under; omit to let PMG assign its own default ('default'). (default: `null`) |
-| `directory` | string (nullable) | no | ACME directory URL of the CA to register with (https:// only); omit to use PMG's default CA. (default: `null`) |
-| `eab_hmac_key` | string (nullable) | no | HMAC key for External Account Binding (required by some CAs, e.g. ZeroSSL). Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
-| `eab_kid` | string (nullable) | no | Key identifier for External Account Binding; pairs with eab_hmac_key. (default: `null`) |
-| `tos_url` | string (nullable) | no | URL of the CA's terms-of-service to accept (https:// only); omit to accept the CA's default ToS. (default: `null`) |
+| `name` | ['string', 'null'] | no | Name to register the account under; omit to let PMG assign its own default ('default'). (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL of the CA to register with (https:// only); omit to use PMG's default CA. (default: `null`) |
+| `eab_hmac_key` | ['string', 'null'] | no | HMAC key for External Account Binding (required by some CAs, e.g. ZeroSSL). Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
+| `eab_kid` | ['string', 'null'] | no | Key identifier for External Account Binding; pairs with eab_hmac_key. (default: `null`) |
+| `tos_url` | ['string', 'null'] | no | URL of the CA's terms-of-service to accept (https:// only); omit to accept the CA's default ToS. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the account registration. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_account_delete`
 
@@ -9597,7 +8954,6 @@ PROXIMO_PMG_* config.
 | `name` | string | no | Name of the ACME account to deactivate and delete from the CA. (default: `"default"`) |
 | `force` | boolean | no | Delete the local account record even if the CA refuses to deactivate it. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the irreversible deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_account_get`
 
@@ -9608,16 +8964,13 @@ Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | no | Name of the ACME account. (default: `"default"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_account_list`
 
 READ-ONLY: list registered PMG ACME account names. Schema-thin (blank per-item shape) —
 `eab-hmac-key`/`eab-kid` DEFENSIVELY stripped anyway. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_acme_account_update`
 
@@ -9633,9 +8986,8 @@ string (unlike PBS's null), no shape assumed. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | no | Name of the existing ACME account to update. (default: `"default"`) |
-| `contact` | string (nullable) | no | New contact email address(es) for the ACME account; omit to trigger a bare CA refresh instead (PMG's own documented behavior — not an error). (default: `null`) |
+| `contact` | ['string', 'null'] | no | New contact email address(es) for the ACME account; omit to trigger a bare CA refresh instead (PMG's own documented behavior — not an error). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update/refresh. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_challenge_schema`
 
@@ -9643,9 +8995,7 @@ READ-ONLY: list the catalog of known ACME challenge plugin types (id/name/schema
 entry) — the parameter schema each plugin_type+dns_api+data combination must satisfy. No
 params — static catalog. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_acme_directories`
 
@@ -9653,9 +9003,7 @@ READ-ONLY: list PMG's built-in catalog of known ACME CA directory endpoints (nam
 pairs, e.g. Let's Encrypt production/staging). No params — static catalog, no caller-
 influenced URL fetch (unlike pmg_acme_tos/pmg_acme_meta). Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_acme_meta`
 
@@ -9666,8 +9014,7 @@ identical reason. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `directory` | string (nullable) | no | ACME directory URL to look up meta information for (https:// only); omit to use PMG's default CA. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL to look up meta information for (https:// only); omit to use PMG's default CA. (default: `null`) |
 
 #### `pmg_acme_plugin_create`
 
@@ -9683,13 +9030,12 @@ None}. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier for the new ACME DNS/standalone challenge plugin (pve-configid format: alnum/./_/-, <=64 chars). |
 | `plugin_type` | string | yes | ACME challenge type: 'dns' or 'standalone' (PMG's own schema declares this closed enum, unlike PBS's open string). |
-| `dns_api` | string (nullable) | no | DNS provider shortcode for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PMG's 'api' field. PMG's schema declares a large, fast-growing enum here — validated defensively by charset instead of a hardcoded list; see pmg_acme_challenge_schema for the live catalog. (default: `null`) |
-| `data` | string (nullable) | no | Base64-encoded plugin credential/config data (e.g. DNS provider API tokens) required by the challenge type. Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
-| `nodes` | string (nullable) | no | Comma-separated list of PMG node names this plugin applies to; omit for all nodes. (default: `null`) |
-| `validation_delay` | integer (nullable) | no | Extra delay in seconds (0-172800) to wait before requesting validation — copes with long DNS TTLs. (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | DNS provider shortcode for a DNS-01 challenge (e.g. 'cf', 'route53'); maps to PMG's 'api' field. PMG's schema declares a large, fast-growing enum here — validated defensively by charset instead of a hardcoded list; see pmg_acme_challenge_schema for the live catalog. (default: `null`) |
+| `data` | ['string', 'null'] | no | Base64-encoded plugin credential/config data (e.g. DNS provider API tokens) required by the challenge type. Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to disable the plugin on creation; omit to leave it enabled. (default: `null`) |
+| `nodes` | ['string', 'null'] | no | Comma-separated list of PMG node names this plugin applies to; omit for all nodes. (default: `null`) |
+| `validation_delay` | ['integer', 'null'] | no | Extra delay in seconds (0-172800) to wait before requesting validation — copes with long DNS TTLs. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the plugin creation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_plugin_delete`
 
@@ -9706,7 +9052,6 @@ PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the ACME DNS/standalone challenge plugin to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_plugin_get`
 
@@ -9717,7 +9062,6 @@ Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | ID of the ACME DNS/standalone challenge plugin. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_plugin_list`
 
@@ -9728,8 +9072,7 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `plugin_type` | string (nullable) | no | Filter by ACME challenge type: 'dns' or 'standalone'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `plugin_type` | ['string', 'null'] | no | Filter by ACME challenge type: 'dns' or 'standalone'. (default: `null`) |
 
 #### `pmg_acme_plugin_update`
 
@@ -9745,15 +9088,14 @@ returns {"status": "ok", "result": None}. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `plugin_id` | string | yes | Identifier of the existing ACME DNS/standalone challenge plugin to update. |
-| `dns_api` | string (nullable) | no | New DNS provider shortcode; maps to PMG's 'api' field. Omit to leave unchanged. (default: `null`) |
-| `data` | string (nullable) | no | New base64-encoded plugin credential/config data; omit to leave unchanged. Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
-| `disable` | boolean (nullable) | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
-| `nodes` | string (nullable) | no | New comma-separated list of PMG node names; omit to leave unchanged. (default: `null`) |
-| `validation_delay` | integer (nullable) | no | New validation-delay in seconds (0-172800); omit to leave unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
-| `delete` | string (nullable) | no | Comma-separated property names to clear: any of 'api', 'data', 'disable', 'nodes', 'validation-delay' (PMG types this a STRING, unlike PBS's list — the same closed set either way). (default: `null`) |
+| `dns_api` | ['string', 'null'] | no | New DNS provider shortcode; maps to PMG's 'api' field. Omit to leave unchanged. (default: `null`) |
+| `data` | ['string', 'null'] | no | New base64-encoded plugin credential/config data; omit to leave unchanged. Redacted from the PLAN preview and the audit ledger, but IS sent to PMG on confirm=True. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Set to enable/disable the plugin; omit to leave unchanged. (default: `null`) |
+| `nodes` | ['string', 'null'] | no | New comma-separated list of PMG node names; omit to leave unchanged. (default: `null`) |
+| `validation_delay` | ['integer', 'null'] | no | New validation-delay in seconds (0-172800); omit to leave unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Config digest for optimistic-locking the update against concurrent changes; omit to skip the check. (default: `null`) |
+| `delete` | ['string', 'null'] | no | Comma-separated property names to clear: any of 'api', 'data', 'disable', 'nodes', 'validation-delay' (PMG types this a STRING, unlike PBS's list — the same closed set either way). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_acme_tos`
 
@@ -9765,8 +9107,7 @@ ADVERSARIAL in the taint control for exactly that reason. Needs PROXIMO_PMG_* co
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `directory` | string (nullable) | no | ACME directory URL to look up the Terms of Service for (https:// only); omit to use PMG's default CA. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `directory` | ['string', 'null'] | no | ACME directory URL to look up the Terms of Service for (https:// only); omit to use PMG's default CA. (default: `null`) |
 
 #### `pmg_action_bcc_create`
 
@@ -9780,10 +9121,9 @@ pmg_ruledb_rule_action_attach. Needs PROXIMO_PMG_* config. confirm=True executes
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new BCC action object. |
 | `target` | string | yes | BCC recipient email address. |
-| `info` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `original` | boolean (nullable) | no | If True, BCC the original unmodified mail instead of the processed copy. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `original` | ['boolean', 'null'] | no | If True, BCC the original unmodified mail instead of the processed copy. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_bcc_get`
 
@@ -9796,7 +9136,6 @@ original), not asserted here. id_ comes from pmg_action_objects_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_bcc_update`
 
@@ -9809,12 +9148,11 @@ returns {"status": "ok", "result": <PMG's raw API response>}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `name` | string (nullable) | no | New action object name; omit to keep current value. (default: `null`) |
-| `target` | string (nullable) | no | New BCC recipient email address; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `original` | boolean (nullable) | no | If True, BCC the original unmodified mail instead of the processed copy. (default: `null`) |
+| `name` | ['string', 'null'] | no | New action object name; omit to keep current value. (default: `null`) |
+| `target` | ['string', 'null'] | no | New BCC recipient email address; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `original` | ['boolean', 'null'] | no | If True, BCC the original unmodified mail instead of the processed copy. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_delete`
 
@@ -9828,7 +9166,6 @@ the 'editable' flag via pmg_action_objects_list first. confirm=True executes and
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_disclaimer_create`
 
@@ -9842,11 +9179,10 @@ pmg_ruledb_rule_action_attach. Needs PROXIMO_PMG_* config. confirm=True executes
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new disclaimer action object. |
 | `disclaimer` | string | yes | Disclaimer text to append/prepend to mail. |
-| `info` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `position` | string (nullable) | no | Where to insert the disclaimer: 'start' or 'end'. (default: `null`) |
-| `add_separator` | boolean (nullable) | no | Insert a separator line before the disclaimer; maps to API param 'add-separator'. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `position` | ['string', 'null'] | no | Where to insert the disclaimer: 'start' or 'end'. (default: `null`) |
+| `add_separator` | ['boolean', 'null'] | no | Insert a separator line before the disclaimer; maps to API param 'add-separator'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_disclaimer_get`
 
@@ -9860,7 +9196,6 @@ pmg_action_objects_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_disclaimer_update`
 
@@ -9873,13 +9208,12 @@ current value. confirm=True executes and returns {"status": "ok",
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `name` | string (nullable) | no | New action object name; omit to keep current value. (default: `null`) |
-| `disclaimer` | string (nullable) | no | New disclaimer text; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `position` | string (nullable) | no | Where to insert the disclaimer: 'start' or 'end'. (default: `null`) |
-| `add_separator` | boolean (nullable) | no | Insert a separator line before the disclaimer; maps to API param 'add-separator'. (default: `null`) |
+| `name` | ['string', 'null'] | no | New action object name; omit to keep current value. (default: `null`) |
+| `disclaimer` | ['string', 'null'] | no | New disclaimer text; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `position` | ['string', 'null'] | no | Where to insert the disclaimer: 'start' or 'end'. (default: `null`) |
+| `add_separator` | ['boolean', 'null'] | no | Insert a separator line before the disclaimer; maps to API param 'add-separator'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_field_create`
 
@@ -9894,9 +9228,8 @@ pmg_ruledb_rule_action_attach. Needs PROXIMO_PMG_* config. confirm=True executes
 | `name` | string | yes | Name for the new field-modification action object. |
 | `field` | string | yes | Mail header field to set. |
 | `value` | string | yes | Value to assign to the header field. |
-| `info` | string (nullable) | no | Optional free-text description. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_field_get`
 
@@ -9909,7 +9242,6 @@ not asserted here. id_ comes from pmg_action_objects_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_field_update`
 
@@ -9925,9 +9257,8 @@ pmg_action_field_create. confirm=True executes and returns {"status": "ok",
 | `name` | string | yes | New action object name; required (PMG rejects partial updates). |
 | `field` | string | yes | New mail header field to set; required (PMG rejects partial updates). |
 | `value` | string | yes | New value to assign to the header field; required (PMG rejects partial updates). |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_notification_create`
 
@@ -9943,10 +9274,9 @@ pmg_ruledb_rule_action_attach. Needs PROXIMO_PMG_* config. confirm=True executes
 | `to` | string | yes | Notification recipient email address. |
 | `subject` | string | yes | Notification email subject line. |
 | `body_text` | string | yes | Notification email body text; maps to API param 'body'. |
-| `info` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `attach` | boolean (nullable) | no | If True, attach the original message to the notification. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `attach` | ['boolean', 'null'] | no | If True, attach the original message to the notification. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_notification_get`
 
@@ -9960,7 +9290,6 @@ content), not asserted here. id_ comes from pmg_action_objects_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_notification_update`
 
@@ -9977,10 +9306,9 @@ pmg_action_notification_create. confirm=True executes and returns {"status": "ok
 | `to` | string | yes | New notification recipient email address; required (PMG rejects partial updates). |
 | `subject` | string | yes | New notification subject line; required (PMG rejects partial updates). |
 | `body_text` | string | yes | New notification body text; maps to API param 'body'; required (PMG rejects partial updates). |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `attach` | boolean (nullable) | no | If True, attach the original message to the notification. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `attach` | ['boolean', 'null'] | no | If True, attach the original message to the notification. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_objects_list`
 
@@ -9990,9 +9318,7 @@ Returns a list of dicts; each carries an 'editable' flag — non-editable ones a
 and cannot be modified via the API. For one rule's attached actions use
 pmg_ruledb_rule_actions_list instead.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_action_removeattachments_create`
 
@@ -10006,11 +9332,10 @@ pmg_ruledb_rule_action_attach. Needs PROXIMO_PMG_* config. confirm=True executes
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new remove-attachments action object. |
 | `text` | string | yes | Replacement text inserted in place of removed attachments. |
-| `info` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `all_` | boolean (nullable) | no | If True, remove all attachments; maps to API param 'all'. (default: `null`) |
-| `quarantine` | boolean (nullable) | no | If True, quarantine removed attachments instead of discarding them. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `all_` | ['boolean', 'null'] | no | If True, remove all attachments; maps to API param 'all'. (default: `null`) |
+| `quarantine` | ['boolean', 'null'] | no | If True, quarantine removed attachments instead of discarding them. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_removeattachments_get`
 
@@ -10024,7 +9349,6 @@ pmg_action_objects_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_action_removeattachments_update`
 
@@ -10037,13 +9361,12 @@ current value. confirm=True executes and returns {"status": "ok",
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Compound action object ID (e.g. '13_26') from pmg_action_objects_list. |
-| `name` | string (nullable) | no | New action object name; omit to keep current value. (default: `null`) |
-| `text` | string (nullable) | no | New replacement text; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `all_` | boolean (nullable) | no | If True, remove all attachments; maps to API param 'all'. (default: `null`) |
-| `quarantine` | boolean (nullable) | no | If True, quarantine removed attachments instead of discarding them. (default: `null`) |
+| `name` | ['string', 'null'] | no | New action object name; omit to keep current value. (default: `null`) |
+| `text` | ['string', 'null'] | no | New replacement text; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `all_` | ['boolean', 'null'] | no | If True, remove all attachments; maps to API param 'all'. (default: `null`) |
+| `quarantine` | ['boolean', 'null'] | no | If True, quarantine removed attachments instead of discarding them. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_apt_changelog`
 
@@ -10058,9 +9381,8 @@ itself happens at your console. This tool governs visibility only. Needs PROXIMO
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Package name to fetch the changelog for (e.g. as listed by pmg_apt_updates_list). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `version` | string (nullable) | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
+| `version` | ['string', 'null'] | no | Specific package version to fetch the changelog for; omit for the latest available. (default: `null`) |
 
 #### `pmg_apt_repositories_get`
 
@@ -10075,8 +9397,7 @@ only. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pmg_apt_repository_add`
 
@@ -10094,10 +9415,9 @@ default (returns a PLAN); confirm=True executes (PUT, Smoke-confirm) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `handle` | string | yes | Handle identifying the standard repository to add (as returned by pmg_apt_repositories_get's standard-repos list, e.g. 'no-subscription'). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `digest` | string (nullable) | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the addition. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_apt_repository_set`
 
@@ -10114,11 +9434,10 @@ Smoke-confirm) and returns {"status": "ok", "result": None}. Needs PROXIMO_PMG_*
 | --- | --- | --- | --- |
 | `path` | string | yes | Absolute path of the sources file containing the repository entry (as returned by pmg_apt_repositories_get). |
 | `index` | integer | yes | 0-based index of the repository entry within that file (as returned by pmg_apt_repositories_get). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `enabled` | boolean (nullable) | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
-| `digest` | string (nullable) | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
+| `enabled` | ['boolean', 'null'] | no | Set the entry's enabled state; omit to leave the enabled state unchanged. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Expected content digest of the repositories file, for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_apt_update_refresh`
 
@@ -10133,11 +9452,10 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `notify` | boolean (nullable) | no | If True, ask PMG to send a notification email about newly available packages. (default: `null`) |
-| `quiet` | boolean (nullable) | no | If True, ask PMG to omit progress output suitable only for interactive logging. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
+| `notify` | ['boolean', 'null'] | no | If True, ask PMG to send a notification email about newly available packages. (default: `null`) |
+| `quiet` | ['boolean', 'null'] | no | If True, ask PMG to omit progress output suitable only for interactive logging. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the index refresh. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_apt_updates_list`
 
@@ -10150,8 +9468,7 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pmg_apt_versions`
 
@@ -10163,8 +9480,7 @@ This tool governs visibility only. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pmg_backup_create`
 
@@ -10177,11 +9493,10 @@ returns {"status": "ok", "result": ...}.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 | `notify` | string | no | Notification mode: always\|error\|never (default never). (default: `"never"`) |
 | `statistic` | boolean | no | Whether to include mail statistics in the backup (default True). (default: `true`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_cluster_create`
 
@@ -10200,7 +9515,6 @@ ledger's own detail.raw_result. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_cluster_join`
 
@@ -10234,7 +9548,6 @@ PROXIMO_PMG_* config.
 | `master_ip` | string | yes | IP address of the target cluster's master node to join. |
 | `password` | string | yes | The TARGET MASTER's OWN root/superuser password (a THIRD-PARTY credential, not the caller's own secret) — transmitted in transit to authenticate the join; redacted from all plans/logs/ledger. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_cluster_join_info`
 
@@ -10242,9 +9555,7 @@ READ-ONLY: get the information a NEW node needs to join THIS cluster — the mas
 address + certificate fingerprint (meant to be base64-encoded and pasted into the new node's
 own join dialog). PUBLIC verification material only — no secret. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_cluster_node_add`
 
@@ -10263,9 +9574,8 @@ item>}. Needs PROXIMO_PMG_* config.
 | `ip` | string | yes | IP address of the node being registered. |
 | `name` | string | yes | Node name. |
 | `rootrsapubkey` | string | yes | Public SSH RSA key for the node's root user. |
-| `max_cid` | integer (nullable) | no | Maximum used cluster node ID — upstream's own field description: 'used internally, do not modify' unless you know what you're doing. (default: `null`) |
+| `max_cid` | ['integer', 'null'] | no | Maximum used cluster node ID — upstream's own field description: 'used internally, do not modify' unless you know what you're doing. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_cluster_nodes_list`
 
@@ -10273,9 +9583,7 @@ READ-ONLY: list this PMG cluster's member nodes (cid/fingerprint/hostrsapubkey/i
 rootrsapubkey/type). PUBLIC verification material only — fingerprint and SSH host/root
 PUBLIC keys, not secrets. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_cluster_status`
 
@@ -10284,8 +9592,7 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `list_single_node` | boolean (nullable) | no | Also list the local node when no cluster is defined. Upstream note: RSA keys/fingerprint are not valid in that case. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `list_single_node` | ['boolean', 'null'] | no | Also list the local node when no cluster is defined. Upstream note: RSA keys/fingerprint are not valid in that case. (default: `null`) |
 
 #### `pmg_cluster_update_fingerprints`
 
@@ -10298,7 +9605,6 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_admin_get`
 
@@ -10307,9 +9613,7 @@ DKIM defaults, consent text, http_proxy, stats lifetime). Schema-thin on this pl
 through best-effort. `http_proxy`, if present, is defensively masked for any embedded
 userinfo credential. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_config_admin_update`
 
@@ -10324,35 +9628,32 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `admin_mail_from` | string (nullable) | no | 'From' header text for admin mails/bounces. Omit to leave unchanged. (default: `null`) |
-| `advfilter` | boolean (nullable) | no | Enable advanced filters for statistics. Omit to leave unchanged. (default: `null`) |
-| `avast` | boolean (nullable) | no | Use Avast Virus Scanner (requires a separate license). Omit to leave unchanged. (default: `null`) |
-| `clamav` | boolean (nullable) | no | Use ClamAV Virus Scanner (default on). False DISABLES ClamAV scanning — flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `consent_text` | string (nullable) | no | Consent text displayed before login. Omit to leave unchanged. (default: `null`) |
-| `custom_check` | boolean (nullable) | no | Use a custom check script. Omit to leave unchanged. (default: `null`) |
-| `custom_check_path` | string (nullable) | no | Absolute path to the custom check script. Omit to leave unchanged. (default: `null`) |
-| `dailyreport` | boolean (nullable) | no | Send daily reports. Omit to leave unchanged. (default: `null`) |
-| `demo` | boolean (nullable) | no | Demo mode — STOPS the SMTP filter entirely when True. Flagged loudly in the plan. Omit to leave unchanged. (default: `null`) |
-| `dkim_use_domain` | string (nullable) | no | 'header' or 'envelope' — which domain DKIM signing uses. Omit to leave unchanged. (default: `null`) |
-| `dkim_selector` | string (nullable) | no | Default DKIM selector. Omit to leave unchanged. (default: `null`) |
-| `dkim_sign` | boolean (nullable) | no | DKIM-sign outbound mail with the configured selector. Omit to leave unchanged. (default: `null`) |
-| `dkim_sign_all_mail` | boolean (nullable) | no | DKIM-sign ALL outgoing mail regardless of envelope-from domain. Omit to leave unchanged. (default: `null`) |
-| `email` | string (nullable) | no | Administrator e-mail address. Omit to leave unchanged. (default: `null`) |
-| `http_proxy` | string (nullable) | no | External HTTP proxy for downloads, e.g. 'http://user:pass@host:port/'; redacted from all plans/logs/ledger DISPLAY (still forwarded raw on write). Omit to leave unchanged. (default: `null`) |
-| `statlifetime` | integer (nullable) | no | User statistics lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
+| `admin_mail_from` | ['string', 'null'] | no | 'From' header text for admin mails/bounces. Omit to leave unchanged. (default: `null`) |
+| `advfilter` | ['boolean', 'null'] | no | Enable advanced filters for statistics. Omit to leave unchanged. (default: `null`) |
+| `avast` | ['boolean', 'null'] | no | Use Avast Virus Scanner (requires a separate license). Omit to leave unchanged. (default: `null`) |
+| `clamav` | ['boolean', 'null'] | no | Use ClamAV Virus Scanner (default on). False DISABLES ClamAV scanning — flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `consent_text` | ['string', 'null'] | no | Consent text displayed before login. Omit to leave unchanged. (default: `null`) |
+| `custom_check` | ['boolean', 'null'] | no | Use a custom check script. Omit to leave unchanged. (default: `null`) |
+| `custom_check_path` | ['string', 'null'] | no | Absolute path to the custom check script. Omit to leave unchanged. (default: `null`) |
+| `dailyreport` | ['boolean', 'null'] | no | Send daily reports. Omit to leave unchanged. (default: `null`) |
+| `demo` | ['boolean', 'null'] | no | Demo mode — STOPS the SMTP filter entirely when True. Flagged loudly in the plan. Omit to leave unchanged. (default: `null`) |
+| `dkim_use_domain` | ['string', 'null'] | no | 'header' or 'envelope' — which domain DKIM signing uses. Omit to leave unchanged. (default: `null`) |
+| `dkim_selector` | ['string', 'null'] | no | Default DKIM selector. Omit to leave unchanged. (default: `null`) |
+| `dkim_sign` | ['boolean', 'null'] | no | DKIM-sign outbound mail with the configured selector. Omit to leave unchanged. (default: `null`) |
+| `dkim_sign_all_mail` | ['boolean', 'null'] | no | DKIM-sign ALL outgoing mail regardless of envelope-from domain. Omit to leave unchanged. (default: `null`) |
+| `email` | ['string', 'null'] | no | Administrator e-mail address. Omit to leave unchanged. (default: `null`) |
+| `http_proxy` | ['string', 'null'] | no | External HTTP proxy for downloads, e.g. 'http://user:pass@host:port/'; redacted from all plans/logs/ledger DISPLAY (still forwarded raw on write). Omit to leave unchanged. (default: `null`) |
+| `statlifetime` | ['integer', 'null'] | no | User statistics lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear (reset to default). (default: `null`) |
-| `digest` | string (nullable) | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_clamav_get`
 
 READ-ONLY: read PMG ClamAV config (archive-scan limits, DB mirror, scripted-updates
 toggle). Schema-thin — passed through best-effort. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_config_clamav_update`
 
@@ -10364,18 +9665,17 @@ None}. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `archiveblockencrypted` | boolean (nullable) | no | Flag encrypted archives/documents as a heuristic virus match. Transitioning True->False is flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `archivemaxfiles` | integer (nullable) | no | Number of files scanned within an archive/container (>=0). Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
-| `archivemaxrec` | integer (nullable) | no | Nested-archive scan recursion depth (>=1). Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
-| `archivemaxsize` | integer (nullable) | no | Max archive size (bytes, >=1000000) to scan. Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
-| `dbmirror` | string (nullable) | no | ClamAV database mirror server. Omit to leave unchanged. (default: `null`) |
-| `maxcccount` | integer (nullable) | no | Lowest number of credit-card/SSN matches to flag a file (>=0). Omit to leave unchanged. (default: `null`) |
-| `maxscansize` | integer (nullable) | no | Max data (bytes, >=1000000) scanned per input file. Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
-| `scriptedupdates` | boolean (nullable) | no | Enable incremental (scripted) signature-database updates. Omit to leave unchanged. (default: `null`) |
+| `archiveblockencrypted` | ['boolean', 'null'] | no | Flag encrypted archives/documents as a heuristic virus match. Transitioning True->False is flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `archivemaxfiles` | ['integer', 'null'] | no | Number of files scanned within an archive/container (>=0). Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
+| `archivemaxrec` | ['integer', 'null'] | no | Nested-archive scan recursion depth (>=1). Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
+| `archivemaxsize` | ['integer', 'null'] | no | Max archive size (bytes, >=1000000) to scan. Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
+| `dbmirror` | ['string', 'null'] | no | ClamAV database mirror server. Omit to leave unchanged. (default: `null`) |
+| `maxcccount` | ['integer', 'null'] | no | Lowest number of credit-card/SSN matches to flag a file (>=0). Omit to leave unchanged. (default: `null`) |
+| `maxscansize` | ['integer', 'null'] | no | Max data (bytes, >=1000000) scanned per input file. Lowering below the current value is flagged. Omit to leave unchanged. (default: `null`) |
+| `scriptedupdates` | ['boolean', 'null'] | no | Enable incremental (scripted) signature-database updates. Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear (reset to default). (default: `null`) |
-| `digest` | string (nullable) | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_mail_update`
 
@@ -10389,50 +9689,49 @@ shipped) to read the current config. confirm=True executes (PUT /config/mail) an
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `accept_broken_mime` | boolean (nullable) | no | Accept mail with broken MIME structure (insecure; adds an X-Proxmox-Broken-Message header). Omit to leave unchanged. (default: `null`) |
-| `banner` | string (nullable) | no | ESMTP banner text. Omit to leave unchanged. (default: `null`) |
-| `before_queue_filtering` | boolean (nullable) | no | Enable before-queue filtering by pmg-smtp-filter. Omit to leave unchanged. (default: `null`) |
-| `conn_count_limit` | integer (nullable) | no | Max simultaneous connections per client (0=unlimited). Omit to leave unchanged. (default: `null`) |
-| `conn_rate_limit` | integer (nullable) | no | Max connection attempts per client per minute (0=unlimited). Omit to leave unchanged. (default: `null`) |
-| `dnsbl_sites` | string (nullable) | no | DNS block/welcome-list domains (postfix postscreen_dnsbl_sites). Omit to leave unchanged. (default: `null`) |
-| `dnsbl_threshold` | integer (nullable) | no | DNSBL score threshold to block a client. Omit to leave unchanged. (default: `null`) |
-| `dwarning` | integer (nullable) | no | SMTP delay-warning time, in hours. Omit to leave unchanged. (default: `null`) |
-| `ext_port` | integer (nullable) | no | SMTP port for incoming (untrusted) mail. Omit to leave unchanged. (default: `null`) |
-| `filter_timeout` | integer (nullable) | no | Timeout (seconds, 2-86400) for processing one mail. Omit to leave unchanged. (default: `null`) |
-| `greylist` | boolean (nullable) | no | Use greylisting for IPv4. Omit to leave unchanged. (default: `null`) |
-| `greylist6` | boolean (nullable) | no | Use greylisting for IPv6. Omit to leave unchanged. (default: `null`) |
-| `greylistmask4` | integer (nullable) | no | Netmask applied for greylisting IPv4 hosts (0-32). Omit to leave unchanged. (default: `null`) |
-| `greylistmask6` | integer (nullable) | no | Netmask applied for greylisting IPv6 hosts (0-128). Omit to leave unchanged. (default: `null`) |
-| `helotests` | boolean (nullable) | no | Use SMTP HELO tests. Omit to leave unchanged. (default: `null`) |
-| `hide_received` | boolean (nullable) | no | Hide the Received header in outgoing mail. Omit to leave unchanged. (default: `null`) |
-| `int_port` | integer (nullable) | no | SMTP port for outgoing (trusted) mail. Omit to leave unchanged. (default: `null`) |
-| `log_headers` | boolean (nullable) | no | Log envelope sender/recipient + decoded From/To/Subject to the mail log (writes personal data — check data-protection obligations). Omit to leave unchanged. (default: `null`) |
-| `max_filters` | integer (nullable) | no | Max pmg-smtp-filter processes (3-40). Omit to leave unchanged. (default: `null`) |
-| `max_policy` | integer (nullable) | no | Max pmgpolicy processes (2-10). Omit to leave unchanged. (default: `null`) |
-| `max_smtpd_in` | integer (nullable) | no | Max inbound SMTP daemon processes (3-100). Omit to leave unchanged. (default: `null`) |
-| `max_smtpd_out` | integer (nullable) | no | Max outbound SMTP daemon processes (3-100). Omit to leave unchanged. (default: `null`) |
-| `maxsize` | integer (nullable) | no | Max email size in bytes (>=1024); larger mail is rejected. Omit to leave unchanged. (default: `null`) |
-| `message_rate_limit` | integer (nullable) | no | Max message-delivery requests per client per minute (0=unlimited). Omit to leave unchanged. (default: `null`) |
-| `ndr_on_block` | boolean (nullable) | no | Send an NDR (bounce) when mail is blocked. Omit to leave unchanged. (default: `null`) |
-| `queue_lifetime` | integer (nullable) | no | Max days (1-100) a deferred/bounce message stays queued before returning to sender. Omit to leave unchanged. (default: `null`) |
-| `rejectunknown` | boolean (nullable) | no | Reject unknown clients (unresolvable hostname). Omit to leave unchanged. (default: `null`) |
-| `rejectunknownsender` | boolean (nullable) | no | Reject unknown senders (unresolvable sender domain). Omit to leave unchanged. (default: `null`) |
-| `relay` | string (nullable) | no | Default mail delivery transport for incoming mail. Changing this reroutes ALL matching mail — flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `relaynomx` | boolean (nullable) | no | Disable MX lookups for the default relay (SMTP only). Omit to leave unchanged. (default: `null`) |
-| `relayport` | integer (nullable) | no | SMTP/LMTP port for the relay host. Omit to leave unchanged. (default: `null`) |
-| `relayprotocol` | string (nullable) | no | Transport protocol for the relay host: 'smtp' or 'lmtp'. Omit to leave unchanged. (default: `null`) |
-| `smarthost` | string (nullable) | no | Smarthost for ALL outgoing mail. Changing this reroutes ALL outbound mail — flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `smarthostport` | integer (nullable) | no | SMTP port for the smarthost. Omit to leave unchanged. (default: `null`) |
-| `smtputf8` | boolean (nullable) | no | Enable SMTPUTF8 support. Omit to leave unchanged. (default: `null`) |
-| `spf` | boolean (nullable) | no | Use Sender Policy Framework checks. False disables SPF — flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `tls` | boolean (nullable) | no | Enable TLS. False disables TLS (SECURITY-LOOSENING) — flagged in the plan. Omit to leave unchanged. (default: `null`) |
-| `tlsheader` | boolean (nullable) | no | Add a TLS-received header. Omit to leave unchanged. (default: `null`) |
-| `tlslog` | boolean (nullable) | no | Enable TLS logging. Omit to leave unchanged. (default: `null`) |
-| `verifyreceivers` | string (nullable) | no | Enable receiver verification; the reply code on rejection: '450' or '550'. Omit to leave unchanged. (default: `null`) |
+| `accept_broken_mime` | ['boolean', 'null'] | no | Accept mail with broken MIME structure (insecure; adds an X-Proxmox-Broken-Message header). Omit to leave unchanged. (default: `null`) |
+| `banner` | ['string', 'null'] | no | ESMTP banner text. Omit to leave unchanged. (default: `null`) |
+| `before_queue_filtering` | ['boolean', 'null'] | no | Enable before-queue filtering by pmg-smtp-filter. Omit to leave unchanged. (default: `null`) |
+| `conn_count_limit` | ['integer', 'null'] | no | Max simultaneous connections per client (0=unlimited). Omit to leave unchanged. (default: `null`) |
+| `conn_rate_limit` | ['integer', 'null'] | no | Max connection attempts per client per minute (0=unlimited). Omit to leave unchanged. (default: `null`) |
+| `dnsbl_sites` | ['string', 'null'] | no | DNS block/welcome-list domains (postfix postscreen_dnsbl_sites). Omit to leave unchanged. (default: `null`) |
+| `dnsbl_threshold` | ['integer', 'null'] | no | DNSBL score threshold to block a client. Omit to leave unchanged. (default: `null`) |
+| `dwarning` | ['integer', 'null'] | no | SMTP delay-warning time, in hours. Omit to leave unchanged. (default: `null`) |
+| `ext_port` | ['integer', 'null'] | no | SMTP port for incoming (untrusted) mail. Omit to leave unchanged. (default: `null`) |
+| `filter_timeout` | ['integer', 'null'] | no | Timeout (seconds, 2-86400) for processing one mail. Omit to leave unchanged. (default: `null`) |
+| `greylist` | ['boolean', 'null'] | no | Use greylisting for IPv4. Omit to leave unchanged. (default: `null`) |
+| `greylist6` | ['boolean', 'null'] | no | Use greylisting for IPv6. Omit to leave unchanged. (default: `null`) |
+| `greylistmask4` | ['integer', 'null'] | no | Netmask applied for greylisting IPv4 hosts (0-32). Omit to leave unchanged. (default: `null`) |
+| `greylistmask6` | ['integer', 'null'] | no | Netmask applied for greylisting IPv6 hosts (0-128). Omit to leave unchanged. (default: `null`) |
+| `helotests` | ['boolean', 'null'] | no | Use SMTP HELO tests. Omit to leave unchanged. (default: `null`) |
+| `hide_received` | ['boolean', 'null'] | no | Hide the Received header in outgoing mail. Omit to leave unchanged. (default: `null`) |
+| `int_port` | ['integer', 'null'] | no | SMTP port for outgoing (trusted) mail. Omit to leave unchanged. (default: `null`) |
+| `log_headers` | ['boolean', 'null'] | no | Log envelope sender/recipient + decoded From/To/Subject to the mail log (writes personal data — check data-protection obligations). Omit to leave unchanged. (default: `null`) |
+| `max_filters` | ['integer', 'null'] | no | Max pmg-smtp-filter processes (3-40). Omit to leave unchanged. (default: `null`) |
+| `max_policy` | ['integer', 'null'] | no | Max pmgpolicy processes (2-10). Omit to leave unchanged. (default: `null`) |
+| `max_smtpd_in` | ['integer', 'null'] | no | Max inbound SMTP daemon processes (3-100). Omit to leave unchanged. (default: `null`) |
+| `max_smtpd_out` | ['integer', 'null'] | no | Max outbound SMTP daemon processes (3-100). Omit to leave unchanged. (default: `null`) |
+| `maxsize` | ['integer', 'null'] | no | Max email size in bytes (>=1024); larger mail is rejected. Omit to leave unchanged. (default: `null`) |
+| `message_rate_limit` | ['integer', 'null'] | no | Max message-delivery requests per client per minute (0=unlimited). Omit to leave unchanged. (default: `null`) |
+| `ndr_on_block` | ['boolean', 'null'] | no | Send an NDR (bounce) when mail is blocked. Omit to leave unchanged. (default: `null`) |
+| `queue_lifetime` | ['integer', 'null'] | no | Max days (1-100) a deferred/bounce message stays queued before returning to sender. Omit to leave unchanged. (default: `null`) |
+| `rejectunknown` | ['boolean', 'null'] | no | Reject unknown clients (unresolvable hostname). Omit to leave unchanged. (default: `null`) |
+| `rejectunknownsender` | ['boolean', 'null'] | no | Reject unknown senders (unresolvable sender domain). Omit to leave unchanged. (default: `null`) |
+| `relay` | ['string', 'null'] | no | Default mail delivery transport for incoming mail. Changing this reroutes ALL matching mail — flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `relaynomx` | ['boolean', 'null'] | no | Disable MX lookups for the default relay (SMTP only). Omit to leave unchanged. (default: `null`) |
+| `relayport` | ['integer', 'null'] | no | SMTP/LMTP port for the relay host. Omit to leave unchanged. (default: `null`) |
+| `relayprotocol` | ['string', 'null'] | no | Transport protocol for the relay host: 'smtp' or 'lmtp'. Omit to leave unchanged. (default: `null`) |
+| `smarthost` | ['string', 'null'] | no | Smarthost for ALL outgoing mail. Changing this reroutes ALL outbound mail — flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `smarthostport` | ['integer', 'null'] | no | SMTP port for the smarthost. Omit to leave unchanged. (default: `null`) |
+| `smtputf8` | ['boolean', 'null'] | no | Enable SMTPUTF8 support. Omit to leave unchanged. (default: `null`) |
+| `spf` | ['boolean', 'null'] | no | Use Sender Policy Framework checks. False disables SPF — flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `tls` | ['boolean', 'null'] | no | Enable TLS. False disables TLS (SECURITY-LOOSENING) — flagged in the plan. Omit to leave unchanged. (default: `null`) |
+| `tlsheader` | ['boolean', 'null'] | no | Add a TLS-received header. Omit to leave unchanged. (default: `null`) |
+| `tlslog` | ['boolean', 'null'] | no | Enable TLS logging. Omit to leave unchanged. (default: `null`) |
+| `verifyreceivers` | ['string', 'null'] | no | Enable receiver verification; the reply code on rejection: '450' or '550'. Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear (reset to default). (default: `null`) |
-| `digest` | string (nullable) | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_spamquar_get`
 
@@ -10440,9 +9739,7 @@ READ-ONLY: read PMG spam-quarantine config (auth mode, lifetime, quarantine-link
 self-service toggle, report style). Schema-thin — passed through best-effort. Needs
 PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_config_spamquar_update`
 
@@ -10454,20 +9751,19 @@ given, is disclosed explicitly. confirm=True executes (PUT /config/spamquar) and
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `allowhrefs` | boolean (nullable) | no | Allow viewing hyperlinks in quarantined spam mail (else shown as plain text). Omit to leave unchanged. (default: `null`) |
-| `authmode` | string (nullable) | no | Quarantine-interface auth mode: 'ticket' (email-ticket login), 'ldap' (LDAP account required), or 'ldapticket' (both). Weakening toward 'ticket' from 'ldap'/'ldapticket' is flagged. Omit to leave unchanged. (default: `null`) |
-| `hostname` | string (nullable) | no | Quarantine host — useful in a cluster to direct users to a specific host. Omit to leave unchanged. (default: `null`) |
-| `lifetime` | integer (nullable) | no | Quarantine lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
-| `mailfrom` | string (nullable) | no | 'From' header text for daily spam-report mail. Omit to leave unchanged. (default: `null`) |
-| `port` | integer (nullable) | no | Quarantine port, for a reverse proxy/port-forward — only used in the generated spam report. Omit to leave unchanged. (default: `null`) |
-| `protocol` | string (nullable) | no | Quarantine web-interface protocol for the spam report: 'http' or 'https'. Omit to leave unchanged. (default: `null`) |
-| `quarantinelink` | boolean (nullable) | no | Enable user self-service Quarantine Links. UPSTREAM CAUTION: 'accessible without authentication'. Setting True is flagged loudly. Omit to leave unchanged. (default: `null`) |
-| `reportstyle` | string (nullable) | no | Spam-report style: 'none', 'short', 'verbose', or 'custom'. Omit to leave unchanged. (default: `null`) |
-| `viewimages` | string (nullable) | no | Image display in quarantined mail: '1' (all, incl. externally-hosted), '0' (hidden), or 'on-demand'. Omit to leave unchanged. (default: `null`) |
+| `allowhrefs` | ['boolean', 'null'] | no | Allow viewing hyperlinks in quarantined spam mail (else shown as plain text). Omit to leave unchanged. (default: `null`) |
+| `authmode` | ['string', 'null'] | no | Quarantine-interface auth mode: 'ticket' (email-ticket login), 'ldap' (LDAP account required), or 'ldapticket' (both). Weakening toward 'ticket' from 'ldap'/'ldapticket' is flagged. Omit to leave unchanged. (default: `null`) |
+| `hostname` | ['string', 'null'] | no | Quarantine host — useful in a cluster to direct users to a specific host. Omit to leave unchanged. (default: `null`) |
+| `lifetime` | ['integer', 'null'] | no | Quarantine lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
+| `mailfrom` | ['string', 'null'] | no | 'From' header text for daily spam-report mail. Omit to leave unchanged. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Quarantine port, for a reverse proxy/port-forward — only used in the generated spam report. Omit to leave unchanged. (default: `null`) |
+| `protocol` | ['string', 'null'] | no | Quarantine web-interface protocol for the spam report: 'http' or 'https'. Omit to leave unchanged. (default: `null`) |
+| `quarantinelink` | ['boolean', 'null'] | no | Enable user self-service Quarantine Links. UPSTREAM CAUTION: 'accessible without authentication'. Setting True is flagged loudly. Omit to leave unchanged. (default: `null`) |
+| `reportstyle` | ['string', 'null'] | no | Spam-report style: 'none', 'short', 'verbose', or 'custom'. Omit to leave unchanged. (default: `null`) |
+| `viewimages` | ['string', 'null'] | no | Image display in quarantined mail: '1' (all, incl. externally-hosted), '0' (hidden), or 'on-demand'. Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear (reset to default). (default: `null`) |
-| `digest` | string (nullable) | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_tfa_webauthn_get`
 
@@ -10475,9 +9771,7 @@ READ-ONLY: read PMG webauthn config (relying-party id/origin/name, subdomain-all
 Richly typed on this plane (the one exception among the 5 GET-verbed global-config reads in
 this chunk, which are all schema-thin). Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_config_tfa_webauthn_update`
 
@@ -10492,23 +9786,20 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `allow_subdomains` | boolean (nullable) | no | Allow the origin to be a subdomain rather than the exact URL. Omit to leave unchanged. (default: `null`) |
-| `id_` | string (nullable) | no | Relying-party ID — the domain name, without protocol/port/location. Changing this WILL break existing WebAuthn credentials (upstream wording verbatim) — flagged loudly. Omit to leave unchanged. (default: `null`) |
-| `origin` | string (nullable) | no | Site origin — an https:// URL (or http://localhost). Changing this MAY break existing WebAuthn credentials (upstream wording verbatim). Omit to leave unchanged. (default: `null`) |
-| `rp` | string (nullable) | no | Relying-party name — any text identifier. Changing this MAY break existing WebAuthn credentials (upstream wording verbatim). Omit to leave unchanged. (default: `null`) |
+| `allow_subdomains` | ['boolean', 'null'] | no | Allow the origin to be a subdomain rather than the exact URL. Omit to leave unchanged. (default: `null`) |
+| `id_` | ['string', 'null'] | no | Relying-party ID — the domain name, without protocol/port/location. Changing this WILL break existing WebAuthn credentials (upstream wording verbatim) — flagged loudly. Omit to leave unchanged. (default: `null`) |
+| `origin` | ['string', 'null'] | no | Site origin — an https:// URL (or http://localhost). Changing this MAY break existing WebAuthn credentials (upstream wording verbatim). Omit to leave unchanged. (default: `null`) |
+| `rp` | ['string', 'null'] | no | Relying-party name — any text identifier. Changing this MAY break existing WebAuthn credentials (upstream wording verbatim). Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear: 'allow-subdomains', 'id', 'origin', or 'rp'. (default: `null`) |
-| `digest` | string (nullable) | no | Optional 40-char SHA-1 config digest to prevent concurrent modifications — a genuine divergence from this chunk's other 5 config families, which use a 64-char SHA-256 digest. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 40-char SHA-1 config digest to prevent concurrent modifications — a genuine divergence from this chunk's other 5 config families, which use a 64-char SHA-256 digest. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_config_virusquar_get`
 
 READ-ONLY: read PMG virus-quarantine config (hyperlink display, lifetime, image display).
 Schema-thin — passed through best-effort. Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_config_virusquar_update`
 
@@ -10520,13 +9811,12 @@ disclosed explicitly. confirm=True executes (PUT /config/virusquar) and returns 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `allowhrefs` | boolean (nullable) | no | Allow viewing hyperlinks in quarantined virus mail (else shown as plain text). Quarantined mail is attacker-authored — setting True is flagged as a phishing-link caution. Omit to leave unchanged. (default: `null`) |
-| `lifetime` | integer (nullable) | no | Quarantine lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
-| `viewimages` | string (nullable) | no | Image display in quarantined mail: '1' (all, incl. externally-hosted), '0' (hidden), or 'on-demand'. Omit to leave unchanged. (default: `null`) |
+| `allowhrefs` | ['boolean', 'null'] | no | Allow viewing hyperlinks in quarantined virus mail (else shown as plain text). Quarantined mail is attacker-authored — setting True is flagged as a phishing-link caution. Omit to leave unchanged. (default: `null`) |
+| `lifetime` | ['integer', 'null'] | no | Quarantine lifetime, in days (>=1). Omit to leave unchanged. (default: `null`) |
+| `viewimages` | ['string', 'null'] | no | Image display in quarantined mail: '1' (all, incl. externally-hosted), '0' (hidden), or 'on-demand'. Omit to leave unchanged. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear (reset to default). (default: `null`) |
-| `digest` | string (nullable) | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional 64-char SHA-256 config digest to prevent concurrent modifications. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_apply`
 
@@ -10545,10 +9835,9 @@ the ledger's own detail.raw_result (for the audit trail — honest both ways). R
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
-| `restart_daemon` | boolean (nullable) | no | Also restart pmg-smtp-filter. Per PMG's own description this is necessary for the changes to work. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `restart_daemon` | ['boolean', 'null'] | no | Also restart pmg-smtp-filter. Per PMG's own description this is necessary for the changes to work. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_create`
 
@@ -10563,10 +9852,9 @@ PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `name` | string | yes | New custom score rule name (letters/digits/'_'/'-'/'.' only). |
 | `score` | number | yes | Score value: positive pushes matching mail toward spam, negative toward ham. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_delete`
 
@@ -10581,9 +9869,8 @@ PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Custom score rule name to delete. |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_get`
 
@@ -10595,7 +9882,6 @@ pmg_customscores_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Custom score rule name to read (letters/digits/'_'/'-'/'.' only). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_list`
 
@@ -10605,9 +9891,7 @@ Returns a list of {"comment": ..., "digest": ..., "name": ..., "score": ...} dic
 here is per-item optimistic-concurrency metadata, not a secret. Use pmg_customscores_create/
 pmg_customscores_update/pmg_customscores_delete to manage entries.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_customscores_revert_all`
 
@@ -10623,7 +9907,6 @@ pmg_customscores_create. Dry-run returns a PLAN; confirm=True executes and retur
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_customscores_update`
 
@@ -10639,10 +9922,9 @@ confirm=True executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `name` | string | yes | Existing custom score rule name to update. |
 | `score` | number | yes | New score value. Required by this endpoint — a full replace. |
-| `comment` | string (nullable) | no | New free-text comment. Omit to leave PMG's own default handling in effect. (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment. Omit to leave PMG's own default handling in effect. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_domain_create`
 
@@ -10656,9 +9938,8 @@ returns a PLAN; confirm=True executes and returns {"status": "ok", "result": ...
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | Domain to register for DKIM signing, e.g. 'example.com'. |
-| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_domain_delete`
 
@@ -10675,7 +9956,6 @@ re-add with pmg_dkim_domain_create. Dry-run returns a PLAN; confirm=True execute
 | --- | --- | --- | --- |
 | `domain` | string | yes | DKIM-sign domain name to remove. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_domain_get`
 
@@ -10686,7 +9966,6 @@ Returns {"comment": ..., "domain": ...}. Sibling single-item read of pmg_dkim_do
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | DKIM-sign domain name to read, e.g. 'example.com'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_domain_update`
 
@@ -10702,7 +9981,6 @@ executes and returns {"status": "ok", "result": ...}.
 | `domain` | string | yes | DKIM-sign domain name to update. |
 | `comment` | string | yes | New comment to store with the domain. Required by this endpoint — pass '' to clear it. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_domains_list`
 
@@ -10711,9 +9989,7 @@ READ-ONLY: list DKIM-sign domains. Needs PROXIMO_PMG_* config.
 Returns a list of {"comment": ..., "domain": ...} dicts. Use pmg_dkim_domain_create/
 pmg_dkim_domain_update/pmg_dkim_domain_delete to manage entries.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_dkim_selector_generate`
 
@@ -10730,9 +10006,8 @@ returns a PLAN; confirm=True executes and returns {"status": "ok", "result": ...
 | --- | --- | --- | --- |
 | `selector` | string | yes | DKIM selector name (DNS-label charset). |
 | `keysize` | integer | yes | RSA key size in bits, >= 1024. |
-| `force` | boolean (nullable) | no | Overwrite an existing key for this selector. Omit for PMG's own default (protective) behavior. (default: `null`) |
+| `force` | ['boolean', 'null'] | no | Overwrite an existing key for this selector. Omit for PMG's own default (protective) behavior. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_dkim_selector_get`
 
@@ -10743,9 +10018,7 @@ Returns {"keysize": ..., "record": ..., "selector": ...}. The PRIVATE signing ke
 appears here (schema-confirmed) — `record` is meant to be published in DNS; it is public by
 design, not redacted. Use pmg_dkim_selector_generate to rotate the key.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_dkim_selectors_list`
 
@@ -10753,9 +10026,7 @@ READ-ONLY: get a list of all existing DKIM selectors. Needs PROXIMO_PMG_* config
 
 Returns a list of {"selector": ...} dicts.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_doctor`
 
@@ -10768,8 +10039,7 @@ PMG has no /access/permissions endpoint (that is PVE-only); "permissions" here i
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 
 #### `pmg_domain_create`
 
@@ -10783,9 +10053,8 @@ current domains with pmg_domains_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | Domain name to add as a managed mail domain, e.g. 'example.com'. |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the domain. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the domain. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_domain_delete`
 
@@ -10800,7 +10069,6 @@ executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `domain` | string | yes | Managed mail domain name to delete, e.g. 'example.com'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_domain_get`
 
@@ -10812,7 +10080,6 @@ LIST form). Use pmg_domain_update to change the comment.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | Managed mail domain name to read, e.g. 'example.com'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_domain_update`
 
@@ -10828,7 +10095,6 @@ a PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | `domain` | string | yes | Managed mail domain name to update, e.g. 'example.com'. |
 | `comment` | string | yes | New comment to store with the domain. Required by this endpoint — pass '' to clear it. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_domains_list`
 
@@ -10837,9 +10103,7 @@ READ-ONLY: list PMG managed mail domains. Needs PROXIMO_PMG_* config.
 Returns a list of domain dicts (domain name + comment). Use pmg_domain_create/pmg_domain_delete
 to manage domains.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_fetchmail_create`
 
@@ -10859,13 +10123,12 @@ is returned in `result` — confirm=True executes (POST /config/fetchmail) and r
 | `password` | string | yes | Login password on the remote mail server (a secret — never recorded to the ledger). |
 | `target` | string | yes | Local email address to deliver fetched mail into. |
 | `protocol` | string | yes | Remote protocol: pop3 or imap. |
-| `enable` | boolean (nullable) | no | Enable polling immediately. Default False. (default: `null`) |
-| `interval` | integer (nullable) | no | Poll every N 5-minute cycles, 1-2016. Default checks every cycle. (default: `null`) |
-| `keep` | boolean (nullable) | no | Keep retrieved messages on the remote mailserver instead of deleting them. (default: `null`) |
-| `port` | integer (nullable) | no | Remote server port, 1-65535. (default: `null`) |
-| `ssl` | boolean (nullable) | no | Use SSL to connect to the remote server. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enable polling immediately. Default False. (default: `null`) |
+| `interval` | ['integer', 'null'] | no | Poll every N 5-minute cycles, 1-2016. Default checks every cycle. (default: `null`) |
+| `keep` | ['boolean', 'null'] | no | Keep retrieved messages on the remote mailserver instead of deleting them. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Remote server port, 1-65535. (default: `null`) |
+| `ssl` | ['boolean', 'null'] | no | Use SSL to connect to the remote server. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_fetchmail_delete`
 
@@ -10880,7 +10143,6 @@ PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `id_` | string | yes | Fetchmail entry's unique ID to delete, from pmg_fetchmail_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_fetchmail_get`
 
@@ -10892,7 +10154,6 @@ schema too — a real leak path). Use pmg_fetchmail_update to change it.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Fetchmail entry's unique ID (alphanumeric, <=16 chars), from pmg_fetchmail_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_fetchmail_list`
 
@@ -10902,9 +10163,7 @@ READ-ONLY: list configured fetchmail accounts. Needs PROXIMO_PMG_* config.
 schema — a real leak path, not defense-in-depth). Use pmg_fetchmail_get for one account's full
 config, pmg_fetchmail_create to add one.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_fetchmail_update`
 
@@ -10919,18 +10178,17 @@ the dry-run plan path or the confirm path. confirm=True executes (PUT
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Fetchmail entry's unique ID to update, from pmg_fetchmail_list. |
-| `server` | string (nullable) | no | Remote mail server address (IP or DNS name). (default: `null`) |
-| `user` | string (nullable) | no | Login username on the remote mail server. (default: `null`) |
-| `password` | string (nullable) | no | Login password on the remote mail server (a secret — never recorded to the ledger). (default: `null`) |
-| `target` | string (nullable) | no | Local email address to deliver fetched mail into. (default: `null`) |
-| `protocol` | string (nullable) | no | Remote protocol: pop3 or imap. (default: `null`) |
-| `enable` | boolean (nullable) | no | Enable/disable polling. (default: `null`) |
-| `interval` | integer (nullable) | no | Poll every N 5-minute cycles, 1-2016. (default: `null`) |
-| `keep` | boolean (nullable) | no | Keep retrieved messages on the remote mailserver instead of deleting them. (default: `null`) |
-| `port` | integer (nullable) | no | Remote server port, 1-65535. (default: `null`) |
-| `ssl` | boolean (nullable) | no | Use SSL to connect to the remote server. (default: `null`) |
+| `server` | ['string', 'null'] | no | Remote mail server address (IP or DNS name). (default: `null`) |
+| `user` | ['string', 'null'] | no | Login username on the remote mail server. (default: `null`) |
+| `password` | ['string', 'null'] | no | Login password on the remote mail server (a secret — never recorded to the ledger). (default: `null`) |
+| `target` | ['string', 'null'] | no | Local email address to deliver fetched mail into. (default: `null`) |
+| `protocol` | ['string', 'null'] | no | Remote protocol: pop3 or imap. (default: `null`) |
+| `enable` | ['boolean', 'null'] | no | Enable/disable polling. (default: `null`) |
+| `interval` | ['integer', 'null'] | no | Poll every N 5-minute cycles, 1-2016. (default: `null`) |
+| `keep` | ['boolean', 'null'] | no | Keep retrieved messages on the remote mailserver instead of deleting them. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Remote server port, 1-65535. (default: `null`) |
+| `ssl` | ['boolean', 'null'] | no | Use SSL to connect to the remote server. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_group_members_get`
 
@@ -10943,7 +10201,6 @@ instructions to act on.
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID, e.g. 'my-ad'. |
 | `gid` | integer | yes | LDAP group's numeric ID, from pmg_ldap_groups_list's gid field. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_groups_list`
 
@@ -10956,7 +10213,6 @@ members.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID, e.g. 'my-ad'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profile_config_get`
 
@@ -10969,7 +10225,6 @@ pmg_ldap_profile_config_update to change it, pmg_ldap_profile_sync to pull direc
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID, e.g. 'my-ad'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profile_config_update`
 
@@ -10985,26 +10240,25 @@ on EITHER the dry-run plan path or the confirm path. confirm=True executes (PUT
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID to update. |
-| `mode` | string (nullable) | no | LDAP protocol mode: ldap, ldaps, or ldap+starttls. (default: `null`) |
-| `port` | integer (nullable) | no | Server port, 1-65535. (default: `null`) |
-| `basedn` | string (nullable) | no | Base DN to search under. (default: `null`) |
-| `binddn` | string (nullable) | no | Bind DN used to authenticate to the directory. (default: `null`) |
-| `bindpw` | string (nullable) | no | Bind password (a secret — never recorded to the ledger). (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `filter` | string (nullable) | no | LDAP search filter. (default: `null`) |
-| `groupbasedn` | string (nullable) | no | Base DN to search for groups under. (default: `null`) |
-| `groupclass` | string (nullable) | no | Comma-separated list of objectclasses for groups. (default: `null`) |
-| `mailattr` | string (nullable) | no | Comma-separated list of mail attribute names. (default: `null`) |
-| `accountattr` | string (nullable) | no | Account attribute name. (default: `null`) |
-| `cafile` | string (nullable) | no | Path to a CA certificate file. (default: `null`) |
-| `verify` | boolean (nullable) | no | Verify the server's TLS certificate. (default: `null`) |
-| `server1` | string (nullable) | no | Primary LDAP server address. (default: `null`) |
-| `server2` | string (nullable) | no | Fallback server address. (default: `null`) |
-| `disable` | boolean (nullable) | no | Enable/disable the profile. (default: `null`) |
-| `delete` | string (nullable) | no | Comma-separated field names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 hex chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP protocol mode: ldap, ldaps, or ldap+starttls. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Server port, 1-65535. (default: `null`) |
+| `basedn` | ['string', 'null'] | no | Base DN to search under. (default: `null`) |
+| `binddn` | ['string', 'null'] | no | Bind DN used to authenticate to the directory. (default: `null`) |
+| `bindpw` | ['string', 'null'] | no | Bind password (a secret — never recorded to the ledger). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `filter` | ['string', 'null'] | no | LDAP search filter. (default: `null`) |
+| `groupbasedn` | ['string', 'null'] | no | Base DN to search for groups under. (default: `null`) |
+| `groupclass` | ['string', 'null'] | no | Comma-separated list of objectclasses for groups. (default: `null`) |
+| `mailattr` | ['string', 'null'] | no | Comma-separated list of mail attribute names. (default: `null`) |
+| `accountattr` | ['string', 'null'] | no | Account attribute name. (default: `null`) |
+| `cafile` | ['string', 'null'] | no | Path to a CA certificate file. (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | Verify the server's TLS certificate. (default: `null`) |
+| `server1` | ['string', 'null'] | no | Primary LDAP server address. (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback server address. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Enable/disable the profile. (default: `null`) |
+| `delete` | ['string', 'null'] | no | Comma-separated field names to clear. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 hex chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profile_create`
 
@@ -11021,23 +10275,22 @@ pmg_ldap_profile_delete.
 | --- | --- | --- | --- |
 | `profile` | string | yes | New LDAP profile ID (pve-configid format), e.g. 'my-ad'. |
 | `server1` | string | yes | Primary LDAP server address (hostname or IP). |
-| `mode` | string (nullable) | no | LDAP protocol mode: ldap, ldaps, or ldap+starttls. Default 'ldap'. (default: `null`) |
-| `port` | integer (nullable) | no | Server port, 1-65535. (default: `null`) |
-| `basedn` | string (nullable) | no | Base DN to search under. (default: `null`) |
-| `binddn` | string (nullable) | no | Bind DN used to authenticate to the directory. (default: `null`) |
-| `bindpw` | string (nullable) | no | Bind password (a secret — never recorded to the ledger). (default: `null`) |
-| `comment` | string (nullable) | no | Optional free-text description. (default: `null`) |
-| `filter` | string (nullable) | no | LDAP search filter. (default: `null`) |
-| `groupbasedn` | string (nullable) | no | Base DN to search for groups under. (default: `null`) |
-| `groupclass` | string (nullable) | no | Comma-separated list of objectclasses for groups. (default: `null`) |
-| `mailattr` | string (nullable) | no | Comma-separated list of mail attribute names. (default: `null`) |
-| `accountattr` | string (nullable) | no | Account attribute name. (default: `null`) |
-| `cafile` | string (nullable) | no | Path to a CA certificate file (only used with ldaps/ldap+starttls verify). (default: `null`) |
-| `verify` | boolean (nullable) | no | Verify the server's TLS certificate (only useful with ldaps/ldap+starttls). (default: `null`) |
-| `server2` | string (nullable) | no | Fallback server address, used when server1 is unreachable. (default: `null`) |
-| `disable` | boolean (nullable) | no | Create the profile disabled. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP protocol mode: ldap, ldaps, or ldap+starttls. Default 'ldap'. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Server port, 1-65535. (default: `null`) |
+| `basedn` | ['string', 'null'] | no | Base DN to search under. (default: `null`) |
+| `binddn` | ['string', 'null'] | no | Bind DN used to authenticate to the directory. (default: `null`) |
+| `bindpw` | ['string', 'null'] | no | Bind password (a secret — never recorded to the ledger). (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text description. (default: `null`) |
+| `filter` | ['string', 'null'] | no | LDAP search filter. (default: `null`) |
+| `groupbasedn` | ['string', 'null'] | no | Base DN to search for groups under. (default: `null`) |
+| `groupclass` | ['string', 'null'] | no | Comma-separated list of objectclasses for groups. (default: `null`) |
+| `mailattr` | ['string', 'null'] | no | Comma-separated list of mail attribute names. (default: `null`) |
+| `accountattr` | ['string', 'null'] | no | Account attribute name. (default: `null`) |
+| `cafile` | ['string', 'null'] | no | Path to a CA certificate file (only used with ldaps/ldap+starttls verify). (default: `null`) |
+| `verify` | ['boolean', 'null'] | no | Verify the server's TLS certificate (only useful with ldaps/ldap+starttls). (default: `null`) |
+| `server2` | ['string', 'null'] | no | Fallback server address, used when server1 is unreachable. (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Create the profile disabled. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profile_delete`
 
@@ -11054,7 +10307,6 @@ executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profile_sync`
 
@@ -11072,7 +10324,6 @@ smokable without a real LDAP server. confirm=True executes (POST
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID to synchronize. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the sync. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_profiles_list`
 
@@ -11082,9 +10333,7 @@ Returns comment/disable/gcount/mcount/mode/profile/server1/server2/ucount per pr
 `bindpw` is CONFIRMED never echoed here. Use pmg_ldap_profile_config_get for one profile's
 full config, pmg_ldap_profile_create to add one.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_ldap_user_emails_get`
 
@@ -11097,7 +10346,6 @@ not instructions to act on.
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID, e.g. 'my-ad'. |
 | `email` | string | yes | One of the user's known email addresses, from pmg_ldap_users_list's pmail field. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ldap_users_list`
 
@@ -11110,7 +10358,6 @@ user's full email list, pmg_ldap_profile_sync to refresh this cache.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `profile` | string | yes | LDAP profile ID, e.g. 'my-ad'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_mimetypes_list`
 
@@ -11119,9 +10366,7 @@ READ-ONLY: get PMG's built-in MIME type list. Needs PROXIMO_PMG_* config.
 Returns a list of {"mimetype": ..., "text": ...} dicts — the static catalog PMG matches
 attachment/content-type filter rules against.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_mynetworks_add`
 
@@ -11135,9 +10380,8 @@ pmg_mynetworks_remove. Dry-run returns a PLAN; confirm=True executes and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cidr` | string | yes | Network in CIDR notation to trust as an internal relay, e.g. '10.0.0.0/8'. |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the mynetworks entry. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the mynetworks entry. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_mynetworks_get`
 
@@ -11149,7 +10393,6 @@ pmg_mynetworks_update to change the comment.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cidr` | string | yes | Network in CIDR notation to read, e.g. '10.0.0.0/8'. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_mynetworks_list`
 
@@ -11158,9 +10401,7 @@ READ-ONLY: list PMG mynetworks (trusted relay) entries. Needs PROXIMO_PMG_* conf
 Returns a list of {"cidr": ...} dicts. Use pmg_mynetworks_add/pmg_mynetworks_update/
 pmg_mynetworks_remove to manage entries.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_mynetworks_remove`
 
@@ -11175,7 +10416,6 @@ executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `cidr` | string | yes | Network in CIDR notation to remove from the trusted mynetworks list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_mynetworks_update`
 
@@ -11191,7 +10431,6 @@ networks are trusted as relays. Dry-run returns a PLAN; confirm=True executes an
 | `cidr` | string | yes | Network in CIDR notation to update, e.g. '10.0.0.0/8'. |
 | `comment` | string | yes | New comment to store with the entry. Required by this endpoint — pass '' to clear it. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_backup_delete`
 
@@ -11203,9 +10442,8 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `filename` | string | yes | Backup file name, e.g. 'pmg-backup_2026_07_17.tgz' (pattern: pmg-backup_[0-9A-Za-z_-]+.tgz). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_backup_list`
 
@@ -11216,8 +10454,7 @@ pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_backup_restore`
 
@@ -11235,12 +10472,11 @@ ledger's own detail.raw_result. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `filename` | string | yes | Backup file name to restore from, e.g. 'pmg-backup_2026_07_17.tgz'. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `config` | boolean | no | Also restore the PMG system configuration (scope not enumerated by PMG's own schema beyond the label). (default: `false`) |
 | `database` | boolean | no | Restore the rule database — the SAME data pmg_ruledb_reset wipes to factory defaults. Default True (matches PMG's own schema default). (default: `true`) |
 | `statistic` | boolean | no | Also restore mail statistics databases. Only considered when database=True. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restore. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_cert_acme_order`
 
@@ -11258,10 +10494,9 @@ own detail.raw_result. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cert_type` | string | yes | Which of PMG's two cert slots to order for: 'api' (pmgproxy management-API cert) or 'smtp' (postfix SMTP-TLS cert). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `force` | boolean | no | Overwrite existing custom certificate files on the node if already present. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME order. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_cert_acme_renew`
 
@@ -11278,10 +10513,9 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cert_type` | string | yes | Which of PMG's two cert slots to renew: 'api' or 'smtp'. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `force` | boolean | no | Renew even if the current certificate is not yet within its renewal lead time. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the ACME renewal. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_cert_acme_revoke`
 
@@ -11300,9 +10534,8 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cert_type` | string | yes | Which of PMG's two cert slots to revoke: 'api' or 'smtp'. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True submits the irreversible revocation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_cert_custom_delete`
 
@@ -11317,10 +10550,9 @@ confirm=True executes (DELETE /nodes/{node}/certificates/custom/{cert_type}) and
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `cert_type` | string | yes | Which of PMG's two cert slots to delete from: 'api' or 'smtp'. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `restart` | boolean | no | Restart the affected service after deletion to apply the reverted self-signed certificate immediately. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_cert_custom_upload`
 
@@ -11347,11 +10579,10 @@ PROXIMO_PMG_* config.
 | `cert_type` | string | yes | Which of PMG's two cert slots to upload to: 'api' (pmgproxy management-API cert) or 'smtp' (postfix SMTP-TLS cert). |
 | `certificates` | string | yes | PEM-encoded certificate chain (public, may appear in plans/logs). |
 | `key` | string | yes | PEM-encoded TLS private key matching the certificate; a secret, UNCONDITIONALLY redacted in all output. REQUIRED — PMG's own schema (unlike PVE's optional key). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `force` | boolean | no | Overwrite existing custom or ACME certificate files. (default: `false`) |
 | `restart` | boolean | no | Restart the affected service (pmgproxy for 'api', postfix for 'smtp') after upload to apply immediately (brief interruption). (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the certificate upload. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_certificates_info`
 
@@ -11361,8 +10592,7 @@ appears here. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_clamav_database_get`
 
@@ -11373,8 +10603,7 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_clamav_database_update`
 
@@ -11386,9 +10615,8 @@ response and in the ledger's own detail.raw_result. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_config_get`
 
@@ -11399,8 +10627,7 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_config_set`
 
@@ -11413,17 +10640,16 @@ before confirm=True executes it. confirm=True executes (PUT /nodes/{node}/config
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `acme` | string (nullable) | no | ACME account config, pre-formatted (e.g. 'account=myaccount'). (default: `null`) |
-| `acmedomain0` | string (nullable) | no | ACME domain mapping slot 0, pre-formatted (e.g. 'domain=example.com,usage=smtp,plugin=cf'). (default: `null`) |
-| `acmedomain1` | string (nullable) | no | ACME domain mapping slot 1, same compound-string format as acmedomain0. (default: `null`) |
-| `acmedomain2` | string (nullable) | no | ACME domain mapping slot 2, same compound-string format as acmedomain0. (default: `null`) |
-| `acmedomain3` | string (nullable) | no | ACME domain mapping slot 3, same compound-string format as acmedomain0. (default: `null`) |
-| `acmedomain4` | string (nullable) | no | ACME domain mapping slot 4, same compound-string format as acmedomain0. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `acme` | ['string', 'null'] | no | ACME account config, pre-formatted (e.g. 'account=myaccount'). (default: `null`) |
+| `acmedomain0` | ['string', 'null'] | no | ACME domain mapping slot 0, pre-formatted (e.g. 'domain=example.com,usage=smtp,plugin=cf'). (default: `null`) |
+| `acmedomain1` | ['string', 'null'] | no | ACME domain mapping slot 1, same compound-string format as acmedomain0. (default: `null`) |
+| `acmedomain2` | ['string', 'null'] | no | ACME domain mapping slot 2, same compound-string format as acmedomain0. (default: `null`) |
+| `acmedomain3` | ['string', 'null'] | no | ACME domain mapping slot 3, same compound-string format as acmedomain0. (default: `null`) |
+| `acmedomain4` | ['string', 'null'] | no | ACME domain mapping slot 4, same compound-string format as acmedomain0. (default: `null`) |
 | `delete` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest (up to 40 hex chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 40 hex chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_dns_get`
 
@@ -11432,8 +10658,7 @@ dns3}. Use pmg_node_dns_set to change it. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_dns_set`
 
@@ -11445,12 +10670,11 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `search` | string | yes | DNS search domain to set. REQUIRED — PMG's own schema (unlike the PVE/PBS tools on this codebase, which treat it as optional). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `dns1` | string (nullable) | no | Primary DNS resolver IP address. (default: `null`) |
-| `dns2` | string (nullable) | no | Secondary DNS resolver IP address. (default: `null`) |
-| `dns3` | string (nullable) | no | Tertiary DNS resolver IP address. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `dns1` | ['string', 'null'] | no | Primary DNS resolver IP address. (default: `null`) |
+| `dns2` | ['string', 'null'] | no | Secondary DNS resolver IP address. (default: `null`) |
+| `dns3` | ['string', 'null'] | no | Tertiary DNS resolver IP address. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_journal`
 
@@ -11462,13 +10686,12 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `lastentries` | integer (nullable) | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
-| `since` | integer (nullable) | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
-| `until` | integer (nullable) | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
-| `startcursor` | string (nullable) | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
-| `endcursor` | string (nullable) | no | End before this journal cursor token; conflicts with until. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `lastentries` | ['integer', 'null'] | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
+| `since` | ['integer', 'null'] | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
+| `until` | ['integer', 'null'] | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
+| `startcursor` | ['string', 'null'] | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
+| `endcursor` | ['string', 'null'] | no | End before this journal cursor token; conflicts with until. (default: `null`) |
 
 #### `pmg_node_network_create`
 
@@ -11484,10 +10707,9 @@ pmg_node_network_revert. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `iface` | string | yes | New network interface name (2-20 chars). |
 | `iface_type` | string | yes | Interface type: bridge, bond, eth, alias, vlan, OVSBridge, OVSBond, OVSPort, OVSIntPort, or unknown. REQUIRED on create (PMG's own schema, matching PVE not PBS). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `options` | object (nullable) | no | Additional interface fields (address, netmask, gateway, bridge_ports, bond_mode, mtu, autostart, comments, ...) forwarded verbatim. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_network_delete`
 
@@ -11499,9 +10721,8 @@ config. confirm=True executes (DELETE /nodes/{node}/network/{iface}) and returns
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `iface` | string | yes | Network interface name to remove. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_network_get`
 
@@ -11511,8 +10732,7 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `iface` | string | yes | Network interface name, e.g. 'eth0' or 'vmbr0'. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_network_list`
 
@@ -11522,9 +10742,8 @@ Use pmg_node_network_get for one interface's full config. Needs PROXIMO_PMG_* co
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `iface_type` | string (nullable) | no | Filter by interface type: bridge, bond, eth, alias, vlan, OVSBridge, OVSBond, OVSPort, OVSIntPort, or any_bridge. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `iface_type` | ['string', 'null'] | no | Filter by interface type: bridge, bond, eth, alias, vlan, OVSBridge, OVSBond, OVSPort, OVSIntPort, or any_bridge. (default: `null`) |
 
 #### `pmg_node_network_reload`
 
@@ -11542,9 +10761,8 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_network_revert`
 
@@ -11555,9 +10773,8 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_network_update`
 
@@ -11579,12 +10796,11 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `iface` | string | yes | Existing network interface name to update. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `iface_type` | string (nullable) | no | Interface type: bridge, bond, eth, alias, vlan, OVSBridge, OVSBond, OVSPort, OVSIntPort, or unknown. If omitted, the interface's CURRENT type is read and re-sent (PMG's schema requires 'type' on every update). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `iface_type` | ['string', 'null'] | no | Interface type: bridge, bond, eth, alias, vlan, OVSBridge, OVSBond, OVSPort, OVSIntPort, or unknown. If omitted, the interface's CURRENT type is read and re-sent (PMG's schema requires 'type' on every update). (default: `null`) |
 | `options` | object (nullable) | no | Interface fields to change (address, netmask, gateway, bridge_ports, mtu, autostart, comments, ...) forwarded verbatim. (default: `null`) |
 | `delete_props` | array<string> (nullable) | no | Property names to clear. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_jobs_list`
 
@@ -11596,8 +10812,7 @@ at /nodes/{node}/pbs/{remote} (a dispositioned stub, not built). Needs PROXIMO_P
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_pbs_snapshot_create`
 
@@ -11613,11 +10828,10 @@ config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `notify` | string (nullable) | no | When to notify via e-mail: always\|error\|never (PMG defaults to 'never' if omitted). (default: `null`) |
-| `statistic` | boolean (nullable) | no | Backup statistic databases (PMG defaults to True if omitted). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `notify` | ['string', 'null'] | no | When to notify via e-mail: always\|error\|never (PMG defaults to 'never' if omitted). (default: `null`) |
+| `statistic` | ['boolean', 'null'] | no | Backup statistic databases (PMG defaults to True if omitted). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the backup. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_snapshot_forget`
 
@@ -11632,9 +10846,8 @@ recovery point on the remote; it cannot be restored. Needs PROXIMO_PMG_* config.
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
 | `backup_id` | string | yes | Backup-id (hostname) of the snapshot, from pmg_node_pbs_snapshots_list. |
 | `backup_time` | string | yes | Backup time (RFC 3339 string) of the snapshot, from pmg_node_pbs_snapshots_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_snapshot_get`
 
@@ -11647,8 +10860,7 @@ PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
 | `backup_id` | string | yes | Backup-id (hostname) of the snapshot, from pmg_node_pbs_snapshots_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_pbs_snapshot_restore`
 
@@ -11669,12 +10881,11 @@ the response and in the ledger's own detail.raw_result. Needs PROXIMO_PMG_* conf
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
 | `backup_id` | string | yes | Backup-id (hostname) of the snapshot, from pmg_node_pbs_snapshots_list. |
 | `backup_time` | string | yes | Backup time (RFC 3339 string) of the snapshot, from pmg_node_pbs_snapshots_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `config` | boolean | no | Also restore the PMG system configuration (scope not enumerated by PMG's own schema beyond the label). (default: `false`) |
 | `database` | boolean | no | Restore the rule database — the SAME data pmg_ruledb_reset wipes to factory defaults. Default True (matches PMG's own schema default). (default: `true`) |
 | `statistic` | boolean | no | Also restore mail statistics databases. Only considered when database=True. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restore. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_snapshot_verify`
 
@@ -11690,9 +10901,8 @@ track via that instance's own task list. Needs PROXIMO_PMG_* config.
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
 | `backup_id` | string | yes | Backup-id (hostname) of the snapshot, from pmg_node_pbs_snapshots_list. |
 | `backup_time` | string | yes | Backup time (RFC 3339 string) of the snapshot, from pmg_node_pbs_snapshots_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the verification. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_snapshots_list`
 
@@ -11703,8 +10913,7 @@ cross-plane precedent). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_pbs_timer_create`
 
@@ -11718,11 +10927,10 @@ confirm=True executes (POST /nodes/{node}/pbs/{remote}/timer) and returns {"stat
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `schedule` | string (nullable) | no | systemd OnCalendar schedule string (PMG defaults to 'daily' if omitted). (default: `null`) |
-| `delay` | string (nullable) | no | systemd RandomizedDelaySec string (PMG defaults to '5min' if omitted). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `schedule` | ['string', 'null'] | no | systemd OnCalendar schedule string (PMG defaults to 'daily' if omitted). (default: `null`) |
+| `delay` | ['string', 'null'] | no | systemd RandomizedDelaySec string (PMG defaults to '5min' if omitted). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_timer_delete`
 
@@ -11735,9 +10943,8 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_pbs_timer_get`
 
@@ -11747,8 +10954,7 @@ READ-ONLY: get the backup schedule (systemd timer spec) for a PBS remote. Return
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_postfix_discard_verify_cache`
 
@@ -11759,9 +10965,8 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the action. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_action`
 
@@ -11777,9 +10982,8 @@ PROXIMO_PMG_* config.
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
 | `action` | string | yes | Action to apply: delete or deliver. |
 | `ids` | string | yes | Comma-separated queue ID(s) to act on. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the action. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_delete_all`
 
@@ -11790,9 +10994,8 @@ returns {"status": "ok", "result": None}. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_delete_queue`
 
@@ -11804,9 +11007,8 @@ executes (DELETE /nodes/{node}/postfix/queue/{queue}) and returns {"status": "ok
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_list`
 
@@ -11818,13 +11020,12 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `filter` | string (nullable) | no | Filter string (PMG's own mailq filter). (default: `null`) |
-| `limit` | integer (nullable) | no | Maximum number of entries to return. (default: `null`) |
-| `sortfield` | string (nullable) | no | Sort field: arrival_time, message_size, sender, receiver, or reason. (default: `null`) |
-| `sortdir` | string (nullable) | no | Sort direction: ASC or DESC. Requires sortfield. (default: `null`) |
-| `start` | integer (nullable) | no | Pagination offset. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `filter` | ['string', 'null'] | no | Filter string (PMG's own mailq filter). (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Maximum number of entries to return. (default: `null`) |
+| `sortfield` | ['string', 'null'] | no | Sort field: arrival_time, message_size, sender, receiver, or reason. (default: `null`) |
+| `sortdir` | ['string', 'null'] | no | Sort direction: ASC or DESC. Requires sortfield. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Pagination offset. (default: `null`) |
 
 #### `pmg_node_postfix_queue_message_delete`
 
@@ -11837,9 +11038,8 @@ bounded to exactly one message (unlike the delete-all family). confirm=True exec
 | --- | --- | --- | --- |
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
 | `queue_id` | string | yes | The Postfix queue ID of the message to delete. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_message_deliver`
 
@@ -11853,9 +11053,8 @@ delivery" semantics, scoped to one message). confirm=True executes (POST
 | --- | --- | --- | --- |
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
 | `queue_id` | string | yes | The Postfix queue ID of the message to deliver. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the delivery. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_postfix_queue_message_get`
 
@@ -11867,11 +11066,10 @@ report, not instructions to act on. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `queue` | string | yes | Postfix queue name: deferred, active, incoming, or hold. |
 | `queue_id` | string | yes | The Postfix queue ID of the message. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `header` | boolean | no | Include message header content. Default True. (default: `true`) |
 | `body` | boolean | no | Include message body content. Default False. (default: `false`) |
 | `decode_header` | boolean | no | Decode the header fields. Default False. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_report`
 
@@ -11882,8 +11080,7 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_rrddata`
 
@@ -11899,9 +11096,8 @@ the returned `time` fields actually cover.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `timeframe` | string | yes | Rolling RRD window ENDING NOW: hour\|day\|week\|month\|year. 'day' is the last ~24 hours, NOT the calendar day. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `cf` | string (nullable) | no | RRD consolidation function: AVERAGE\|MAX. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `cf` | ['string', 'null'] | no | RRD consolidation function: AVERAGE\|MAX. (default: `null`) |
 
 #### `pmg_node_service_reload`
 
@@ -11917,9 +11113,8 @@ docstring fact #19). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, clamav-daemon, pmg-smtp-filter. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the reload. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_service_restart`
 
@@ -11934,9 +11129,8 @@ proximo.pmg_node's module docstring fact #19). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, clamav-daemon, pmg-smtp-filter. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the restart. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_service_start`
 
@@ -11952,9 +11146,8 @@ pmg_service_control(service, action='start') dispatcher — both reach the same 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, clamav-daemon, pmg-smtp-filter. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the start. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_service_stop`
 
@@ -11970,9 +11163,8 @@ proximo.pmg_node's module docstring fact #19). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, clamav-daemon, pmg-smtp-filter. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the stop. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_services_list`
 
@@ -11980,8 +11172,7 @@ READ-ONLY: list systemd services on a PMG node. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_spamassassin_rules_get`
 
@@ -11992,8 +11183,7 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_spamassassin_rules_update`
 
@@ -12006,9 +11196,8 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the update. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_status`
 
@@ -12019,8 +11208,7 @@ Returns a dict with cpu/memory/disk/uptime fields for the node. This is the PMG 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 
 #### `pmg_node_subscription_check`
 
@@ -12031,10 +11219,9 @@ Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `force` | boolean | no | If True, always re-check even if the cached status is fresh. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_subscription_delete`
 
@@ -12045,9 +11232,8 @@ PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_subscription_get`
 
@@ -12059,8 +11245,7 @@ config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_subscription_set`
 
@@ -12072,9 +11257,8 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `key` | string | yes | Subscription key to install (a secret — never recorded to the ledger). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_syslog`
 
@@ -12085,13 +11269,12 @@ instead; for RRD performance data use pmg_node_rrddata.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `limit` | integer (nullable) | no | Maximum syslog entries to return. (default: `null`) |
-| `service` | string (nullable) | no | Filter syslog entries by service name. (default: `null`) |
-| `since` | string (nullable) | no | Only return entries at or after this time (journalctl-style time spec). (default: `null`) |
-| `until` | string (nullable) | no | Only return entries at or before this time (journalctl-style time spec). (default: `null`) |
-| `start` | integer (nullable) | no | Pagination offset into the syslog entries. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Maximum syslog entries to return. (default: `null`) |
+| `service` | ['string', 'null'] | no | Filter syslog entries by service name. (default: `null`) |
+| `since` | ['string', 'null'] | no | Only return entries at or after this time (journalctl-style time spec). (default: `null`) |
+| `until` | ['string', 'null'] | no | Only return entries at or before this time (journalctl-style time spec). (default: `null`) |
+| `start` | ['integer', 'null'] | no | Pagination offset into the syslog entries. (default: `null`) |
 
 #### `pmg_node_task_log`
 
@@ -12103,10 +11286,9 @@ proximo.pmg_node's module docstring fact #14). Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `start` | integer | no | Log line offset to start at (0-based). (default: `0`) |
 | `limit` | integer | no | Maximum number of log lines to return. (default: `50`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_task_status`
 
@@ -12116,8 +11298,7 @@ task metadata only, no free text. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_task_stop`
 
@@ -12131,9 +11312,8 @@ UPIDs via pmg_tasks_list. Needs PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `upid` | string | yes | The task's Unique Process ID (UPID) string to cancel. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the cancellation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_node_time_get`
 
@@ -12142,8 +11322,7 @@ timezone}. Use pmg_node_time_set to change the timezone. Needs PROXIMO_PMG_* con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 
 #### `pmg_node_time_set`
 
@@ -12154,9 +11333,8 @@ timezone first (also readable via pmg_node_time_get). confirm=True executes (PUT
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `timezone` | string | yes | IANA timezone name to set on the node (e.g. UTC, America/Chicago). |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_pbs_remote_create`
 
@@ -12174,24 +11352,23 @@ pmg_pbs_remote_list's docstring). Needs PROXIMO_PMG_* config.
 | `remote` | string | yes | New PBS remote ID (pve-configid format: alnum/./_/-, <=64 chars). |
 | `datastore` | string | yes | Target PBS datastore name. |
 | `server` | string | yes | PBS server address (hostname or IP, <=256 chars). |
-| `disable` | boolean (nullable) | no | Deactivate this entry without deleting it. (default: `null`) |
-| `encryption_key` | string (nullable) | no | Encryption key, or 'autogen' to have PBS generate one. If auto-generated, it is returned ONCE in this call's own result — never recorded to the ledger, there is no second copy. (default: `null`) |
-| `fingerprint` | string (nullable) | no | PBS server's TLS cert SHA-256 fingerprint (PUBLIC verification material, colon-separated hex, e.g. 'AA:BB:...'). (default: `null`) |
-| `include_statistics` | boolean (nullable) | no | Include statistics in scheduled backups. (default: `null`) |
-| `keep_daily` | integer (nullable) | no | Retention: keep the last N daily backups. (default: `null`) |
-| `keep_hourly` | integer (nullable) | no | Retention: keep the last N hourly backups. (default: `null`) |
-| `keep_last` | integer (nullable) | no | Retention: keep the last N backups outright. (default: `null`) |
-| `keep_monthly` | integer (nullable) | no | Retention: keep the last N monthly backups. (default: `null`) |
-| `keep_weekly` | integer (nullable) | no | Retention: keep the last N weekly backups. (default: `null`) |
-| `keep_yearly` | integer (nullable) | no | Retention: keep the last N yearly backups. (default: `null`) |
-| `master_pubkey` | string (nullable) | no | Base64 PEM PUBLIC RSA key used to encrypt a recovery copy of the encryption-key. (default: `null`) |
-| `namespace` | string (nullable) | no | Proxmox Backup Server namespace in the datastore, defaults to the root NS. (default: `null`) |
-| `notify` | string (nullable) | no | When to notify via e-mail: always\|error\|never. (default: `null`) |
-| `password` | string (nullable) | no | Password or API token secret for the user on the PBS server. NEVER recorded to the ledger. (default: `null`) |
-| `port` | integer (nullable) | no | Non-default PBS port; PMG defaults to 8007 if omitted. (default: `null`) |
-| `username` | string (nullable) | no | Username or API token ID on the PBS server (e.g. 'user@realm' or a tokenid — NOT the secret itself). (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Deactivate this entry without deleting it. (default: `null`) |
+| `encryption_key` | ['string', 'null'] | no | Encryption key, or 'autogen' to have PBS generate one. If auto-generated, it is returned ONCE in this call's own result — never recorded to the ledger, there is no second copy. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | PBS server's TLS cert SHA-256 fingerprint (PUBLIC verification material, colon-separated hex, e.g. 'AA:BB:...'). (default: `null`) |
+| `include_statistics` | ['boolean', 'null'] | no | Include statistics in scheduled backups. (default: `null`) |
+| `keep_daily` | ['integer', 'null'] | no | Retention: keep the last N daily backups. (default: `null`) |
+| `keep_hourly` | ['integer', 'null'] | no | Retention: keep the last N hourly backups. (default: `null`) |
+| `keep_last` | ['integer', 'null'] | no | Retention: keep the last N backups outright. (default: `null`) |
+| `keep_monthly` | ['integer', 'null'] | no | Retention: keep the last N monthly backups. (default: `null`) |
+| `keep_weekly` | ['integer', 'null'] | no | Retention: keep the last N weekly backups. (default: `null`) |
+| `keep_yearly` | ['integer', 'null'] | no | Retention: keep the last N yearly backups. (default: `null`) |
+| `master_pubkey` | ['string', 'null'] | no | Base64 PEM PUBLIC RSA key used to encrypt a recovery copy of the encryption-key. (default: `null`) |
+| `namespace` | ['string', 'null'] | no | Proxmox Backup Server namespace in the datastore, defaults to the root NS. (default: `null`) |
+| `notify` | ['string', 'null'] | no | When to notify via e-mail: always\|error\|never. (default: `null`) |
+| `password` | ['string', 'null'] | no | Password or API token secret for the user on the PBS server. NEVER recorded to the ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Non-default PBS port; PMG defaults to 8007 if omitted. (default: `null`) |
+| `username` | ['string', 'null'] | no | Username or API token ID on the PBS server (e.g. 'user@realm' or a tokenid — NOT the secret itself). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_pbs_remote_delete`
 
@@ -12205,7 +11382,6 @@ password/encryption-key to be re-supplied. Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID to delete, from pmg_pbs_remote_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the deletion. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_pbs_remote_get`
 
@@ -12217,7 +11393,6 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_pbs_remote_list`
 
@@ -12228,9 +11403,7 @@ unredacted. DISTINCT from the PBS-plane's own pbs_remotes_list (a different prod
 that family configures a PBS datastore's OWN sync-source; this configures PMG's integration TO
 push its config to a PBS instance). Needs PROXIMO_PMG_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_pbs_remote_update`
 
@@ -12243,28 +11416,27 @@ encryption_key='autogen'), never recorded to the ledger. Needs PROXIMO_PMG_* con
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID to update, from pmg_pbs_remote_list. |
-| `datastore` | string (nullable) | no | Target PBS datastore name. (default: `null`) |
-| `server` | string (nullable) | no | PBS server address (hostname or IP, <=256 chars). (default: `null`) |
-| `disable` | boolean (nullable) | no | Deactivate this entry without deleting it. (default: `null`) |
-| `encryption_key` | string (nullable) | no | Encryption key, or 'autogen'. If auto-generated, it is returned ONCE in this call's own result — never recorded to the ledger. (default: `null`) |
-| `fingerprint` | string (nullable) | no | PBS server's TLS cert SHA-256 fingerprint (PUBLIC, colon-separated hex). (default: `null`) |
-| `include_statistics` | boolean (nullable) | no | Include statistics in scheduled backups. (default: `null`) |
-| `keep_daily` | integer (nullable) | no | Retention: keep the last N daily backups. (default: `null`) |
-| `keep_hourly` | integer (nullable) | no | Retention: keep the last N hourly backups. (default: `null`) |
-| `keep_last` | integer (nullable) | no | Retention: keep the last N backups outright. (default: `null`) |
-| `keep_monthly` | integer (nullable) | no | Retention: keep the last N monthly backups. (default: `null`) |
-| `keep_weekly` | integer (nullable) | no | Retention: keep the last N weekly backups. (default: `null`) |
-| `keep_yearly` | integer (nullable) | no | Retention: keep the last N yearly backups. (default: `null`) |
-| `master_pubkey` | string (nullable) | no | Base64 PEM PUBLIC RSA key used to encrypt a recovery copy of the encryption-key. (default: `null`) |
-| `namespace` | string (nullable) | no | Proxmox Backup Server namespace in the datastore, defaults to the root NS. (default: `null`) |
-| `notify` | string (nullable) | no | When to notify via e-mail: always\|error\|never. (default: `null`) |
-| `password` | string (nullable) | no | Password or API token secret for the user on the PBS server. NEVER recorded to the ledger. (default: `null`) |
-| `port` | integer (nullable) | no | Non-default PBS port. (default: `null`) |
-| `username` | string (nullable) | no | Username or API token ID on the PBS server. (default: `null`) |
-| `delete` | string (nullable) | no | Comma-separated list of settings to reset to their defaults. (default: `null`) |
-| `digest` | string (nullable) | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
+| `datastore` | ['string', 'null'] | no | Target PBS datastore name. (default: `null`) |
+| `server` | ['string', 'null'] | no | PBS server address (hostname or IP, <=256 chars). (default: `null`) |
+| `disable` | ['boolean', 'null'] | no | Deactivate this entry without deleting it. (default: `null`) |
+| `encryption_key` | ['string', 'null'] | no | Encryption key, or 'autogen'. If auto-generated, it is returned ONCE in this call's own result — never recorded to the ledger. (default: `null`) |
+| `fingerprint` | ['string', 'null'] | no | PBS server's TLS cert SHA-256 fingerprint (PUBLIC, colon-separated hex). (default: `null`) |
+| `include_statistics` | ['boolean', 'null'] | no | Include statistics in scheduled backups. (default: `null`) |
+| `keep_daily` | ['integer', 'null'] | no | Retention: keep the last N daily backups. (default: `null`) |
+| `keep_hourly` | ['integer', 'null'] | no | Retention: keep the last N hourly backups. (default: `null`) |
+| `keep_last` | ['integer', 'null'] | no | Retention: keep the last N backups outright. (default: `null`) |
+| `keep_monthly` | ['integer', 'null'] | no | Retention: keep the last N monthly backups. (default: `null`) |
+| `keep_weekly` | ['integer', 'null'] | no | Retention: keep the last N weekly backups. (default: `null`) |
+| `keep_yearly` | ['integer', 'null'] | no | Retention: keep the last N yearly backups. (default: `null`) |
+| `master_pubkey` | ['string', 'null'] | no | Base64 PEM PUBLIC RSA key used to encrypt a recovery copy of the encryption-key. (default: `null`) |
+| `namespace` | ['string', 'null'] | no | Proxmox Backup Server namespace in the datastore, defaults to the root NS. (default: `null`) |
+| `notify` | ['string', 'null'] | no | When to notify via e-mail: always\|error\|never. (default: `null`) |
+| `password` | ['string', 'null'] | no | Password or API token secret for the user on the PBS server. NEVER recorded to the ledger. (default: `null`) |
+| `port` | ['integer', 'null'] | no | Non-default PBS port. (default: `null`) |
+| `username` | ['string', 'null'] | no | Username or API token ID on the PBS server. (default: `null`) |
+| `delete` | ['string', 'null'] | no | Comma-separated list of settings to reset to their defaults. (default: `null`) |
+| `digest` | ['string', 'null'] | no | Optional config digest (up to 64 chars) for optimistic-concurrency conflict detection. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the change. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_postfix_flush`
 
@@ -12277,9 +11449,8 @@ with pmg_postfix_qshape before and after.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_postfix_qshape`
 
@@ -12290,8 +11461,7 @@ counts. To force immediate re-delivery of the queued mail use pmg_postfix_flush.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 
 #### `pmg_quarantine_action`
 
@@ -12307,7 +11477,6 @@ confirm=True executes and returns {"status": "ok", "result": ...}.
 | `action` | string | yes | Action to apply: deliver\|delete\|mark-seen\|mark-unseen\|blocklist\|welcomelist. |
 | `mail_ids` | string | yes | Single quarantined mail ID, or a comma-separated list of IDs, to act on. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_attachment`
 
@@ -12319,10 +11488,9 @@ pmg_quarantine_action.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pmail` | string (nullable) | no | Scope the attachment quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the attachment quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_quarantine_attachments_list`
 
@@ -12335,7 +11503,6 @@ pmg_quarantine_content_get.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Quarantine mail ID (e.g. from pmg_quarantine_spam or pmg_quarantine_virus). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_blocklist_add`
 
@@ -12349,9 +11516,8 @@ pmg_quarantine_blocklist_list. pmail scopes the entry to a per-user blocklist (o
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `address` | string | yes | Email address to add to the quarantine blocklist. |
-| `pmail` | string (nullable) | no | Scope the blocklist entry to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the blocklist entry to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_blocklist_list`
 
@@ -12364,8 +11530,7 @@ pmg_quarantine_blocklist_add/pmg_quarantine_blocklist_remove to manage entries.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pmail` | string (nullable) | no | Scope the blocklist read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the blocklist read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 
 #### `pmg_quarantine_blocklist_remove`
 
@@ -12379,9 +11544,8 @@ and returns {"status": "ok", "result": ...}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `address` | string | yes | Email address to remove from the quarantine blocklist. |
-| `pmail` | string (nullable) | no | Scope the blocklist removal to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the blocklist removal to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_content_get`
 
@@ -12395,9 +11559,8 @@ pmg_quarantine_attachments_list; to act on the message use pmg_quarantine_action
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Quarantine mail ID (e.g. from pmg_quarantine_spam or pmg_quarantine_virus). |
-| `images` | boolean (nullable) | no | Load externally-hosted images too (only effective in 'on-demand' viewimages mode). (default: `null`) |
-| `raw` | boolean (nullable) | no | Return raw eml data, deactivating the normal size limit. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `images` | ['boolean', 'null'] | no | Load externally-hosted images too (only effective in 'on-demand' viewimages mode). (default: `null`) |
+| `raw` | ['boolean', 'null'] | no | Return raw eml data, deactivating the normal size limit. (default: `null`) |
 
 #### `pmg_quarantine_link_get`
 
@@ -12418,7 +11581,6 @@ pmg_quarantine_sendlink.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mail` | string | yes | Recipient email address to generate a quarantine login link for. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_sendlink`
 
@@ -12434,7 +11596,6 @@ To get the link value directly instead (without emailing it) use pmg_quarantine_
 | --- | --- | --- | --- |
 | `mail` | string | yes | Recipient email address to send a quarantine login link to. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_spam`
 
@@ -12444,9 +11605,7 @@ Returns a list of dicts, one per quarantined message. For virus quarantine use
 pmg_quarantine_virus; for attachment quarantine use pmg_quarantine_attachment. To act on
 quarantined messages (deliver/delete/mark-seen/blocklist/welcomelist) use pmg_quarantine_action.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_quarantine_spamstatus`
 
@@ -12455,9 +11614,7 @@ READ-ONLY: get spam quarantine status summary. Needs PROXIMO_PMG_* config.
 Returns a dict of summary counts. For the individual quarantined messages use
 pmg_quarantine_spam instead.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_quarantine_spamusers`
 
@@ -12469,10 +11626,9 @@ sent to the PMG API as 'quarantine-type'. To list one user's messages use pmg_qu
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 | `quarantine_type` | string | no | Quarantine type to list users for: spam\|virus\|attachment (default spam). (default: `"spam"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_users_list`
 
@@ -12484,8 +11640,7 @@ pmg_quarantine_blocklist_list / pmg_quarantine_welcomelist_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `list_` | string (nullable) | no | Filter to 'BL' (blocklist) or 'WL' (welcomelist) users only; omit for both. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `list_` | ['string', 'null'] | no | Filter to 'BL' (blocklist) or 'WL' (welcomelist) users only; omit for both. (default: `null`) |
 
 #### `pmg_quarantine_virus`
 
@@ -12497,10 +11652,9 @@ entries use pmg_quarantine_action.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pmail` | string (nullable) | no | Scope the virus quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the virus quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_quarantine_virusstatus`
 
@@ -12509,9 +11663,7 @@ READ-ONLY: get virus quarantine status summary. Needs PROXIMO_PMG_* config.
 Returns a dict of summary counts. For the individual quarantined messages use
 pmg_quarantine_virus instead.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_quarantine_welcomelist_add`
 
@@ -12529,9 +11681,8 @@ cluster-wide for every mailbox). THIS tool is scoped to one mailbox (`pmail`), r
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `address` | string | yes | Email address to add to the quarantine welcomelist. |
-| `pmail` | string (nullable) | no | Scope the welcomelist entry to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the welcomelist entry to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_quarantine_welcomelist_list`
 
@@ -12548,8 +11699,7 @@ This tool reads the PER-MAILBOX quarantine bypass instead (`pmail`-scoped).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pmail` | string (nullable) | no | Scope the welcomelist read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the welcomelist read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 
 #### `pmg_quarantine_welcomelist_remove`
 
@@ -12567,9 +11717,8 @@ THIS tool removes a PER-MAILBOX quarantine bypass instead.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `address` | string | yes | Email address to remove from the quarantine welcomelist. |
-| `pmail` | string (nullable) | no | Scope the welcomelist removal to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
+| `pmail` | ['string', 'null'] | no | Scope the welcomelist removal to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_regextest`
 
@@ -12586,7 +11735,6 @@ means a boolean match (0/1) or a match count; passed through unchanged, no shape
 | --- | --- | --- | --- |
 | `regex` | string | yes | Regex pattern to test (case-insensitive), max 1024 chars. |
 | `text` | string | yes | Sample string to test the regex against, max 1024 chars. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_relay_config`
 
@@ -12595,9 +11743,7 @@ READ-ONLY: get PMG SMTP relay/smarthost configuration. Needs PROXIMO_PMG_* confi
 Returns the full mail config section as a dict, including relay host, relay port, and other
 SMTP delivery settings. Lives at /config/mail — there is no separate /config/relay endpoint.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_ruledb_digest`
 
@@ -12606,9 +11752,7 @@ READ-ONLY: get the PMG RuleDB digest (change-detection hash). Needs PROXIMO_PMG_
 Returns a dict with the current hash. The digest changes whenever any ruledb configuration is
 modified — poll it to detect drift cheaply instead of re-fetching pmg_ruledb_rules_list.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_ruledb_reset`
 
@@ -12629,7 +11773,6 @@ null), never "submitted".
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the FACTORY RESET. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_action_attach`
 
@@ -12645,7 +11788,6 @@ affects mail flow once the rule is active. confirm=True executes and returns {"s
 | `id_` | string | yes | Rule ID to attach the action group to. |
 | `ogroup` | string | yes | Numeric action group ID from pmg_action_objects_list to attach to the rule. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_action_detach`
 
@@ -12660,7 +11802,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to detach the action group from. |
 | `ogroup` | string | yes | Numeric action group ID currently attached to the rule to detach. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_action_groups_list`
 
@@ -12684,7 +11825,6 @@ id_: rule ID (e.g. '100') from pmg_ruledb_rules_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_actions_list`
 
@@ -12704,7 +11844,6 @@ id_: rule ID (e.g. '100') from pmg_ruledb_rules_list.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_create`
 
@@ -12720,17 +11859,16 @@ confirm=True executes and returns {"status": "ok", "result": <new rule ID assign
 | `name` | string | yes | Name for the new RuleDB rule. |
 | `priority` | integer | yes | Rule priority 0-100; lower numbers are evaluated with higher priority. |
 | `active` | boolean | no | Whether the rule is active on creation; defaults False since active rules affect live mail processing. (default: `false`) |
-| `direction` | integer (nullable) | no | Mail direction the rule applies to: 0=inbound, 1=outbound, 2=both. (default: `null`) |
-| `from_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'from' groups. (default: `null`) |
-| `from_invert` | boolean (nullable) | no | If True, invert the 'from' group match. (default: `null`) |
-| `to_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'to' groups. (default: `null`) |
-| `to_invert` | boolean (nullable) | no | If True, invert the 'to' group match. (default: `null`) |
-| `what_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'what' groups. (default: `null`) |
-| `what_invert` | boolean (nullable) | no | If True, invert the 'what' group match. (default: `null`) |
-| `when_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'when' groups. (default: `null`) |
-| `when_invert` | boolean (nullable) | no | If True, invert the 'when' group match. (default: `null`) |
+| `direction` | ['integer', 'null'] | no | Mail direction the rule applies to: 0=inbound, 1=outbound, 2=both. (default: `null`) |
+| `from_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'from' groups. (default: `null`) |
+| `from_invert` | ['boolean', 'null'] | no | If True, invert the 'from' group match. (default: `null`) |
+| `to_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'to' groups. (default: `null`) |
+| `to_invert` | ['boolean', 'null'] | no | If True, invert the 'to' group match. (default: `null`) |
+| `what_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'what' groups. (default: `null`) |
+| `what_invert` | ['boolean', 'null'] | no | If True, invert the 'what' group match. (default: `null`) |
+| `when_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'when' groups. (default: `null`) |
+| `when_invert` | ['boolean', 'null'] | no | If True, invert the 'when' group match. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_delete`
 
@@ -12744,7 +11882,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | --- | --- | --- | --- |
 | `id_` | string | yes | Rule ID (positive integer string, e.g. '100'). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_from_attach`
 
@@ -12759,7 +11896,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to attach the group to. |
 | `ogroup` | string | yes | Numeric 'who' group ID from pmg_who_groups_list to attach as the 'from' condition. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_from_detach`
 
@@ -12774,7 +11910,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to detach the group from. |
 | `ogroup` | string | yes | Numeric 'who' group ID currently attached as the 'from' condition to detach. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_from_list`
 
@@ -12786,7 +11921,6 @@ pmg_ruledb_rule_to_list for the 'to' side, and the what/when/actions counterpart
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_get`
 
@@ -12799,7 +11933,6 @@ its to/what/when/actions siblings.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_to_attach`
 
@@ -12814,7 +11947,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to attach the group to. |
 | `ogroup` | string | yes | Numeric 'who' group ID from pmg_who_groups_list to attach as the 'to' condition. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_to_detach`
 
@@ -12829,7 +11961,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to detach the group from. |
 | `ogroup` | string | yes | Numeric 'who' group ID currently attached as the 'to' condition to detach. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_to_list`
 
@@ -12841,7 +11972,6 @@ pmg_ruledb_rule_from_list for the 'from' side, and the what/when/actions counter
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_update`
 
@@ -12855,20 +11985,19 @@ attach/detach tools. Only non-None fields are sent. confirm=True executes and re
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Rule ID (positive integer string, e.g. '100'). |
-| `name` | string (nullable) | no | New rule name; omit to keep current value. (default: `null`) |
-| `priority` | integer (nullable) | no | New rule priority 0-100; lower numbers are evaluated with higher priority. (default: `null`) |
-| `active` | boolean (nullable) | no | Whether the rule is active; True begins live mail processing under this rule. (default: `null`) |
-| `direction` | integer (nullable) | no | Mail direction the rule applies to: 0=inbound, 1=outbound, 2=both. (default: `null`) |
-| `from_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'from' groups. (default: `null`) |
-| `from_invert` | boolean (nullable) | no | If True, invert the 'from' group match. (default: `null`) |
-| `to_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'to' groups. (default: `null`) |
-| `to_invert` | boolean (nullable) | no | If True, invert the 'to' group match. (default: `null`) |
-| `what_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'what' groups. (default: `null`) |
-| `what_invert` | boolean (nullable) | no | If True, invert the 'what' group match. (default: `null`) |
-| `when_and` | boolean (nullable) | no | AND (True) vs OR (False) logic across attached 'when' groups. (default: `null`) |
-| `when_invert` | boolean (nullable) | no | If True, invert the 'when' group match. (default: `null`) |
+| `name` | ['string', 'null'] | no | New rule name; omit to keep current value. (default: `null`) |
+| `priority` | ['integer', 'null'] | no | New rule priority 0-100; lower numbers are evaluated with higher priority. (default: `null`) |
+| `active` | ['boolean', 'null'] | no | Whether the rule is active; True begins live mail processing under this rule. (default: `null`) |
+| `direction` | ['integer', 'null'] | no | Mail direction the rule applies to: 0=inbound, 1=outbound, 2=both. (default: `null`) |
+| `from_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'from' groups. (default: `null`) |
+| `from_invert` | ['boolean', 'null'] | no | If True, invert the 'from' group match. (default: `null`) |
+| `to_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'to' groups. (default: `null`) |
+| `to_invert` | ['boolean', 'null'] | no | If True, invert the 'to' group match. (default: `null`) |
+| `what_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'what' groups. (default: `null`) |
+| `what_invert` | ['boolean', 'null'] | no | If True, invert the 'what' group match. (default: `null`) |
+| `when_and` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across attached 'when' groups. (default: `null`) |
+| `when_invert` | ['boolean', 'null'] | no | If True, invert the 'when' group match. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_what_attach`
 
@@ -12883,7 +12012,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to attach the group to. |
 | `ogroup` | string | yes | Numeric 'what' group ID from pmg_what_groups_list to attach as a content condition. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_what_detach`
 
@@ -12898,7 +12026,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to detach the group from. |
 | `ogroup` | string | yes | Numeric 'what' group ID currently attached as a content condition to detach. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_what_list`
 
@@ -12910,7 +12037,6 @@ pmg_ruledb_rule_when_list for the 'when' side, and the from/to/actions counterpa
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_when_attach`
 
@@ -12925,7 +12051,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to attach the group to. |
 | `ogroup` | string | yes | Numeric 'when' group ID from pmg_when_groups_list to attach as a timeframe condition. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_when_detach`
 
@@ -12940,7 +12065,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | `id_` | string | yes | Rule ID to detach the group from. |
 | `ogroup` | string | yes | Numeric 'when' group ID currently attached as a timeframe condition to detach. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rule_when_list`
 
@@ -12952,7 +12076,6 @@ pmg_ruledb_rule_what_list for the 'what' side, and the from/to/actions counterpa
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | RuleDB rule ID (positive integer string, e.g. '100'). |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_ruledb_rules_list`
 
@@ -12962,9 +12085,7 @@ Returns the full hydrated rule list as dicts, including from/to/what/when/action
 rule. For one rule use pmg_ruledb_rule_get; to detect drift without the full fetch use
 pmg_ruledb_digest.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_service_control`
 
@@ -12979,9 +12100,8 @@ executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, clamav, spamassassin. |
 | `action` | string | yes | Control action: start\|stop\|restart\|reload. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_service_status`
 
@@ -12994,8 +12114,7 @@ pmg_service_control to start/stop/restart/reload the service.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `service` | string | yes | PMG service name, e.g. postfix, pmgproxy, pmgdaemon, pmgmirror, pmgtunnel, pmg-smtp-filter, clamav, spamassassin. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
 
 #### `pmg_spam_config`
 
@@ -13004,9 +12123,7 @@ READ-ONLY: get PMG spam filter configuration. Needs PROXIMO_PMG_* config.
 Returns a dict of the current spam-filter settings (score thresholds, Bayes/AWL/Razor/RBL
 toggles, etc). Use pmg_spam_config_update to change them.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_spam_config_update`
 
@@ -13020,19 +12137,18 @@ pmg_spam_config. Dry-run returns a PLAN; confirm=True executes and returns {"sta
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `bounce_score` | integer (nullable) | no | Spam score threshold added for bounce/NDR-shaped messages; omit to leave unchanged. (default: `null`) |
-| `clamav_heuristic_score` | integer (nullable) | no | Spam score added when ClamAV heuristic detection fires; omit to leave unchanged. (default: `null`) |
-| `extract_text` | boolean (nullable) | no | Whether to extract text from attachments for spam scanning; omit to leave unchanged. (default: `null`) |
-| `languages` | string (nullable) | no | Space-separated language codes used for spam language-based scoring; omit to leave unchanged. (default: `null`) |
-| `maxspamsize` | integer (nullable) | no | Maximum message size in bytes scanned for spam; omit to leave unchanged. (default: `null`) |
-| `rbl_checks` | boolean (nullable) | no | Whether to enable RBL (realtime blocklist) checks; omit to leave unchanged. (default: `null`) |
-| `use_awl` | boolean (nullable) | no | Whether to enable the auto-whitelist; omit to leave unchanged. (default: `null`) |
-| `use_bayes` | boolean (nullable) | no | Whether to enable Bayesian spam classification; omit to leave unchanged. (default: `null`) |
-| `use_razor` | boolean (nullable) | no | Whether to enable Razor collaborative spam filtering; omit to leave unchanged. (default: `null`) |
-| `wl_bounce_relays` | string (nullable) | no | Whitelisted bounce-relay hosts, space-separated; omit to leave unchanged. (default: `null`) |
-| `delete` | string (nullable) | no | Comma-separated field names to reset to their PMG defaults. (default: `null`) |
+| `bounce_score` | ['integer', 'null'] | no | Spam score threshold added for bounce/NDR-shaped messages; omit to leave unchanged. (default: `null`) |
+| `clamav_heuristic_score` | ['integer', 'null'] | no | Spam score added when ClamAV heuristic detection fires; omit to leave unchanged. (default: `null`) |
+| `extract_text` | ['boolean', 'null'] | no | Whether to extract text from attachments for spam scanning; omit to leave unchanged. (default: `null`) |
+| `languages` | ['string', 'null'] | no | Space-separated language codes used for spam language-based scoring; omit to leave unchanged. (default: `null`) |
+| `maxspamsize` | ['integer', 'null'] | no | Maximum message size in bytes scanned for spam; omit to leave unchanged. (default: `null`) |
+| `rbl_checks` | ['boolean', 'null'] | no | Whether to enable RBL (realtime blocklist) checks; omit to leave unchanged. (default: `null`) |
+| `use_awl` | ['boolean', 'null'] | no | Whether to enable the auto-whitelist; omit to leave unchanged. (default: `null`) |
+| `use_bayes` | ['boolean', 'null'] | no | Whether to enable Bayesian spam classification; omit to leave unchanged. (default: `null`) |
+| `use_razor` | ['boolean', 'null'] | no | Whether to enable Razor collaborative spam filtering; omit to leave unchanged. (default: `null`) |
+| `wl_bounce_relays` | ['string', 'null'] | no | Whitelisted bounce-relay hosts, space-separated; omit to leave unchanged. (default: `null`) |
+| `delete` | ['string', 'null'] | no | Comma-separated field names to reset to their PMG defaults. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_contact`
 
@@ -13045,14 +12161,13 @@ pmg_statistics_receiver instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `filter_` | string (nullable) | no | Optional search string to filter contact addresses. (default: `null`) |
-| `orderby` | string (nullable) | no | Raw sort spec passed through to the PMG API — unconfirmed whether this endpoint accepts it (pmg_statistics_sender is confirmed to reject it). (default: `null`) |
-| `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
-| `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
-| `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `filter_` | ['string', 'null'] | no | Optional search string to filter contact addresses. (default: `null`) |
+| `orderby` | ['string', 'null'] | no | Raw sort spec passed through to the PMG API — unconfirmed whether this endpoint accepts it (pmg_statistics_sender is confirmed to reject it). (default: `null`) |
+| `day` | ['integer', 'null'] | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
+| `month` | ['integer', 'null'] | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
+| `year` | ['integer', 'null'] | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
 
 #### `pmg_statistics_detail`
 
@@ -13066,14 +12181,13 @@ pmg_statistics_sender/receiver. address + type_ are both REQUIRED.
 | --- | --- | --- | --- |
 | `address` | string | yes | Email address to get detail statistics for. |
 | `type_` | string | yes | Statistics type: contact\|sender\|receiver. |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `filter_` | string (nullable) | no | Optional search string to filter addresses. (default: `null`) |
-| `orderby` | string (nullable) | no | Raw sort spec passed through to the PMG API — unconfirmed whether this endpoint accepts it (pmg_statistics_sender is confirmed to reject it). (default: `null`) |
-| `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
-| `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
-| `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `filter_` | ['string', 'null'] | no | Optional search string to filter addresses. (default: `null`) |
+| `orderby` | ['string', 'null'] | no | Raw sort spec passed through to the PMG API — unconfirmed whether this endpoint accepts it (pmg_statistics_sender is confirmed to reject it). (default: `null`) |
+| `day` | ['integer', 'null'] | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
+| `month` | ['integer', 'null'] | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
+| `year` | ['integer', 'null'] | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
 
 #### `pmg_statistics_domains`
 
@@ -13085,9 +12199,8 @@ time-bucketed counts use pmg_statistics_mailcount. start/end map to starttime/en
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_statistics_mail`
 
@@ -13097,9 +12210,7 @@ PMG 9.1 live-verified: /statistics/mail returns today's aggregate counters
 (count_in, count_out, spam, virus, bytes, …). Always returns today's totals;
 for time-ranged data use pmg_statistics_mailcount instead.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_statistics_mailcount`
 
@@ -13110,10 +12221,9 @@ For today's single aggregate total use pmg_statistics_mail instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 | `timespan` | integer | no | Histogram bucket size in seconds, 3600-31622400 (default 3600 = 1 hour). (default: `3600`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_maildistribution`
 
@@ -13125,12 +12235,11 @@ Count for score 10 includes mails with spam score > 10 (PMG's own description).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
-| `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
-| `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `day` | ['integer', 'null'] | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
+| `month` | ['integer', 'null'] | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
+| `year` | ['integer', 'null'] | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
 
 #### `pmg_statistics_receiver`
 
@@ -13142,11 +12251,10 @@ pmg_statistics_sender.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `filter_` | string (nullable) | no | Optional search string to filter recipients. (default: `null`) |
-| `orderby` | string (nullable) | no | Raw sort spec passed through to the PMG API. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `filter_` | ['string', 'null'] | no | Optional search string to filter recipients. (default: `null`) |
+| `orderby` | ['string', 'null'] | no | Raw sort spec passed through to the PMG API. (default: `null`) |
 
 #### `pmg_statistics_recent`
 
@@ -13158,7 +12266,6 @@ pmg_statistics_mail instead.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `hours` | integer | no | Lookback window in hours, 1-24 (default 1). (default: `1`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_recentreceivers`
 
@@ -13171,7 +12278,6 @@ match-twins to pmg_statistics_receiver. For senders use pmg_statistics_recentsen
 | --- | --- | --- | --- |
 | `hours` | integer | no | Lookback window in hours, 1-24 (default 12). (default: `12`) |
 | `limit` | integer | no | Maximum number of receivers to return, 1-50 (default 5). (default: `5`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_recentsenders`
 
@@ -13184,7 +12290,6 @@ match-twins to pmg_statistics_sender. For receivers use pmg_statistics_recentrec
 | --- | --- | --- | --- |
 | `hours` | integer | no | Lookback window in hours, 1-24 (default 12). (default: `12`) |
 | `limit` | integer | no | Maximum number of senders to return, 1-50 (default 5). (default: `5`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_rejectcount`
 
@@ -13195,13 +12300,12 @@ counters, no address/free-text field. Twin of pmg_statistics_mailcount.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
-| `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
-| `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `day` | ['integer', 'null'] | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
+| `month` | ['integer', 'null'] | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
+| `year` | ['integer', 'null'] | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
 | `timespan` | integer | no | Histogram bucket size in seconds, 3600-31622400 (default 3600 = 1 hour). (default: `3600`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_statistics_sender`
 
@@ -13213,11 +12317,10 @@ per-recipient stats use pmg_statistics_receiver.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
-| `filter_` | string (nullable) | no | Optional search string to filter senders. (default: `null`) |
-| `orderby` | string (nullable) | no | Accepted for compatibility but ignored — PMG 9.1 rejects orderby on this endpoint. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `filter_` | ['string', 'null'] | no | Optional search string to filter senders. (default: `null`) |
+| `orderby` | ['string', 'null'] | no | Accepted for compatibility but ignored — PMG 9.1 rejects orderby on this endpoint. (default: `null`) |
 
 #### `pmg_statistics_spamscores`
 
@@ -13229,9 +12332,8 @@ messages use pmg_quarantine_spam instead. start/end map to starttime/endtime.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_statistics_virus`
 
@@ -13243,9 +12345,8 @@ quarantine entries use pmg_quarantine_virus instead. start/end map to starttime/
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `start` | integer (nullable) | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the stats window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the stats window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_tasks_list`
 
@@ -13256,16 +12357,15 @@ node's tasks use pve_tasks_list instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `start` | integer (nullable) | no | Pagination offset into the task list. (default: `null`) |
-| `limit` | integer (nullable) | no | Maximum tasks to return. (default: `null`) |
-| `userfilter` | string (nullable) | no | Filter tasks by the user that started them. (default: `null`) |
-| `errors` | boolean (nullable) | no | If True, return only failed tasks. (default: `null`) |
-| `typefilter` | string (nullable) | no | Filter tasks by task type. (default: `null`) |
-| `since` | integer (nullable) | no | Unix epoch: only tasks started at or after this time. (default: `null`) |
-| `until` | integer (nullable) | no | Unix epoch: only tasks started at or before this time. (default: `null`) |
-| `statusfilter` | string (nullable) | no | Filter tasks by status text. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Pagination offset into the task list. (default: `null`) |
+| `limit` | ['integer', 'null'] | no | Maximum tasks to return. (default: `null`) |
+| `userfilter` | ['string', 'null'] | no | Filter tasks by the user that started them. (default: `null`) |
+| `errors` | ['boolean', 'null'] | no | If True, return only failed tasks. (default: `null`) |
+| `typefilter` | ['string', 'null'] | no | Filter tasks by task type. (default: `null`) |
+| `since` | ['integer', 'null'] | no | Unix epoch: only tasks started at or after this time. (default: `null`) |
+| `until` | ['integer', 'null'] | no | Unix epoch: only tasks started at or before this time. (default: `null`) |
+| `statusfilter` | ['string', 'null'] | no | Filter tasks by status text. (default: `null`) |
 
 #### `pmg_tls_inbound_domains_create`
 
@@ -13281,7 +12381,6 @@ confirm=True executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `domain` | string | yes | Domain to require TLS on incoming connections for, e.g. 'example.com'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tls_inbound_domains_delete`
 
@@ -13298,7 +12397,6 @@ PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `domain` | string | yes | Domain to stop requiring TLS on incoming connections for. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tls_inbound_domains_list`
 
@@ -13308,9 +12406,7 @@ PROXIMO_PMG_* config.
 Returns a bare list of domain-name strings (schema-confirmed — NOT a list of dicts, unlike
 every sibling list in this family). Use pmg_tls_inbound_domains_create/_delete to manage it.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_tlspolicy_create`
 
@@ -13327,7 +12423,6 @@ PLAN; confirm=True executes and returns {"status": "ok", "result": ...}.
 | `destination` | string | yes | Destination (domain or next-hop) the TLS policy applies to. |
 | `policy` | string | yes | TLS policy value (PMG documents no closed enum here; Postfix conventions include e.g. none/may/encrypt/dane/secure/verify). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tlspolicy_delete`
 
@@ -13344,7 +12439,6 @@ if needed. Dry-run returns a PLAN; confirm=True executes and returns
 | --- | --- | --- | --- |
 | `destination` | string | yes | Destination (domain or next-hop) whose TLS policy entry to delete. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tlspolicy_get`
 
@@ -13355,7 +12449,6 @@ Returns {"destination": ..., "policy": ...}. Sibling single-item read of pmg_tls
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `destination` | string | yes | Destination (domain or next-hop, e.g. '[relay.example.com]:587') whose TLS policy to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tlspolicy_list`
 
@@ -13365,9 +12458,7 @@ PROXIMO_PMG_* config.
 Returns a list of {"destination": ..., "policy": ...} dicts. Use pmg_tlspolicy_create/
 pmg_tlspolicy_update/pmg_tlspolicy_delete to manage entries.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_tlspolicy_update`
 
@@ -13383,7 +12474,6 @@ enforcement for this destination. Dry-run returns a PLAN; confirm=True executes 
 | `destination` | string | yes | Destination (domain or next-hop) whose TLS policy to update. |
 | `policy` | string | yes | New TLS policy value. Required by this endpoint — a full replace. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_tracker_detail`
 
@@ -13395,10 +12485,9 @@ it is validated path-segment-safe (rejects '..', '/', control/whitespace chars).
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id_` | string | yes | Mail/queue tracker ID to fetch detail for. |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `start` | integer (nullable) | no | Unix epoch start of the tracker window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the tracker window; omit for no upper bound. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the tracker window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the tracker window; omit for no upper bound. (default: `null`) |
 
 #### `pmg_tracker_list`
 
@@ -13409,16 +12498,15 @@ pmg_tracker_detail for the full delivery trace of one message ID from this list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `node` | string (nullable) | no | PMG node name; defaults to the configured node. (default: `null`) |
-| `start` | integer (nullable) | no | Unix epoch start of the tracker window; omit for no lower bound. (default: `null`) |
-| `end` | integer (nullable) | no | Unix epoch end of the tracker window; omit for no upper bound. (default: `null`) |
-| `from_` | string (nullable) | no | Filter by envelope sender address. (default: `null`) |
-| `target` | string (nullable) | no | Filter by recipient address. (default: `null`) |
-| `xfilter` | string (nullable) | no | Free-text filter applied to tracker entries. (default: `null`) |
-| `ndr` | boolean (nullable) | no | If set, filter to (or exclude) non-delivery-report entries. (default: `null`) |
-| `greylist` | boolean (nullable) | no | If set, filter to (or exclude) greylisted entries. (default: `null`) |
+| `node` | ['string', 'null'] | no | PMG node name; defaults to the configured node. (default: `null`) |
+| `start` | ['integer', 'null'] | no | Unix epoch start of the tracker window; omit for no lower bound. (default: `null`) |
+| `end` | ['integer', 'null'] | no | Unix epoch end of the tracker window; omit for no upper bound. (default: `null`) |
+| `from_` | ['string', 'null'] | no | Filter by envelope sender address. (default: `null`) |
+| `target` | ['string', 'null'] | no | Filter by recipient address. (default: `null`) |
+| `xfilter` | ['string', 'null'] | no | Free-text filter applied to tracker entries. (default: `null`) |
+| `ndr` | ['boolean', 'null'] | no | If set, filter to (or exclude) non-delivery-report entries. (default: `null`) |
+| `greylist` | ['boolean', 'null'] | no | If set, filter to (or exclude) greylisted entries. (default: `null`) |
 | `limit` | integer | no | Maximum entries to return, 0-100000 (default 2000). (default: `2000`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_transport_create`
 
@@ -13432,12 +12520,11 @@ Additive — reverse with pmg_transport_delete. Overrides MX-based routing for t
 | --- | --- | --- | --- |
 | `domain` | string | yes | Destination domain the transport rule applies to. |
 | `host` | string | yes | Next-hop relay hostname or IP for mail to this domain. |
-| `comment` | string (nullable) | no | Optional free-text comment stored with the transport rule. (default: `null`) |
+| `comment` | ['string', 'null'] | no | Optional free-text comment stored with the transport rule. (default: `null`) |
 | `port` | integer | no | TCP port to connect to on the relay host, 1-65535 (default 25). (default: `25`) |
 | `protocol` | string | no | Transport protocol: smtp\|lmtp (default smtp). (default: `"smtp"`) |
 | `use_mx` | boolean | no | Whether to use MX lookup for the relay host (default True). (default: `true`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_transport_delete`
 
@@ -13452,7 +12539,6 @@ executes and returns {"status": "ok", "result": ...}.
 | --- | --- | --- | --- |
 | `domain` | string | yes | Destination domain whose transport rule should be deleted. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_transport_get`
 
@@ -13464,7 +12550,6 @@ pmg_transport_list. Use pmg_transport_update to change it.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | Destination domain whose transport rule to read. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_transport_list`
 
@@ -13473,9 +12558,7 @@ READ-ONLY: list mail transport map entries. Needs PROXIMO_PMG_* config.
 Returns a list of transport-rule dicts (domain/host/port/protocol/use_mx/comment). Use
 pmg_transport_create/pmg_transport_update/pmg_transport_delete to manage entries.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_transport_update`
 
@@ -13490,13 +12573,12 @@ and returns {"status": "ok", "result": ...}.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | yes | Destination domain whose transport rule to update. |
-| `host` | string (nullable) | no | New next-hop relay hostname or IP. Omit to leave unchanged. (default: `null`) |
-| `comment` | string (nullable) | no | New free-text comment. Omit to leave unchanged. (default: `null`) |
-| `port` | integer (nullable) | no | New TCP port, 1-65535. Omit to leave unchanged. (default: `null`) |
-| `protocol` | string (nullable) | no | New transport protocol: smtp\|lmtp. Omit to leave unchanged. (default: `null`) |
-| `use_mx` | boolean (nullable) | no | New MX-lookup setting. Omit to leave unchanged. (default: `null`) |
+| `host` | ['string', 'null'] | no | New next-hop relay hostname or IP. Omit to leave unchanged. (default: `null`) |
+| `comment` | ['string', 'null'] | no | New free-text comment. Omit to leave unchanged. (default: `null`) |
+| `port` | ['integer', 'null'] | no | New TCP port, 1-65535. Omit to leave unchanged. (default: `null`) |
+| `protocol` | ['string', 'null'] | no | New transport protocol: smtp\|lmtp. Omit to leave unchanged. (default: `null`) |
+| `use_mx` | ['boolean', 'null'] | no | New MX-lookup setting. Omit to leave unchanged. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_welcomelist_object_add`
 
@@ -13512,13 +12594,12 @@ ONE field matching type_ (see each param's description). confirm=True executes a
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `type_` | string | yes | Welcomelist object type: email\|receiver\|domain\|receiver_domain\|regex\|receiver_regex\|ip\|network. Plain families (email/domain/regex/ip/network) match the SENDER side; receiver_* families match the RECIPIENT side. NO ogroup — this plane is a flat global namespace, unlike ruledb who/what/when. |
-| `email` | string (nullable) | no | Email address to welcomelist; REQUIRED when type_='email' or 'receiver'. (default: `null`) |
-| `domain` | string (nullable) | no | DNS domain to welcomelist; REQUIRED when type_='domain' or 'receiver_domain'. (default: `null`) |
-| `regex` | string (nullable) | no | Email-address regex to welcomelist; REQUIRED when type_='regex' or 'receiver_regex'. (default: `null`) |
-| `ip` | string (nullable) | no | IP address to welcomelist; REQUIRED when type_='ip'. (default: `null`) |
-| `cidr` | string (nullable) | no | Network in CIDR notation to welcomelist; REQUIRED when type_='network'. (default: `null`) |
+| `email` | ['string', 'null'] | no | Email address to welcomelist; REQUIRED when type_='email' or 'receiver'. (default: `null`) |
+| `domain` | ['string', 'null'] | no | DNS domain to welcomelist; REQUIRED when type_='domain' or 'receiver_domain'. (default: `null`) |
+| `regex` | ['string', 'null'] | no | Email-address regex to welcomelist; REQUIRED when type_='regex' or 'receiver_regex'. (default: `null`) |
+| `ip` | ['string', 'null'] | no | IP address to welcomelist; REQUIRED when type_='ip'. (default: `null`) |
+| `cidr` | ['string', 'null'] | no | Network in CIDR notation to welcomelist; REQUIRED when type_='network'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_welcomelist_object_delete`
 
@@ -13538,7 +12619,6 @@ executes and returns {"status": "ok", "result": None}.
 | --- | --- | --- | --- |
 | `id_` | string | yes | Object ID (numeric string) from pmg_welcomelist_objects_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_welcomelist_object_get`
 
@@ -13552,7 +12632,6 @@ real response is presumably richer (the type-specific field itself), not asserte
 | --- | --- | --- | --- |
 | `type_` | string | yes | Welcomelist object type: email\|receiver\|domain\|receiver_domain\|regex\|receiver_regex\|ip\|network. Plain families (email/domain/regex/ip/network) match the SENDER side; receiver_* families match the RECIPIENT side. NO ogroup — this plane is a flat global namespace, unlike ruledb who/what/when. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_welcomelist_objects_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_welcomelist_object_update`
 
@@ -13569,13 +12648,12 @@ confirm=True executes and returns {"status": "ok", "result": None}.
 | --- | --- | --- | --- |
 | `type_` | string | yes | Welcomelist object type: email\|receiver\|domain\|receiver_domain\|regex\|receiver_regex\|ip\|network. Plain families (email/domain/regex/ip/network) match the SENDER side; receiver_* families match the RECIPIENT side. NO ogroup — this plane is a flat global namespace, unlike ruledb who/what/when. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_welcomelist_objects_list. |
-| `email` | string (nullable) | no | New email address; REQUIRED when type_='email' or 'receiver'. (default: `null`) |
-| `domain` | string (nullable) | no | New DNS domain; REQUIRED when type_='domain' or 'receiver_domain'. (default: `null`) |
-| `regex` | string (nullable) | no | New regex; REQUIRED when type_='regex' or 'receiver_regex'. (default: `null`) |
-| `ip` | string (nullable) | no | New IP address; REQUIRED when type_='ip'. (default: `null`) |
-| `cidr` | string (nullable) | no | New CIDR network; REQUIRED when type_='network'. (default: `null`) |
+| `email` | ['string', 'null'] | no | New email address; REQUIRED when type_='email' or 'receiver'. (default: `null`) |
+| `domain` | ['string', 'null'] | no | New DNS domain; REQUIRED when type_='domain' or 'receiver_domain'. (default: `null`) |
+| `regex` | ['string', 'null'] | no | New regex; REQUIRED when type_='regex' or 'receiver_regex'. (default: `null`) |
+| `ip` | ['string', 'null'] | no | New IP address; REQUIRED when type_='ip'. (default: `null`) |
+| `cidr` | ['string', 'null'] | no | New CIDR network; REQUIRED when type_='network'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_welcomelist_objects_list`
 
@@ -13587,9 +12665,7 @@ GLOBAL admin welcomelist, no owning mailbox. Schema types only {id: int} per ite
 field (Smoke-confirm) — use pmg_welcomelist_object_get with a candidate type_ to resolve one
 id to its typed content.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_what_group_create`
 
@@ -13602,11 +12678,10 @@ pmg_what_groups_list. Needs PROXIMO_PMG_* config. confirm=True executes and retu
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new 'what' object group. |
-| `info` | string (nullable) | no | Optional free-text description of the group. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description of the group. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_group_delete`
 
@@ -13620,7 +12695,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_group_get`
 
@@ -13632,7 +12706,6 @@ NOT the group name. Use pmg_what_group_objects to list the objects inside the gr
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'what' object group numeric ID (e.g. '2') from pmg_what_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_group_objects`
 
@@ -13644,7 +12717,6 @@ the group name. Use pmg_what_group_get for the group's own config (not its membe
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'what' object group numeric ID (e.g. '2') from pmg_what_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_group_update`
 
@@ -13658,12 +12730,11 @@ sent, others keep their current value. confirm=True executes and returns {"statu
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
-| `name` | string (nullable) | no | New name for the group; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `name` | ['string', 'null'] | no | New name for the group; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_groups_list`
 
@@ -13672,9 +12743,7 @@ READ-ONLY: list all PMG RuleDB 'what' object groups. Needs PROXIMO_PMG_* config.
 Returns a list of group dicts (id/name/comment). For 'who' or 'when' groups use
 pmg_who_groups_list / pmg_when_groups_list. Use pmg_what_group_get for one group's config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_what_object_add`
 
@@ -13689,15 +12758,14 @@ mail matching immediately. confirm=True executes and returns {"status": "ok",
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
 | `type_` | string | yes | Object type: contenttype\|matchfield\|spamfilter\|virusfilter\|filenamefilter\|archivefilter\|archivefilenamefilter. |
-| `contenttype` | string (nullable) | no | MIME content type to match; used for type_='contenttype'/'archivefilter'. (default: `null`) |
-| `only_content` | boolean (nullable) | no | Match content only, not filename; maps to API param 'only-content'. (default: `null`) |
-| `field` | string (nullable) | no | Mail header field name to match; used for type_='matchfield'. (default: `null`) |
-| `value` | string (nullable) | no | Value/pattern to match against the field; used for type_='matchfield'. (default: `null`) |
-| `top_part_only` | boolean (nullable) | no | Restrict match to the top MIME part only; maps to API param 'top-part-only'. (default: `null`) |
-| `spamlevel` | integer (nullable) | no | Spam score threshold; used for type_='spamfilter'. (default: `null`) |
-| `filename` | string (nullable) | no | Filename pattern to match; used for type_='filenamefilter'/'archivefilenamefilter'. (default: `null`) |
+| `contenttype` | ['string', 'null'] | no | MIME content type to match; used for type_='contenttype'/'archivefilter'. (default: `null`) |
+| `only_content` | ['boolean', 'null'] | no | Match content only, not filename; maps to API param 'only-content'. (default: `null`) |
+| `field` | ['string', 'null'] | no | Mail header field name to match; used for type_='matchfield'. (default: `null`) |
+| `value` | ['string', 'null'] | no | Value/pattern to match against the field; used for type_='matchfield'. (default: `null`) |
+| `top_part_only` | ['boolean', 'null'] | no | Restrict match to the top MIME part only; maps to API param 'top-part-only'. (default: `null`) |
+| `spamlevel` | ['integer', 'null'] | no | Spam score threshold; used for type_='spamfilter'. (default: `null`) |
+| `filename` | ['string', 'null'] | no | Filename pattern to match; used for type_='filenamefilter'/'archivefilenamefilter'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_object_delete`
 
@@ -13712,7 +12780,6 @@ pmg_what_group_delete. confirm=True executes and returns {"status": "ok",
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_what_group_objects. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_object_get`
 
@@ -13728,7 +12795,6 @@ pmg_what_groups_list / pmg_what_group_objects.
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
 | `type_` | string | yes | Object type: contenttype\|matchfield\|spamfilter\|virusfilter\|filenamefilter\|archivefilter\|archivefilenamefilter. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_what_group_objects. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_what_object_update`
 
@@ -13743,15 +12809,14 @@ non-None fields are sent, others keep their current value. confirm=True executes
 | `ogroup` | string | yes | Numeric 'what' object group ID (e.g. '8') from pmg_what_groups_list. |
 | `type_` | string | yes | Object type: contenttype\|matchfield\|spamfilter\|virusfilter\|filenamefilter\|archivefilter\|archivefilenamefilter. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_what_group_objects. |
-| `contenttype` | string (nullable) | no | New MIME content type; used for type_='contenttype'/'archivefilter'. (default: `null`) |
-| `only_content` | boolean (nullable) | no | Match content only, not filename; maps to API param 'only-content'. (default: `null`) |
-| `field` | string (nullable) | no | Mail header field name to match; used for type_='matchfield'. (default: `null`) |
-| `value` | string (nullable) | no | Value/pattern to match against the field; used for type_='matchfield'. (default: `null`) |
-| `top_part_only` | boolean (nullable) | no | Restrict match to the top MIME part only; maps to API param 'top-part-only'. (default: `null`) |
-| `spamlevel` | integer (nullable) | no | New spam score threshold; used for type_='spamfilter'. (default: `null`) |
-| `filename` | string (nullable) | no | New filename pattern; used for type_='filenamefilter'/'archivefilenamefilter'. (default: `null`) |
+| `contenttype` | ['string', 'null'] | no | New MIME content type; used for type_='contenttype'/'archivefilter'. (default: `null`) |
+| `only_content` | ['boolean', 'null'] | no | Match content only, not filename; maps to API param 'only-content'. (default: `null`) |
+| `field` | ['string', 'null'] | no | Mail header field name to match; used for type_='matchfield'. (default: `null`) |
+| `value` | ['string', 'null'] | no | Value/pattern to match against the field; used for type_='matchfield'. (default: `null`) |
+| `top_part_only` | ['boolean', 'null'] | no | Restrict match to the top MIME part only; maps to API param 'top-part-only'. (default: `null`) |
+| `spamlevel` | ['integer', 'null'] | no | New spam score threshold; used for type_='spamfilter'. (default: `null`) |
+| `filename` | ['string', 'null'] | no | New filename pattern; used for type_='filenamefilter'/'archivefilenamefilter'. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_group_create`
 
@@ -13764,11 +12829,10 @@ with pmg_when_groups_list. Needs PROXIMO_PMG_* config. confirm=True executes and
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new 'when' object group. |
-| `info` | string (nullable) | no | Optional free-text description of the group. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description of the group. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_group_delete`
 
@@ -13782,7 +12846,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'when' object group ID (e.g. '4') from pmg_when_groups_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_group_get`
 
@@ -13794,7 +12857,6 @@ NOT the group name. Use pmg_when_group_objects to list the objects inside the gr
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'when' object group numeric ID (e.g. '2') from pmg_when_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_group_objects`
 
@@ -13806,7 +12868,6 @@ the group name. Use pmg_when_group_get for the group's own config (not its membe
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'when' object group numeric ID (e.g. '2') from pmg_when_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_group_update`
 
@@ -13820,12 +12881,11 @@ sent, others keep their current value. confirm=True executes and returns {"statu
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'when' object group ID (e.g. '4') from pmg_when_groups_list. |
-| `name` | string (nullable) | no | New name for the group; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `name` | ['string', 'null'] | no | New name for the group; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_groups_list`
 
@@ -13834,9 +12894,7 @@ READ-ONLY: list all PMG RuleDB 'when' object groups. Needs PROXIMO_PMG_* config.
 Returns a list of group dicts (id/name/comment). For 'who' or 'what' groups use
 pmg_who_groups_list / pmg_what_groups_list. Use pmg_when_group_get for one group's config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_when_object_add`
 
@@ -13852,7 +12910,6 @@ pmg_when_group_objects. confirm=True executes and returns {"status": "ok",
 | `start` | string | yes | Timeframe start time in H:i format (e.g. '08:00'). |
 | `end` | string | yes | Timeframe end time in H:i format (e.g. '17:00'). |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_object_delete`
 
@@ -13867,7 +12924,6 @@ pmg_when_group_delete. confirm=True executes and returns {"status": "ok",
 | `ogroup` | string | yes | Numeric 'when' object group ID (e.g. '4') from pmg_when_groups_list. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_when_group_objects. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_object_get`
 
@@ -13883,7 +12939,6 @@ pmg_when_group_objects.
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'when' object group ID (e.g. '4') from pmg_when_groups_list. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_when_group_objects. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_when_object_update`
 
@@ -13900,7 +12955,6 @@ pmg_when_object_add. confirm=True executes and returns {"status": "ok",
 | `start` | string | yes | New timeframe start time in H:i format (e.g. '08:00'); required, PMG rejects partial updates. |
 | `end` | string | yes | New timeframe end time in H:i format (e.g. '17:00'); required, PMG rejects partial updates. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_group_create`
 
@@ -13913,11 +12967,10 @@ pmg_who_groups_list. Needs PROXIMO_PMG_* config. confirm=True executes and retur
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Name for the new 'who' object group. |
-| `info` | string (nullable) | no | Optional free-text description of the group. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `info` | ['string', 'null'] | no | Optional free-text description of the group. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_group_delete`
 
@@ -13931,7 +12984,6 @@ confirm=True executes and returns {"status": "ok", "result": <PMG's raw API resp
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_group_get`
 
@@ -13943,7 +12995,6 @@ NOT the group name. Use pmg_who_group_objects to list the objects inside the gro
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'who' object group numeric ID (e.g. '2') from pmg_who_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_group_objects`
 
@@ -13955,7 +13006,6 @@ the group name. Use pmg_who_group_get for the group's own config (not its member
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | 'who' object group numeric ID (e.g. '2') from pmg_who_groups_list — not the group name. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_group_update`
 
@@ -13969,12 +13019,11 @@ sent, others keep their current value. confirm=True executes and returns {"statu
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
-| `name` | string (nullable) | no | New name for the group; omit to keep current value. (default: `null`) |
-| `info` | string (nullable) | no | New free-text description; omit to keep current value. (default: `null`) |
-| `and_` | boolean (nullable) | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
-| `invert` | boolean (nullable) | no | If True, invert the group's match result. (default: `null`) |
+| `name` | ['string', 'null'] | no | New name for the group; omit to keep current value. (default: `null`) |
+| `info` | ['string', 'null'] | no | New free-text description; omit to keep current value. (default: `null`) |
+| `and_` | ['boolean', 'null'] | no | AND (True) vs OR (False) logic across group members; maps to API param 'and'. (default: `null`) |
+| `invert` | ['boolean', 'null'] | no | If True, invert the group's match result. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_groups_list`
 
@@ -13983,9 +13032,7 @@ READ-ONLY: list all PMG RuleDB 'who' object groups. Needs PROXIMO_PMG_* config.
 Returns a list of group dicts (id/name/comment). For 'what' or 'when' groups use
 pmg_what_groups_list / pmg_when_groups_list. Use pmg_who_group_get for one group's config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pmg_who_object_add`
 
@@ -14000,17 +13047,16 @@ mail matching immediately. confirm=True executes and returns {"status": "ok",
 | --- | --- | --- | --- |
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
 | `type_` | string | yes | Object type: email\|domain\|regex\|ip\|network\|ldap\|ldapuser — selects which sub-path/fields apply. |
-| `email` | string (nullable) | no | Email address to match; required when type_='email'. (default: `null`) |
-| `domain` | string (nullable) | no | Domain to match; required when type_='domain'. (default: `null`) |
-| `regex` | string (nullable) | no | Regex pattern to match; required when type_='regex'. (default: `null`) |
-| `ip` | string (nullable) | no | IP address to match; required when type_='ip'. (default: `null`) |
-| `cidr` | string (nullable) | no | CIDR network to match; required when type_='network'. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP lookup mode; used when type_='ldap'. (default: `null`) |
-| `profile` | string (nullable) | no | LDAP profile name; used for type_='ldap'; REQUIRED (with account) when type_='ldapuser'. (default: `null`) |
-| `group` | string (nullable) | no | LDAP group name; used when type_='ldap'. (default: `null`) |
-| `account` | string (nullable) | no | LDAP user account name; required when type_='ldapuser' (Wave 8a). (default: `null`) |
+| `email` | ['string', 'null'] | no | Email address to match; required when type_='email'. (default: `null`) |
+| `domain` | ['string', 'null'] | no | Domain to match; required when type_='domain'. (default: `null`) |
+| `regex` | ['string', 'null'] | no | Regex pattern to match; required when type_='regex'. (default: `null`) |
+| `ip` | ['string', 'null'] | no | IP address to match; required when type_='ip'. (default: `null`) |
+| `cidr` | ['string', 'null'] | no | CIDR network to match; required when type_='network'. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP lookup mode; used when type_='ldap'. (default: `null`) |
+| `profile` | ['string', 'null'] | no | LDAP profile name; used for type_='ldap'; REQUIRED (with account) when type_='ldapuser'. (default: `null`) |
+| `group` | ['string', 'null'] | no | LDAP group name; used when type_='ldap'. (default: `null`) |
+| `account` | ['string', 'null'] | no | LDAP user account name; required when type_='ldapuser' (Wave 8a). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_object_delete`
 
@@ -14025,7 +13071,6 @@ pmg_who_group_delete. confirm=True executes and returns {"status": "ok",
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_who_group_objects. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_object_get`
 
@@ -14041,7 +13086,6 @@ numeric ID strings from pmg_who_groups_list / pmg_who_group_objects.
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
 | `type_` | string | yes | Object type: email\|domain\|regex\|ip\|network\|ldap\|ldapuser — selects which sub-path applies. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_who_group_objects. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pmg_who_object_update`
 
@@ -14056,17 +13100,16 @@ non-None fields are sent, others keep their current value. confirm=True executes
 | `ogroup` | string | yes | Numeric 'who' object group ID (e.g. '2') from pmg_who_groups_list. |
 | `type_` | string | yes | Object type: email\|domain\|regex\|ip\|network\|ldap\|ldapuser — selects which sub-path/fields apply. |
 | `id_` | string | yes | Object ID (numeric string) from pmg_who_group_objects. |
-| `email` | string (nullable) | no | New email address; used when type_='email'. (default: `null`) |
-| `domain` | string (nullable) | no | New domain; used when type_='domain'. (default: `null`) |
-| `regex` | string (nullable) | no | New regex pattern; used when type_='regex'. (default: `null`) |
-| `ip` | string (nullable) | no | New IP address; used when type_='ip'. (default: `null`) |
-| `cidr` | string (nullable) | no | New CIDR network; used when type_='network'. (default: `null`) |
-| `mode` | string (nullable) | no | LDAP lookup mode; used when type_='ldap'. (default: `null`) |
-| `profile` | string (nullable) | no | LDAP profile name; used for type_='ldap'; REQUIRED (with account) when type_='ldapuser'. (default: `null`) |
-| `group` | string (nullable) | no | LDAP group name; used when type_='ldap'. (default: `null`) |
-| `account` | string (nullable) | no | New LDAP user account name; used when type_='ldapuser' (Wave 8a). (default: `null`) |
+| `email` | ['string', 'null'] | no | New email address; used when type_='email'. (default: `null`) |
+| `domain` | ['string', 'null'] | no | New domain; used when type_='domain'. (default: `null`) |
+| `regex` | ['string', 'null'] | no | New regex pattern; used when type_='regex'. (default: `null`) |
+| `ip` | ['string', 'null'] | no | New IP address; used when type_='ip'. (default: `null`) |
+| `cidr` | ['string', 'null'] | no | New CIDR network; used when type_='network'. (default: `null`) |
+| `mode` | ['string', 'null'] | no | LDAP lookup mode; used when type_='ldap'. (default: `null`) |
+| `profile` | ['string', 'null'] | no | LDAP profile name; used for type_='ldap'; REQUIRED (with account) when type_='ldapuser'. (default: `null`) |
+| `group` | ['string', 'null'] | no | LDAP group name; used when type_='ldap'. (default: `null`) |
+| `account` | ['string', 'null'] | no | New LDAP user account name; used when type_='ldapuser' (Wave 8a). (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; True executes the mutation. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 ## Proxmox Datacenter Manager (PDM)
 
@@ -14080,9 +13123,8 @@ pve_acl_list. Needs PROXIMO_PDM_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string (nullable) | no | Optional ACL path filter, e.g. '/'; omit to list all entries. (default: `null`) |
+| `path` | ['string', 'null'] | no | Optional ACL path filter, e.g. '/'; omit to list all entries. (default: `null`) |
 | `exact` | boolean | no | If true, match the given path exactly rather than including sub-paths. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_node_status`
 
@@ -14095,7 +13137,6 @@ node's status instead, use pve_node_status. Needs PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PDM node name; PDM is single-node so this defaults to 'localhost'. (default: `"localhost"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pbs_datastores_list`
 
@@ -14108,7 +13149,6 @@ use pbs_datastores_list. Needs PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PBS remote name, from pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pbs_remote_status`
 
@@ -14121,7 +13161,6 @@ datastores, use pdm_pbs_datastores_list. Needs PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PBS remote name, from pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pbs_snapshots_list`
 
@@ -14136,8 +13175,7 @@ directly without PDM, use pbs_snapshots_list. Needs PROXIMO_PDM_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PBS remote name, from pdm_remotes_list. |
 | `datastore` | string | yes | PBS datastore name on the remote to list snapshots from. |
-| `ns` | string (nullable) | no | Optional PBS namespace filter; omit to use the default namespace. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `ns` | ['string', 'null'] | no | Optional PBS namespace filter; omit to use the default namespace. (default: `null`) |
 
 #### `pdm_ping`
 
@@ -14147,9 +13185,7 @@ No state change. Returns the string 'pong' on success; raises on connection/auth
 For version details instead of a bare health check, use pdm_version. Needs PROXIMO_PDM_*
 config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_pve_cluster_status`
 
@@ -14162,7 +13198,6 @@ PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_config`
 
@@ -14176,10 +13211,9 @@ directly without PDM, use pve_guest_config_get. Needs PROXIMO_PDM_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
 | `vmid` | string | yes | Numeric CT ID on the remote. |
-| `node` | string (nullable) | no | Optional PVE node name; not required for PDM to resolve the container. (default: `null`) |
-| `snapshot` | string (nullable) | no | Optional snapshot name to read config from instead of the live config. (default: `null`) |
+| `node` | ['string', 'null'] | no | Optional PVE node name; not required for PDM to resolve the container. (default: `null`) |
+| `snapshot` | ['string', 'null'] | no | Optional snapshot name to read config from instead of the live config. (default: `null`) |
 | `state` | string | no | PDM config-state selector, required by the PDM API; 'active' returns the current config. (default: `"active"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_list`
 
@@ -14193,8 +13227,7 @@ to query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PD
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
-| `node` | string (nullable) | no | Optional PVE node name to restrict the listing to; omit to list cluster-wide. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Optional PVE node name to restrict the listing to; omit to list cluster-wide. (default: `null`) |
 
 #### `pdm_pve_lxc_migrate`
 
@@ -14215,7 +13248,6 @@ wired PDM remote's token to permit migration (VM.Migrate).
 | `target` | string | yes | Destination node name within the same remote's cluster. |
 | `online` | boolean | no | True attempts online (restart) migration — real downtime for LXC; else the container must be stopped. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True submits it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_power`
 
@@ -14230,7 +13262,6 @@ pve_guest_power. Dry-run by default (PLAN); confirm=True to submit. Task-backed 
 | `vmid` | string | yes | Numeric CTID of the target container, as a string. |
 | `action` | string | yes | Power action: 'start', 'stop', or 'shutdown'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_remote_migrate`
 
@@ -14249,11 +13280,10 @@ delete=True removes the source after a successful move (irreversible). Dry-run b
 | `target_remote` | string | yes | Destination PDM-registered remote (a different datacenter). |
 | `target_bridge` | string | yes | Source-to-target network bridge mapping, e.g. 'vmbr0:vmbr0'. |
 | `target_storage` | string | yes | Source-to-target storage mapping, e.g. 'local-lvm:local-lvm'. |
-| `target_vmid` | string (nullable) | no | CTID on the destination; omit to keep same CTID. (default: `null`) |
+| `target_vmid` | ['string', 'null'] | no | CTID on the destination; omit to keep same CTID. (default: `null`) |
 | `online` | boolean | no | True attempts online (restart) migration — real downtime for LXC; else the container must be stopped. (default: `false`) |
 | `delete` | boolean | no | True deletes container after successful move (destructive). (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True submits it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_snapshot_create`
 
@@ -14268,9 +13298,8 @@ Dry-run by default (PLAN); confirm=True creates it and returns the Proxmox task 
 | `remote` | string | yes | PDM-registered remote (Proxmox cluster) hosting the container. |
 | `vmid` | string | yes | Numeric CTID of the target container, as a string. |
 | `snapname` | string | yes | Name to give the new snapshot. |
-| `description` | string (nullable) | no | Optional free-text note stored with the snapshot. (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text note stored with the snapshot. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True creates it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_snapshot_delete`
 
@@ -14287,7 +13316,6 @@ returns a PDM task reference (track with pdm_tasks_list; pve_task_status cannot 
 | `vmid` | string | yes | Numeric CTID of the target container, as a string. |
 | `snapname` | string | yes | Name of the snapshot to delete. |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True deletes it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_lxc_snapshot_rollback`
 
@@ -14304,7 +13332,6 @@ rollback. Dry-run by default (PLAN); confirm=True submits and returns the Proxmo
 | `vmid` | string | yes | Numeric CTID of the target container, as a string. |
 | `snapname` | string | yes | Name of the snapshot to roll back to. |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True runs it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_node_list`
 
@@ -14316,7 +13343,6 @@ No state change. Returns a list of dicts shaped like PVE's /nodes endpoint (live
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_config`
 
@@ -14330,10 +13356,9 @@ directly without PDM, use pve_guest_config_get. Needs PROXIMO_PDM_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
 | `vmid` | string | yes | Numeric VM ID on the remote. |
-| `node` | string (nullable) | no | Optional PVE node name; not required for PDM to resolve the VM. (default: `null`) |
-| `snapshot` | string (nullable) | no | Optional snapshot name to read config from instead of the live config. (default: `null`) |
+| `node` | ['string', 'null'] | no | Optional PVE node name; not required for PDM to resolve the VM. (default: `null`) |
+| `snapshot` | ['string', 'null'] | no | Optional snapshot name to read config from instead of the live config. (default: `null`) |
 | `state` | string | no | PDM config-state selector, required by the PDM API; 'active' returns the current config. (default: `"active"`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_list`
 
@@ -14347,8 +13372,7 @@ PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
-| `node` | string (nullable) | no | Optional PVE node name to restrict the listing to; omit to list cluster-wide. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | Optional PVE node name to restrict the listing to; omit to list cluster-wide. (default: `null`) |
 
 #### `pdm_pve_qemu_migrate`
 
@@ -14366,7 +13390,6 @@ online=True migrates it running; the default requires it stopped first. Dry-run 
 | `target` | string | yes | Destination node name within the same remote's cluster. |
 | `online` | boolean | no | True live-migrates the VM; else it must be stopped. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True submits it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_power`
 
@@ -14382,7 +13405,6 @@ recorded to the ledger. Re-call with confirm=True to submit. Task-backed → sta
 | `vmid` | string | yes | Numeric VMID of the target VM, as a string. |
 | `action` | string | yes | Power action: 'start', 'stop', 'shutdown', or 'resume'. |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_remote_migrate`
 
@@ -14400,11 +13422,10 @@ delete=True removes the source VM after a successful move (irreversible). Dry-ru
 | `target_remote` | string | yes | Destination PDM-registered remote (a different datacenter). |
 | `target_bridge` | string | yes | Source-to-target network bridge mapping, e.g. 'vmbr0:vmbr0'. |
 | `target_storage` | string | yes | Source-to-target storage mapping, e.g. 'local-lvm:local-lvm'. |
-| `target_vmid` | string (nullable) | no | VMID on the destination; omit to keep same VMID. (default: `null`) |
+| `target_vmid` | ['string', 'null'] | no | VMID on the destination; omit to keep same VMID. (default: `null`) |
 | `online` | boolean | no | True live-migrates the VM; else it must be stopped. (default: `false`) |
 | `delete` | boolean | no | True deletes source VM after successful move (irreversible). (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True submits it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_snapshot_create`
 
@@ -14419,10 +13440,9 @@ Dry-run by default (PLAN); confirm=True creates it and returns the Proxmox task 
 | `remote` | string | yes | PDM-registered remote (Proxmox cluster) hosting the VM. |
 | `vmid` | string | yes | Numeric VMID of the target VM, as a string. |
 | `snapname` | string | yes | Name to give the new snapshot. |
-| `description` | string (nullable) | no | Optional free-text note stored with the snapshot. (default: `null`) |
+| `description` | ['string', 'null'] | no | Optional free-text note stored with the snapshot. (default: `null`) |
 | `vmstate` | boolean | no | True includes the VM's RAM state (larger, slower snapshot). (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True creates it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_snapshot_delete`
 
@@ -14439,7 +13459,6 @@ returns a PDM task reference (track with pdm_tasks_list; pve_task_status cannot 
 | `vmid` | string | yes | Numeric VMID of the target VM, as a string. |
 | `snapname` | string | yes | Name of the snapshot to delete. |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True deletes it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_qemu_snapshot_rollback`
 
@@ -14456,7 +13475,6 @@ rollback. Dry-run by default (PLAN); confirm=True submits and returns the Proxmo
 | `vmid` | string | yes | Numeric VMID of the target VM, as a string. |
 | `snapname` | string | yes | Name of the snapshot to roll back to. |
 | `confirm` | boolean | no | False (default) returns a PLAN only; True runs it. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_pve_resources`
 
@@ -14469,8 +13487,7 @@ cluster directly without PDM, use pve_cluster_resources. Needs PROXIMO_PDM_* con
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote` | string | yes | PDM-registered PVE remote name, from pdm_remotes_list. |
-| `kind` | string (nullable) | no | Optional resource-type filter, e.g. 'vm', 'storage', 'node', 'sdn'. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `kind` | ['string', 'null'] | no | Optional resource-type filter, e.g. 'vm', 'storage', 'node', 'sdn'. (default: `null`) |
 
 #### `pdm_remote_config_get`
 
@@ -14483,7 +13500,6 @@ PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote_id` | string | yes | Remote name as shown in pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_remote_version`
 
@@ -14495,7 +13511,6 @@ remotes first, use pdm_remotes_list. Needs PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `remote_id` | string | yes | Remote name as shown in pdm_remotes_list. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_remotes_list`
 
@@ -14505,9 +13520,7 @@ No state change. Returns a list of remote dicts; credential-shaped keys (token/p
 are stripped before returning. For one remote's version or config use pdm_remote_version /
 pdm_remote_config_get. Needs PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_resources_list`
 
@@ -14517,9 +13530,7 @@ No state change. Returns a flat list of resource dicts. For counters instead of 
 list, use pdm_resources_status; to scope to one remote, use pdm_pve_resources. Needs
 PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_resources_status`
 
@@ -14529,9 +13540,7 @@ across all PDM-registered remotes.
 No state change. Returns a dict of counters. For the underlying per-resource list, use
 pdm_resources_list. Needs PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_roles_list`
 
@@ -14540,9 +13549,7 @@ READ-ONLY: list PDM's own roles and their privileges (not a managed remote's rol
 No state change. Returns a list of role dicts. For a managed PVE cluster's roles instead of
 PDM's own, use pve_roles_list. Needs PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_tasks_list`
 
@@ -14552,9 +13559,7 @@ registered remotes.
 No state change. Returns a list of task dicts. For a target remote's own task list directly
 (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 #### `pdm_users_list`
 
@@ -14567,7 +13572,6 @@ users instead of PDM's own, use pve_users_list. Needs PROXIMO_PDM_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `include_tokens` | boolean | no | If true, include API token entries alongside user accounts. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `pdm_version`
 
@@ -14576,9 +13580,7 @@ READ-ONLY: get the PDM appliance's own version info.
 No state change. Returns a dict with release, repoid, and version. For a lightweight health
 check instead, use pdm_ping. Needs PROXIMO_PDM_* config.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+_No parameters._
 
 ## Container exec (opt-in)
 
@@ -14596,8 +13598,7 @@ evidence use pve_diagnose.
 | --- | --- | --- | --- |
 | `ctid` | string | yes | Numeric CTID of the LXC container to diagnose. |
 | `kind` | string | no | Guest type; only `lxc` is meaningful here since diagnostics are container-specific. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the container runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the container runs on. Omit to resolve it automatically from the cluster. (default: `null`) |
 
 #### `ct_exec`
 
@@ -14618,7 +13619,6 @@ result carries an `undo_point` you can revert with pve_rollback.
 | `command` | array<string> | yes | Argv list to run inside the container (not a shell string). |
 | `snapshot` | boolean | no | Take a fail-closed auto-undo snapshot before running. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; true executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `ct_logs`
 
@@ -14633,7 +13633,6 @@ for an arbitrary in-container command use ct_exec.
 | `ctid` | string | yes | Numeric CTID of the LXC container to read logs from. |
 | `unit` | string | yes | Name of the systemd unit to tail journalctl for (e.g. `nginx.service`). |
 | `lines` | integer | no | Number of most-recent log lines to return. (default: `50`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `ct_psql`
 
@@ -14653,7 +13652,6 @@ SQL is NOT run (fail-closed). On success the result carries an `undo_point` (rev
 | `db` | string | no | Target database name. (default: `"postgres"`) |
 | `snapshot` | boolean | no | Take a fail-closed auto-undo snapshot before running. (default: `false`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN; true executes. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 ## Core / trust spine
 
@@ -14667,7 +13665,7 @@ alone can't see those. Falls back to PROXIMO_AUDIT_EXPECTED_HEAD when omitted.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `expected_head` | string (nullable) | no | 64-char hex head() value pinned off-box; verifying against it also catches tail truncation, a forged tail-append, or a full ledger replacement. Omit to fall back to PROXIMO_AUDIT_EXPECTED_HEAD. (default: `null`) |
+| `expected_head` | ['string', 'null'] | no | 64-char hex head() value pinned off-box; verifying against it also catches tail truncation, a forged tail-append, or a full ledger replacement. Omit to fall back to PROXIMO_AUDIT_EXPECTED_HEAD. (default: `null`) |
 
 #### `proximo_baseline`
 
@@ -14685,10 +13683,9 @@ point-in-time state use pve_guest_status; for raw series use pve_node_rrddata (n
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID of the guest — VMID for a QEMU VM or CTID for an LXC container. |
 | `kind` | string | no | Guest type: `lxc` for a container or `qemu` for a VM. (default: `"lxc"`) |
-| `node` | string (nullable) | no | PVE node the guest runs on. Omit to use the configured default node. (default: `null`) |
+| `node` | ['string', 'null'] | no | PVE node the guest runs on. Omit to use the configured default node. (default: `null`) |
 | `timeframe` | string | no | Rolling RRD window the baseline covers, ENDING NOW: `hour`, `day`, `week` (default), `month`, or `year`. `day` is the last ~24 hours, NOT the calendar day; a specific date is not available. (default: `"week"`) |
 | `refresh` | boolean | no | Set `true` to pull fresh rrddata and recompute; default serves the stored rollup when one exists. (default: `false`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `proximo_recall`
 
@@ -14704,10 +13701,9 @@ and rebuildable. For live state use pve_list_guests / pve_cluster_resources.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `since` | string (nullable) | no | Optional change window: ISO8601 (`2026-07-29T00:00:00`) or relative (`24h`, `7d`). Adds appeared / status_changed / not_seen_since diffs. (default: `null`) |
+| `since` | ['string', 'null'] | no | Optional change window: ISO8601 (`2026-07-29T00:00:00`) or relative (`24h`, `7d`). Adds appeared / status_changed / not_seen_since diffs. (default: `null`) |
 | `detail` | string | no | Row depth: `summary` (counts only), `lean` (default: identity + status), `full` (timestamps, prev_status). (default: `"lean"`) |
 | `journal` | integer | no | Include the newest N diagnosis-journal entries (pve_diagnose / ct_diagnose / pve_doctor digests over time). 0 (default) omits the journal; `since` also windows it. (default: `0`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
 
 #### `proximo_wiki`
 
@@ -14725,8 +13721,7 @@ the contract, never content). For live estate state use pve_list_guests / proxim
 | --- | --- | --- | --- |
 | `query` | string | yes | What you want to know, in plain words (`zfs pool won't import after reboot`). Terms are matched independently and ranked; punctuation and quotes are safe. |
 | `k` | integer | no | How many hits to return (default 5, capped at 25). `matched` always reports the FULL match count regardless of this. (default: `5`) |
-| `source` | string (nullable) | no | Restrict to one corpus: `refdocs` (Proxmox reference docs), `wiki` (Proxmox wiki articles), or `forum` (solved forum threads). Omit to search all three. (default: `null`) |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |
+| `source` | ['string', 'null'] | no | Restrict to one corpus: `refdocs` (Proxmox reference docs), `wiki` (Proxmox wiki articles), or `forum` (solved forum threads). Omit to search all three. (default: `null`) |
 
 #### `proximo_wiki_read`
 
@@ -14741,4 +13736,3 @@ via PROXIMO_WIKI=1.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `section_id` | string | yes | The `id` from a proximo_wiki search hit. Ids are index-stable but change when the index is rebuilt — search again rather than reusing an old one. |
-| `proximo_target` | string (nullable) | no | Configured target name to run against; omit for the default box. (default: `null`) |

@@ -32,7 +32,7 @@ single most important decision a deployer makes.
   mean to grant. **This is why Proximo is safe to hand to an agent at all.**
 - **Layer 2 — the in-process gates (raise the bar within Proximo's trust domain).**
   PLAN / PROVE / UNDO / DIAGNOSE plus the opt-in CONSENT / CONTAIN / LEASE / SCOPE /
-  ENVELOPE / TAINT controls. These run in the *same process and OS user* as the agent
+  ENVELOPE / TAINT controls (and the PRINCIPAL who-asked identity layer). These run in the *same process and OS user* as the agent
   they constrain. They become a **real boundary rather than a speed bump only when their
   state paths live outside the agent's write reach** — a different OS user, mount, or host.
   Co-located, a compromised agent can clear its own gate.
@@ -56,7 +56,7 @@ These are **known and by design**, not oversights. A report that reduces to one 
 is expected behavior (see `SECURITY.md` → "Honest scope notes"):
 
 - **Co-located Layer-2 gates are advisory.** If gate state (CONSENT dir, CONTAIN trip
-  file, SCOPE file, taint marker) sits where the agent can write, a compromised agent can
+  file, SCOPE file, taint marker, caller-keys pin dir) sits where the agent can write, a compromised agent can
   clear it. Real boundary ⇢ put that state out of the agent's reach, or rely on Layer 1.
   The runbook for building that reach is `SECURITY.md` → "Building the boundary: a
   hardened deployment (Layer 2 in practice)".

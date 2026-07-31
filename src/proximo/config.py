@@ -26,7 +26,8 @@ _SSH_TARGET_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*\Z")
 # Unrecognized values keep TLS on (safe default) and emit a diagnostic warning.
 _VTLS_FALSY = frozenset({"0", "false", "off", "no"})
 _VTLS_TRUTHY = frozenset({"1", "true", "on", "yes"})
-_TRUTHY = frozenset({"1", "true", "yes", "on"})  # generic bool-env values (redact, etc.)
+_TRUTHY = frozenset({"1", "true", "yes", "on"})  # generic bool-env values
+_FALSY = frozenset({"0", "false", "off", "no"})  # generic opt-OUT set (same words as audit_keyed)
 
 _DEFAULT_ENV_FILE = "~/.config/proximo/proximo.env"
 
@@ -107,7 +108,8 @@ class ProximoConfig:
     enable_exec: bool = False  # OFF by default (API-only, safe). True enables ssh->pct exec (root-grant tradeoff).
     audit_key_path: str | None = None  # opt-in: path to an HMAC key file → keyed (tamper-resistant) PROVE ledger
     audit_keyed: bool = True  # PROXIMO_AUDIT_KEYED — keyed (HMAC) PROVE by default; "off"/"0"/"false"/"no" disables
-    redact_ledger: bool = False  # opt-in: store a fingerprint of ct_psql SQL / ct_exec argv, not the body
+    redact_ledger: bool = True  # PROXIMO_LEDGER_REDACT — fingerprint ct_psql SQL / ct_exec argv
+    # by default; "0"/"false"/"off"/"no" records the full body instead
     expected_head: str | None = None  # PROXIMO_AUDIT_EXPECTED_HEAD — off-box-pinned head() for tail-attack detection
     anchor_sink: AnchorSink | None = None  # PROXIMO_AUDIT_ANCHOR_* — off-box head-pinning sink (None=off)
 
@@ -139,7 +141,7 @@ class ProximoConfig:
             enable_agent=os.environ.get("PROXIMO_ENABLE_AGENT", "false").lower() in ("1", "true", "yes", "on"),
             audit_key_path=os.environ.get("PROXIMO_AUDIT_KEY_PATH") or None,
             audit_keyed_raw=os.environ.get("PROXIMO_AUDIT_KEYED", "true"),
-            redact_ledger=os.environ.get("PROXIMO_LEDGER_REDACT", "false").lower() in _TRUTHY,
+            redact_ledger=os.environ.get("PROXIMO_LEDGER_REDACT", "true").strip().lower() not in _FALSY,
             expected_head_raw=os.environ.get("PROXIMO_AUDIT_EXPECTED_HEAD") or "",
             audit_log_path=os.environ.get("PROXIMO_AUDIT_LOG", cls.audit_log_path),
             anchor_sink_raw=os.environ.get("PROXIMO_AUDIT_ANCHOR_SINK", "none"),
@@ -165,7 +167,7 @@ class ProximoConfig:
             enable_exec=False, enable_agent=False,
             audit_key_path=os.environ.get("PROXIMO_AUDIT_KEY_PATH") or None,
             audit_keyed_raw=os.environ.get("PROXIMO_AUDIT_KEYED", "true"),
-            redact_ledger=os.environ.get("PROXIMO_LEDGER_REDACT", "false").lower() in _TRUTHY,
+            redact_ledger=os.environ.get("PROXIMO_LEDGER_REDACT", "true").strip().lower() not in _FALSY,
             expected_head_raw=os.environ.get("PROXIMO_AUDIT_EXPECTED_HEAD") or "",
             audit_log_path=os.environ.get("PROXIMO_AUDIT_LOG", cls.audit_log_path),
             anchor_sink_raw=os.environ.get("PROXIMO_AUDIT_ANCHOR_SINK", "none"),
@@ -211,7 +213,7 @@ class ProximoConfig:
             # per-target `redact_ledger` still wins (a target may opt out of a redaction env turned on).
             redact_ledger=bool(fields.get(
                 "redact_ledger",
-                os.environ.get("PROXIMO_LEDGER_REDACT", "false").lower() in _TRUTHY)),
+                os.environ.get("PROXIMO_LEDGER_REDACT", "true").strip().lower() not in _FALSY)),
             expected_head_raw=str(fields.get("audit_expected_head") or ""),
             audit_log_path=fields.get("audit_log", cls.audit_log_path),
             anchor_sink_raw=str(fields.get("audit_anchor_sink", "none")),
@@ -326,10 +328,10 @@ class ProximoConfig:
             )
         if not redact_ledger:
             warnings.warn(
-                "PROXIMO_LEDGER_REDACT is off — ct_exec/ct_psql/pve_agent_exec record the full "
-                "command/SQL body (which can carry secrets, e.g. a password on the argv) into "
-                "the PROVE ledger. Set PROXIMO_LEDGER_REDACT=1 to record a fingerprint "
-                "(sha256 + kind + length) instead.",
+                "PROXIMO_LEDGER_REDACT is turned OFF — ct_exec/ct_psql/pve_agent_exec will "
+                "record the full command/SQL body (which can carry secrets, e.g. a password "
+                "on the argv) into the PROVE ledger, a durable file. Redaction (a sha256 "
+                "fingerprint + kind + length) is the DEFAULT; unset this to restore it.",
                 stacklevel=2,
             )
         # Independent CONSENT (PROXIMO_CONSENT_DIR). Read from the process env directly: CONSENT is

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.28.0"
+version = "0.29.0"
 description = "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -41,13 +41,14 @@ a2a = ["a2a-sdk[signing]>=1.1,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "c
 # The HTTP/OpenAPI face is OPTIONAL too — the full governed tool surface + trust funnel, the same
 # shared dispatch as A2A, served as plain REST for no-code clients (Open WebUI etc.). ASGI only; no a2a-sdk.
 # Install with: pip install 'proximo-proxmox[http]'
-http = ["uvicorn>=0.30,<1", "starlette>=1.3.1,<2"]
+# cryptography is for caller-badge verification (proximo.principal) — ES256 JWS pins on this face.
+http = ["uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=49.0.0,<50"]
 # The MCP-over-streamable-HTTP face is OPTIONAL — the SAME FastMCP instance the stdio server runs,
 # served over the SDK's native Streamable HTTP transport behind the shared webguard perimeter (no
 # third-party stdio→HTTP bridge needed). mcp>=1.8.0 is the streamable_http_app() floor — the base
 # dep stays at its own floor; this extra only raises it for the face that needs the newer API.
 # Install with: pip install 'proximo-proxmox[mcp-http]'
-mcp-http = ["mcp>=1.8.0,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2"]
+mcp-http = ["mcp>=1.8.0,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=49.0.0,<50"]
 dev = [
   "pytest>=8", "pytest-asyncio>=1.4.0", "ruff>=0.6", "pyright>=1.1",
   "a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=1.3.1", "cryptography>=49.0.0",  # A2A slice + SIGNET tests

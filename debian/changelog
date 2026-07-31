@@ -1,3 +1,12 @@
+proximo (0.29.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.29.0 (minor - principal-in-ledger: who-asked on every PROVE
+    entry, ES256 caller badges on the network faces, plus two defaults moved
+    toward safety: command-body redaction on by default and a ~16% cheaper
+    tools/list payload).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Thu, 31 Jul 2026 22:00:00 +0000
+
 proximo (0.28.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.28.0 (minor - one new opt-in capability plus a schema-honesty

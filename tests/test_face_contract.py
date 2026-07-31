@@ -2,16 +2,18 @@
 
 Transport-agnosticism is only real if it's enforced. Every network face must (1) route tool
 calls through ``governed.call_governed``/``list_governed`` — never import a Proxmox backend or
-call the service builders directly, (2) touch ``server`` only for the two sanctioned seams
-(``_apply_surfaces`` registry scoping, ``_ledger`` rejection audits) plus any per-face seam
-granted explicitly in EXTRA_SERVER_ATTRS (today: ``server.mcp`` for the MCP-native face, which
-serves the spine's own protocol and so has nothing to adapt), and (3) mount the ONE shared
-perimeter stack from ``webguard.guard_middleware``, in its contract order. This test refuses
+call the service builders directly, (2) touch ``server`` only for the three sanctioned seams
+(``_apply_surfaces`` registry scoping, ``_ledger`` rejection audits, ``_record_session``
+arrival/departure entries) plus any per-face seam granted explicitly in EXTRA_SERVER_ATTRS
+(today: ``server.mcp`` for the MCP-native face, which serves the spine's own protocol and so has
+nothing to adapt), and (3) mount the ONE shared perimeter stack from ``webguard.guard_middleware``,
+in its contract order. A new face inherits the spine by following these imports; this test refuses
 the shortcut that would give a transport its own path.
 """
 from __future__ import annotations
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -47,8 +49,8 @@ FORBIDDEN = (
     r"\b_audited\s*\(",               # calling the funnel directly = skipping name-based dispatch
 )
 
-# The ONLY server attributes a face may touch (the two sanctioned seams).
-ALLOWED_SERVER_ATTRS = {"_apply_surfaces", "_ledger"}
+# The ONLY server attributes a face may touch (the three sanctioned seams).
+ALLOWED_SERVER_ATTRS = {"_apply_surfaces", "_ledger", "_record_session"}
 
 # Per-face EXTRA seams, granted individually so the global set stays tight. The MCP-HTTP face's
 # whole purpose is serving the FastMCP instance over the SDK's native transport — `server.mcp`
@@ -116,7 +118,7 @@ def _server_attr_uses(tree: ast.AST, names: set[str]) -> set[str]:
 
 
 @pytest.mark.parametrize("rel", FACE_SOURCES)
-def test_face_server_seams_are_the_sanctioned_two(rel):
+def test_face_server_seams_are_the_sanctioned_three(rel):
     tree = ast.parse(_source(rel))
     used = _server_attr_uses(tree, _server_module_names(tree))
     allowed = ALLOWED_SERVER_ATTRS | EXTRA_SERVER_ATTRS.get(rel, set())
@@ -209,14 +211,20 @@ def _middleware_names(app) -> list[str]:
     return [m.cls.__name__ for m in app.user_middleware]
 
 
-def test_faces_mount_the_same_perimeter_in_contract_order():
-    """Every factory produces the identical guard stack — the faces cannot drift."""
+def test_faces_mount_the_same_perimeter_in_contract_order(monkeypatch, tmp_path):
+    """Every factory produces the identical guard stack — the faces cannot drift.
+
+    Also covers the conditional Principal layer (Task 5): with NO ``PROXIMO_CALLER_KEYS_DIR`` the
+    stack is byte-identical to before; with it set, ``PrincipalMiddleware`` is appended LAST —
+    after ``BearerAuthMiddleware`` when both are configured — per the contract order TrustedHost ->
+    CrossOriginGuard -> Bearer -> Principal.
+    """
     a2a_app_mod = pytest.importorskip("proximo.a2a.app")
     from proximo.httpface import build_app as build_http
     from proximo.mcphttp import build_app as build_mcp_http
 
-    with_token = ["TrustedHostMiddleware", "CrossOriginGuardMiddleware", "BearerAuthMiddleware"]
     without = ["TrustedHostMiddleware", "CrossOriginGuardMiddleware"]
+    with_token = [*without, "BearerAuthMiddleware"]
 
     assert _middleware_names(build_http(token="sentinel-token")) == with_token
     assert _middleware_names(build_http()) == without
@@ -225,3 +233,96 @@ def test_faces_mount_the_same_perimeter_in_contract_order():
     # The MCP-HTTP face mounts the stack onto the SDK-built app — same contract, same order.
     assert _middleware_names(build_mcp_http(token="sentinel-token")) == with_token
     assert _middleware_names(build_mcp_http()) == without
+
+    monkeypatch.setenv("PROXIMO_CALLER_KEYS_DIR", str(tmp_path))  # empty dir: 0 pins, still valid
+    with_pins = [*without, "PrincipalMiddleware"]
+    with_token_and_pins = [*with_token, "PrincipalMiddleware"]
+
+    assert _middleware_names(build_http()) == with_pins
+    assert _middleware_names(build_http(token="sentinel-token")) == with_token_and_pins
+    assert _middleware_names(a2a_app_mod.build_app()) == with_pins
+    assert _middleware_names(a2a_app_mod.build_app(token="sentinel-token")) == with_token_and_pins
+    # The third face (mcp-http) landed AFTER this feature was written. One perimeter means it
+    # cannot be the one face without a camera — pin the Principal layer on it too.
+    assert _middleware_names(build_mcp_http()) == with_pins
+    assert _middleware_names(build_mcp_http(token="sentinel-token")) == with_token_and_pins
+
+
+# --- the contract must REQUIRE the seams, not only forbid the wrong ones --------------------
+#
+# Every test above is a prohibition: a face may not touch core internals, may not reach past the
+# sanctioned seams. None of them require a face to actually USE those seams — so mcp-http shipped
+# for two weeks tagging its NETWORK ledger entries face:"stdio" (the local-trust default) and
+# recording no session entries, with the whole suite green. A prohibition-only contract cannot see
+# an omission. This is the positive half.
+
+SERVING_FACES = ("httpface.py", "a2a/app.py", "mcphttp.py")
+
+
+@pytest.mark.parametrize("rel", SERVING_FACES)
+def test_every_serving_face_declares_which_face_it_is(rel):
+    """principal.serving_face() is a process global defaulting to "stdio". A network face that
+    never sets it attributes its own remote requests to the local channel, in the tamper-evident
+    log — a false statement, not a missing nicety."""
+    tree = ast.parse(_source(rel))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "set_serving_face"]
+    assert calls, f"{rel} never calls set_serving_face() — its ledger entries will claim 'stdio'"
+    literals = [a.value for c in calls for a in c.args if isinstance(a, ast.Constant)]
+    assert literals and all(v != "stdio" for v in literals), (
+        f"{rel} must name its own face, not the stdio default (got {literals!r})")
+
+
+@pytest.mark.parametrize("rel", SERVING_FACES)
+def test_every_serving_face_records_arrival_and_departure(rel):
+    """Session entries are how a ledger reader knows a face was up. One face silently omitting
+    them makes the ledger's coverage uneven in a way no reader can detect from the outside."""
+    text = _source(rel)
+    assert text.count("_record_session(") >= 2, (
+        f"{rel} does not record both session_start and session_end")
+    for kind in ("session_start", "session_end"):
+        assert kind in text, f"{rel} never records {kind}"
+    assert "finally:" in text, f"{rel} must record session_end in a finally, or a crash loses it"
+
+
+# --- the try/finally is the POINT, so pin it with a crash ------------------------------------
+#
+# Every face wraps uvicorn.run in try/finally so session_end still lands when serving dies. Every
+# test of that wrap monkeypatched uvicorn.run to a lambda that never raises — so a reviewer's
+# mutant replacing the try/finally with plain sequential calls passed the whole suite. The test I
+# added for mcp-http earlier the same day had the identical hole: I copied the pattern including
+# its defect. A no-op double cannot test crash safety. Make it crash.
+
+@pytest.mark.parametrize("mod_name,face", [("proximo.httpface", "http"),
+                                           ("proximo.a2a.app", "a2a"),
+                                           ("proximo.mcphttp", "mcp-http")])
+def test_session_end_still_lands_when_serving_crashes(mod_name, face, tmp_path, monkeypatch):
+    import uvicorn  # noqa: PLC0415
+
+    from proximo import principal, server  # noqa: PLC0415
+    from proximo.audit import AuditLedger  # noqa: PLC0415
+
+    mod = pytest.importorskip(mod_name)
+
+    log = tmp_path / "audit.log"
+    ledger = AuditLedger(str(log))
+    monkeypatch.setattr(server, "_svc", lambda: (None, None, None, ledger))
+    monkeypatch.setenv("PROXIMO_PRINCIPAL", "svc-account")
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+
+    def _boom(*a, **kw):
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(uvicorn, "run", _boom)
+    try:
+        with pytest.raises(RuntimeError, match="bind failed"):
+            mod.main()
+    finally:
+        principal.set_serving_face("stdio")
+
+    lines = [json.loads(x) for x in log.read_text().splitlines() if x.strip()]
+    ends = [e for e in lines if e["action"] == "session_end"]
+    assert len(ends) == 1, (
+        f"{mod_name}: serving crashed and session_end never landed — the try/finally is not doing "
+        "the job its comment claims")
+    assert ends[0]["detail"]["face"] == face

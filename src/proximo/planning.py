@@ -353,7 +353,7 @@ def _sql_kind(sql: str) -> str:
 def sql_fingerprint(sql: str) -> dict:
     """A privacy-preserving fingerprint of a SQL statement for the audit ledger: proves WHICH
     statement ran (sha256) and its size + coarse kind, without persisting the body (which may
-    carry secrets/PII). Used when PROXIMO_LEDGER_REDACT is set; the default records the body."""
+    carry secrets/PII). Used unless PROXIMO_LEDGER_REDACT is turned off; fingerprinting is the default."""
     return {
         "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
         "sql_kind": _sql_kind(sql),

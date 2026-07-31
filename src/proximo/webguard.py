@@ -161,7 +161,8 @@ def guard_middleware(url: str, *, face: str, token: str | None, protect: Callabl
     Outermost → innermost: ``TrustedHostMiddleware`` (DNS-rebind guard, ALWAYS on — a bad Host is
     refused before anything else runs) → :class:`CrossOriginGuardMiddleware` (loopback-CSRF defense,
     ALWAYS on) → :class:`BearerAuthMiddleware` (only when *token* is set; discovery paths stay open
-    via *protect*). A face chooses only *protect* (which paths are its control endpoints) and the
+    via *protect*) → :class:`PrincipalMiddleware` (only when ``PROXIMO_CALLER_KEYS_DIR`` is set;
+    same *protect*). A face chooses only *protect* (which paths are its control endpoints) and the
     per-protocol 401 body — everything else is shared so the faces cannot drift.
 
     ``allowed_hosts=["*"]`` disables the Host guard and warns LOUDLY — legitimate only behind a
@@ -182,6 +183,14 @@ def guard_middleware(url: str, *, face: str, token: str | None, protect: Callabl
         middleware.append(Middleware(
             BearerAuthMiddleware, token=token, protect=protect,
             unauthorized_body=unauthorized_body,
+        ))
+    pins_dir = os.environ.get("PROXIMO_CALLER_KEYS_DIR")
+    if pins_dir:
+        from .principal import load_pins  # noqa: PLC0415 -- lazy; needs the [http]/[a2a] extra
+        pins = load_pins(pins_dir)  # fail-LOUD here: a bad dir must refuse startup
+        middleware.append(Middleware(
+            PrincipalMiddleware, pins=pins, pins_dir=pins_dir, protect=protect,
+            face=face.strip().lower(), unauthorized_body=unauthorized_body,
         ))
     return middleware
 
@@ -260,3 +269,89 @@ class CrossOriginGuardMiddleware(BaseHTTPMiddleware):
                 if cl is not None and cl.isdigit() and int(cl) > MAX_BODY_BYTES:
                     return JSONResponse({"error": "request body too large"}, status_code=413)
         return await call_next(request)
+
+
+_REFUSAL_WINDOW_S = 60.0
+_refusal_state = {"window_start": 0.0, "folded": 0}     # module-level, process-wide by design
+
+
+def _audit_caller_event(action: str, *, face: str, detail: dict) -> None:
+    """PROVE entries from the perimeter — late server import (webguard stays server-independent)."""
+    from . import server  # noqa: PLC0415 -- late import; webguard stays server-independent
+    from .principal import ledger_principal  # noqa: PLC0415
+    from .targets import ledger_remote  # noqa: PLC0415
+    server._ledger().record(action, target=f"face/{face}", mutation=False,
+                            outcome=detail.pop("outcome", "ok"), detail=detail,
+                            principal=ledger_principal(), remote=ledger_remote())
+
+
+def _audit_refusal_bounded(face: str) -> None:
+    """≤1 refusal entry per window PROCESS-WIDE; the rest fold into a count. Never per-source —
+    claimed subs / forwarded IPs are attacker-controlled, a per-source map is itself a target."""
+    import time  # noqa: PLC0415
+    now = time.monotonic()
+    if now - _refusal_state["window_start"] >= _REFUSAL_WINDOW_S:
+        # New window: read the PRIOR window's folded count before resetting, so the entry we're
+        # about to record carries how much the last window suppressed.
+        folded = _refusal_state["folded"]
+        _refusal_state["window_start"] = now
+        _refusal_state["folded"] = 0
+        _audit_caller_event("caller_refused", face=face,
+                            detail={"outcome": "blocked:unverified_caller",
+                                    "folded_prior_window": folded})
+    else:
+        _refusal_state["folded"] += 1
+
+
+class PrincipalMiddleware(BaseHTTPMiddleware):
+    """The camera at the door: verify a ``Proximo-Principal`` ES256 badge against operator pins.
+
+    Present only when ``PROXIMO_CALLER_KEYS_DIR`` is configured. Protected paths REQUIRE a valid
+    badge (fail-closed); discovery stays open (same *protect* as bearer). Identity, not authority.
+    """
+
+    def __init__(self, app, *, pins: dict, protect: Callable[[str], bool],
+                 face: str, unauthorized_body: dict, pins_dir: str | None = None) -> None:
+        super().__init__(app)
+        self._pins = pins
+        self._pins_dir = pins_dir
+        self._protect = protect
+        self._face = face
+        self._body = unauthorized_body
+        self._seen: set[str] = set()
+
+    async def dispatch(self, request, call_next):
+        if not self._protect(request.url.path):
+            return await call_next(request)
+        from .principal import (  # noqa: PLC0415
+            BadgeError,
+            load_pins_live,
+            reset_active_caller,
+            set_active_caller,
+            verify_badge,
+        )
+        badge = request.headers.get("proximo-principal", "")
+        # Re-resolve the pin store per protected request (stat-gated, reloads only on change) so
+        # deleting a pin file revokes that caller HERE, on the running process, exactly as
+        # SECURITY.md promises. A store that has become unreadable refuses the request rather
+        # than falling back to the last-known-good pins: zero trust by default.
+        try:
+            pins = load_pins_live(self._pins_dir) if self._pins_dir else self._pins
+        except RuntimeError:
+            _audit_refusal_bounded(self._face)
+            return JSONResponse(self._body, status_code=401,
+                                headers={"WWW-Authenticate": "Proximo-Principal"})
+        try:
+            sub = verify_badge(badge, pins)
+        except BadgeError:
+            _audit_refusal_bounded(self._face)
+            return JSONResponse(self._body, status_code=401,
+                                headers={"WWW-Authenticate": "Proximo-Principal"})
+        token = set_active_caller(sub)
+        try:
+            if sub not in self._seen:
+                self._seen.add(sub)
+                _audit_caller_event("caller_arrived", face=self._face, detail={"caller": sub})
+            return await call_next(request)
+        finally:
+            reset_active_caller(token)

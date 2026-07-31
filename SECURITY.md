@@ -23,7 +23,7 @@ Proximo's protection comes from two layers that do not fail the same way. Don't 
    declared scope, and rate/blast-radius limits. But they're enforced by code running in
    the *same process, same OS user* as the agent they're meant to constrain. If that agent
    (or whatever's hijacked it) can also write to a gate's own state — the CONSENT
-   directory, the CONTAIN trip-file path, the SCOPE file, the rate-reservation directory —
+   directory, the CONTAIN trip-file path, the SCOPE file, the rate-reservation directory, the caller-keys pin directory —
    it can potentially clear its own gate. **These become a real boundary, not just a
    speed bump, only when their state directories live outside the agent's write reach** —
    a different OS user, a different filesystem mount, a different host entirely. Point
@@ -337,6 +337,7 @@ the configured paths back — a hijacked session shouldn't learn where you put y
 | **SCOPE / provenance** | An agent mutating a target outside the box(es) the operator authorized at arm-time | **Off** | `PROXIMO_SCOPE_PATH` — a present-but-unreadable/garbled/empty scope file fails **closed**; an **absent** file reads as no-scope (unrestricted) — the transitional armed-not-written window. NB this differs from LEASE, which fails closed on an absent token: set the scope file before relying on SCOPE. |
 | **ENVELOPE** (FORBID + RATE) | Blast radius under hijack — unlimited-speed mutation, or an explicitly forbidden action, from an agent that's been compromised or gone off-script | **Off** | `PROXIMO_FORBID` (global floor, always checked once set) + `PROXIMO_RATE_MAX` / `PROXIMO_RATE_WINDOW` (per-box budget) |
 | **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK` (mark + record a sticky taint on an adversarial read) then, once tainted, `PROXIMO_TAINT_FORBID` (actions refused outright — the primary, no consent escape) and/or `PROXIMO_TAINT_REQUIRE_CONSENT` (any mutation now needs an out-of-band grant). `PROXIMO_TAINT_FENCE` adds an advisory content-fence. |
+| **PRINCIPAL** (who-asked) | A PROVE ledger that records *what* happened but not *who asked* — attribution gaps across faces, and (with pins) network callers whose identity is unproven | **Off** | `PROXIMO_PRINCIPAL` stamps a declared name-tag on every entry (the operator's word, like the token). `PROXIMO_CALLER_KEYS_DIR` verifies signed ES256 caller badges against operator-pinned keys and, once set, **refuses an unverifiable caller on the network faces** (fail-closed). Identity, not authority — a verified name changes nothing about what a call may do; the token ACL remains the only authorization boundary. **Two honest limits.** *"Verified" is only as strong as the pin directory's isolation:* an agent that can write `PROXIMO_CALLER_KEYS_DIR` can pin a key it controls and be recorded `via:verified` — keep the pin dir outside the agent's own write reach, the same two-deployment caveat the gates above carry. *A badge is a long-lived bearer credential:* it does not expire unless minted with `--exp`, its only revocation is deleting the caller's pin file (which takes effect on that face's next protected request — the pin store is re-read whenever the directory changes, so revocation does not wait for a restart; rewriting an existing pin file in place is the one edit the directory stamp cannot see, and it requires ownership of that file), and it is not bound to a TLS session — so treat a leaked badge like a leaked bearer token (standing impersonation until unpinned), keep it off disk and out of logs, and rotate it. |
 
 Two more flags widen what Proximo can **do**, rather than protect what it's already
 doing — don't confuse them with the gates above: `PROXIMO_ENABLE_EXEC` (near-root
@@ -356,7 +357,7 @@ surprise-empty server). An unknown surface name refuses startup rather than sile
 a surface you didn't pick. This is context hygiene and attack-surface reduction, not an
 authorization control — the token's ACL remains the real boundary.
 
-*Status note: CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE/TAINT are present in this repository's
+*Status note: CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE/TAINT/PRINCIPAL are present in this repository's
 current source. Check `CHANGELOG.md` against the version you actually installed — a
 published package can lag the tree you're reading; these gates land in a release only
 when their changelog entry says so.*

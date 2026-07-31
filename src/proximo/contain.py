@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .backends import ProximoError
+from .principal import ledger_principal
 from .targets import ledger_remote
 
 if TYPE_CHECKING:
@@ -87,7 +88,7 @@ def enforce_containment(action: str, target: str, audit: AuditLedger, *,
         return
     audit.record(action, target=target, mutation=True, outcome="contained",
                  detail={**(detail or {}), **({"reason": state.reason} if state.reason else {})},
-                 remote=ledger_remote())
+                 principal=ledger_principal(), remote=ledger_remote())
     msg = f"contained: mutation {action!r} refused (containment trip active)"
     if state.reason:
         msg += f" — {state.reason}"

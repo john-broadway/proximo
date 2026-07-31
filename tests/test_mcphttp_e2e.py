@@ -131,3 +131,39 @@ async def test_mutating_tool_through_the_face_is_plan_gated(tmp_path, monkeypatc
         entries = [json.loads(line) for line in f if line.strip()]
     planned = [e for e in entries if e.get("outcome") == "planned"]
     assert planned and planned[0]["mutation"] is True, "the plan must land on the PROVE ledger"
+
+
+# --- the face must not lie about WHICH face it is -------------------------------------------
+#
+# `set_serving_face` is a serve-time fact set by each face's main(); the module default is
+# "stdio". httpface.main() and a2a/app.main() both set it and both wrap uvicorn.run in a
+# try/finally recording session_start/session_end. mcphttp.main() did neither, because this face
+# landed AFTER the principal work was written. The cost is not a missing nicety: every ledger
+# entry from this NETWORK face was tagged face:"stdio" -- the local, trusted channel -- so the
+# tamper-evident log misattributed the access path of a remote request.
+
+def test_main_sets_the_serving_face_and_records_sessions(tmp_path, monkeypatch):
+    import uvicorn  # noqa: PLC0415
+
+    from proximo import mcphttp, principal, server  # noqa: PLC0415
+    from proximo.audit import AuditLedger  # noqa: PLC0415
+
+    log = tmp_path / "audit.log"
+    ledger = AuditLedger(str(log))
+    monkeypatch.setattr(server, "_svc", lambda: (None, None, None, ledger))
+    monkeypatch.setenv("PROXIMO_PRINCIPAL", "svc-account")
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)  # no real bind
+
+    try:
+        mcphttp.main()
+    finally:
+        principal.set_serving_face("stdio")
+
+    lines = [json.loads(x) for x in log.read_text().splitlines() if x.strip()]
+    starts = [e for e in lines if e["action"] == "session_start"]
+    ends = [e for e in lines if e["action"] == "session_end"]
+    assert len(starts) == 1 and len(ends) == 1, "the face recorded no session arrival/departure"
+    assert starts[0]["detail"]["face"] == "mcp-http"
+    assert starts[0]["principal"] == {"id": "svc-account", "via": "spawn", "face": "mcp-http"}
+    assert ends[0]["detail"]["face"] == "mcp-http"

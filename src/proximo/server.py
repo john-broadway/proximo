@@ -20,6 +20,7 @@ import hashlib
 import os
 import sys
 import time
+import warnings
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from functools import cache, lru_cache
@@ -59,6 +60,7 @@ from .pmg import (
     PmgBackend,
     PmgConfig,
 )
+from .principal import ledger_principal, principal_feature_active, serving_face
 from .provenance import enforce_scope
 from .qemu_agent import (
     plan_agent_exec,
@@ -380,7 +382,7 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
             # audit.in_flight() reason about an operation that never started.
             audit.record(action, target=target, mutation=mutation, outcome="blocked:taint_mark_failed",
                          detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
-                         remote=ledger_remote())
+                         principal=ledger_principal(), remote=ledger_remote())
             raise ProximoError(
                 f"taint tracking is enabled but the taint marker could not be written for {action!r} "
                 "— refusing to return untrusted output untracked (fail-closed)"
@@ -406,16 +408,20 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
     # each record site instead, so every copy is taken after fn() has had its say.
     intent = intent_id(action, target) if mutation else None
     if intent is not None:
+        # principal= matters MOST here: if fn() never returns (OOM/SIGKILL/host reboot) this
+        # stranded entry is the ONLY record the operation will ever have — it is what
+        # audit.in_flight() surfaces — so dropping who-asked loses attribution exactly for the
+        # mutation nobody got to see finish.
         audit.record(action, target=target, mutation=True, outcome=audit_mod.EXECUTING,
                      detail=_untrusted_detail(action, {**(detail or {}), "intent": intent}),
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
     try:
         result = fn()
     except Exception as e:
         audit.record(action, target=target, mutation=mutation, outcome="error",
                      detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
                                                        "error": type(e).__name__}),
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         if isinstance(e, httpx.TransportError):
             # Same class of failure `doctor` already degrades gracefully (verdict 1.4): a
             # connection-level httpx failure (DNS/refused/timeout/TLS) must not hand the caller
@@ -446,12 +452,13 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
                          outcome="error:outcome_resolution_failed",
                          detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
                                                            "error": type(e).__name__}),
-                         remote=ledger_remote())
+                         principal=ledger_principal(), remote=ledger_remote())
             raise
     else:
         resolved_outcome = outcome
     audit.record(action, target=target, mutation=mutation, outcome=resolved_outcome,
-                 detail=_untrusted_detail(action, _with_intent(detail, intent)), remote=ledger_remote())
+                 detail=_untrusted_detail(action, _with_intent(detail, intent)),
+                 principal=ledger_principal(), remote=ledger_remote())
     if mutation:
         return {"status": resolved_outcome, "result": fence_output(action, result)}
     return fence_output(action, result)
@@ -465,7 +472,8 @@ def _record_plan(plan: Plan) -> None:
         plan.action, target=plan.target, mutation=True, outcome="planned",
         detail={"change": plan.change, "risk": plan.risk, "risk_reasons": plan.risk_reasons,
                 "blast_radius": plan.blast_radius, "current": plan.current,
-                "affected": plan.affected, "complete": plan.complete}, remote=ledger_remote())
+                "affected": plan.affected, "complete": plan.complete},
+        principal=ledger_principal(), remote=ledger_remote())
 
 
 def _plan(action: str, target: str, build: Callable[[], Plan]) -> Plan:
@@ -481,7 +489,8 @@ def _plan(action: str, target: str, build: Callable[[], Plan]) -> Plan:
         plan = build()
     except Exception as e:
         audit.record(action, target=target, mutation=True, outcome="error",
-                     detail={"error": type(e).__name__, "phase": "planning"}, remote=ledger_remote())
+                     detail={"error": type(e).__name__, "phase": "planning"},
+                     principal=ledger_principal(), remote=ledger_remote())
         raise
     # The server tool name + target are AUTHORITATIVE for the ledger: stamp them onto the plan so the
     # "planned" entry pairs with the later "submitted"/"ok" entry under ONE action AND ONE target
@@ -545,7 +554,8 @@ def _auto_undo(action: str, target: str, api: ApiBackend, vmid: str,
         _wait_task(api, upid, node=node)
     except Exception as e:
         audit.record(action, target=target, mutation=True, outcome="blocked:undo_unavailable",
-                     detail={**detail, "error": type(e).__name__}, remote=ledger_remote())
+                     detail={**detail, "error": type(e).__name__},
+                     principal=ledger_principal(), remote=ledger_remote())
         return {
             "status": "blocked:undo_unavailable",
             "message": ("Requested an undo snapshot but it could not be created/completed (the "
@@ -554,7 +564,8 @@ def _auto_undo(action: str, target: str, api: ApiBackend, vmid: str,
             "error": type(e).__name__,
         }
     audit.record(action, target=target, mutation=True, outcome="undo_point",
-                 detail={"snapshot": snapname, "task": upid}, remote=ledger_remote())
+                 detail={"snapshot": snapname, "task": upid},
+                 principal=ledger_principal(), remote=ledger_remote())
     return {"snapshot": snapname, "task": upid,
             "revert": f"pve_rollback vmid={vmid} snapname={snapname}",
             "note": ("undo points are NOT auto-pruned — they accumulate and consume storage; "
@@ -566,7 +577,7 @@ def _blocked(action: str, target: str, outcome: str, message: str, detail: dict 
     """Shared body for the four 'refuse + audit' helpers below."""
     audit = _ledger()
     audit.record(action, target=target, mutation=mutation, outcome=outcome,
-                 detail=detail, remote=ledger_remote())
+                 detail=detail, principal=ledger_principal(), remote=ledger_remote())
     return {"status": outcome, "message": message}
 
 
@@ -958,7 +969,7 @@ def pve_agent_exec(
             audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
                          outcome="blocked:taint_mark_failed",
                          detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__}),
-                         remote=ledger_remote())
+                         principal=ledger_principal(), remote=ledger_remote())
             raise ProximoError(
                 "taint tracking is enabled but the taint marker could not be written for "
                 "'pve_agent_exec' — refusing to return untrusted output untracked (fail-closed)"
@@ -991,7 +1002,7 @@ def pve_agent_exec(
                 audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="ok",
                              detail=_untrusted_detail("pve_agent_exec",
                                                       {**detail, "confirmed": True, "pid": pid}),
-                             remote=ledger_remote())
+                             principal=ledger_principal(), remote=ledger_remote())
                 # Fence ONLY the `result` field (the guest-controlled out-data/err-data), keeping the
                 # top-level `status` intact — same symmetric-envelope contract _audited honors for
                 # ct_exec/ct_psql. Fencing the whole {status,result} dict would bury `status` inside
@@ -1006,7 +1017,7 @@ def pve_agent_exec(
                              detail=_untrusted_detail(
                                  "pve_agent_exec",
                                  {**detail, "confirmed": True, "pid": pid, "timeout": timeout}),
-                             remote=ledger_remote())
+                             principal=ledger_principal(), remote=ledger_remote())
                 return {
                     "status": "running", "pid": pid,
                     "message": f"command is still running (pid={pid}) — did not exit within {timeout}s; "
@@ -1016,7 +1027,7 @@ def pve_agent_exec(
         audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="error",
                      detail=_untrusted_detail("pve_agent_exec",
                                               {"error": type(e).__name__, "confirmed": True}),
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise
 
 
@@ -1292,11 +1303,75 @@ def strip_schema_titles(node: Any) -> Any:
     return node
 
 
+def collapse_nullable_anyof(node: Any) -> Any:
+    """Rewrite `anyOf:[{type:X},{type:null}]` as `type:[X,"null"]` in place — identical schema.
+
+    Pydantic emits the long form for every `X | None` parameter, and optional parameters are the
+    common case across the surface, so the same ~30 wasted chars ride on hundreds of properties.
+    ONLY the exact two-branch shape where both branches carry nothing but `type` is collapsed: a
+    branch with `minLength`/`enum`/anything else cannot be folded into a type union without
+    changing meaning, and a shorter schema that means something different is not a saving.
+    """
+    if isinstance(node, dict):
+        branches = node.get("anyOf")
+        if (isinstance(branches, list) and len(branches) == 2
+                and all(isinstance(b, dict) and set(b) == {"type"} for b in branches)
+                and any(b["type"] == "null" for b in branches)):
+            node.pop("anyOf")
+            node["type"] = [b["type"] for b in branches]
+        for value in node.values():
+            collapse_nullable_anyof(value)
+    elif isinstance(node, list):
+        for item in node:
+            collapse_nullable_anyof(item)
+    return node
+
+
+def drop_unusable_target_param(schema: dict, *, registry_configured: bool) -> dict:
+    """Remove `proximo_target` from a schema when there is no target registry to name.
+
+    The parameter selects an entry in PROXIMO_TARGETS. With no registry configured, the only
+    outcome of passing it is `resolve_target_fields` raising "no target registry configured" —
+    so on a single-box deployment (the common one) it is a parameter that cannot succeed,
+    advertised on ~every tool. That is the same rule autoscope already applies to whole planes:
+    do not advertise what this box cannot serve. A configured registry keeps it untouched.
+    """
+    if registry_configured:
+        return schema
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        props.pop("proximo_target", None)
+    required = schema.get("required")
+    if isinstance(required, list) and "proximo_target" in required:
+        schema["required"] = [r for r in required if r != "proximo_target"]
+    return schema
+
+
 def _slim_registry_schemas(server_mcp=mcp) -> None:
+    # Resolved ONCE, not per tool: load_registry() reads and parses a TOML file.
+    try:
+        from .targets import load_registry  # noqa: PLC0415
+        registry_configured = bool(load_registry())
+    except Exception as e:
+        # A malformed registry is a real error, but it belongs to the code path that USES it and
+        # reports it properly. Slimming must never be the thing that refuses startup, and the
+        # safe direction here is to KEEP the parameter. It must not be SILENT though: every
+        # sibling posture failure in this codebase warns at startup, and a registry broken by one
+        # bad entry poisons every target, so an operator otherwise gets no signal until the first
+        # live call against a target that used to work.
+        warnings.warn(
+            f"PROXIMO_TARGETS could not be read at startup ({type(e).__name__}); the target "
+            "selector stays advertised and any call naming a target will fail loudly with the "
+            "real error. Fix the registry file.",
+            stacklevel=2,
+        )
+        registry_configured = True
     for tool_obj in server_mcp._tool_manager._tools.values():
         params = getattr(tool_obj, "parameters", None)
         if isinstance(params, dict):
             strip_schema_titles(params)
+            collapse_nullable_anyof(params)
+            drop_unusable_target_param(params, registry_configured=registry_configured)
 
 
 # --- PROXIMO_TOOLS — exact-name selection, the finest scoping layer. ---
@@ -1506,6 +1581,15 @@ def _run_doctor(product: str, target: str | None) -> dict:
         raise
 
 
+def _record_session(kind: str) -> None:
+    """Arrival/departure entries — only when the principal feature is configured (byte-compat)."""
+    if not principal_feature_active():
+        return
+    _ledger().record(kind, target="proximo", mutation=False,
+                     detail={"face": serving_face()}, principal=ledger_principal(),
+                     remote=ledger_remote())
+
+
 def main() -> None:
     # Source ~/.config/proximo/proximo.env FIRST (before doctor or any from_env) so a PROXIMO_* var
     # set in the documented file actually reaches the stdio server — otherwise it is silently ignored,
@@ -1651,6 +1735,73 @@ def main() -> None:
         greeting = build_greeting()
         print(json.dumps(greeting, indent=2) if args.json else render_hello(greeting))
         return
+    # `proximo badge` — offline caller-badge mint (signs with an operator-held EC P-256
+    # private key, never touches the network) and a NEVER-VERIFYING inspect for debugging a
+    # badge's claims. Makes NO API call, writes NO session/ledger entries, never starts the
+    # server.
+    if len(sys.argv) > 1 and sys.argv[1] == "badge":
+        import argparse
+        import json as _json
+
+        from .principal import _b64url_dec, mint_badge, public_jwk
+        parser = argparse.ArgumentParser(prog="proximo badge")
+        sub = parser.add_subparsers(dest="cmd", required=True)
+        m = sub.add_parser("mint")
+        m.add_argument("--key", required=True, help="EC P-256 private key PEM (caller keeps this)")
+        m.add_argument("--sub", required=True, help="caller name — must match the pinned filename stem")
+        m.add_argument("--exp", default=None, help="optional lifetime, e.g. 90d / 12h / 30m")
+        m.add_argument("--jwk-out", default=None, help="where to write the public .jwk to pin")
+        i = sub.add_parser("inspect")
+        i.add_argument("badge")
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            if args.cmd == "mint":
+                # Same floor every other secret this codebase loads by path gets (PVE/PBS/PMG/PDM
+                # tokens, bearer-token files, the A2A signing key). This one mints identities, so
+                # it is not a weaker class of secret — it was just the one that never got wired.
+                from ._secretfile import refuse_exposed_secret  # noqa: PLC0415
+
+                refuse_exposed_secret(args.key, "caller badge signing key")
+                with open(args.key, "rb") as f:
+                    pem = f.read()
+                exp = None
+                if args.exp:
+                    try:
+                        unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}[args.exp[-1]]
+                        exp = int(time.time()) + int(args.exp[:-1]) * unit
+                    except (KeyError, ValueError) as e:
+                        raise ValueError(
+                            f"malformed --exp {args.exp!r} — expected <int><s|m|h|d>, e.g. 90d") from e
+                jwk = public_jwk(pem, args.sub)
+                if args.jwk_out:
+                    out = args.jwk_out
+                else:
+                    # Default is "beside the key" (never cwd-relative), and --sub must be a bare
+                    # filename stem — reject anything a path separator would let escape that
+                    # directory (basename() alone would silently swallow the traversal instead
+                    # of refusing it, so also require safe == args.sub).
+                    safe = os.path.basename(args.sub)
+                    if not safe or safe in (".", "..") or safe != args.sub:
+                        raise ValueError(
+                            f"--sub {args.sub!r} is not a safe filename stem for the default "
+                            f"JWK path; pass --jwk-out explicitly")
+                    out = os.path.join(os.path.dirname(os.path.abspath(args.key)), f"{safe}.jwk")
+                if os.path.islink(out):
+                    raise ValueError(f"refusing to write JWK to a symlink: {out}")
+                with open(out, "w", encoding="utf-8") as f:
+                    _json.dump(jwk, f, indent=2)
+                print(mint_badge(pem, args.sub, exp=exp))
+                print(f"pinned public key written to {out} — copy it into the operator's "
+                      f"PROXIMO_CALLER_KEYS_DIR", file=sys.stderr)
+            else:
+                h_b64, p_b64, _ = args.badge.strip().split(".")
+                print(_json.dumps({"header": _json.loads(_b64url_dec(h_b64)),
+                                   "payload": _json.loads(_b64url_dec(p_b64)),
+                                   "note": "NOT VERIFIED — inspection only"}, indent=2))
+        except Exception as e:
+            print(f"proximo badge: {e}", file=sys.stderr)
+            raise SystemExit(1) from None
+        return
     # Register as a live holder of this session's arm, if it has one. This is the entire liveness
     # signal `proximo reap` reads: the kernel drops this lock on exit, crash or kill, so a session
     # that ENDED while armed becomes visible without any heartbeat, TTL, or client-specific probe.
@@ -1661,7 +1812,11 @@ def main() -> None:
     if _arm_lock:
         print(f"proximo: holding the session arm lock ({_arm_lock})", file=sys.stderr)
     print(BANNER, file=sys.stderr)
-    mcp.run()
+    _record_session("session_start")
+    try:
+        mcp.run()
+    finally:
+        _record_session("session_end")
 
 
 # --- Re-exports: every tool moved to proximo.tools.* is re-imported here by name so that

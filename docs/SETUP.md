@@ -242,18 +242,18 @@ configured, not on one default number: a single-plane install (one PVE cluster, 
 memory, no wiki) serves 310; wiring in all four data planes (PVE + PBS + PMG + PDM) with exec
 still off serves 896; nothing configured at all serves the full registered 904. Every served
 tool costs your model context at connection time, before you ask anything: the full surface is
-~276k tokens of schema, which does not fit most models and wastes most of a large one. So pick
+~232k tokens of schema, which does not fit most models and wastes most of a large one. So pick
 what you need. Four layers, most specific wins. Every figure below was measured against the
 full 904-tool registry:
 
 | Set this | Serves | Real cost |
 |---|---|---|
-| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those | **~1,040 tokens** |
+| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those | **~1,000 tokens** |
 | `PROXIMO_TOOLSETS=dynamic` | 3 search tools; every other tool still callable | **~555 tokens** |
-| `PROXIMO_TOOLSETS=pve.guests` | one domain (27 tools) | ~8,900 tokens |
-| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (48 tools) | ~15,700 tokens |
-| `PROXIMO_SURFACES=pve` | a whole plane (310 tools) | ~97,000 tokens |
-| *(nothing)* | auto-scoped to your configured planes | up to ~276,000 tokens |
+| `PROXIMO_TOOLSETS=pve.guests` | one domain (27 tools) | ~7,750 tokens |
+| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (48 tools) | ~13,400 tokens |
+| `PROXIMO_SURFACES=pve` | a whole plane (310 tools) | ~81,900 tokens |
+| *(nothing)* | auto-scoped to your configured planes | up to ~231,700 tokens |
 
 Every "cost" above is UTF-8 payload bytes ÷ 4, a stated conservative heuristic, not a live
 tokenizer for any specific model.

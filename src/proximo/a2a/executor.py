@@ -28,6 +28,7 @@ from a2a.utils.errors import UnsupportedOperationError
 
 from .. import server
 from ..governed import GovernedError, call_governed
+from ..principal import ledger_principal
 
 
 class ProximoAgentExecutor(AgentExecutor):
@@ -48,7 +49,8 @@ class ProximoAgentExecutor(AgentExecutor):
         """
         try:
             server._ledger().record("a2a_rejected", target=str(tool_name or "<none>"),
-                                    mutation=False, outcome="rejected", detail={"reason": reason})
+                                    mutation=False, outcome="rejected", detail={"reason": reason},
+                                    principal=ledger_principal())
         except Exception as exc:  # noqa: BLE001 — supplementary audit; never break the rejection path
             warnings.warn(f"A2A rejection audit failed to record: {type(exc).__name__}", stacklevel=2)
 

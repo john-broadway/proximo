@@ -123,6 +123,7 @@ def main() -> None:
     """``proximo-mcp-http`` entry point — run the MCP-HTTP face with uvicorn (fail-closed)."""
     import uvicorn  # noqa: PLC0415 -- only needed when actually serving
 
+    from .principal import set_serving_face  # noqa: PLC0415
     from .webguard import (  # noqa: PLC0415
         apply_surfaces_or_exit,
         read_face_env,
@@ -130,6 +131,11 @@ def main() -> None:
         url_authority,
     )
 
+    # Which door this process serves — set before anything else so every ledger entry from this
+    # process (incl. the session entries below) carries face="mcp-http", never the "stdio"
+    # default. This face is network-exposed; inheriting the local-channel tag would make the
+    # tamper-evident log misstate the access path of every remote request.
+    set_serving_face("mcp-http")
     apply_surfaces_or_exit("proximo-mcp-http")
     host, port, token, allowed_hosts = read_face_env("MCP_HTTP", default_port=_DEFAULT_PORT)
 
@@ -144,4 +150,13 @@ def main() -> None:
 
     app = build_app(f"http://{url_authority(host)}:{port}/", token=token,
                     allowed_hosts=allowed_hosts, stateless=stateless, json_response=json_response)
-    uvicorn.run(app, host=host, port=port)
+    # Arrival/departure PROVE entries — mirrors the HTTP and A2A faces exactly; a no-op unless
+    # the operator configured the principal feature (PROXIMO_PRINCIPAL / PROXIMO_CALLER_KEYS_DIR),
+    # so byte-compat for every deployment that hasn't opted in.
+    from . import server  # noqa: PLC0415
+
+    server._record_session("session_start")
+    try:
+        uvicorn.run(app, host=host, port=port)
+    finally:
+        server._record_session("session_end")

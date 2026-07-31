@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .backends import ProximoError
+from .principal import ledger_principal
 from .targets import ledger_remote
 
 if TYPE_CHECKING:
@@ -125,7 +126,7 @@ def enforce_lease(action: str, target: str, audit: AuditLedger, *,
         return
     audit.record(action, target=target, mutation=True, outcome="blocked:lease_expired",
                  detail={**(detail or {}), "age_seconds": state.age_seconds, "ttl": state.ttl},
-                 remote=ledger_remote())
+                 principal=ledger_principal(), remote=ledger_remote())
     raise ProximoError(
         f"arm lease expired: {action!r} refused — armed {state.age_seconds}s ago, "
         f"TTL {state.ttl}s; re-arm to continue"

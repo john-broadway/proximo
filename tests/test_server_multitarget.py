@@ -120,7 +120,8 @@ def test_audited_records_active_target_as_remote(monkeypatch, tmp_path):
     recorded = {}
 
     class _FakeLedger:
-        def record(self, action, *, target, mutation=False, outcome="ok", detail=None, remote=None):
+        def record(self, action, *, target, mutation=False, outcome="ok", detail=None,
+                   remote=None, principal=None):
             recorded.update(action=action, remote=remote, outcome=outcome)
             return {}
 
@@ -137,7 +138,8 @@ def test_audited_default_records_no_remote(monkeypatch):
     recorded = {}
 
     class _FakeLedger:
-        def record(self, action, *, target, mutation=False, outcome="ok", detail=None, remote=None):
+        def record(self, action, *, target, mutation=False, outcome="ok", detail=None,
+                   remote=None, principal=None):
             recorded.update(remote=remote)
             return {}
 
@@ -250,14 +252,27 @@ def test_pdm_named_target_uses_registry(monkeypatch, tmp_path):
 
 # --- ct_* exec/diagnose tools must be target-aware (redteam MEDIUM: sweep missed ct_ prefix) ---
 
+def _accepts_target(name: str) -> bool:
+    """Does this tool's callable actually ACCEPT proximo_target?
+
+    The advertised schema is downstream of this: `target_aware` injects the kwarg into the
+    wrapper and the schema is generated from that signature. Asserting on the schema was a
+    PROXY for the injection working — and the proxy broke the moment the schema was allowed to
+    omit an unusable parameter (a box with no PROXIMO_TARGETS registry). Routing has always run
+    off the signature, so assert the signature.
+    """
+    import inspect
+
+    fn = server.mcp._tool_manager._tools[name].fn
+    return "proximo_target" in inspect.signature(fn).parameters
+
+
 def test_exec_tools_are_target_aware_and_audit_verify_is_not():
-    """ct_exec/ct_psql/ct_logs/ct_diagnose operate on a PVE box → must advertise proximo_target.
-    audit_verify is instance-level (verifies THE local ledger) → must NOT."""
-    import anyio
-    tools = {t.name: t for t in anyio.run(server.mcp.list_tools)}
+    """ct_exec/ct_psql/ct_logs/ct_diagnose operate on a PVE box → must be target-aware.
+    audit_verify is instance-level (verifies THE local ledger) → must NOT be."""
     for name in ("ct_exec", "ct_psql", "ct_logs", "ct_diagnose"):
-        assert "proximo_target" in tools[name].inputSchema["properties"], f"{name} not target-aware"
-    assert "proximo_target" not in tools["audit_verify"].inputSchema["properties"]
+        assert _accepts_target(name), f"{name} not target-aware"
+    assert not _accepts_target("audit_verify")
 
 
 def test_ct_logs_wrong_kind_target_raises(monkeypatch, tmp_path):
@@ -287,8 +302,48 @@ def test_every_remote_tool_advertises_proximo_target():
     tools = anyio.run(server.mcp.list_tools)
     assert len(tools) > 300, f"expected the full surface, got {len(tools)}"
     for t in tools:
-        has = "proximo_target" in t.inputSchema.get("properties", {})
+        has = _accepts_target(t.name)
         if t.name in INSTANCE_LEVEL:
-            assert not has, f"{t.name} is instance-level but advertises proximo_target"
+            assert not has, f"{t.name} is instance-level but accepts proximo_target"
         else:
-            assert has, f"{t.name} acts on a remote box but does NOT advertise proximo_target"
+            assert has, f"{t.name} acts on a remote box but does NOT accept proximo_target"
+
+
+def test_advertised_schema_carries_the_target_param_when_a_registry_exists(monkeypatch, tmp_path):
+    """The other half: when a registry IS configured the parameter must reach the wire, or a
+    multi-target operator cannot select a box.
+
+    Drives the real `_slim_registry_schemas` over a stand-in registry holding UNPRUNED schemas.
+    The first version of this test deep-copied the LIVE schemas — which the import-time pass had
+    already pruned, since this test env has no PROXIMO_TARGETS — so it re-ran a no-op over an
+    empty result and could never have observed the thing it named.
+    """
+    reg = tmp_path / "targets.toml"
+    reg.write_text('[targets.other]\nkind = "pve"\n'
+                   'base_url = "https://192.0.2.9:8006/api2/json"\n'
+                   'token_path = "/etc/proximo/other.token"\n')
+    monkeypatch.setenv("PROXIMO_TARGETS", str(reg))
+
+    def _unpruned():
+        return {"properties": {"vmid": {"type": "string"},
+                               "proximo_target": {"type": "string", "description": "d"}}}
+
+    class _Tool:
+        def __init__(self): self.parameters = _unpruned()
+
+    class _Stand:
+        def __init__(self): self._tool_manager = type("M", (), {"_tools": {"t": _Tool()}})()
+
+    stand = _Stand()
+    server._slim_registry_schemas(stand)
+    kept = stand._tool_manager._tools["t"].parameters["properties"]
+    assert "proximo_target" in kept, (
+        "with a registry configured the slimming pass dropped the parameter a multi-target "
+        "operator needs to select a box")
+
+    # ...and the negative control, same pass, registry removed: it must actually prune.
+    monkeypatch.delenv("PROXIMO_TARGETS", raising=False)
+    stand2 = _Stand()
+    server._slim_registry_schemas(stand2)
+    assert "proximo_target" not in stand2._tool_manager._tools["t"].parameters["properties"], (
+        "negative control failed — the prune never fires, so the positive case proves nothing")

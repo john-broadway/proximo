@@ -139,6 +139,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .backends import ProximoError
+from .principal import ledger_principal
 from .targets import active_target, ledger_remote, load_registry
 
 if TYPE_CHECKING:
@@ -479,7 +480,7 @@ def _resolve_envelope_audited(action: str, target: str, audit: AuditLedger,
     except Exception as e:
         audit.record(action, target=target, mutation=True, outcome="blocked:envelope_error",
                       detail={**(detail or {}), "error": type(e).__name__},
-                      remote=ledger_remote())
+                      principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(
             f"envelope refused: could not resolve envelope config for {action!r} on {target!r} "
             f"(fail-closed) — {type(e).__name__}"
@@ -511,7 +512,7 @@ def enforce_envelope_forbid(action: str, target: str, audit: AuditLedger, *,
     if env.forbid and _forbidden(action, target, detail, env.forbid):
         audit.record(action, target=target, mutation=True, outcome="blocked:forbidden",
                      detail={**(detail or {}), "forbid": sorted(env.forbid)},
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(
             f"envelope refused: {action!r} on {target!r} is forbidden on this surface"
         )
@@ -542,7 +543,7 @@ def enforce_envelope_forbid(action: str, target: str, audit: AuditLedger, *,
     if _forbidden(action, target, detail, taint_forbid_effective):
         audit.record(action, target=target, mutation=True, outcome="blocked:taint_forbidden",
                      detail={**(detail or {}), "taint_forbid": sorted(taint_forbid_effective)},
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(
             f"envelope refused: {action!r} on {target!r} is forbidden after an untrusted read "
             "on this surface"
@@ -588,7 +589,7 @@ def enforce_envelope_rate(action: str, target: str, audit: AuditLedger, *,
         audit.record(action, target=target, mutation=True, outcome=outcome,
                      detail={**(detail or {}), "rate_max": env.rate_max,
                              "rate_window": env.rate_window, "box": _box_key(base_url or "")},
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(
             f"envelope refused: {action!r} on {target!r} exceeds the rate budget for this surface"
         )

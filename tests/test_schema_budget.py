@@ -115,9 +115,9 @@ def test_schemas_carry_no_redundant_titles():
 # smaller SURFACE — fewer, coarser tools — not tidier bytes on the same 900. Trimming descriptions
 # would buy ~87k tokens at the cost of the model knowing what it is calling: a capability trade,
 # not a cleanup, and not one to make silently inside a budget test.
-FULL_SURFACE_BUDGET = 1_200_000
-PVE_SURFACE_BUDGET = 420_000
-PER_TOOL_AVERAGE_BUDGET = 1_300
+FULL_SURFACE_BUDGET = 1_010_000
+PVE_SURFACE_BUDGET = 355_000
+PER_TOOL_AVERAGE_BUDGET = 1_120
 
 
 def test_full_surface_payload_within_budget():
@@ -174,9 +174,17 @@ def _lean_facade_registry() -> dict:
 
 DOC_PRINTED_TOKEN_FIGURES = {
     "dynamic (PROXIMO_TOOLSETS=dynamic)": 555,
-    "one domain toolset (pve.guests)": 8_900,
-    "one plane (PROXIMO_SURFACES=pve)": 97_000,
-    "full surface (nothing configured)": 276_000,
+    # Added 2026-07-31. These two SETUP.md rows were NOT pinned here, so nothing watched them.
+    # The toolsets row had genuinely drifted 17% after the doorway work. The PROXIMO_TOOLS row
+    # had NOT — a review lens and I both measured it at 828 by summing the three NAMED tools,
+    # forgetting that tool_keep always adds audit_verify, so the real figure is 4 tools. The doc
+    # was right and we were about to "fix" it. Pinning both here is what makes that unrepeatable:
+    # a figure nobody measures the same way twice needs a guard, not another careful reader.
+    "three exact tools (PROXIMO_TOOLS)": 1_000,
+    "two domain toolsets (pve.guests,pve.storage)": 13_400,
+    "one domain toolset (pve.guests)": 7_750,
+    "one plane (PROXIMO_SURFACES=pve)": 81_900,
+    "full surface (nothing configured)": 231_700,
 }
 
 
@@ -188,6 +196,12 @@ def test_doc_printed_token_figures_match_live_measurement(label, doc_tokens):
         names, registry = list(lean_registry), lean_registry
     elif label.startswith("one domain toolset"):
         names, registry = sorted(server.toolset_keep(REGISTRY.keys(), "pve.guests")), REGISTRY
+    elif label.startswith("three exact tools"):
+        names = sorted(server.tool_keep(set(REGISTRY), "pve_list_guests,pve_guest_power,pve_rollback"))
+        registry = REGISTRY
+    elif label.startswith("two domain toolsets"):
+        names = sorted(server.toolset_keep(REGISTRY.keys(), "pve.guests,pve.storage"))
+        registry = REGISTRY
     elif label.startswith("one plane"):
         names, registry = sorted(server.surface_keep(list(REGISTRY), "pve")), REGISTRY
     else:
@@ -200,3 +214,64 @@ def test_doc_printed_token_figures_match_live_measurement(label, doc_tokens):
         f"{measured_tokens:,} across {len(names)} tools — outside +/-10%, the docs need "
         "a re-measure"
     )
+
+
+# --- two cuts the 900-tool measurement above called impossible -------------------------------
+#
+# That note concluded "no further FREE cut here", measuring bytes on a fixed surface with the
+# target selector treated as mandatory. Both assumptions had room in them.
+
+def test_nullable_anyof_is_collapsed_to_a_type_union():
+    """`anyOf:[{type:X},{type:null}]` and `type:[X,"null"]` are the SAME JSON Schema; one is
+    ~30 chars longer, and pydantic emits it on every optional parameter across the surface."""
+    from proximo.server import collapse_nullable_anyof
+
+    node = {"properties": {"node": {"anyOf": [{"type": "string"}, {"type": "null"}],
+                                    "default": None, "description": "d"}}}
+    collapse_nullable_anyof(node)
+    prop = node["properties"]["node"]
+    assert "anyOf" not in prop
+    assert prop["type"] == ["string", "null"]
+    assert prop["default"] is None and prop["description"] == "d"  # nothing else touched
+
+
+def test_nullable_anyof_collapse_leaves_real_unions_alone():
+    """Only the two-branch X-or-null shape collapses. A genuine union, or a branch carrying
+    more than `type`, must survive untouched — a shorter schema that means something else is
+    not a saving."""
+    from proximo.server import collapse_nullable_anyof
+
+    real = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+    constrained = {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
+    three = {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}
+    for node in (real, constrained, three):
+        before = dict(node)
+        collapse_nullable_anyof(node)
+        assert node == before, f"collapsed a shape it must not touch: {before}"
+
+
+def test_target_param_dropped_when_no_registry_but_kept_when_configured():
+    """`proximo_target` names an entry in the PROXIMO_TARGETS registry. With no registry the
+    only thing a caller can do with it is get 'no target registry configured' back — so on a
+    single-box deployment it is pure payload advertised on ~every tool. Same principle autoscope
+    already applies: do not advertise what this box cannot serve.
+
+    Both directions asserted, because a prune that fires unconditionally would silently remove a
+    parameter that multi-target deployments genuinely need.
+    """
+    from proximo.server import drop_unusable_target_param
+
+    def fresh():
+        return {"properties": {"vmid": {"type": "string"},
+                               "proximo_target": {"type": "string", "description": "d"}},
+                "required": ["vmid"]}
+
+    no_registry = fresh()
+    drop_unusable_target_param(no_registry, registry_configured=False)
+    assert "proximo_target" not in no_registry["properties"]
+    assert "vmid" in no_registry["properties"], "pruned more than the target selector"
+
+    configured = fresh()
+    drop_unusable_target_param(configured, registry_configured=True)
+    assert "proximo_target" in configured["properties"], (
+        "a multi-target deployment lost the parameter it needs")

@@ -146,6 +146,11 @@ def doctor_check(api) -> dict:
             "ca_bundle": getattr(cfg, "ca_bundle", None),
             "ct_allowlist": ("none (exec deny-all)" if not allow
                              else "ALL (*)" if "*" in allow else f"{len(allow)} CTID(s)"),
+            # Whether exec/SQL bodies are fingerprinted or written whole into the PROVE ledger.
+            # This block exists for exactly this class of signal, and it was the one posture fact
+            # a stranger could not read off it — the one that decides whether a password on an
+            # argv lands in a durable file.
+            "ledger_redaction": bool(getattr(cfg, "redact_ledger", True)),
         }
         if not getattr(cfg, "verify_tls", True) and not getattr(cfg, "ca_bundle", None):
             flags.append("TLS verification is OFF with no CA bundle — API traffic is not cert-validated.")
@@ -190,6 +195,7 @@ def doctor_check(api) -> dict:
         ),
     }
 
+    report["principal"] = _principal_report()
     report["surfaces"] = _surfaces_report()
 
     # Tier-1 memory (opt-in): enabled/size/freshness. A broken db is a doctor FINDING —
@@ -202,6 +208,72 @@ def doctor_check(api) -> dict:
     report["flags"] = flags
     report["complete"] = complete
     return report
+
+
+def _principal_report() -> dict:
+    """The principal feature's config state: name tag, caller pins enrolled count, enrollment mode.
+
+    Reports the WHO layer on every ledger entry. Two layers: the operator-declared NAME TAG
+    (PROXIMO_PRINCIPAL) and network-face CALLER BADGE verification (PROXIMO_CALLER_KEYS_DIR).
+    Degrades to a note on any error; never crashes the doctor run.
+    """
+    try:
+        from . import principal  # deferred: lazy import; cryptography may not be installed
+
+        process_principal = principal.process_principal()
+        pins_dir = os.environ.get("PROXIMO_CALLER_KEYS_DIR", "").strip() or None
+
+        caller_pins: dict = {
+            "configured": False,
+            "dir": None,
+            "enrolled": None,
+            "note": "",
+        }
+
+        # Determine state and generate note
+        if process_principal is None and pins_dir is None:
+            # Completely unconfigured
+            caller_pins["note"] = (
+                "no principal configured — ledger entries carry no who-asked"
+            )
+        elif pins_dir is not None:
+            # Pins directory is configured; try to load and count
+            caller_pins["configured"] = True
+            caller_pins["dir"] = pins_dir
+            try:
+                pins = principal.load_pins(pins_dir)
+                enrolled = len(pins)
+                caller_pins["enrolled"] = enrolled
+                if enrolled == 0:
+                    caller_pins["note"] = (
+                        "caller pins configured, 0 enrolled — ALL callers will be refused on network faces"
+                    )
+                else:
+                    caller_pins["note"] = f"{enrolled} caller(s) enrolled"
+            except RuntimeError as e:
+                # Pin directory unreadable, bad format, symlink, etc.
+                # Degrade gracefully; the note carries the error.
+                caller_pins["note"] = str(e)
+        elif process_principal is not None:
+            # Name tag set but no pins
+            caller_pins["note"] = (
+                "name tag set; no caller pins (network callers unverified)"
+            )
+
+        return {
+            "process_principal": process_principal,
+            "caller_pins": caller_pins,
+        }
+    except Exception as e:  # never let introspection break a read-only preflight
+        return {
+            "process_principal": None,
+            "caller_pins": {
+                "configured": False,
+                "dir": None,
+                "enrolled": None,
+                "note": f"principal feature not introspectable here ({type(e).__name__})",
+            },
+        }
 
 
 def _surfaces_report() -> dict:

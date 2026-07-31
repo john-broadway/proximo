@@ -17,6 +17,7 @@ from proximo import targets
 from proximo.audit import AuditLedger
 from proximo.config import ProximoConfig
 from proximo.doctor import doctor_check
+from proximo.principal import public_jwk
 
 
 def _cfg(**kw):
@@ -179,7 +180,8 @@ def test_pve_doctor_routes_to_named_target(monkeypatch):
     captured = {}
 
     class _FakeLedger:
-        def record(self, action, *, target, mutation=False, outcome="ok", detail=None, remote=None):
+        def record(self, action, *, target, mutation=False, outcome="ok", detail=None,
+                   remote=None, principal=None):
             return {}
 
     def _fake_svc():
@@ -200,7 +202,8 @@ def test_pve_doctor_default_target_is_none(monkeypatch):
     captured = {}
 
     class _FakeLedger:
-        def record(self, action, *, target, mutation=False, outcome="ok", detail=None, remote=None):
+        def record(self, action, *, target, mutation=False, outcome="ok", detail=None,
+                   remote=None, principal=None):
             return {}
 
     def _fake_svc():
@@ -476,3 +479,124 @@ def test_surfaces_report_uses_the_utility_guard_not_a_bare_exec_set(monkeypatch)
     monkeypatch.setattr(server, "configured_surfaces", lambda: {"memory", "wiki"})
     rep = doctor._surfaces_report()
     assert rep["scoping"].startswith("no plane configured yet"), rep["scoping"]
+
+
+# --- Principal block: name tag, caller pins, the empty-pins lockout warning ---
+
+
+def test_principal_unconfigured(monkeypatch):
+    """No PROXIMO_PRINCIPAL AND no PROXIMO_CALLER_KEYS_DIR => principal block reports unconfigured."""
+    monkeypatch.delenv("PROXIMO_PRINCIPAL", raising=False)
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+    out = doctor_check(_DoctorApi())
+    principal = out.get("principal")
+    assert principal is not None
+    assert principal["process_principal"] is None
+    assert principal["caller_pins"]["configured"] is False
+    assert principal["caller_pins"]["dir"] is None
+    assert principal["caller_pins"]["enrolled"] is None
+    assert "no principal configured" in principal["caller_pins"]["note"]
+
+
+def test_principal_pins_with_zero_enrolled(monkeypatch, tmp_path):
+    """PROXIMO_CALLER_KEYS_DIR set to empty dir => configured, 0 enrolled, lockout warning."""
+    monkeypatch.delenv("PROXIMO_PRINCIPAL", raising=False)
+    pins_dir = str(tmp_path)
+    monkeypatch.setenv("PROXIMO_CALLER_KEYS_DIR", pins_dir)
+    out = doctor_check(_DoctorApi())
+    principal = out.get("principal")
+    assert principal is not None
+    assert principal["process_principal"] is None
+    assert principal["caller_pins"]["configured"] is True
+    assert principal["caller_pins"]["dir"] == pins_dir
+    assert principal["caller_pins"]["enrolled"] == 0
+    assert "0 enrolled" in principal["caller_pins"]["note"]
+    assert "ALL callers will be refused" in principal["caller_pins"]["note"]
+
+
+def test_principal_pins_with_one_enrolled(monkeypatch, tmp_path):
+    """PROXIMO_CALLER_KEYS_DIR with 1 valid .jwk file => enrolled==1, positive note."""
+    # Create a keypair and mint a public JWK
+    from cryptography.hazmat.primitives import serialization  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric import ec  # noqa: PLC0415
+    key = ec.generate_private_key(ec.SECP256R1())
+    pem = key.private_bytes(serialization.Encoding.PEM,
+                             serialization.PrivateFormat.PKCS8,
+                             serialization.NoEncryption())
+    jwk = public_jwk(pem, "test-caller")
+
+    # Write the JWK to a .jwk file
+    pins_dir = str(tmp_path)
+    (tmp_path / "test-caller.jwk").write_text(json.dumps(jwk))
+
+    monkeypatch.delenv("PROXIMO_PRINCIPAL", raising=False)
+    monkeypatch.setenv("PROXIMO_CALLER_KEYS_DIR", pins_dir)
+
+    out = doctor_check(_DoctorApi())
+    principal = out.get("principal")
+    assert principal is not None
+    assert principal["process_principal"] is None
+    assert principal["caller_pins"]["configured"] is True
+    assert principal["caller_pins"]["dir"] == pins_dir
+    assert principal["caller_pins"]["enrolled"] == 1
+    assert "1 caller" in principal["caller_pins"]["note"]
+
+
+def test_principal_pins_malformed_degrades_gracefully(monkeypatch, tmp_path):
+    """PROXIMO_CALLER_KEYS_DIR with malformed .jwk => configured=True, enrolled=None, error in note."""
+    pins_dir = str(tmp_path)
+    # Write a malformed JWK file (non-JSON garbage)
+    (tmp_path / "fleet-7.jwk").write_text("not json{{{")
+
+    monkeypatch.delenv("PROXIMO_PRINCIPAL", raising=False)
+    monkeypatch.setenv("PROXIMO_CALLER_KEYS_DIR", pins_dir)
+
+    out = doctor_check(_DoctorApi())
+    principal = out.get("principal")
+    # Doctor must not crash; must have the principal block
+    assert principal is not None
+    assert principal["process_principal"] is None
+    assert principal["caller_pins"]["configured"] is True
+    assert principal["caller_pins"]["dir"] == pins_dir
+    assert principal["caller_pins"]["enrolled"] is None
+    # Note must carry the error string from load_pins
+    assert "invalid" in principal["caller_pins"]["note"].lower()
+
+
+def test_principal_name_tag_only_no_pins(monkeypatch):
+    """PROXIMO_PRINCIPAL set, PROXIMO_CALLER_KEYS_DIR unset => process_principal carries name, configured=False."""
+    monkeypatch.setenv("PROXIMO_PRINCIPAL", "my-instance")
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+
+    out = doctor_check(_DoctorApi())
+    principal = out.get("principal")
+    assert principal is not None
+    assert principal["process_principal"] == "my-instance"
+    assert principal["caller_pins"]["configured"] is False
+    assert principal["caller_pins"]["dir"] is None
+    assert principal["caller_pins"]["enrolled"] is None
+    assert "name tag set" in principal["caller_pins"]["note"]
+    assert "no caller pins" in principal["caller_pins"]["note"]
+
+
+def test_doctor_reports_whether_the_ledger_redacts():
+    """doctor's config block is 'the safety/posture signals a stranger needs to see' by its own
+    comment, and it already surfaces exec, TLS and the CT allowlist. It never surfaced whether the
+    PROVE ledger fingerprints command bodies or writes them whole — the one posture signal that
+    decides whether a password on an argv lands in a durable file.
+
+    Driven through the config object doctor actually reads (api.config), not the environment: an
+    earlier version of this test set PROXIMO_LEDGER_REDACT and asserted on the result, which could
+    never have worked because doctor_check takes cfg off the api double and never consults env.
+    """
+    import copy  # noqa: PLC0415
+
+    def _with(redact):
+        c = copy.copy(_cfg())
+        c.redact_ledger = redact
+        return _DoctorApi(config=c)
+
+    on, off = _with(True), _with(False)
+    assert doctor_check(on)["config"]["ledger_redaction"] is True
+    assert doctor_check(off)["config"]["ledger_redaction"] is False, (
+        "an operator turning redaction OFF cannot see that in doctor — the one place they would look")

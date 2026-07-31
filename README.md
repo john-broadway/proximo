@@ -191,7 +191,7 @@ A second cut: `doctor` preflight, a destructive delete answered with a **PLAN**,
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
-904 tools is an estate, not a starting point — and you only carry the part you use. One env var sets your floor: `PROXIMO_TOOLSETS=dynamic` serves 3 search tools with every other one still callable (~555 tokens of context), one domain like `pve.guests` runs ~8,900, a whole plane ~97,000. **The estate is 904. The doorway is yours to size.** Coverage and context stopped being the same number.
+904 tools is an estate, not a starting point — and you only carry the part you use. One env var sets your floor: `PROXIMO_TOOLSETS=dynamic` serves 3 search tools with every other one still callable (~555 tokens of context), one domain like `pve.guests` runs ~7,750, a whole plane ~81,900. **The estate is 904. The doorway is yours to size.** Coverage and context stopped being the same number.
 
 Where an operator actually starts:
 
@@ -212,16 +212,14 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.28.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.28.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.29.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.29.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.28.0 — two honesty fixes.** The RRD tools stopped letting a model call a rolling
-> window "today": the schema never said those windows roll and end at *now*, so an agent asked
-> for today answered from the last 24 hours. It wasn't hallucinating — **the description told it
-> that.** Fixed at all five sites that shipped the wording, pinned by tests. And `proximo reap`
-> gained opt-in cleanup (`PROXIMO_REAP_UNLINK_DAYS`) for dead sessions' token and lock files,
-> which restoring the key never removed. Tool count unchanged at 904.
->
-> Recent: **0.27.1** — an unbounded `mcp` dependency met an SDK major that removed the module this server imports, so every fresh PyPI install broke while the suite stayed green. Capped and bounded: a lockfile protects the build, not the adopter.
+> **New in 0.29.0 — who asked, and a leaner default.** The PROVE ledger now records *who*, not
+> just what: a declared name tag (`PROXIMO_PRINCIPAL`) on every entry, and on the network faces
+> signed ES256 caller badges (`PROXIMO_CALLER_KEYS_DIR`) that refuse an unverifiable caller
+> fail-closed. Opt-in; an unconfigured ledger's bytes are unchanged. Two defaults moved toward
+> safety: command-body redaction is now **on** unless you turn it off, and the tools/list payload
+> dropped ~16% with no loss of surface. Tool count unchanged at 904.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,12 +256,11 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.28.0** — **a reviewer asked for "utilization charts for today" and got the last 24 hours, and he was
-  right to call it**: the RRD schema never said its windows roll and end at *now*, so the model picked one and
-  called it today. The model wasn't hallucinating — our own tool description authored the claim. Every one of the
-  five tools carrying that wording now states the limit, and what to report instead, pinned by tests. `proximo
-  reap` also learned to clean up after dead sessions, since putting the key back never removed the files. **A
-  tool description is a prompt: whatever it omits, the model fills in.**
+- 🩸 **0.29.0** — **the ledger recorded what happened but never who asked.** It does now, and the
+  five independent review passes that landed it found more in our own work than in the feature: a
+  crash-safety entry that dropped attribution, a network face tagging its own remote requests as
+  the local channel, and a revocation guarantee in SECURITY.md that was false against a running
+  process. Each was fixed in the code, not softened in the prose.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

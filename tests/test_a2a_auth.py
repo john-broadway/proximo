@@ -19,8 +19,10 @@ import pytest
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from starlette.testclient import TestClient
 
+from proximo import principal, server
 from proximo.a2a.app import _require_auth_for_public, build_app
 from proximo.a2a.card import build_agent_card
+from proximo.audit import AuditLedger
 from proximo.webguard import is_public as _is_public  # the shared perimeter is the canon now
 
 PUBLIC_URL = "http://10.1.2.3:41241/"
@@ -174,3 +176,71 @@ def test_build_app_bracketed_ipv6_loopback_accepted_without_token():
     from starlette.applications import Starlette  # noqa: PLC0415
 
     assert isinstance(build_app("http://[::1]:41241/"), Starlette)
+
+
+# --- Task 6: main() registers the serving face + records session entries ------------------------
+#
+# Mirrors test_main_ipv6_loopback_starts_without_token's shape exactly (uvicorn.run monkeypatched to
+# a no-op so main() returns without a real bind) plus a `server._svc` swap (same pattern
+# tests/test_principal.py's `_wire_ledger` uses) so `_record_session`'s `_ledger()` call lands on a
+# tmp ledger instead of the real _instance_ledger() lru_cache.
+
+
+def _ledger_lines(log_path) -> list[dict]:
+    import json  # noqa: PLC0415
+
+    if not log_path.exists():
+        return []
+    return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+
+
+def test_a2a_main_records_session_entries_with_face(monkeypatch, tmp_path):
+    import uvicorn  # noqa: PLC0415
+
+    from proximo.a2a import app as a2a_app  # noqa: PLC0415
+
+    log = tmp_path / "audit.log"
+    ledger = AuditLedger(str(log))
+    monkeypatch.setattr(server, "_svc", lambda: (None, None, None, ledger))
+    monkeypatch.setenv("PROXIMO_PRINCIPAL", "svc-account")
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+    monkeypatch.delenv("PROXIMO_A2A_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("PROXIMO_A2A_SIGNING_KEY_FILE", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)  # no real bind
+
+    try:
+        a2a_app.main()
+    finally:
+        principal.set_serving_face("stdio")
+
+    lines = _ledger_lines(log)
+    starts = [e for e in lines if e["action"] == "session_start"]
+    ends = [e for e in lines if e["action"] == "session_end"]
+    assert len(starts) == 1 and len(ends) == 1
+    assert starts[0]["detail"]["face"] == "a2a"
+    assert starts[0]["principal"] == {"id": "svc-account", "via": "spawn", "face": "a2a"}
+    assert ends[0]["detail"]["face"] == "a2a"
+
+
+def test_a2a_main_no_session_entries_when_principal_unconfigured(monkeypatch, tmp_path):
+    """Byte-compat gate: an operator who hasn't opted into the principal feature sees NO session
+    entries at all — same as before this feature existed."""
+    import uvicorn  # noqa: PLC0415
+
+    from proximo.a2a import app as a2a_app  # noqa: PLC0415
+
+    log = tmp_path / "audit.log"
+    ledger = AuditLedger(str(log))
+    monkeypatch.setattr(server, "_svc", lambda: (None, None, None, ledger))
+    monkeypatch.delenv("PROXIMO_PRINCIPAL", raising=False)
+    monkeypatch.delenv("PROXIMO_CALLER_KEYS_DIR", raising=False)
+    monkeypatch.delenv("PROXIMO_A2A_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("PROXIMO_A2A_SIGNING_KEY_FILE", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)  # no real bind
+
+    try:
+        a2a_app.main()
+    finally:
+        principal.set_serving_face("stdio")
+
+    assert not log.exists()

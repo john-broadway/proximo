@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .backends import ProximoError
+from .principal import ledger_principal
 from .targets import ledger_remote
 
 if TYPE_CHECKING:
@@ -136,7 +137,7 @@ def enforce_scope(action: str, target: str, audit: AuditLedger, *,
     if state.fail_closed:
         audit.record(action, target=target, mutation=True, outcome="blocked:scope_unreadable",
                      detail={**(detail or {}), **({"reason": state.reason} if state.reason else {})},
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(f"scope refused: {action!r} on {target!r} (scope file unreadable, "
                             "garbled, or authorizes nothing — fail-closed)")
     key = scope_key(target)
@@ -144,6 +145,6 @@ def enforce_scope(action: str, target: str, audit: AuditLedger, *,
         audit.record(action, target=target, mutation=True, outcome="blocked:out_of_scope",
                      detail={**(detail or {}), "scope_key": key,
                              **({"reason": state.reason} if state.reason else {})},
-                     remote=ledger_remote())
+                     principal=ledger_principal(), remote=ledger_remote())
         raise ProximoError(f"out of declared scope: {action!r} on {target!r} (key {key!r})")
     return  # in scope — proceed

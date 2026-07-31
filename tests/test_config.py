@@ -120,9 +120,16 @@ def test_verify_tls_false_without_ca_bundle_warns_loudly(monkeypatch):
     assert cfg.verify_tls is False
 
 
-def test_redact_ledger_off_by_default():
-    # Audit completeness is the default: ct_psql/ct_exec record the body unless explicitly opted out.
-    assert _cfg().redact_ledger is False
+def test_redact_ledger_on_by_default():
+    """Zero trust by default: the ledger fingerprints exec/SQL bodies unless an operator opts OUT.
+
+    This was the one default in the box that failed that rule. `ct_exec`/`ct_psql`/
+    `pve_agent_exec` record the full command body, which routinely carries a secret (a password
+    on the argv), and the PROVE ledger is a durable file — so the permissive setting wrote
+    credentials to disk for anyone who enabled exec and never read the startup warning. The safe
+    posture is now the default and full-body recording is the deliberate choice.
+    """
+    assert _cfg().redact_ledger is True
 
 
 def test_from_env_parses_redact_ledger(monkeypatch):
@@ -322,14 +329,29 @@ def test_audit_keyed_off_no_key_path_warns(monkeypatch):
 # permissive-by-default security toggle in _build().
 # ---------------------------------------------------------------------------
 
-def test_redact_ledger_off_warns_ledger_may_carry_secrets(monkeypatch):
-    """PROXIMO_LEDGER_REDACT unset (the default: full command/SQL body recorded) must warn that
-    ct_exec/ct_psql/pve_agent_exec write the raw command/SQL — which can carry secrets like a
-    password on the argv — into the PROVE ledger."""
-    _base_env(monkeypatch)  # PROXIMO_LEDGER_REDACT deliberately not set
+def test_redact_ledger_explicit_off_still_warns(monkeypatch):
+    """Turning redaction OFF is now a deliberate act, and still warns — the warning moved from
+    'you did not opt in' to 'you opted out', because the permissive state is no longer reached
+    by doing nothing."""
+    _base_env(monkeypatch, PROXIMO_LEDGER_REDACT="0")
     with pytest.warns(UserWarning, match="(?i)ledger_redact|redact_ledger"):
         cfg = ProximoConfig.from_env()
     assert cfg.redact_ledger is False
+
+
+@pytest.mark.parametrize("raw", ["0", "false", "off", "no", "FALSE", " Off "])
+def test_redact_ledger_opt_out_forms(monkeypatch, raw):
+    """Same falsy vocabulary as PROXIMO_AUDIT_KEYED — one opt-out spelling set, not two."""
+    _base_env(monkeypatch, PROXIMO_LEDGER_REDACT=raw)
+    with pytest.warns(UserWarning):
+        assert ProximoConfig.from_env().redact_ledger is False
+
+
+def test_redact_ledger_unrecognised_value_stays_SAFE(monkeypatch):
+    """A typo must not silently disable redaction. Anything not in the falsy set keeps the safe
+    default — fail toward the protective state, never away from it."""
+    _base_env(monkeypatch, PROXIMO_LEDGER_REDACT="flase")
+    assert ProximoConfig.from_env().redact_ledger is True
 
 
 def test_redact_ledger_on_does_not_warn(monkeypatch):

@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import __version__
+from .principal import ledger_principal, set_serving_face
 
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 41242  # A2A is 41241; the HTTP face sits beside it
@@ -92,7 +93,8 @@ def _audit_rejection(tool_name: str | None, reason: str) -> None:
 
     try:
         server._ledger().record("http_rejected", target=str(tool_name or "<none>"), mutation=False,
-                                outcome="rejected", detail={"reason": reason})
+                                outcome="rejected", detail={"reason": reason},
+                                principal=ledger_principal())
     except Exception as exc:  # noqa: BLE001 — supplementary audit; never break the rejection path
         warnings.warn(f"HTTP rejection audit failed to record: {type(exc).__name__}", stacklevel=2)
 
@@ -178,6 +180,7 @@ def main() -> None:
     """``proximo-http`` entry point — run the HTTP face with uvicorn (fail-closed)."""
     import uvicorn  # noqa: PLC0415 -- only needed when actually serving
 
+    from . import server  # noqa: PLC0415 -- late import; keeps the app-factory path import-light
     from .webguard import (  # noqa: PLC0415
         apply_surfaces_or_exit,
         read_face_env,
@@ -185,6 +188,9 @@ def main() -> None:
         url_authority,
     )
 
+    # Which door this process serves — set before anything else so every ledger entry from this
+    # process (incl. the session entries below) carries face="http", never the "stdio" default.
+    set_serving_face("http")
     apply_surfaces_or_exit("proximo-http")
     host, port, token, allowed_hosts = read_face_env("HTTP", default_port=_DEFAULT_PORT)
 
@@ -192,4 +198,11 @@ def main() -> None:
     require_auth_for_public(host, token, where="bind host", face="HTTP", token_env=_TOKEN_FILE_ENV)
 
     app = build_app(f"http://{url_authority(host)}:{port}/", token=token, allowed_hosts=allowed_hosts)
-    uvicorn.run(app, host=host, port=port)
+    # Arrival/departure PROVE entries — mirrors the stdio entrypoint's pattern exactly (Task 3.4);
+    # a no-op unless the operator configured the principal feature (PROXIMO_PRINCIPAL /
+    # PROXIMO_CALLER_KEYS_DIR), so byte-compat for every deployment that hasn't opted in.
+    server._record_session("session_start")
+    try:
+        uvicorn.run(app, host=host, port=port)
+    finally:
+        server._record_session("session_end")

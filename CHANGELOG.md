@@ -2,6 +2,45 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.29.0] — 2026-07-31
+
+### Changed
+- **The doorway got ~16% cheaper, with no loss of surface.** Two schema cuts the previous
+  measurement had ruled out, both mechanical and both measured rather than estimated:
+  `anyOf:[{type:X},{type:null}]` is rewritten as the identical `type:[X,"null"]` (pydantic emits
+  the long form on every optional parameter, so the same ~30 wasted chars rode on hundreds of
+  properties); and `proximo_target` is no longer advertised when no `PROXIMO_TARGETS` registry is
+  configured, because with no registry the only thing that parameter can do is return "no target
+  registry configured" — it was pure payload on ~every tool of a single-box deployment. The same
+  rule autoscope already applies to whole planes: do not advertise what this box cannot serve.
+  A configured registry keeps the parameter untouched, asserted in both directions.
+  Measured: full surface **276,000 → 231,700** tokens, one plane **97,000 → 81,900**, one domain
+  **8,900 → 7,750**. Routing is unaffected — it has always run off the injected kwarg, never off
+  the advertised schema, and the two structural guards that used the schema as a proxy for the
+  injection now assert the signature they actually care about.
+
+- **`PROXIMO_LEDGER_REDACT` now defaults to ON — the one default that failed zero-trust.**
+  `ct_exec` / `ct_psql` / `pve_agent_exec` record a sha256 fingerprint (+ kind + length) of the
+  command or SQL instead of the body. The body routinely carries a secret (a password on the
+  argv) and the PROVE ledger is a durable file, so the permissive setting wrote credentials to
+  disk for anyone who enabled exec and did not read the startup warning. Full-body recording is
+  now the deliberate choice: set `0`/`false`/`off`/`no` to opt out, which still warns. A value
+  the parser does not recognise keeps redaction ON — a typo must fail toward the safe state, not
+  away from it. **Operators who relied on full-body ledger entries for forensics must now set
+  this explicitly.**
+
+### Added
+- **Principal in the ledger — who-asked on every PROVE entry.** A declared process
+  name-tag (`PROXIMO_PRINCIPAL`) stamps every ledger entry across all faces; on the
+  network faces, signed ES256 caller badges (`PROXIMO_CALLER_KEYS_DIR`, operator-pinned
+  keys) record a *verified* caller and, once pins exist, refuse an unverifiable caller
+  fail-closed at the shared `webguard` perimeter — so all three HTTP-carried faces (HTTP,
+  A2A and MCP-over-HTTP) inherit it. Adds `session_start`/`session_end`/`caller_arrived`
+  ledger events, a `proximo badge` mint/inspect CLI, and a `doctor` principal block.
+  Identity, not authority: the Proxmox token ACL stays the only authorization boundary.
+  Opt-in and inert until configured; an unconfigured deployment's ledger bytes are
+  unchanged.
+
 ## [0.28.0] — 2026-07-30
 
 Two honesty fixes, one in what the software *says* and one in what it *leaves behind*.

@@ -140,8 +140,13 @@ def main() -> None:
     """``proximo-a2a`` entry point — run the A2A server with uvicorn (fail-closed)."""
     import uvicorn  # noqa: PLC0415 -- only needed when actually serving
 
+    from .. import server  # noqa: PLC0415 -- late import; keeps the app-factory path import-light
+    from ..principal import set_serving_face  # noqa: PLC0415
     from ..webguard import apply_surfaces_or_exit, read_face_env, url_authority  # noqa: PLC0415
 
+    # Which door this process serves — set before anything else so every ledger entry from this
+    # process (incl. the session entries below) carries face="a2a", never the "stdio" default.
+    set_serving_face("a2a")
     apply_surfaces_or_exit("proximo-a2a")
     host, port, token, allowed_hosts = read_face_env("A2A", default_port=_DEFAULT_PORT)
 
@@ -154,4 +159,11 @@ def main() -> None:
         allowed_hosts=allowed_hosts,
         signing_key=_load_signing_key(),
     )
-    uvicorn.run(app, host=host, port=port)
+    # Arrival/departure PROVE entries — mirrors the stdio entrypoint's pattern exactly (Task 3.4);
+    # a no-op unless the operator configured the principal feature (PROXIMO_PRINCIPAL /
+    # PROXIMO_CALLER_KEYS_DIR), so byte-compat for every deployment that hasn't opted in.
+    server._record_session("session_start")
+    try:
+        uvicorn.run(app, host=host, port=port)
+    finally:
+        server._record_session("session_end")
