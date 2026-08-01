@@ -1,10 +1,10 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.29.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.30.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
-**904 tools** across 7 surfaces.
+**906 tools** across 7 surfaces.
 
 ## Contents
 
@@ -14,7 +14,7 @@ The complete external interface of Proximo **v0.29.0**: every MCP tool it expose
 - [Proxmox Mail Gateway (PMG)](#proxmox-mail-gateway-pmg) — 295
 - [Proxmox Datacenter Manager (PDM)](#proxmox-datacenter-manager-pdm) — 34
 - [Container exec (opt-in)](#container-exec-opt-in) — 4
-- [Core / trust spine](#core--trust-spine) — 5
+- [Core / trust spine](#core--trust-spine) — 7
 
 ## Proxmox VE — in-guest agent (opt-in)
 
@@ -13655,6 +13655,25 @@ SQL is NOT run (fail-closed). On success the result carries an `undo_point` (rev
 
 ## Core / trust spine
 
+#### `audit_entries`
+
+READ-ONLY: WHO changed WHAT and WHEN — guest configuration changes and every other
+audited action, read back from the PROVE ledger.
+
+Newest first. This is how you answer "who changed this guest" or "what has this caller
+done". `matched` counts entries passing your filters, `total` counts the whole ledger,
+and `truncated` says so when `limit` cut rows. An entry with no principal returns null
+plus a note: the ledger not capturing an identity is a fact about the log, never a claim
+that nobody was responsible. This READS the chain; `audit_verify` PROVES it is intact.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | integer | no | Newest N entries to return (default 20). (default: `20`) |
+| `target` | ['string', 'null'] | no | Only entries against this exact target, e.g. 'vmid=100'. (default: `null`) |
+| `action` | ['string', 'null'] | no | Only this exact tool name, e.g. 'pve_guest_config_set'. (default: `null`) |
+| `principal` | ['string', 'null'] | no | Only entries attributed to this caller id. (default: `null`) |
+| `mutations_only` | boolean | no | Only entries that changed state. (default: `false`) |
+
 #### `audit_verify`
 
 Verify the tamper-evident audit ledger's hash chain — PROVE the log is intact.
@@ -13676,8 +13695,9 @@ still answers with no PVE call; the live pull needs a configured PVE plane). Wit
 rollup it answers from memory, age-stamped, with NO PVE call and `current: null` (never a
 fabricated reading); when missing or refresh=true it pulls rrddata, stores the rollup, and
 positions the newest sample against it. The assessment is an advisory heuristic from
-history — not an alarm, not a health verdict. Opt-in via PROXIMO_MEMORY=1. For live
-point-in-time state use pve_guest_status; for raw series use pve_node_rrddata (node-level).
+history — not an alarm, not a health verdict. On by default (PROXIMO_MEMORY=0 opts out).
+For live point-in-time state use pve_guest_status; for raw series use pve_node_rrddata
+(node-level).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -13687,6 +13707,18 @@ point-in-time state use pve_guest_status; for raw series use pve_node_rrddata (n
 | `timeframe` | string | no | Rolling RRD window the baseline covers, ENDING NOW: `hour`, `day`, `week` (default), `month`, or `year`. `day` is the last ~24 hours, NOT the calendar day; a specific date is not available. (default: `"week"`) |
 | `refresh` | boolean | no | Set `true` to pull fresh rrddata and recompute; default serves the stored rollup when one exists. (default: `false`) |
 
+#### `proximo_call`
+
+Call any Proximo tool by exact name, including ones not in this server's listed tools.
+
+Get the argument shape from proximo_tool_schema first. Same gates as calling it directly:
+dry-run PLAN, ledger entry, token ACL. A smaller doorway, not a looser one.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tool` | string | yes |  |
+| `arguments` | object (nullable) | no | (default: `null`) |
+
 #### `proximo_recall`
 
 READ-ONLY: the estate map from local Tier-1 memory — NOT a live PVE read. Returns
@@ -13695,15 +13727,16 @@ all counting is server-side) plus lean entity rows, stamped {source:'memory', as
 age_seconds}: the data is as old as the stamp says. With `since`, also diffs: appeared,
 status_changed, and not_seen_since (last observed before the window — a fact, not a claim
 the entity is gone). journal=N adds the newest N diagnosis digests ("when did this last
-happen") — findings summaries only, never raw diagnostic output. Memory is opt-in
-(PROXIMO_MEMORY=1), fed opportunistically by list reads and diagnose/doctor runs, derived
-and rebuildable. For live state use pve_list_guests / pve_cluster_resources.
+happen") — findings summaries only, never raw diagnostic output. Memory is on by default
+(PROXIMO_MEMORY=0 opts out), fed opportunistically by list reads and diagnose/doctor runs,
+derived and rebuildable. For live state use pve_list_guests / pve_cluster_resources.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `since` | ['string', 'null'] | no | Optional change window: ISO8601 (`2026-07-29T00:00:00`) or relative (`24h`, `7d`). Adds appeared / status_changed / not_seen_since diffs. (default: `null`) |
 | `detail` | string | no | Row depth: `summary` (counts only), `lean` (default: identity + status), `full` (timestamps, prev_status). (default: `"lean"`) |
 | `journal` | integer | no | Include the newest N diagnosis-journal entries (pve_diagnose / ct_diagnose / pve_doctor digests over time). 0 (default) omits the journal; `since` also windows it. (default: `0`) |
+| `query` | ['string', 'null'] | no | Optional filter, e.g. a guest name like 'gitea': rows narrow to the closest matches, counts still cover the whole estate. Always available; no configuration needed. Omit it to list every entity. (default: `null`) |
 
 #### `proximo_wiki`
 

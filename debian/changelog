@@ -1,3 +1,14 @@
+proximo (0.30.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.30.0 (minor - the default flip: with nothing configured the
+    server now serves the dynamic facade (~1,449 tokens, everything still callable
+    through it) instead of the full catalog, and Tier-1 estate memory is on by
+    default (PROXIMO_MEMORY=0 opts out). PROXIMO_TOOLSETS=catalog restores the
+    previous default by name. Adds audit_entries residency, a negatively-stated
+    map-limits pointer, and in-wheel lexical search improvements.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 01 Aug 2026 20:35:00 +0000
+
 proximo (0.29.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.29.0 (minor - principal-in-ledger: who-asked on every PROVE

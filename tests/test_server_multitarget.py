@@ -267,12 +267,14 @@ def _accepts_target(name: str) -> bool:
     return "proximo_target" in inspect.signature(fn).parameters
 
 
-def test_exec_tools_are_target_aware_and_audit_verify_is_not():
+def test_exec_tools_are_target_aware_and_the_ledger_tools_are_not():
     """ct_exec/ct_psql/ct_logs/ct_diagnose operate on a PVE box → must be target-aware.
-    audit_verify is instance-level (verifies THE local ledger) → must NOT be."""
+    audit_verify and audit_entries are instance-level (THIS box's one local ledger, which
+    has no remote to aim at) → must NOT be."""
     for name in ("ct_exec", "ct_psql", "ct_logs", "ct_diagnose"):
         assert _accepts_target(name), f"{name} not target-aware"
-    assert not _accepts_target("audit_verify")
+    for name in ("audit_verify", "audit_entries"):
+        assert not _accepts_target(name), f"{name} is instance-level and must not take a target"
 
 
 def test_ct_logs_wrong_kind_target_raises(monkeypatch, tmp_path):
@@ -298,7 +300,13 @@ def test_every_remote_tool_advertises_proximo_target():
     own ledger chain) are exempt. Generalizes the spot-checks to all ~350 tools and catches any
     tool whose signature silently defeated the __signature__ injection."""
     import anyio
-    INSTANCE_LEVEL = {"audit_verify"}
+    # audit_verify is instance-level (it verifies THIS Proximo's ledger chain).
+    # proximo_call is a DISPATCHER: it acts on no box of its own, and the inner tool's
+    # proximo_target rides inside `arguments` and is honoured because dispatch runs the
+    # decorated wrapper (pinned by test_lean_wiring.py::test_dispatch_runs_the_decorated_
+    # function, which asserts target_aware saw the target). Advertising a second, outer
+    # proximo_target would create two places to say the same thing with no rule for which wins.
+    INSTANCE_LEVEL = {"audit_verify", "audit_entries", "proximo_call"}
     tools = anyio.run(server.mcp.list_tools)
     assert len(tools) > 300, f"expected the full surface, got {len(tools)}"
     for t in tools:

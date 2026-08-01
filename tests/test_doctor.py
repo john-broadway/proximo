@@ -453,7 +453,7 @@ def test_dynamic_scoping_line_counts_the_memory_first_facade(monkeypatch):
 
 def test_dynamic_scoping_line_stays_three_without_memory(monkeypatch):
     monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
     scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
     assert "3 facade tools resident + audit_verify" in scoping
     assert "proximo_recall" not in scoping
@@ -466,11 +466,12 @@ def test_surfaces_note_does_not_hardcode_a_facade_size(monkeypatch):
     assert "3-tool" not in note
 
 
-def test_surfaces_report_uses_the_utility_guard_not_a_bare_exec_set(monkeypatch):
-    """A utility-only config (memory/wiki, no data plane) serves the full surface, and the
-    scoping text must say so — the same _UTILITY_SURFACES guard _autoscope_planes uses,
-    not the stale pre-widening {"exec"} (ultra review 2026-07-30). No entry point reaches
-    this branch today, which is exactly why it gets a pin before one arrives."""
+def test_surfaces_report_names_the_default_door_on_a_utility_only_config(monkeypatch):
+    """A utility-only config (memory/wiki, no data plane) gets the default dynamic door, and
+    the scoping text must say it is the DEFAULT — never a claim that utilities were
+    'auto-scoped to' as if they were data planes (the stale pre-widening {"exec"} bug this
+    test originally pinned, ultra review 2026-07-30; the 0.30 flip retired the branch that
+    said 'no plane configured yet — serving the full surface')."""
     from proximo import doctor, server
 
     for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_AUTOSCOPE",
@@ -478,7 +479,7 @@ def test_surfaces_report_uses_the_utility_guard_not_a_bare_exec_set(monkeypatch)
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(server, "configured_surfaces", lambda: {"memory", "wiki"})
     rep = doctor._surfaces_report()
-    assert rep["scoping"].startswith("no plane configured yet"), rep["scoping"]
+    assert rep["scoping"].startswith("dynamic facade (the default)"), rep["scoping"]
 
 
 # --- Principal block: name tag, caller pins, the empty-pins lockout warning ---
@@ -600,3 +601,29 @@ def test_doctor_reports_whether_the_ledger_redacts():
     assert doctor_check(on)["config"]["ledger_redaction"] is True
     assert doctor_check(off)["config"]["ledger_redaction"] is False, (
         "an operator turning redaction OFF cannot see that in doctor — the one place they would look")
+
+
+def test_surfaces_note_does_not_promise_more_than_dynamic_mode_delivers():
+    """Catches the claim that shipped false in 0.29.0: "everything still callable".
+
+    The note is a payload the MODEL reads, so it is a prompt, and an unqualified superlative in
+    it is the shape that produced the RRD "today" bug. On a PVE-only box `PROXIMO_TOOLSETS=
+    dynamic` snapshots its catalog AFTER autoscope prunes (server.py:1260-1263), so the callable
+    set is what THIS BOX SERVES (measured: 310), not the 904-tool estate the README names in the
+    same breath.
+
+    Pinned as an exact substring rather than a regex over meaning: a regex over prose is a
+    phrase list wearing a semantic costume, and this one has to survive rewording being
+    DELIBERATE. If you change the wording, change this line and say why.
+
+    Mutant it kills: restoring "with everything still callable" (the 0.29.0 text). Not vacuous —
+    the positive assertion pins the qualifier, so deleting the word "serves" alone turns it red.
+    """
+    note = doctor_check(_DoctorApi())["surfaces"]["note"]
+
+    assert "everything this box serves still callable" in note, (
+        "the dynamic-mode claim lost its scoping qualifier; unqualified, it promises the whole "
+        "estate is callable when only what this box serves is")
+    assert "with everything still callable" not in note, (
+        "the unqualified 0.29.0 claim is back — it is false on any autoscoped box, which is "
+        "every real deployment")

@@ -18,7 +18,9 @@ That's defense in depth, in the right order:
 - **The floor — your token's permissions.** Enforced by Proxmox, held by you, impossible for Proximo to exceed.
 - **On top — Proximo's safety net.** Every dangerous op is **planned** (dry-run + blast radius first),
   **proven** (a tamper-evident log of every move), and **undoable where the platform can snapshot**
-  (it snapshots before it acts — guest/exec ops; firewall/SDN/ACL/token ops have no snapshot to revert to).
+  (a config change returns the exact prior state; a risky in-container command takes a snapshot first when
+  you pass `snapshot=true`, and refuses to run if it can't — firewall/SDN/ACL/token ops have no snapshot to
+  revert to).
 
 > 🔒 **Do every step below in YOUR OWN terminal / browser. Never paste your token secret into an AI chat.**
 
@@ -236,24 +238,31 @@ typo must not switch deletion on.
 
 ## Fitting a smaller model — scoping the tool surface
 
-Proximo governs 904 operations. Four are opt-in (estate memory and the wiki index), and
-in-container exec is opt-in too — so what an install actually serves depends on what you've
-configured, not on one default number: a single-plane install (one PVE cluster, no exec, no
-memory, no wiki) serves 310; wiring in all four data planes (PVE + PBS + PMG + PDM) with exec
-still off serves 896; nothing configured at all serves the full registered 904. Every served
-tool costs your model context at connection time, before you ask anything: the full surface is
-~232k tokens of schema, which does not fit most models and wastes most of a large one. So pick
-what you need. Four layers, most specific wins. Every figure below was measured against the
-full 904-tool registry:
+Proximo governs 906 operations, and **the default door is small**: with nothing configured,
+the server serves the dynamic facade — search, schema, call, recall and the audit trail
+(~1,449 tokens) — with everything this box serves still callable through it. That is the 0.30
+flip, and the reason is measured: the catalog doors below cost your model context at
+connection time, before you ask anything, and the full surface is ~277k tokens of schema —
+12x over the 8,192-token default window of a stock local model, which means dead on connect.
+The catalog doors are explicit choices now. Four layers, most specific wins. Every figure
+below was measured against the full 906-tool registry:
 
 | Set this | Serves | Real cost |
 |---|---|---|
-| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those | **~1,000 tokens** |
-| `PROXIMO_TOOLSETS=dynamic` | 3 search tools; every other tool still callable | **~555 tokens** |
-| `PROXIMO_TOOLSETS=pve.guests` | one domain (27 tools) | ~7,750 tokens |
-| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (48 tools) | ~13,400 tokens |
-| `PROXIMO_SURFACES=pve` | a whole plane (310 tools) | ~81,900 tokens |
-| *(nothing)* | auto-scoped to your configured planes | up to ~231,700 tokens |
+| *(nothing — the default)* | the dynamic facade; every tool this box serves still callable | **~1,449 tokens** |
+| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those, plus the audit trail and `proximo_call` | **~1,579 tokens** |
+| `PROXIMO_TOOLSETS=pve.guests` | one domain (28 tools) | ~9,123 tokens |
+| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (49 tools) | ~15,783 tokens |
+| `PROXIMO_SURFACES=pve` | a whole plane (311 tools) | ~97,432 tokens |
+| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes | up to ~277,376 tokens |
+| `PROXIMO_TOOLSETS=all` | the full surface, auto-scope overridden | ~277,376 tokens |
+
+> These figures were **revised upward 16-20% on 2026-08-01**, and the surface did not grow.
+> They are now measured from what `tools/list` actually serializes, verified by installing
+> this package into a clean virtualenv and driving the real server over JSON-RPC. The
+> earlier numbers were rebuilt by hand from name + description + input schema, which
+> omitted `outputSchema` — 16.4% of the payload, present on 903 of 905 tools. What you
+> pay has not changed; what we print now matches it.
 
 Every "cost" above is UTF-8 payload bytes ÷ 4, a stated conservative heuristic, not a live
 tokenizer for any specific model.
@@ -264,19 +273,23 @@ Available toolsets: `pve.guests` `pve.cluster` `pve.storage` `pve.network` `pve.
 `pmg.statistics` `pmg.access` `pmg.node` `pmg.maintenance` · `pdm` · `exec`.
 
 A typo refuses startup rather than quietly serving a different set than you picked, and
-`audit_verify` is never scopeable away — PROVE is not optional at any size.
+`audit_verify` and `proximo_call` are never scopeable away — PROVE is not optional at any
+size, and neither is being able to reach a tool by name that scoping left unadvertised.
 
-### `dynamic` — the whole surface on a small model
+### `dynamic` — the default: the whole surface on a small model
 
-`PROXIMO_TOOLSETS=dynamic` loads three tools instead of the whole served surface:
+The default door (also picked explicitly with `PROXIMO_TOOLSETS=dynamic`) loads a facade
+instead of the whole served surface:
 
 - `proximo_find_tools(query)` — search the catalog
 - `proximo_tool_schema(name)` — get one tool's arguments
 - `proximo_call(tool, arguments)` — run it
+- `proximo_recall()` — estate questions (what exists, how many, what changed) in one call
 
-`audit_verify` rides alongside these three on every surface (PROVE is never scopeable away), so
-a raw `tools/list` in this mode shows **four** entries at ~555 tokens — five with
-`PROXIMO_MEMORY=1`, which also keeps `proximo_recall` resident so estate questions stay one call.
+`audit_verify` and `audit_entries` ride alongside these on every surface (PROVE — the write
+proof and the read-back — is never scopeable away), so a raw `tools/list` in this mode shows
+**six** entries at ~1,449 tokens — five at ~888 with `PROXIMO_MEMORY=0`, which removes
+`proximo_recall` rather than leaving a call that could only fail.
 
 The rest stay callable; they stop being *resident*. This is the only mode that fits an ~8k
 context — a single domain toolset is ~8.9k, so toolsets alone reach roughly 32k-class models,
@@ -288,12 +301,14 @@ and your token's ACL all apply exactly as they would otherwise. The trade is erg
 governmental: your model spends two extra round trips discovering a tool, and it must be capable
 enough to drive search-then-call.
 
-#### Memory-first — with `PROXIMO_MEMORY=1`, a fourth tool
+#### Memory-first — `proximo_recall`, resident by default
 
 What `dynamic` costs is round trips, and the smallest models are where that bites: every
-question, however small, is search → schema → call. Turn on Tier-1 memory and `proximo_recall`
-joins the facade, so the commonest question class — what exists, how many, what changed, when
-did this last happen — costs **one call with no arguments**, no search and no schema lookup.
+question, however small, is search → schema → call. Tier-1 memory is on by default (opt out
+with `PROXIMO_MEMORY=0`; the map is a local, derived, rebuildable SQLite beside the audit
+ledger — nothing leaves the box), and `proximo_recall` sits in the facade, so the commonest
+question class — what exists, how many, what changed, when did this last happen — costs
+**one call with no arguments**, no search and no schema lookup.
 
 It is the same `proximo_recall` you would get on the full surface: kept, not re-declared, with
 its ledger entry, its taint classification and every other control intact. Two things it will
@@ -305,6 +320,57 @@ observed nothing and says so rather than reporting an empty estate. And because 
 originate in adversarial-classified reads, a memory-first model trips the taint marker on its
 first call rather than its third — earlier, not different. `proximo doctor` tells you which
 facade you are actually serving.
+
+#### Finding the right tool — the search stack, and what works with no config at all
+
+Search is a stack. Each tier fills only the room the tier above left empty, and marks its
+rows so you can always tell which one answered:
+
+| order | tier | needs | marked |
+|---|---|---|---|
+| 1 | keyword | nothing | *(unmarked — exact matches, always first)* |
+| 2 | semantic | `PROXIMO_EMBED_URL` | `"match": "semantic"` |
+| 3 | lexical | nothing | `"match": "lexical"` |
+
+**The lexical tier ships inside the wheel** — no model, no server, no download, no
+dependency — because a search that needs configuration to work is not much of a search.
+It expands your words into Proxmox's own (memory→mem/ram, container→lxc/ct/guest,
+who/changed→audit/ledger) using a curated table you can read in `lexical.py`, then ranks
+by character-n-gram TF-IDF. On the real ~900-tool catalog the first search builds the index
+(~260 ms, then cached) and later searches take about 7 ms; it finds `audit_verify` for
+"who changed this vm's config". An off-domain query returns nothing, deliberately — a
+result must share a real word with your question, not just a fragment. Set
+`PROXIMO_LEXICAL=off` to disable this tier.
+
+The semantic tier is the optional upgrade in the middle: stronger at crossing vocabulary
+gaps, at the cost of an embedding server you run. When it is configured it takes the room
+below the keyword hits, and lexical fills whatever is left; when it is unreachable, search
+falls back to lexical rather than to bare keyword.
+
+#### Vector search — with `PROXIMO_EMBED_URL`, the drawers find themselves
+
+Keyword search requires the operator's words to appear in a tool's name or description —
+"memory usage of a container" matches nothing, because the tool that answers it says "runtime
+status". Point `PROXIMO_EMBED_URL` at an OpenAI-compatible `/v1/embeddings` server **you run**
+(ollama, llama.cpp and vLLM all serve one; nothing leaves your estate) and semantic matches fill
+in behind the keyword hits — keyword precision stays first and untouched, each vector-ranked row
+is marked `"match": "semantic"` so you can tell which ranking produced it, and `proximo_recall`
+accepts a `query` that narrows entity rows semantically ("the git box" → your gitea container)
+while every count still covers the whole estate.
+
+```bash
+PROXIMO_EMBED_URL=http://localhost:11434          # your embedding server, http(s) only
+PROXIMO_EMBED_MODEL=qwen3-embedding               # optional; single-model servers ignore it
+PROXIMO_EMBED_QUERY_PREFIX=                       # optional, for asymmetric models (see below)
+PROXIMO_VECTORS_PATH=~/.config/proximo/vectors.db # else vectors.db beside the audit log
+```
+
+The index builds itself on the first semantic search and syncs by content hash after that —
+no startup cost, and only new or changed texts ever re-embed. If your embedder is down, search
+degrades to keyword-only with a warning on stderr; the facade never fails because an assist is
+unreachable. Asymmetric embedding models rank better with an instruction prefix on the query
+(e.g. Qwen3-Embedding's `Instruct: ...\nQuery: ` convention) — set `PROXIMO_EMBED_QUERY_PREFIX`
+to your model's convention; it applies to queries only, so changing it never re-indexes.
 
 ## The wiki index — `PROXIMO_WIKI=1`, two more tools
 

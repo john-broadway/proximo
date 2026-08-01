@@ -94,10 +94,28 @@ def demo_local() -> int:
     pause()
 
     beat("1 / The agent acts. Proximo writes it down.")
+    # These detail dicts are the REAL shapes `_audited()` writes, captured from a live ledger
+    # write against each tool (2026-08-01) and kept in sync deliberately. The previous versions
+    # were hand-invented — `{"op","why"}`, `{"name"}`, `{"argv"}` — and none of those keys exists
+    # anywhere in the product, so the demo taught adopters field names they could not find.
+    #
+    # The ct_exec entry matters most: it used to show the raw argv, which is exactly what
+    # PROXIMO_LEDGER_REDACT (default ON since 0.29.0) exists to keep OUT of a durable file,
+    # because a command line routinely carries a secret. Showing the pre-0.29.0 behaviour
+    # advertised the vulnerability we fixed. The fingerprint below is what a real box records.
     for action, target, detail in [
-        ("pve_guest_power",     "lxc/931", {"op": "stop", "why": "agent: free memory"}),
-        ("pve_snapshot_create", "lxc/931", {"name": "pre-deploy"}),
-        ("ct_exec",             "lxc/931", {"argv": ["apt", "full-upgrade", "-y"]}),
+        ("pve_guest_power",     "lxc/931", {
+            "change": "stop lxc 931", "risk": "high",
+            "risk_reasons": ["hard stop (power pull) of a running guest"],
+            "blast_radius": ["1 running guest will halt (uptime 1d)"]}),
+        ("pve_snapshot_create", "lxc/931", {
+            "change": "create snapshot pre-deploy of lxc 931", "risk": "low",
+            "risk_reasons": ["additive — creates a snapshot"],
+            "blast_radius": ["adds a restore point (non-destructive)"]}),
+        ("ct_exec",             "lxc/931", {
+            "change": "run in 931: [redacted apt, 19 chars, sha256:2aabcc03b444]",
+            "risk": "medium", "cmd_kind": "apt", "cmd_len": 19,
+            "cmd_sha256": "2aabcc03b44475014399e2e18d2aac30da0abd33d417b445edf976b2de1e658a"}),
     ]:
         led.record(action, target=target, mutation=True, detail=detail)
         agent(f"{action}  {dim(json.dumps(detail))}")

@@ -789,7 +789,14 @@ def test_ct_logs_exec_disabled_wins_over_allowlist(tmp_path, monkeypatch):
 # read-only, to consciously add it below). Counterpart to test_tool_count's count pin: that catches
 # "a tool changed"; this catches "a dangerous tool is ungated".
 _READ_ONLY_TOOLS = frozenset({
-    "audit_verify", "ct_diagnose", "ct_logs",
+    "audit_verify", "audit_entries", "ct_diagnose", "ct_logs",
+    # proximo_call MUTATES NOTHING ITSELF — it is the by-name dispatcher, and the tool it
+    # reaches keeps its own confirm gate. A `confirm` parameter here would be actively harmful:
+    # it would be a second gate satisfiable without the inner tool ever seeing one, which is the
+    # bypass this sweep exists to prevent. Proven, not assumed:
+    # test_escape_hatch.py::test_the_PLAN_gate_holds_through_the_hatch drives a real mutation by
+    # name with no confirm and asserts it comes back a PLAN with the backend untouched.
+    "proximo_call",
     "proximo_recall",  # Tier-1 memory read: local SQLite only, no PVE call, no state change
     "proximo_baseline",  # Tier-1 memory: rrddata READ + local rollup cache; no PVE state change
     "proximo_wiki",  # local docs index search: read-only SQLite (opened mode=ro), no PVE call

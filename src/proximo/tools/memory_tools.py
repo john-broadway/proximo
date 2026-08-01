@@ -21,6 +21,7 @@ def proximo_recall(
     since: Annotated[str | None, Field(description="Optional change window: ISO8601 (`2026-07-29T00:00:00`) or relative (`24h`, `7d`). Adds appeared / status_changed / not_seen_since diffs.")] = None,
     detail: Annotated[str, Field(description="Row depth: `summary` (counts only), `lean` (default: identity + status), `full` (timestamps, prev_status).")] = "lean",
     journal: Annotated[int, Field(description="Include the newest N diagnosis-journal entries (pve_diagnose / ct_diagnose / pve_doctor digests over time). 0 (default) omits the journal; `since` also windows it.")] = 0,
+    query: Annotated[str | None, Field(description="Optional filter, e.g. a guest name like 'gitea': rows narrow to the closest matches, counts still cover the whole estate. Always available; no configuration needed. Omit it to list every entity.")] = None,
 ) -> dict:
     """READ-ONLY: the estate map from local Tier-1 memory — NOT a live PVE read. Returns
     total/by_kind/by_status/guest_summary counts (trust guest_summary for guest-count questions;
@@ -28,13 +29,14 @@ def proximo_recall(
     age_seconds}: the data is as old as the stamp says. With `since`, also diffs: appeared,
     status_changed, and not_seen_since (last observed before the window — a fact, not a claim
     the entity is gone). journal=N adds the newest N diagnosis digests ("when did this last
-    happen") — findings summaries only, never raw diagnostic output. Memory is opt-in
-    (PROXIMO_MEMORY=1), fed opportunistically by list reads and diagnose/doctor runs, derived
-    and rebuildable. For live state use pve_list_guests / pve_cluster_resources."""
+    happen") — findings summaries only, never raw diagnostic output. Memory is on by default
+    (PROXIMO_MEMORY=0 opts out), fed opportunistically by list reads and diagnose/doctor runs,
+    derived and rebuildable. For live state use pve_list_guests / pve_cluster_resources."""
     # No _svc() here: recall is local (SQLite beside the audit log) and _svc is PVE-strict,
     # so demanding it made a PBS-only box die with a PVE-shaped env error. _audited stands
     # up the ledger itself via _ledger(), which tolerates a PVE-less box.
-    return _audited("proximo_recall", "memory", lambda: recall_state(since, detail, journal))
+    return _audited("proximo_recall", "memory",
+                    lambda: recall_state(since, detail, journal, query=query))
 
 
 @tool()
@@ -52,8 +54,9 @@ def proximo_baseline(
     rollup it answers from memory, age-stamped, with NO PVE call and `current: null` (never a
     fabricated reading); when missing or refresh=true it pulls rrddata, stores the rollup, and
     positions the newest sample against it. The assessment is an advisory heuristic from
-    history — not an alarm, not a health verdict. Opt-in via PROXIMO_MEMORY=1. For live
-    point-in-time state use pve_guest_status; for raw series use pve_node_rrddata (node-level)."""
+    history — not an alarm, not a health verdict. On by default (PROXIMO_MEMORY=0 opts out).
+    For live point-in-time state use pve_guest_status; for raw series use pve_node_rrddata
+    (node-level)."""
     # api resolves LAZILY, at the moment rrddata is actually needed: the stored path
     # promises "NO PVE call", and an eager _svc() here made it demand PVE env anyway,
     # blocking the memory-only answer on a PVE-less box (2nd-lens find, 2026-07-30).

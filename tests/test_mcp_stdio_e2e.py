@@ -40,8 +40,16 @@ async def test_mcp_stdio_transport_end_to_end(tmp_path):
 
             tools = await asyncio.wait_for(session.list_tools(), timeout=30)
             names = {t.name for t in tools.tools}
-            assert "audit_verify" in names
-            assert len(names) > 100  # the full tool surface is exposed over the protocol
+            # The 0.30 default door over the real protocol: the facade is resident and SMALL —
+            # that is the product claim — and the catalog is searchable behind it, not served.
+            assert {"proximo_find_tools", "proximo_tool_schema", "proximo_call",
+                    "proximo_recall", "audit_verify", "audit_entries"} <= names
+            assert len(names) < 10
+            found = await asyncio.wait_for(
+                session.call_tool("proximo_find_tools", {"query": "guest power"}), timeout=30)
+            assert found.isError is False
+            found_text = " ".join(getattr(c, "text", "") or "" for c in (found.content or []))
+            assert "pve_guest_power" in found_text  # the catalog is reachable through the facade
 
             # A clean round-trip through the protocol (no PVE needed).
             res = await asyncio.wait_for(session.call_tool("audit_verify", {}), timeout=30)

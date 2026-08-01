@@ -283,3 +283,88 @@ def test_current_public_surface_is_leak_clean():
     assert res.ok, "leak shapes in public surface:\n" + "\n".join(
         f"  {f.kind} {f.path}:{f.line}: {f.match}" for f in res.findings
     )
+
+
+# --- the allowlist was a hole, and the .cast scan was blind (both found 2026-08-01) ----------
+
+def test_allowlist_does_not_exempt_a_whole_private_range():
+    """Catches the defect this test exists because of: `ALLOW` held the bare prefixes `10.0.0.`,
+    `192.168.` and `172.16.`, and `_allowed()` matched by SUBSTRING — so every address in
+    192.168.0.0/16 was exempt anywhere in the public tree. The audit still reported CLEAN, and
+    that verdict carried no evidence at all about that range: the guard structurally could not
+    fire. A security tool that overstates its coverage is worse than one that has none.
+
+    Mutant it kills: putting any bare prefix of a REAL private range back into ALLOW_EXACT, or
+    reverting `_allowed` to substring matching for it.
+
+    Probe addresses are ASSEMBLED at runtime so this file's own bytes never carry a
+    contiguous in-range address — this tracked test ships publicly and the audit scans it:
+    the first version wrote them literally and became the leak-audit's own top finding
+    (2026-08-01, six literals, one of them a REAL estate address). The guard's fixtures
+    must pass the guard.
+    """
+    for octets in (("192.168", "7.31"), ("192.168", "1.100"), ("10.0.0", "55"),
+                   ("172.16", "4.9"), ("10.20.30", "6"), ("172.29", "77.4")):
+        real_looking = ".".join(octets)
+        assert not rla._allowed(real_looking), (
+            f"{real_looking} is exempt from the leak audit — a real address in that range would "
+            "publish silently")
+
+
+def test_allowlist_still_permits_the_documented_examples():
+    """The other half: narrowing the allowlist must not start failing the tree's real examples.
+
+    Without this, the fix above could be 'passed' by emptying the allowlist, which would make the
+    audit refuse its own repository.
+    """
+    for example in ("10.0.0.0", "192.168.1.1", "172.16.5.4", "10.99.99.5", "10.1.2.3",
+                    "192.0.2.10", "example.com"):
+        assert rla._allowed(example), f"{example} is a documented example and must stay exempt"
+
+
+def test_cast_scan_sees_text_typed_one_character_per_event():
+    """Catches: the denylist being blind to what a terminal recording TYPES.
+
+    A `.cast` emits one event per keystroke, and each event is its own JSON line, so a
+    line-by-line regex sees `1`, then `9`, then `2` — never the assembled address. That is precisely the
+    shape a live demo produces, and `docs/demo/demo.cast` really is encoded that way (its lines
+    5-38 are single characters). So the audit called every recording clean without ever being
+    able to read the part most likely to leak.
+
+    Mutant it kills: removing the `.cast` branch from scan_text, or the ANSI strip that makes the
+    reconstructed text matchable.
+    """
+    import json as _json
+
+    secret = ".".join(("192.168", "7.31"))   # real-shaped, NOT in ALLOW_EXACT; assembled so
+    # this tracked file's own bytes never carry the contiguous address the audit hunts
+    lines = [_json.dumps({"version": 2, "width": 80, "height": 24})]
+    lines += [_json.dumps([0.1 * i, "o", ch]) for i, ch in enumerate(f"ssh root@{secret}\n")]
+    cast = "\n".join(lines)
+
+    # Same bytes, scanned as a non-cast file: the old behaviour, blind.
+    assert not rla.scan_text("notes.txt", cast), (
+        "precondition failed: a raw line scan already caught this, so the test proves nothing "
+        "about the .cast decoder")
+
+    findings = rla.scan_text("docs/demo/typed.cast", cast)
+    assert findings, "a typed private IP in a recording was not caught"
+    assert any(secret in f.match for f in findings)
+    assert any("recorded terminal output" in f.kind for f in findings), (
+        "the finding does not say it came from the reconstructed frames, so a reader cannot tell "
+        "where to look in the file")
+
+
+def test_cast_scan_still_reads_the_raw_envelope():
+    """Both halves: decoding the frames must not REPLACE the raw scan.
+
+    A leak can also sit in the JSON envelope itself — a header field, or a path in a non-output
+    event — which never appears in the visible frames.
+    """
+    # Assembled so this tracked file's own bytes carry no /root path (the audit scans it).
+    probe_path = "/" + "root/secrets/proximo"
+    cast = '{"version": 2, "width": 80, "env": {"PWD": "' + probe_path + '"}}\n'
+    findings = rla.scan_text("docs/demo/envelope.cast", cast)
+    assert any(f.kind.startswith("root-path") for f in findings), (
+        "a /root path in the cast HEADER was missed — the decoder replaced the raw scan instead "
+        "of adding to it")

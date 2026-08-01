@@ -18,6 +18,7 @@ payload so ordinary work never trips them, and a careless surface addition does.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -39,19 +40,37 @@ def _schema(tool) -> dict:
 def _payload_bytes(names, registry=None) -> int:
     """Serialized size of what `tools/list` actually hands the client for `names`.
 
+    ⚠️ Measured through the MCP layer's OWN serialization, not rebuilt from the registry.
+    This function used to construct `{name, description, inputSchema}` by hand — and a
+    reconstruction cannot see a field it does not know about. It missed `outputSchema`,
+    which FastMCP emits for 903 of 905 tools and which costs **45,468 tokens, 16.4% of
+    the whole doorway**. Every figure this module pinned, and every token number in
+    SETUP.md and the CHANGELOG, was therefore understated by up to 20%: the full surface
+    reads ~231,700 by the old method and **~277,376 on the wire**.
+
+    Caught by installing the package from gitea into a clean venv and speaking JSON-RPC
+    to the real `proximo` binary — the adopter path. `model_dump(by_alias=True,
+    exclude_none=True)` reproduces that wire payload byte-for-byte (verified against a
+    live server: 36,494 B for pve.guests, both ways).
+
     `registry` defaults to the module's own full-catalog REGISTRY; callers measuring a
     registry that doesn't share tool objects with it (e.g. a lean/dynamic facade, whose
-    three search tools don't exist in the full catalog) pass their own.
+    search tools don't exist in the full catalog) pass their own.
     """
     reg = REGISTRY if registry is None else registry
-    return len(json.dumps([
-        {
-            "name": n,
-            "description": getattr(reg[n], "description", "") or "",
-            "inputSchema": _schema(reg[n]),
-        }
-        for n in names
-    ]))
+    wanted = set(names)
+    listed = asyncio.run(_list_tools_for(reg))
+    return len(json.dumps([t.model_dump(by_alias=True, exclude_none=True)
+                           for t in listed if t.name in wanted]))
+
+
+async def _list_tools_for(registry):
+    """The MCP `tools/list` payload for a registry, via the server's own converter."""
+    from mcp.server.fastmcp import FastMCP
+
+    probe = FastMCP("proximo-budget-probe")
+    probe._tool_manager._tools = dict(registry)
+    return await probe.list_tools()
 
 
 def _titles_in(schema: dict) -> list[str]:
@@ -108,16 +127,28 @@ def test_schemas_carry_no_redundant_titles():
 # addition trips them, loose enough that ordinary work does not. Raising one is a deliberate act:
 # it means the surface got more expensive for every client, so say why in the commit.
 #
-# What the remaining payload is made of (measured at 900 tools, after both strips above):
+# What the remaining payload is made of (measured at 905 tools ON THE WIRE, after both
+# strips above):
 #   tool descriptions  ~347k B / ~87k tok   <- real content: how a model knows what a tool does
 #   parameter schemas  ~682k B / ~170k tok  <- of which ~152k B is the per-call target selector
-# There is no further FREE cut here. Getting a local model (8k-32k window) onto Proximo needs a
-# smaller SURFACE — fewer, coarser tools — not tidier bytes on the same 900. Trimming descriptions
-# would buy ~87k tokens at the cost of the model knowing what it is calling: a capability trade,
-# not a cleanup, and not one to make silently inside a budget test.
-FULL_SURFACE_BUDGET = 1_010_000
-PVE_SURFACE_BUDGET = 355_000
-PER_TOOL_AVERAGE_BUDGET = 1_120
+#   outputSchema       ~182k B / ~45k tok   <- 16.4% of the doorway, on 903 of 905 tools
+#
+# ⚠️ The three ceilings below ROSE ~20% on 2026-08-01. That is NOT the surface growing: it is
+# this module starting to measure the real wire payload instead of a hand-rebuilt
+# {name, description, inputSchema}, which silently omitted outputSchema. The old numbers were
+# never what an adopter paid.
+#
+# outputSchema is mostly boilerplate ({"result": {"type": "object"}} plus a generated title),
+# but it is NOT free to remove: the server also returns `structuredContent`, verified live on
+# an adopter install, and MCP pairs the two. Suppressing it (`structured_output=False`) is a
+# capability trade for a human to weigh, not a cleanup to make inside a budget test — the same
+# rule the description-trimming note below already states.
+#
+# Getting a local model (8k-32k window) onto Proximo still needs a smaller SURFACE — fewer,
+# coarser tools — not tidier bytes on the same 905.
+FULL_SURFACE_BUDGET = 1_200_000
+PVE_SURFACE_BUDGET = 425_000
+PER_TOOL_AVERAGE_BUDGET = 1_330
 
 
 def test_full_surface_payload_within_budget():
@@ -173,18 +204,38 @@ def _lean_facade_registry() -> dict:
 
 
 DOC_PRINTED_TOKEN_FIGURES = {
-    "dynamic (PROXIMO_TOOLSETS=dynamic)": 555,
+    # 2026-08-01: 582 -> 888 and 1,273 -> 1,579. audit_entries joined _ALWAYS_REGISTERED,
+    # so both of these doorways are one tool wider. The READ side of PROVE is resident by
+    # design; that is a deliberate cost, stated rather than absorbed silently.
+    # 2026-08-01 (the 0.30 flip): 888 -> 1,449. Estate memory is default-on now, so
+    # proximo_recall (and its memory-first find_tools description) is part of the DEFAULT
+    # door. This row is what a bare install serves. Still ~18% of ollama's default 8,192
+    # window; the 888 figure survives as the PROXIMO_MEMORY=0 variant, not pinned here.
+    "dynamic (the default; also PROXIMO_TOOLSETS=dynamic)": 1_449,
     # Added 2026-07-31. These two SETUP.md rows were NOT pinned here, so nothing watched them.
     # The toolsets row had genuinely drifted 17% after the doorway work. The PROXIMO_TOOLS row
     # had NOT — a review lens and I both measured it at 828 by summing the three NAMED tools,
     # forgetting that tool_keep always adds audit_verify, so the real figure is 4 tools. The doc
     # was right and we were about to "fix" it. Pinning both here is what makes that unrepeatable:
     # a figure nobody measures the same way twice needs a guard, not another careful reader.
-    "three exact tools (PROXIMO_TOOLS)": 1_000,
-    "two domain toolsets (pve.guests,pve.storage)": 13_400,
-    "one domain toolset (pve.guests)": 7_750,
-    "one plane (PROXIMO_SURFACES=pve)": 81_900,
-    "full surface (nothing configured)": 231_700,
+    # 2026-08-01: 1,000 -> 1,130. NOT drift — a structural change. `proximo_call`, the by-name
+    # escape hatch, joined `_ALWAYS_REGISTERED`, so this row is now 5 tools (the three named +
+    # audit_verify + the hatch), not 4. Same trap as the note above, one tool further along:
+    # the figure is never just the tools you named.
+    # 2026-08-01: EVERY row below rose ~16-20%, and not because the surface grew. The
+    # measurement above stopped rebuilding the payload by hand and started reading what
+    # `tools/list` actually serializes — which includes outputSchema. Verified against a
+    # clean venv installed from gitea and driven over real JSON-RPC: that adopter server
+    # sent 36,494 B for pve.guests and 1,109,504 B for the full surface, matching these
+    # numbers byte-for-byte. The figures a user was reading before were understated by up
+    # to 20%.
+    "three exact tools (PROXIMO_TOOLS)": 1_579,
+    "two domain toolsets (pve.guests,pve.storage)": 15_783,
+    "one domain toolset (pve.guests)": 9_123,
+    "one plane (PROXIMO_SURFACES=pve)": 97_432,
+    # Label updated at the 0.30 flip: nothing-configured now serves the dynamic facade;
+    # the full surface is an explicit choice.
+    "full surface (PROXIMO_TOOLSETS=all)": 277_376,
 }
 
 

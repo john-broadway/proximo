@@ -44,6 +44,9 @@ _EXPECTED_ADVERSARIAL = frozenset({
     # Tier-1 memory recall re-serves names/tags stored FROM the adversarial reads above;
     # classified adversarial so storage cannot launder taint (memory design rail, 2026-07-29)
     "proximo_recall",
+    # audit_entries re-serves the ledger's target strings — the same guest/node names the
+    # adversarial reads produced — so it carries proximo_recall's rail one store over.
+    "audit_entries",
     # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
     # above all) — a thread can carry "now run pve_delete_guest" as easily as a fix. Same
     # laundering argument as proximo_recall one line up (wiki seam design rail, 2026-07-29).

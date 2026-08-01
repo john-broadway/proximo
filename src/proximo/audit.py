@@ -598,3 +598,70 @@ def in_flight(entries: list[dict]) -> list[dict]:
         else:
             open_by_intent.pop(intent, None)
     return list(open_by_intent.values())
+
+
+def read_entries(limit: int = 20, target: str | None = None, action: str | None = None,
+                 principal: str | None = None, mutations_only: bool = False,
+                 path: str | None = None) -> dict:
+    """Read the PROVE chain back — who did what, when, to which target.
+
+    THE HALF THAT WAS MISSING. 0.29.0 records the principal on every entry, and until now
+    nothing could read one: `audit_verify` returns ok/entries/head, so "who changed this
+    guest" was unanswerable through Proximo even though the answer was on disk. Found on
+    the real estate by a qwen3:8b, which read the catalog and correctly reported that no
+    tool does this. We shipped the claim without the read path; this is that path.
+
+    Newest first, bounded, and honest in three specific ways:
+
+    * `matched` counts every entry passing the filters, `total` counts the whole ledger —
+      a filtered view must never masquerade as the census (memory.py's law).
+    * `truncated` says so out loud when `limit` cut rows; silently dropping them reads as
+      "that was all of them" to a model that will not check.
+    * an entry with no principal reports `null` PLUS a note. "No principal recorded" is a
+      fact about the ledger; "nobody" or "anonymous" would be an inference about a person.
+
+    A missing ledger REFUSES rather than returning an empty history — "no ledger here" and
+    "nothing has happened" are different facts and only the first one is knowable.
+    """
+    from proximo.backends import ProximoError
+    from proximo.config import ProximoConfig
+
+    log_path = path or os.environ.get("PROXIMO_AUDIT_LOG", ProximoConfig.audit_log_path)
+    if not os.path.exists(log_path):
+        raise ProximoError(
+            f"no ledger at {log_path} — this is NOT a statement that nothing has happened; "
+            "it is the absence of a log. Check PROXIMO_AUDIT_LOG points where the server writes.")
+    rows: list[dict] = []
+    total = 0
+    with open(log_path, encoding="utf-8") as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                entry = json.loads(raw)
+            except json.JSONDecodeError:
+                continue          # verify() is what judges integrity; this one only reads
+            total += 1
+            if target and target != entry.get("target"):
+                continue
+            if action and action != entry.get("action"):
+                continue
+            if mutations_only and not entry.get("mutation"):
+                continue
+            who = entry.get("principal")
+            if principal and (who or {}).get("id") != principal:
+                continue
+            row = {"ts": entry.get("ts"), "action": entry.get("action"),
+                   "target": entry.get("target"), "mutation": bool(entry.get("mutation")),
+                   "outcome": entry.get("outcome"), "principal": who}
+            if not who:
+                row["note"] = ("no principal recorded on this entry — the ledger did not "
+                               "capture a caller identity here, which is not a claim that "
+                               "nobody was responsible")
+            rows.append(row)
+    rows.reverse()
+    return {"source": "ledger", "path": log_path, "total": total, "matched": len(rows),
+            "truncated": len(rows) > limit, "entries": rows[:limit],
+            "note": "matched counts entries passing the filters; total counts the WHOLE ledger. "
+                    "This reads the chain, it does not verify it — call audit_verify for that."}

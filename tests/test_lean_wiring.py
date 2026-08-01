@@ -36,7 +36,9 @@ def _fresh_mcp():
 
 def test_exact_tool_selection_keeps_only_those():
     kept = server.tool_keep(server.mcp._tool_manager._tools, "pve_list_guests,pve_cluster_status")
-    assert kept == {"pve_list_guests", "pve_cluster_status", "audit_verify"}
+    assert kept == {"pve_list_guests", "pve_cluster_status"} | set(server._ALWAYS_REGISTERED), (
+        "tool_keep must return the named tools PLUS everything never scopeable away — read\n"
+        "the set from the code, never restate it here")
 
 
 def test_unknown_tool_name_refuses_startup():
@@ -52,10 +54,12 @@ def test_blank_tool_spec_is_inert():
 # --- the dynamic facade --------------------------------------------------------------------
 
 def test_lean_mode_registers_only_the_facade():
+    # proximo_recall is part of the default facade since the 0.30 flip (memory default-on).
     m = _fresh_mcp()
     server.apply_lean(m)
     assert set(m._tool_manager._tools) == {
-        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "audit_verify",
+        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
+        "audit_verify", "audit_entries",
     }
 
 
@@ -193,13 +197,13 @@ def test_memory_on_makes_recall_resident_in_the_facade(monkeypatch):
     server.apply_lean(m)
     assert set(m._tool_manager._tools) == {
         "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
-        "audit_verify",
+        "audit_verify", "audit_entries",
     }
 
 
 def test_memory_off_leaves_the_facade_at_three(monkeypatch):
     """No dead tool burning resident tokens on a first call that could only fail."""
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
     m = _fresh_mcp()
     server.apply_lean(m)
     assert "proximo_recall" not in m._tool_manager._tools
@@ -242,7 +246,7 @@ def test_find_tools_sends_estate_questions_to_recall_when_memory_is_on(monkeypat
 
 
 def test_find_tools_does_not_advertise_recall_when_memory_is_off(monkeypatch):
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     m = _fresh_mcp()
     server.apply_lean(m)
     desc = m._tool_manager._tools["proximo_find_tools"].description

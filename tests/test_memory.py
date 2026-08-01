@@ -286,19 +286,31 @@ def test_deleting_the_db_loses_convenience_never_truth(tmp_path):
 # Module seam — env-gated wrappers the tools call
 # ---------------------------------------------------------------------------
 
-def test_disabled_means_fully_inert_no_file(tmp_path, monkeypatch):
+def test_memory_defaults_on(monkeypatch):
+    """The 0.30 flip: unset means ENABLED — the estate map is part of the default install."""
     monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    assert memory_enabled()
+
+
+def test_every_opt_out_spelling_disables(monkeypatch):
+    for v in ("0", "false", "no", "off", "OFF", " 0 "):
+        monkeypatch.setenv("PROXIMO_MEMORY", v)
+        assert not memory_enabled(), v
+
+
+def test_opted_out_means_fully_inert_no_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
     observe_guests(GUEST_ROWS)
     assert not memory_enabled()
     assert not (tmp_path / "memory.db").exists()
 
 
-def test_disabled_recall_refuses_with_the_enable_hint(tmp_path, monkeypatch):
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+def test_disabled_recall_refuses_with_the_reenable_hint(tmp_path, monkeypatch):
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     with pytest.raises(ProximoError) as ei:
         recall_state()
-    assert "PROXIMO_MEMORY=1" in str(ei.value)
+    assert "PROXIMO_MEMORY" in str(ei.value)
 
 
 def test_enabled_observe_then_recall_roundtrip(tmp_path, monkeypatch):
@@ -504,10 +516,10 @@ def test_proximo_baseline_refresh_forces_the_pull(monkeypatch, tmp_path):
     assert api.rrd_calls == 2
 
 
-def test_proximo_baseline_disabled_refuses_with_hint(monkeypatch, tmp_path):
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+def test_proximo_baseline_opted_out_refuses_with_hint(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     server = _wire(monkeypatch, tmp_path, _RrdApi())
-    with pytest.raises(ProximoError, match="PROXIMO_MEMORY=1"):
+    with pytest.raises(ProximoError, match="PROXIMO_MEMORY"):
         server.proximo_baseline(vmid="100", kind="lxc")
 
 
@@ -595,7 +607,7 @@ def test_journal_add_get_order_limit_and_since(tmp_path):
 
 def test_journal_record_module_seam_is_env_gated(tmp_path, monkeypatch):
     from proximo.memory import journal_record
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
     journal_record("pve_diagnose", "node/pve", {"flags": []})
     assert not (tmp_path / "memory.db").exists()
@@ -651,9 +663,9 @@ def test_recall_without_journal_param_has_no_journal_key(tmp_path, monkeypatch):
 # Increment 4 — the doctor's memory section
 # ---------------------------------------------------------------------------
 
-def test_memory_status_disabled_reports_the_enable_hint(monkeypatch):
+def test_memory_status_opted_out_reports_the_reenable_hint(monkeypatch):
     from proximo.memory import memory_status
-    monkeypatch.delenv("PROXIMO_MEMORY", raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     out = memory_status()
     assert out["enabled"] is False
     assert "PROXIMO_MEMORY=1" in out["hint"]
@@ -703,7 +715,7 @@ def test_doctor_report_carries_the_memory_section(tmp_path, monkeypatch):
     report = doctor_check(_DoctorApi())
     assert report["memory"]["enabled"] is True
     assert report["memory"]["entities"] == 2
-    monkeypatch.delenv("PROXIMO_MEMORY")
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
     report = doctor_check(_DoctorApi())
     assert report["memory"]["enabled"] is False
 
@@ -806,3 +818,19 @@ def test_a_stored_baseline_answers_with_no_pve_env_as_the_docstring_promises(
         assert out["current"] is None
     finally:
         server._svc_cache_clear()
+
+
+def test_next_pointer_names_the_reader_and_says_what_is_never_here(tmp_path, monkeypatch):
+    """Two live-run defects, 2026-08-01, pinned together because they live in one dict:
+    (1) for_more still pointed the who-changed question at audit_verify — the PROVER —
+    after audit_entries (the READER) shipped; (2) map_holds stated the map's contents only
+    positively, and one of ten qwen3:8b runs filled the silence with a fabricated "1.5GB".
+    A tool response is a prompt: the limit must be stated negatively."""
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
+    observe_guests(GUEST_ROWS)
+    nxt = recall_state(query="web")["next"]
+    assert "audit_entries" in nxt["for_more"]
+    assert "not_held" in nxt
+    low = nxt["not_held"].lower()
+    assert "never" in low and "mem" in low

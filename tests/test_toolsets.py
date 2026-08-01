@@ -28,6 +28,13 @@ from proximo.server import TOOLSETS, toolset_keep
 REGISTRY = sorted(server.mcp._tool_manager._tools)
 
 
+# The always-registered set, read from the code rather than restated. These assertions used to
+# spell "audit_verify" as a literal in six places, so adding a second always-registered tool
+# (proximo_call, the by-name escape hatch) meant six edits and six chances to miss one. The
+# property under test is "this filter keeps its plane PLUS whatever is never scopeable", and
+# that is what this now says.
+ALWAYS = set(server._ALWAYS_REGISTERED)
+
 # --- the load-bearing invariant ----------------------------------------------------------
 
 def test_every_tool_belongs_to_at_least_one_toolset():
@@ -35,7 +42,7 @@ def test_every_tool_belongs_to_at_least_one_toolset():
     covered = set()
     for prefixes in TOOLSETS.values():
         covered |= {n for n in REGISTRY if n.startswith(prefixes)}
-    orphans = sorted(set(REGISTRY) - covered - {"audit_verify"})
+    orphans = sorted(set(REGISTRY) - covered - ALWAYS)
     assert not orphans, (
         f"{len(orphans)} tools belong to NO toolset and would be unreachable when scoping "
         f"by toolset: {orphans[:12]}"
@@ -65,7 +72,7 @@ def test_unset_is_inert():
 def test_single_toolset_narrows_to_that_domain():
     kept = toolset_keep(REGISTRY, "pve.ceph")
     assert kept, "pve.ceph selected nothing"
-    assert all(n.startswith("pve_ceph") or n == "audit_verify" for n in kept)
+    assert all(n.startswith("pve_ceph") or n in ALWAYS for n in kept)
 
 
 def test_multiple_toolsets_union():

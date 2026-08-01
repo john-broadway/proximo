@@ -1,6 +1,7 @@
-"""LEAN mode — a searchable catalog instead of 900 resident tool schemas.
+"""LEAN mode — a searchable catalog instead of 906 resident tool schemas. THE DEFAULT since
+the 0.30 flip.
 
-WHY THIS EXISTS. Proximo's tools/list payload is ~276k tokens across 900 tools (~97k for one
+WHY THIS EXISTS. Proximo's tools/list payload is ~277k tokens across 906 tools (~97k for one
 auto-scoped plane). A local model with an 8k-32k window cannot connect at all: the catalog
 arrives before the first question and exhausts the context. That was reported from the outside,
 with a measurement, and it is correct. Byte-trimming already took ~21% off and cannot close a
@@ -12,7 +13,9 @@ What closes it is making the catalog NON-RESIDENT. Lean mode serves three small 
     proximo_tool_schema(name)      the full input schema, for the one or two that matched
     proximo_call(tool, arguments)  dispatch
 
-~900 tokens resident instead of ~276,000. The ~900 tools still exist and still work; they stop
+~1,449 tokens resident by default (six entries, `proximo_recall` and the audit pair included;
+~888 with PROXIMO_MEMORY=0) instead of ~277,376 (measured on the wire). The ~906 tools still
+exist and still work; they stop
 being sent to every client on every connection. This is the same pattern the agent harnesses
 themselves use at this scale — deferred schemas fetched on demand — and it is the only approach
 measured here that fits a small local context.
@@ -37,29 +40,30 @@ from typing import Any
 _SUMMARY_MAX = 140
 _DEFAULT_LIMIT = 25
 
-# Operators type "vm"/"container"/"ct"/"destroy"/"remove"; Proximo's own tool names and
-# docstrings say "guest"/"delete" — pve_delete_guest says neither "vm" nor "container" anywhere,
-# so "delete vm"/"delete container"/"remove vm"/"destroy vm" returned zero hits against the real
-# 900-tool catalog. Kept short and honest: five entries, the exact gap a real operator hit.
-_QUERY_SYNONYMS = {
-    "vm": "guest",
-    "container": "guest",
-    "ct": "guest",
-    "destroy": "delete",
-    "remove": "delete",
-}
-
-
 def _term_variants(term: str) -> tuple[str, ...]:
-    """A query term plus its synonym, so either spelling finds a tool.
+    """A query term plus its synonyms, so any spelling finds a tool.
 
     This WIDENS a term, it does not replace it: a bare "vm" query must still find
     `pve_create_vm`, whose own name says vm, not guest, while also finding `pve_delete_guest`
     via the vm->guest mapping. Swapping the term outright would fix one query and break the
     other.
+
+    Synonyms come from `lexical.KEYWORD_VOCABULARY`, which is deliberately NARROW and a
+    DIFFERENT table from the wide `lexical.VOCABULARY` the ranking tier uses.
+
+    This briefly read from the wide table on the reasoning that one table cannot drift from
+    itself. That was wrong, and a measurement killed it: on the real 905-tool catalog "on"
+    then matched 905 of 905 tools, "show" 824, and "check cluster health" 187, because
+    concept-level expansions (health→status, check→status) land on words nearly every
+    description contains — so the AND across terms stopped filtering and lean mode's
+    OR-blowup came back through the front door. Keyword AND-matching needs near-exact
+    renames only; the ranking tier is where a wide vocabulary belongs, because cosine order
+    plus a score floor can sort out what an AND filter cannot. Both widths are pinned by a
+    blast-radius test against the real tracked manifest.
     """
-    synonym = _QUERY_SYNONYMS.get(term)
-    return (term, synonym) if synonym else (term,)
+    from proximo.lexical import KEYWORD_VOCABULARY
+
+    return (term, *KEYWORD_VOCABULARY.get(term, ()))
 
 
 def _summary_of(description: str) -> str:
@@ -92,8 +96,9 @@ def search_tools(catalog: dict[str, Any], query: str, limit: int = _DEFAULT_LIMI
     A blank query RAISES rather than returning everything — "no filter" degrading into "the whole
     catalog" is the exact blowup this mode prevents.
 
-    Each term is matched by ITSELF OR its operator-vocabulary synonym (`_QUERY_SYNONYMS`): "delete
-    vm" must find `pve_delete_guest`, whose name says "guest"/"delete", never "vm".
+    Each term is matched by ITSELF OR its synonym from `lexical.KEYWORD_VOCABULARY`: "delete
+    vm" must find `pve_delete_guest`, whose name says "guest"/"delete", never "vm". That table
+    is deliberately narrow — see `_term_variants` for the measurement behind the split.
     """
     terms = [t for t in (query or "").strip().lower().split() if t]
     if not terms:
@@ -122,7 +127,57 @@ def search_tools(catalog: dict[str, Any], query: str, limit: int = _DEFAULT_LIMI
         scored.append((rank, name, {"name": name, "summary": _summary_of(description)}))
 
     scored.sort(key=lambda row: (row[0], row[1]))
-    return [row[2] for row in scored[:limit]]
+    # Rank 3 is a PROSE-ONLY match: every term appeared somewhere in a description, nowhere
+    # in the name. That is the weakest evidence keyword search produces, and it is not
+    # better than a strong lexical match — but "keyword always first" handed it the whole
+    # limit anyway. Measured on the real catalog: `configuration audit` returned
+    # pbs_metrics_influxdb_http_create / pbs_s3_client_create (both merely CONTAIN those
+    # words in prose) and filled all four slots, so `audit_entries` — which the lexical
+    # tier ranks first for the same intent — never got a place. A live qwen3:8b then
+    # reported no such tool exists.
+    #
+    # So the strong keyword ranks (0-2, the name matched) keep absolute priority, and
+    # prose-only hits go BEHIND the lower tiers rather than ahead of them. Nothing is
+    # dropped; only the order changes, and every row still says which tier found it.
+    strong = [row[2] for row in scored if row[0] < 3]
+    prose_only = [row[2] for row in scored if row[0] == 3]
+    results = strong[:limit]
+
+    # THE TIERS, strongest-precision first. Keyword hits are never removed, reordered or
+    # marked; each lower tier only fills room the tier above left empty, and marks its rows
+    # so a reader can tell which one answered:
+    #
+    #   1. keyword   exact terms (above). Highest precision, zero recall for operator
+    #                language that shares no words with our tool text.
+    #   2. semantic  opt-in neural (PROXIMO_EMBED_URL). Measured strongest at crossing the
+    #                vocabulary gap, but costs an embedding server the adopter runs.
+    #   3. lexical   in-wheel, default-on. Vocabulary-expanded n-gram TF-IDF: no model, no
+    #                network, no dependency, so an adopter who configures NOTHING still
+    #                gets it — and it is what an unreachable embedder degrades to, rather
+    #                than falling all the way back to bare keyword.
+    #
+    # Each tier is independently fail-soft. A search assist must never take the facade down.
+    # (No `except ValueError: raise` in the loop below. It was written to keep a blank query
+    # raising, but the blank check above already guarantees a non-blank query by this line —
+    # the branch was unreachable, and unreachable code that looks like a guard is worse than
+    # none: it reads as protection.)
+    if len(results) < limit:
+        summaries = {n: _summary_of(getattr(t, "description", "") or "")
+                     for n, t in catalog.items()}
+        from proximo import lexical, vectors
+        for enabled, fill, label in ((vectors.vectors_enabled, vectors.semantic_fill, "semantic"),
+                                     (lexical.lexical_enabled, lexical.lexical_fill, "lexical")):
+            if len(results) >= limit or not enabled():
+                continue
+            try:
+                results += fill(summaries, query, {row["name"] for row in results},
+                                limit - len(results))
+            except Exception as e:
+                vectors._warn_once(f"{label} search degraded: {e}")
+    if len(results) < limit:                      # prose-only keyword hits, last
+        seen = {row["name"] for row in results}
+        results += [row for row in prose_only if row["name"] not in seen][:limit - len(results)]
+    return results
 
 
 def tool_schema(catalog: dict[str, Any], name: str) -> dict:

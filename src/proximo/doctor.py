@@ -319,33 +319,35 @@ def _surfaces_report() -> dict:
             "off", "0", "false", "no")
         if tools_spec:
             scoping = f"PROXIMO_TOOLS={tools_spec} — exact tools"
-        elif toolsets_spec.lower() == "dynamic":
+        elif toolsets_spec.lower() == "dynamic" or not (toolsets_spec or spec):
+            # The dynamic facade — picked explicitly, or the default since the 0.30 flip.
             # The count comes from the composition, never a constant: with memory on the facade
             # is 4, and a doctor that states a number it did not derive is a doctor that will
             # misreport the box it exists to describe.
             from proximo.memory import memory_enabled
             memory_first = memory_enabled()
+            label = ("PROXIMO_TOOLSETS=dynamic" if toolsets_spec
+                     else "dynamic facade (the default)")
             scoping = (
-                f"PROXIMO_TOOLSETS=dynamic — search facade "
+                f"{label} — search facade "
                 f"({4 if memory_first else 3} facade tools resident + audit_verify"
                 + ("; memory-first: proximo_recall answers estate questions in one call"
                    if memory_first else "")
-                + "; the rest searchable via proximo_find_tools, still auto-scoped to "
-                  "configured planes)")
-        elif toolsets_spec and toolsets_spec.lower() != "all":
-            scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
+                + "; the rest searchable via proximo_find_tools, "
+                + ("NOT plane-narrowed (PROXIMO_AUTOSCOPE=off)" if autoscope_off
+                   else "still auto-scoped to configured planes")
+                + ")")
+        elif toolsets_spec.lower() == "catalog":
+            scoping = ("PROXIMO_TOOLSETS=catalog — full schemas, auto-scoped to configured "
+                       "planes (the pre-0.30 default door)")
         elif toolsets_spec.lower() == "all":
             scoping = "PROXIMO_TOOLSETS=all — full surface (auto-scope overridden)"
+        elif toolsets_spec:
+            scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
         elif spec.lower() == "all":
             scoping = "PROXIMO_SURFACES=all — full surface (auto-scope overridden)"
-        elif spec:
-            scoping = f"PROXIMO_SURFACES={spec} — explicit"
-        elif autoscope_off:
-            scoping = "PROXIMO_AUTOSCOPE=off — full surface"
-        elif configured - server._UTILITY_SURFACES:
-            scoping = "auto-scoped to configured planes"
         else:
-            scoping = "no plane configured yet — serving the full surface"
+            scoping = f"PROXIMO_SURFACES={spec} — explicit"
 
         return {
             "served_tools": len(registry),
@@ -354,11 +356,13 @@ def _surfaces_report() -> dict:
             "note": (
                 "One audited plane over all four Proxmox products; Proximo serves only the "
                 "planes you've configured. Light up a plane with its PROXIMO_*_BASE_URL (or a "
-                "target). Size the surface to your model, most specific wins: PROXIMO_TOOLS for "
-                "exact tools, PROXIMO_TOOLSETS for domains (pve.guests, pbs.tape, …) or "
-                "'dynamic' for a small search facade with everything still callable, "
-                "PROXIMO_SURFACES for whole planes. Scoping is context hygiene, not an "
-                "authorization control — the token ACL stays the real boundary."
+                "target). The default door is the dynamic facade — small enough for a local "
+                "model's window, with everything this box serves still callable. Size it "
+                "differently, most specific wins: "
+                "PROXIMO_TOOLS for exact tools, PROXIMO_TOOLSETS for domains (pve.guests, "
+                "pbs.tape, …), 'catalog' for the classic auto-scoped plane catalog, 'all' for "
+                "the full surface, PROXIMO_SURFACES for whole planes. Scoping is context "
+                "hygiene, not an authorization control — the token ACL stays the real boundary."
             ),
         }
     except Exception as e:  # never let introspection break a read-only preflight

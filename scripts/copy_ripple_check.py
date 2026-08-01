@@ -162,7 +162,15 @@ def check_repo(root: Path) -> list[str]:
 
     canonical = _canonical_tool_count(root)
     if canonical is not None:
-        problems += check_tool_counts({"README.md": readme}, canonical, current)
+        # README plus every RENDERED surface that bakes a tool count into an image. The
+        # architecture SVGs are embedded at the top of the README via raw.githubusercontent, so a
+        # stale number there is a wrong number on the public front page — and it went stale for
+        # nine days in exactly that way (900 while the truth was 905), because this gate only ever
+        # read README.md. An image is a copy surface; it just cannot be grepped by a human.
+        counted = {"README.md": readme}
+        for svg in sorted(root.glob("docs/brand/*.svg")):
+            counted[svg.relative_to(root).as_posix()] = svg.read_text(encoding="utf-8")
+        problems += check_tool_counts(counted, canonical, current)
 
     tagline_files = {
         name: (root / name).read_text(encoding="utf-8")

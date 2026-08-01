@@ -2,6 +2,152 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.30.0] — 2026-08-01
+
+### Changed
+- **The default door is now the dynamic facade, and estate memory is on by default.** With
+  nothing configured, `tools/list` serves six resident tools at **~1,449 tokens** —
+  `proximo_find_tools` / `proximo_tool_schema` / `proximo_call` / `proximo_recall` plus the
+  audit pair — with everything the box serves still searchable and callable through them.
+  The measured reason: the previous default served the full plane catalog (~97k tokens on a
+  single-PVE box, ~277k unscoped), 12x over the 8,192-token default context of a stock
+  ollama install — dead on connect for a local model, and a silent tax on every other
+  client that does not defer schemas. Rollbacks, by name: `PROXIMO_TOOLSETS=catalog`
+  restores the pre-0.30 default (full schemas, auto-scoped to configured planes),
+  `PROXIMO_TOOLSETS=all` the full surface, and `PROXIMO_MEMORY=0` opts out of the estate
+  map (removing `proximo_recall` from the facade rather than leaving a call that could only
+  fail). The map stays local, derived and rebuildable, beside the audit ledger the install
+  already keeps; scoping remains context hygiene, not an authorization control — the token
+  ACL is still the boundary. CLI verbs (`badge`, `mint`, `arm`, `disarm`, `reap`, `hello`)
+  no longer run registry scoping at all, so their errors are not prefixed with scoping
+  noise.
+
+### Added
+- **Search now finds the right tool with NOTHING configured — a vocabulary tier and lexical
+  vectors, in the wheel.** Keyword search needs the operator's words to appear in a tool's
+  text; "how much space is left for backups" shares no surface form with "storage usage —
+  disk used and available", so it matched nothing. Two mechanisms, pure stdlib, no
+  dependency, no model, no network, no download:
+  `lexical.VOCABULARY` maps operator language onto Proxmox's own terms (memory→mem/ram,
+  container→lxc/ct/guest, who/changed→audit/ledger) as **curated, auditable data — one
+  readable line per mapping**, and it is now the single source keyword search draws its
+  synonyms from, so the two can never drift. Behind that, hashed char-n-gram TF-IDF vectors
+  rank whatever keyword left unanswered, marked `"match": "lexical"`.
+
+  Measured on the real **905-tool** catalog: the first search builds the index (259 ms,
+  cached per catalog for the process), every search after it is **~7 ms**, and the probes
+  that used to miss now land (`who changed this vm's config` → `audit_verify`,
+  `space left for backups` → the backup tools). Off-domain queries return **nothing**:
+  admission requires a real word in common — a character-n-gram score alone once offered
+  `pve_node_disk_wipe` ("MUTATION: wipe ALL data… NO UNDO") for "recipe for banana bread",
+  because "recipe" and "wipe" share the fragment "ipe". Default-on because a search that
+  needs configuration to work defeats the purpose; `PROXIMO_LEXICAL=off` disables the
+  lexical tier.
+
+  **The two vocabularies are deliberately separate.** `VOCABULARY` (wide, concept-level)
+  serves ranking only; `KEYWORD_VOCABULARY` (narrow, near-exact renames) serves the keyword
+  tier. Sharing one table was tried and reverted the same day after measurement: with the
+  wide table feeding keyword AND-matching, "show" matched 824 of 905 tools and
+  "check cluster health" 187, because concept jumps (health→status) land on words nearly
+  every description carries — the OR-blowup lean mode exists to prevent. A blast-radius
+  test against the tracked manifest now holds that line.
+
+  Search is now a stack, each tier filling only what the one above left empty and marking
+  its rows: **keyword** (exact) → **semantic** (opt-in, `PROXIMO_EMBED_URL`) → **lexical**
+  (in-wheel). An unreachable embedder now degrades to lexical rather than all the way back
+  to bare keyword.
+- **Opt-in vector search over the estate sqlite — `PROXIMO_EMBED_URL`.** Point it at an
+  OpenAI-compatible `/v1/embeddings` server you run (ollama, llama.cpp and vLLM all serve one)
+  and two seams gain semantic recall, zero new dependencies (struct-packed float32 in sqlite,
+  pure-python dot product): `proximo_find_tools` keeps its exact-keyword hits FIRST and
+  unchanged, and vector matches only fill remaining room, each marked `"match": "semantic"`;
+  `proximo_recall` gains an optional `query` that narrows entity rows to the top semantic
+  matches while every count still covers the whole estate. Unset, nothing changes — no store,
+  no network, byte-identical search. The index is lazy and self-healing (content-hashed; the
+  embedding model name is part of the hash, so swapping models re-embeds instead of comparing
+  vectors from different spaces), lives owner-only beside the audit log
+  (`PROXIMO_VECTORS_PATH` overrides), and an unreachable embedder costs one loudly-degraded
+  keyword-only search — never a failed facade. `PROXIMO_EMBED_MODEL`, `PROXIMO_EMBED_TIMEOUT`
+  and `PROXIMO_EMBED_QUERY_PREFIX` (asymmetric-model instruction prefix, query-side only,
+  no re-index to change) complete the knob set.
+
+### Fixed
+- **Every published token figure was understated by 16-20%, and is now measured from the
+  wire.** `docs/SETUP.md`, `README.md` and the budget test all rebuilt the `tools/list`
+  payload by hand from `name + description + inputSchema` — and a reconstruction cannot see
+  a field it does not know about. It omitted **`outputSchema`, which FastMCP emits on 903 of
+  905 tools and costs ~45,468 tokens: 16.4% of the entire doorway.** The corrected figures:
+  full surface **231,700 → 277,376**, one plane **81,900 → 97,432**, one domain
+  **7,750 → 9,123**, lean **555 → 582**, `PROXIMO_TOOLS` **1,130 → 1,273**. Nothing about
+  the served surface changed — only the honesty of the number.
+
+  Found by installing this package from source into a clean virtualenv and driving the real
+  `proximo` binary over JSON-RPC, the way an adopter's client does, rather than calling the
+  library in-process. The budget test now measures through the MCP layer's own serializer
+  (`model_dump(by_alias=True, exclude_none=True)`), verified byte-for-byte against that live
+  server, so this class of drift cannot recur.
+
+  ⚠️ **`outputSchema` is not free to remove**, despite being near-boilerplate: the server
+  also returns `structuredContent`, confirmed live on that adopter install, and MCP pairs the
+  two. Suppressing it is a capability trade, recorded here and deliberately not taken.
+- **A symlink at `PROXIMO_MEMORY_PATH` / `PROXIMO_VECTORS_PATH` is now refused.** `O_NOFOLLOW`
+  did not cover it: a *dangling* symlink failed the `exists()` branch, hit `ELOOP` on the
+  create, and the best-effort swallow returned as if nothing were wrong — then sqlite's own
+  ordinary open followed the link and wrote the estate inventory at the link's target, at
+  umask default (**0644 measured**), somewhere the operator never configured. A symlink to an
+  *existing* file was worse in a second way: the permission-tightening branch chmod'ed the link
+  TARGET, silently narrowing an unrelated file. Both shapes now raise, and the escape is
+  asserted absent rather than merely "an error was raised".
+- **`proximo_recall(detail="summary", query=...)` silently evicted the vector cache.** The
+  summary shape carries no entity rows, so the filter had nothing to filter — but it still
+  synced an EMPTY authoritative set, whose stale-key deletion wiped every cached entity vector
+  for that target, forcing a full re-embed on the next real query. It also injected an
+  `entities: []` key the summary shape omits, under a note claiming matches had been made. It
+  now refuses and names the working combination.
+- **An embedding endpoint's `index` field is validated as a 0..n-1 permutation before it is
+  trusted to re-order.** A row count alone let `{index:-1}, {index:0}` land a vector in the
+  *wrong* input's slot — text and vector silently misaligned, every later score wrong with
+  nothing raised. Duplicate indices did the same. Batches are also now refused when
+  dimensions are ragged (would crash a later search), non-finite (a NaN reaches every score
+  and serializes as the bare token `NaN`, invalid JSON that can fail a strict client's parse
+  of the whole response), or over a dimensionality ceiling (`PROXIMO_EMBED_MAX_DIM`, default
+  16384 — an unbounded dim let a misbehaving endpoint inflate the store without limit).
+
+  All found by an adversarial review of the feature commit. Two further findings were
+  defensive branches that were real but had no test — a cross-embedding-space row skip
+  (whose removal crashed *every* search on one stale row) and the off-catalog filter in
+  `semantic_fill` — both now pinned. Nine mutants written against these fixes, nine killed.
+- **`proximo_call` is now resident in every mode — scoping narrows what is ADVERTISED, never what
+  is REACHABLE.** It was a closure inside `apply_lean`, so it existed only under
+  `PROXIMO_TOOLSETS=dynamic`. Every other deployment — including the default, where autoscope is
+  on and prunes 904 tools to 310 on a single-plane box — had no by-name dispatcher at all, so a
+  pruned tool was not merely unlisted, it was **unreachable**: `Unknown tool` over stdio and a
+  hard 404 on the A2A/HTTP/MCP-HTTP faces, with no recovery inside a live session. Dispatch now
+  runs from `FULL_CATALOG`, snapshotted at import before any of the four scoping layers prunes.
+  The tool count moves 904 → 905, and the `PROXIMO_TOOLS` doorway row 1,000 → ~1,130 tokens,
+  because the hatch is a real fifth tool in that mode.
+
+  Governance is unchanged and proven, not asserted: a mutation reached by name with no `confirm`
+  comes back a PLAN with the backend untouched; an adversarial tool reached by name taints under
+  **its own** name, not the dispatcher's, checked against a direct-call control. `proximo_call`
+  is deliberately not classified adversarial — it carries no bytes of its own — and takes no
+  `confirm` of its own, because a second gate satisfiable without the inner tool seeing one is
+  the bypass the confirm sweep exists to prevent.
+
+  A tool for a plane this box has not configured stays reachable and fails with its own named
+  config error (`Missing required PMG env var: PROXIMO_PMG_BASE_URL`), which tells an operator
+  what to fix where `unknown tool` would send them to build something that already exists. What
+  the lean facade *advertises* is still narrowed to the configured planes — that separation is
+  the point, and the dogfood lesson behind it is unchanged.
+
+### Fixed
+- **A published claim that was false: "every other tool still callable" in dynamic mode.**
+  README, `docs/SETUP.md` and — worse, because a model reads it — `pve_doctor`'s own surfaces
+  note all said it, in a sentence anchored to 904. Measured on a PVE-only box the callable set
+  was **310**, because the lean catalog is snapshotted after autoscope prunes. Now stated as
+  "every tool this box serves still callable", and pinned by a test, since 40 doctor tests
+  passed while that string was wrong.
+
 ## [0.29.0] — 2026-07-31
 
 ### Changed

@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -75,6 +75,49 @@
       }
     },
     {
+      "name": "audit_entries",
+      "description": "READ-ONLY: WHO changed WHAT and WHEN — guest configuration changes and every other\naudited action, read back from the PROVE ledger.\n\nNewest first. This is how you answer \"who changed this guest\" or \"what has this caller\ndone\". `matched` counts entries passing your filters, `total` counts the whole ledger,\nand `truncated` says so when `limit` cut rows. An entry with no principal returns null\nplus a note: the ledger not capturing an identity is a fact about the log, never a claim\nthat nobody was responsible. This READS the chain; `audit_verify` PROVES it is intact.\n",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "description": "Newest N entries to return (default 20).",
+            "type": "integer"
+          },
+          "target": {
+            "default": null,
+            "description": "Only entries against this exact target, e.g. 'vmid=100'.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "action": {
+            "default": null,
+            "description": "Only this exact tool name, e.g. 'pve_guest_config_set'.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal": {
+            "default": null,
+            "description": "Only entries attributed to this caller id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mutations_only": {
+            "default": false,
+            "description": "Only entries that changed state.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
       "name": "audit_verify",
       "description": "Verify the tamper-evident audit ledger's hash chain — PROVE the log is intact.\n\nPass `expected_head` (the head() value you pinned off-box) to also catch tail\ntruncation, a forged tail-append, or a full file replacement — a forward walk\nalone can't see those. Falls back to PROXIMO_AUDIT_EXPECTED_HEAD when omitted.\n",
       "inputSchema": {
@@ -134,8 +177,35 @@
       }
     },
     {
+      "name": "proximo_call",
+      "description": "Call any Proximo tool by exact name, including ones not in this server's listed tools.\n\nGet the argument shape from proximo_tool_schema first. Same gates as calling it directly:\ndry-run PLAN, ledger entry, token ACL. A smaller doorway, not a looser one.\n",
+      "inputSchema": {
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "proximo_recall",
-      "description": "READ-ONLY: the estate map from local Tier-1 memory — NOT a live PVE read. Returns\ntotal/by_kind/by_status/guest_summary counts (trust guest_summary for guest-count questions;\nall counting is server-side) plus lean entity rows, stamped {source:'memory', as_of,\nage_seconds}: the data is as old as the stamp says. With `since`, also diffs: appeared,\nstatus_changed, and not_seen_since (last observed before the window — a fact, not a claim\nthe entity is gone). journal=N adds the newest N diagnosis digests (\"when did this last\nhappen\") — findings summaries only, never raw diagnostic output. Memory is opt-in\n(PROXIMO_MEMORY=1), fed opportunistically by list reads and diagnose/doctor runs, derived\nand rebuildable. For live state use pve_list_guests / pve_cluster_resources.",
+      "description": "READ-ONLY: the estate map from local Tier-1 memory — NOT a live PVE read. Returns\ntotal/by_kind/by_status/guest_summary counts (trust guest_summary for guest-count questions;\nall counting is server-side) plus lean entity rows, stamped {source:'memory', as_of,\nage_seconds}: the data is as old as the stamp says. With `since`, also diffs: appeared,\nstatus_changed, and not_seen_since (last observed before the window — a fact, not a claim\nthe entity is gone). journal=N adds the newest N diagnosis digests (\"when did this last\nhappen\") — findings summaries only, never raw diagnostic output. Memory is on by default\n(PROXIMO_MEMORY=0 opts out), fed opportunistically by list reads and diagnose/doctor runs,\nderived and rebuildable. For live state use pve_list_guests / pve_cluster_resources.",
       "inputSchema": {
         "properties": {
           "since": {
@@ -155,6 +225,14 @@
             "default": 0,
             "description": "Include the newest N diagnosis-journal entries (pve_diagnose / ct_diagnose / pve_doctor digests over time). 0 (default) omits the journal; `since` also windows it.",
             "type": "integer"
+          },
+          "query": {
+            "default": null,
+            "description": "Optional filter, e.g. a guest name like 'gitea': rows narrow to the closest matches, counts still cover the whole estate. Always available; no configuration needed. Omit it to list every entity.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -162,7 +240,7 @@
     },
     {
       "name": "proximo_baseline",
-      "description": "READ-ONLY: what \"normal\" looks like for one guest — cpu/mem distribution rollups\n(n/mean/p50/p95/max) from PVE rrddata, stored in local Tier-1 memory. PVE-guest-only: on a\nPBS/PMG/PDM-only deployment this tool has nothing to report (a stored rollup, if one exists,\nstill answers with no PVE call; the live pull needs a configured PVE plane). With a stored\nrollup it answers from memory, age-stamped, with NO PVE call and `current: null` (never a\nfabricated reading); when missing or refresh=true it pulls rrddata, stores the rollup, and\npositions the newest sample against it. The assessment is an advisory heuristic from\nhistory — not an alarm, not a health verdict. Opt-in via PROXIMO_MEMORY=1. For live\npoint-in-time state use pve_guest_status; for raw series use pve_node_rrddata (node-level).",
+      "description": "READ-ONLY: what \"normal\" looks like for one guest — cpu/mem distribution rollups\n(n/mean/p50/p95/max) from PVE rrddata, stored in local Tier-1 memory. PVE-guest-only: on a\nPBS/PMG/PDM-only deployment this tool has nothing to report (a stored rollup, if one exists,\nstill answers with no PVE call; the live pull needs a configured PVE plane). With a stored\nrollup it answers from memory, age-stamped, with NO PVE call and `current: null` (never a\nfabricated reading); when missing or refresh=true it pulls rrddata, stores the rollup, and\npositions the newest sample against it. The assessment is an advisory heuristic from\nhistory — not an alarm, not a health verdict. On by default (PROXIMO_MEMORY=0 opts out).\nFor live point-in-time state use pve_guest_status; for raw series use pve_node_rrddata\n(node-level).",
       "inputSchema": {
         "properties": {
           "vmid": {

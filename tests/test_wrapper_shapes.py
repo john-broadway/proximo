@@ -1291,12 +1291,21 @@ NOT_SHAPE_ASSERTED_READ: dict[str, str] = {
     "pve_doctor": "server.py pve_doctor(): fixed target='preflight', no identity-bearing params",
     "pmg_doctor": "server.py pmg_doctor(): connectivity/permission preflight, no identity params",
     "audit_verify": "server.py audit_verify(): verifies the ledger itself, not a per-object read",
-    "proximo_recall": "tools/memory_tools.py: opt-in Tier-1 memory — refuses (ProximoError) when "
-                      "PROXIMO_MEMORY is unset, as in this sweep's env; request/response/ledger "
-                      "seams are pinned in tests/test_memory.py",
-    "proximo_baseline": "tools/memory_tools.py: opt-in Tier-1 memory (same PROXIMO_MEMORY refusal "
-                        "as proximo_recall); request/response/ledger seams incl. the no-PVE-call "
-                        "stored path are pinned in tests/test_memory.py",
+    "audit_entries": "server.py audit_entries(): filters over THIS box's own log, not object identity",
+    # The by-name escape hatch is a DISPATCHER, not a read wrapper: it writes no ledger entry of
+    # its own (the inner tool does, under the inner tool's name — which is the property, proven
+    # in tests/test_escape_hatch.py), and its `tool`/`arguments` params identify no Proxmox
+    # object for a target string to reflect. Its request/response/ledger/taint/PLAN seams are all
+    # pinned in tests/test_escape_hatch.py, including a control run against a direct call.
+    "proximo_call": "server.py proximo_call(): by-name dispatcher, no ledger entry or identity "
+                    "params of its own; seams pinned in tests/test_escape_hatch.py",
+    "proximo_recall": "tools/memory_tools.py: Tier-1 memory (default-on since the 0.30 flip) — "
+                      "answers from the LOCAL map, so it has no Proxmox object identity params "
+                      "for this sweep to probe; request/response/ledger seams are pinned in "
+                      "tests/test_memory.py",
+    "proximo_baseline": "tools/memory_tools.py: Tier-1 memory (default-on since the 0.30 flip); "
+                        "request/response/ledger seams incl. the no-PVE-call stored path are "
+                        "pinned in tests/test_memory.py",
     "proximo_wiki": "tools/wiki_tools.py: opt-in local docs index — refuses (ProximoError) when "
                     "PROXIMO_WIKI is unset, as in this sweep's env; request/response/ledger seams "
                     "are pinned in tests/test_wiki.py "

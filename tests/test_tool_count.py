@@ -32,7 +32,18 @@ from pathlib import Path
 
 import proximo.server as server
 
-EXPECTED_TOOL_COUNT = 904  # +2 (wiki seam reader side, 2026-07-29): proximo_wiki +
+EXPECTED_TOOL_COUNT = 906  # +1 (audit_entries, 2026-08-01): the READ side of PROVE. 0.29.0
+# recorded the principal on every ledger entry and nothing could read one back, so "who changed
+# this guest" was unanswerable through Proximo while the answer sat on disk — a shipped claim
+# with no read path. Found on the live estate by a local qwen3:8b that read the catalog and
+# correctly reported no tool does this. Resident in every mode: a chain you cannot read is a
+# claim, not a control.
+# Prior: 905  # +1 (the by-name escape hatch, 2026-08-01): proximo_call is now a
+# MODULE-LEVEL tool rather than a closure inside apply_lean, so it is resident in every mode and
+# in _ALWAYS_REGISTERED. Four scoping layers ship and every one of them could strand a working
+# tool — unreachable on every transport, with no way back inside a live session. Dispatch is from
+# FULL_CATALOG, snapshotted before any layer prunes. See tests/test_escape_hatch.py.
+# Prior: 904  # +2 (wiki seam reader side, 2026-07-29): proximo_wiki +
 # proximo_wiki_read — BM25 search and one-section read over a LOCAL docs index built by
 # an operator-supplied builder (proximo/wiki.py). Opt-in via PROXIMO_WIKI; the seam is a file
 # contract, so proximo imports nothing from the builder.

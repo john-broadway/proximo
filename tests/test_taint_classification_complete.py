@@ -29,6 +29,19 @@ from proximo import taint
 # Generated once via `set(names) - taint.ADVERSARIAL_TOOLS` against the live registry
 # (352 tools, 2026-07-02), then hand-reviewed. Keep sorted for readable diffs.
 REVIEWED_TRUSTED: frozenset[str] = frozenset({
+    # proximo_call is a DISPATCHER, not a reader: it carries no bytes of its own, it returns
+    # whatever the inner tool returned, and the inner tool's OWN classification is what fires.
+    # Verified against a control rather than reasoned — calling pve_list_guests directly and
+    # calling it by name through the hatch both taint, and both name `pve_list_guests`, never
+    # `proximo_call` (the marker is written in _audited on the name it is called with, and
+    # dispatch runs the decorated wrapper). Pinned by
+    # tests/test_escape_hatch.py::test_taint_fires_with_the_INNER_tool_name_through_the_hatch.
+    #
+    # Classifying it adversarial would be strictly WRONG, not merely cautious: it would taint
+    # every by-name call including pure reads of operator-authored config, and it would
+    # attribute untrusted bytes to the dispatcher instead of to the tool that actually carried
+    # them — losing the one fact taint_sources() exists to record.
+    'proximo_call',
     'audit_verify', 'pbs_acl_get', 'pbs_acl_update',
     'pbs_acme_account_create', 'pbs_acme_account_delete', 'pbs_acme_account_get',
     'pbs_acme_account_list', 'pbs_acme_account_update', 'pbs_acme_cert_order',

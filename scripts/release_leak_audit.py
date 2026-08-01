@@ -26,6 +26,7 @@ CLI:
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -100,13 +101,38 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 ALLOW_MARKER = "leak-audit: allow"
 
 # Documented, benign example values that legitimately appear in public docs / smokes.
-ALLOW: tuple[str, ...] = (
+#
+# PREFIX-matched, and safe to prefix-match because these are RESERVED-FOR-DOCUMENTATION ranges
+# (RFC 5737 / RFC 2606). No real infrastructure can be numbered here, so exempting the whole
+# range exempts nothing that could ever be a leak.
+ALLOW_PREFIX: tuple[str, ...] = (
     "192.0.2.", "198.51.100.", "203.0.113.",   # RFC 5737 documentation IP ranges
-    "10.0.0.", "192.168.", "172.16.",           # canonical example private subnets in fixtures
-    "10.99.99.", "10.1.2.3",                    # example ranges used in live-smoke / a2a fixtures
     ".example.", "example.com", "your-node",    # RFC 2606 example domains / sanctioned placeholders
     "proxmox.lan",                              # generic example host in a2a-auth allowed-hosts test
 )
+
+# EXACT-matched, one full address per entry. These are REAL private ranges (RFC 1918) used as
+# examples in docstrings, fixtures and smokes — and a real deployment is numbered in exactly these
+# ranges, so a prefix here would be a hole, not an exemption.
+#
+# It WAS a hole. Until 2026-08-01 this list carried the bare prefixes `10.0.0.`, `192.168.` and
+# `172.16.`, and `_allowed()` matched by SUBSTRING — so ANY full address inside 192.168.0.0/16
+# passed as allowed and the entire space was exempt anywhere in the public tree, `.md`, `.py` and
+# `.cast` alike. The audit's CLEAN verdict was true but carried no evidence about that range: it
+# structurally could not fire. Found by an adversarial pass on the demo assets, not by a leak.
+# (No example address is written here — this file scans itself.)
+#
+# Adding an entry here means: this exact address is an example and will never be real infra. If a
+# new fixture needs one, add the full address — never a prefix, never a range.
+ALLOW_EXACT: frozenset[str] = frozenset({
+    # docstring CIDR/gateway examples (blast, firewall, network, pmg, sdn_routing, TOOLS.md)
+    "10.0.0.0", "10.0.0.1", "10.0.0.5", "10.0.0.6", "10.0.0.7", "10.0.0.9",
+    "10.0.0.10", "10.0.0.20",
+    "172.16.0.0", "172.16.5.4",
+    "192.168.0.0", "192.168.0.99", "192.168.1.0", "192.168.1.1",
+    # live-smoke SDN fixtures + the a2a allowed-host fixture
+    "10.99.99.0", "10.99.99.1", "10.99.99.2", "10.99.99.5", "10.1.2.3",
+})
 
 
 @dataclass(frozen=True)
@@ -129,7 +155,13 @@ class AuditResult:
 
 
 def _allowed(token: str) -> bool:
-    return any(a in token for a in ALLOW)
+    """True if `token` is a sanctioned example value.
+
+    Two rules, deliberately different. A documentation-reserved range may be matched by PREFIX
+    (nothing real lives there). A real private range must match the FULL token, or the exemption
+    swallows every address in it — which is exactly the defect this split fixed.
+    """
+    return token in ALLOW_EXACT or any(a in token for a in ALLOW_PREFIX)
 
 
 def _deny_literal_pattern(deny_literals: tuple[str, ...]) -> re.Pattern[str] | None:
@@ -141,13 +173,56 @@ def _deny_literal_pattern(deny_literals: tuple[str, ...]) -> re.Pattern[str] | N
     return re.compile(r"\b(?:" + "|".join(re.escape(s) for s in lits) + r")\b", re.IGNORECASE)
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][A-B0-2]|\r")
+
+
+def cast_visible_text(text: str) -> str:
+    """Reconstruct what a viewer actually SEES in an asciinema v2 recording.
+
+    A `.cast` is one JSON array per line, and a terminal recording emits ONE EVENT PER KEYSTROKE
+    for anything typed. So a hostname the operator typed is spread one character per line, and a
+    line-by-line regex scan cannot see it: it matches `p`, then `v`, then `e`. Verified against
+    docs/demo/demo.cast, whose lines 5-38 are single characters.
+
+    That made the denylist scan structurally blind to exactly the thing a live terminal demo is
+    most likely to expose — typed infra names — while still reporting the file CLEAN. Found by an
+    adversarial pass on the demo assets, 2026-08-01, not by a leak.
+
+    Concatenating the output payloads and stripping ANSI gives the visible frame text, which is
+    what a human reviewing the recording would read, and what this scan should see.
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("["):
+            continue  # the v2 header is a JSON OBJECT on line 1; skip it
+        try:
+            ev = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(ev, list) and len(ev) >= 3 and ev[1] == "o" and isinstance(ev[2], str):
+            out.append(ev[2])
+    return _ANSI.sub("", "".join(out))
+
+
 def scan_text(
     path: str, text: str,
     extra_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (),
 ) -> list[Finding]:
     """Leak shapes in one file's content, honoring the documented-example allowlist. *extra_patterns*
-    scan alongside the built-ins (e.g. the site-specific internal-identifier denylist)."""
+    scan alongside the built-ins (e.g. the site-specific internal-identifier denylist).
+
+    A `.cast` is scanned TWICE: once raw (so a leak in the JSON envelope or the header still
+    fires) and once over its reconstructed visible text (so per-keystroke-encoded text fires too).
+    """
     findings: list[Finding] = []
+    if path.endswith(".cast"):
+        visible = cast_visible_text(text)
+        if visible:
+            findings += [
+                Finding(path, 0, f"{f.kind} (in recorded terminal output)", f.match)
+                for f in scan_text(path + "::visible", visible, extra_patterns)
+            ]
     for lineno, line in enumerate(text.splitlines(), start=1):
         if ALLOW_MARKER in line:
             continue

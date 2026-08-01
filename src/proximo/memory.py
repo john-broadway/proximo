@@ -9,8 +9,10 @@ without any raw payload in context.
 
 The rails (each one is load-bearing, argued in the design doc):
 
-- **Opt-in.** ``PROXIMO_MEMORY`` unset => fully inert: no file is ever created, observe is
-  a no-op, recall refuses with the enable hint. Same contract as CONSENT/CONTAIN/LEASE.
+- **Default-on, opt-out.** Since the 0.30 flip: ``PROXIMO_MEMORY`` unset => enabled — the
+  estate map is part of the default install, kept beside the ledger the install already
+  keeps. ``PROXIMO_MEMORY=0`` (or false/no/off) => fully inert: no file is ever created,
+  observe is a no-op, recall refuses with the re-enable hint.
 - **Opportunistic writes only.** Memory is fed by reads that already happened
   (``pve_list_guests``, ``pve_cluster_resources``); it NEVER initiates I/O against PVE.
 - **A memory failure never fails the read.** The observe path warns (once per process per
@@ -40,7 +42,7 @@ from datetime import UTC, datetime
 
 from proximo.backends import ProximoError
 
-_TRUTHY = ("1", "true", "yes", "on")
+_FALSY = ("0", "false", "no", "off")
 _DEFAULT_AUDIT_LOG = os.path.expanduser("~/.local/state/proximo/audit.log")
 
 # once-per-process-per-reason warning memo, so a broken path warns loudly but not per-call
@@ -60,6 +62,21 @@ def _own_the_file(path: str) -> None:
     narrowing its mode can lose nothing. Best-effort throughout: memory is a convenience layer and
     must never be the reason the server cannot start.
     """
+    # A symlink at this path is REFUSED outright, before any branch below — the one
+    # condition here that is an attack rather than an inconvenience, so it is the one
+    # thing this function does not treat as best-effort. O_NOFOLLOW alone did NOT cover
+    # it: a DANGLING symlink fails os.path.exists(), takes the create branch, fails with
+    # ELOOP, and the swallow returned as if nothing were wrong — then the caller's own
+    # sqlite3.connect() followed the link with an ordinary open and created the estate
+    # inventory at the attacker's target, at umask default (0644 measured), somewhere the
+    # operator never configured. A symlink to an EXISTING file was worse in a second way:
+    # the tighten branch chmod'ed the LINK TARGET, silently narrowing an unrelated file.
+    # Found by an adversarial lens, 2026-08-01.
+    if os.path.islink(path):
+        raise ProximoError(
+            f"{path} is a symlink — refusing to open estate state through it. Point "
+            "PROXIMO_MEMORY_PATH / PROXIMO_VECTORS_PATH at a real file: a link here can "
+            "aim the create at another location or narrow an unrelated file's permissions.")
     try:
         if os.path.exists(path):
             mode = stat.S_IMODE(os.stat(path).st_mode)
@@ -161,7 +178,8 @@ def rollup_samples(samples: list, metrics: tuple[str, ...] = BASELINE_METRICS) -
 
 
 def memory_enabled() -> bool:
-    return os.environ.get("PROXIMO_MEMORY", "").lower() in _TRUTHY
+    """Default-on since the 0.30 flip; only an explicit falsy value opts out."""
+    return os.environ.get("PROXIMO_MEMORY", "").strip().lower() not in _FALSY
 
 
 def memory_path() -> str:
@@ -446,7 +464,8 @@ def memory_status() -> dict:
     (and a doctor flag), not an exception."""
     if not memory_enabled():
         return {"enabled": False,
-                "hint": "PROXIMO_MEMORY=1 enables the Tier-1 estate map "
+                "hint": "estate memory is opted out (PROXIMO_MEMORY=0) — unset it or set "
+                        "PROXIMO_MEMORY=1 to re-enable the Tier-1 estate map "
                         "(local, derived, rebuildable — nothing leaves the box)"}
     path = memory_path()
     out: dict = {"enabled": True, "path": path}
@@ -551,7 +570,8 @@ def baseline_state(api, vmid: str, kind: str = "lxc", node: str | None = None,
     """
     if not memory_enabled():
         raise ProximoError(
-            "estate memory is off — set PROXIMO_MEMORY=1 to enable baselines "
+            "estate memory is opted out (PROXIMO_MEMORY=0) — unset it or set PROXIMO_MEMORY=1 "
+            "to re-enable baselines "
             "(a derived, rebuildable SQLite beside the audit log; nothing leaves the box)")
     from proximo.observability import guest_rrddata
 
@@ -598,10 +618,68 @@ def baseline_state(api, vmid: str, kind: str = "lxc", node: str | None = None,
         mem.close()
 
 
-def recall_state(since: str | None = None, detail: str = "lean", journal: int = 0) -> dict:
+# What the map CANNOT answer, and which governed tool can — keyed on what the operator
+# asked for, not on what we hold. The map carries identity and status; live metrics,
+# stored config and provenance all live behind a real call.
+#
+# WHY THIS IS DATA AND NOT PROSE. Two live qwen3:8b runs on the real estate ended the same
+# way: the model queried the map, got the right entity, and then concluded the capability
+# did not exist — "the available tools do not include memory consumption metrics for
+# containers" (false: pve_guest_status returns mem), and "there is no tool to track who
+# changed a guest's configuration" (false: audit_verify is resident in its own tool list).
+# It never searched. Telling it to search, in the system prompt, changed nothing across
+# both runs. ⭐ The 07-29 law in the other direction: prose could not stop a small model
+# fabricating, and prose cannot make it reach either. So the server, which already knows
+# what it does not hold, says the tool name in the response itself.
+_NEXT_TOOL = (
+    ("pve_guest_status", "live cpu/mem/uptime"),
+    # audit_entries, not audit_verify (live-caught 2026-08-01): verify PROVES the chain is
+    # intact; entries READS who changed what. Pointing the who-question at the prover sent
+    # a live 8B to a tool that could never answer it.
+    ("audit_entries", "who changed what, from the ledger"),
+    ("pve_guest_config_get", "stored config"),
+    ("pve_backup_list", "backups"),
+)
+
+
+def _next_tool_for(query: str, entities: list[dict]) -> dict | None:
+    """What the map does NOT hold, and which tool does — attached to every filtered recall.
+
+    ⚠️ This must NOT key on the query text, and the first version did. It matched trigger
+    words like "memory"/"who" against the query string, which passed a test fed the user's
+    whole question — and then did not fire once in a live run, because a model does not
+    send its user's question. Asked "how much memory is the container named redis using",
+    qwen3:8b called `proximo_recall(query='redis')`: a SEARCH TERM. The words the trigger
+    needed were in the sentence the server never receives. My fixture used input no model
+    produces, so a green test proved nothing about the path it named.
+
+    So the pointer is unconditional whenever a filter ran and matched something, and kept
+    to one short line per class (~30 tokens) — cheap enough to always carry, which is the
+    only way it can be there for the call that actually needs it.
+    """
+    if not entities:
+        return None
+    first = entities[0]
+    vmid = first.get("key")
+    return {
+        "map_holds": "identity, name, node, status only",
+        # Stated NEGATIVELY on purpose (1 of 10 live qwen3:8b runs, 2026-08-01, answered a
+        # memory question from this response with a fabricated "1.5GB"): a tool response is
+        # a prompt, and what it fails to forbid, a small model fills in.
+        "not_held": "cpu/mem/disk/uptime numbers are NEVER in this response — do not state "
+                    "them from here; read them via the tools below",
+        "for_more": dict(_NEXT_TOOL),
+        "subject": {"vmid": vmid, "kind": first.get("kind")},
+        "hint": f"call these via proximo_call, e.g. pve_guest_status(vmid={vmid!r})",
+    }
+
+
+def recall_state(since: str | None = None, detail: str = "lean", journal: int = 0,
+                 query: str | None = None) -> dict:
     if not memory_enabled():
         raise ProximoError(
-            "estate memory is off — set PROXIMO_MEMORY=1 to enable the local map "
+            "estate memory is opted out (PROXIMO_MEMORY=0) — unset it or set PROXIMO_MEMORY=1 "
+            "to re-enable the local map "
             "(a derived, rebuildable SQLite beside the audit log; nothing leaves the box)")
     if not isinstance(journal, int) or journal < 0:
         raise ProximoError(f"journal must be a non-negative entry count, got {journal!r}")
@@ -626,6 +704,33 @@ def recall_state(since: str | None = None, detail: str = "lean", journal: int = 
                 + _recall_unfed_remedy())
         if journal:
             out["journal"] = entries
+        if query and query.strip():
+            # Semantic entity filter (opt-in vectors; refuses when unconfigured rather
+            # than silently returning everything). ROWS are filtered; COUNTS are not:
+            # a filtered list must never masquerade as the census — the same law as
+            # the empty-map branch above, one tier up. The note says so in-band.
+            #
+            # detail="summary" carries NO entities by design, so a query there has
+            # nothing to filter. Refuse rather than proceed: the old code called
+            # entity_filter with [], which returned [] (inventing an "entities" key
+            # the summary shape omits, under a note claiming matches were made) AND
+            # synced an EMPTY authoritative set, whose stale-key deletion wiped every
+            # cached entity vector for the target — a silent cache eviction that
+            # forced a full re-embed on the next real query. Found by an adversarial
+            # lens, 2026-08-01.
+            if detail == "summary":
+                raise ProximoError(
+                    "detail='summary' returns counts only and carries no entity rows, so "
+                    "there is nothing for query to filter — use detail='lean' (default) "
+                    "or 'full' with a query, or drop the query for counts alone")
+            from proximo import vectors
+            out["entities"] = vectors.entity_filter(
+                target, out.get("entities") or [], query.strip())
+            out["query"] = query.strip()
+            out["next"] = _next_tool_for(query, out["entities"])
+            out["note"] = ("entities lists the top semantic matches for the query only; "
+                           "total/by_kind/by_status/guest_summary still count the WHOLE "
+                           "estate.")
         return out
     finally:
         mem.close()

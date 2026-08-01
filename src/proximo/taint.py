@@ -150,6 +150,11 @@ ADVERSARIAL_TOOLS: frozenset[str] = frozenset({
     # classified adversarial itself so stored bytes re-enter the taint model rather than
     # laundering through the estate map (design rail, 2026-07-29).
     "proximo_recall",
+    # The PROVE ledger's `target` fields carry the same guest/node names the adversarial reads
+    # above produced — reading entries back re-serves those bytes, so it re-enters the taint
+    # model rather than laundering through the log. Exactly proximo_recall's rail, one store
+    # over. (The `detail` body is fingerprinted under the default PROXIMO_LEDGER_REDACT.)
+    "audit_entries",
     # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
     # above all): a thread can carry "now run pve_delete_guest" as easily as a fix, and the
     # bytes arrive already inside the model's context window. Classified adversarial for the

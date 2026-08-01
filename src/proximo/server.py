@@ -32,7 +32,7 @@ from pydantic import Field
 
 from . import __version__, lean
 from . import audit as audit_mod
-from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger
+from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger, read_entries
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
 from .config import ProximoConfig, load_env_file
@@ -780,6 +780,34 @@ def _anchor_moved_hint(prev_entries: int | None, cur_entries: int) -> str:
     )
 
 
+# THE READ SIDE OF PROVE. 0.29.0 records the principal on every entry and, until this tool,
+# nothing could read one back — audit_verify returns ok/entries/head, so "who changed this
+# guest" was unanswerable through Proximo while the answer sat on disk. Found on the real
+# estate by a local qwen3:8b, which read the catalog and correctly reported that no tool
+# does this. Bare like audit_verify and for the same reason: the ledger is a LOCAL file with
+# no remote box to target. Resident in every mode — a PROVE chain you cannot read is a claim,
+# not a control.
+@mcp.tool()
+def audit_entries(
+    limit: Annotated[int, Field(description="Newest N entries to return (default 20).")] = 20,
+    target: Annotated[str | None, Field(description="Only entries against this exact target, e.g. 'vmid=100'.")] = None,
+    action: Annotated[str | None, Field(description="Only this exact tool name, e.g. 'pve_guest_config_set'.")] = None,
+    principal: Annotated[str | None, Field(description="Only entries attributed to this caller id.")] = None,
+    mutations_only: Annotated[bool, Field(description="Only entries that changed state.")] = False,
+) -> dict:
+    """READ-ONLY: WHO changed WHAT and WHEN — guest configuration changes and every other
+    audited action, read back from the PROVE ledger.
+
+    Newest first. This is how you answer "who changed this guest" or "what has this caller
+    done". `matched` counts entries passing your filters, `total` counts the whole ledger,
+    and `truncated` says so when `limit` cut rows. An entry with no principal returns null
+    plus a note: the ledger not capturing an identity is a fact about the log, never a claim
+    that nobody was responsible. This READS the chain; `audit_verify` PROVES it is intact.
+    """
+    return read_entries(limit=limit, target=target, action=action,
+                        principal=principal, mutations_only=mutations_only)
+
+
     # THIS Proximo's one PROVE ledger chain, which has no remote box to target. It is the
     # sole intentionally-bare tool; every other tool (incl. the ct_* exec tools) is @tool().
 @mcp.tool()
@@ -1044,10 +1072,15 @@ SURFACES: dict[str, tuple[str, ...]] = {
     "pmg": ("pmg_",),   # Proxmox Mail Gateway
     "pdm": ("pdm_",),   # Proxmox Datacenter Manager (reads + governed fleet control: power/snapshot/migrate)
     "exec": ("ct_",),   # in-container exec/psql/logs/diagnose (ssh -> pct)
-    "memory": ("proximo_recall", "proximo_baseline"),  # Tier-1 estate memory (opt-in via PROXIMO_MEMORY)
+    "memory": ("proximo_recall", "proximo_baseline"),  # Tier-1 estate memory (default-on; PROXIMO_MEMORY=0 opts out)
     "wiki": ("proximo_wiki",),  # local docs index, prefix covers _read (opt-in via PROXIMO_WIKI)
 }
-_ALWAYS_REGISTERED = frozenset({"audit_verify"})
+# Never scopeable away, for two different reasons. `audit_verify` because PROVE must not be
+# removable. `proximo_call` because it is the by-name escape hatch: the four scoping layers below
+# each narrow what is ADVERTISED, and without a resident dispatcher that narrowing also removed
+# capability — on every transport, with no way back inside a live session. Pinned by
+# tests/test_escape_hatch.py.
+_ALWAYS_REGISTERED = frozenset({"audit_verify", "audit_entries", "proximo_call"})
 
 # --- PROXIMO_TOOLSETS — domain scoping, one layer finer than SURFACES. ---
 # SURFACES scopes by plane, which is too coarse to reach a small context: pve alone is 310 tools
@@ -1101,7 +1134,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     # --- the rest ---
     "pdm":             ("pdm_",),
     "exec":            ("ct_",),
-    # Tier-1 estate memory (opt-in via PROXIMO_MEMORY; see proximo/memory.py)
+    # Tier-1 estate memory (default-on since 0.30, PROXIMO_MEMORY=0 opts out; see proximo/memory.py)
     "memory":          ("proximo_recall", "proximo_baseline"),
     # Local Proxmox docs index (opt-in via PROXIMO_WIKI; see proximo/wiki.py). One prefix
     # covers both tools; the seam is a file contract, so no builder import exists anywhere.
@@ -1226,21 +1259,47 @@ def _prune_registry(server_mcp, keep: set[str], reason: str) -> None:
     print(f"proximo: {reason} — {len(keep)} of {total} tools registered", file=sys.stderr)
 
 
-def _apply_surfaces(server_mcp=mcp) -> None:
-    """Scope the live registry to the planes in use. ValueError propagates to main().
+def _apply_dynamic(server_mcp) -> None:
+    """The dynamic facade door: auto-scope FIRST, then swap the registry for the facade.
 
-    Precedence: (1) explicit PROXIMO_SURFACES wins verbatim — including `all` to force the
-    full surface; (2) otherwise auto-scope to the *configured* planes (default-on; disable
-    with PROXIMO_AUTOSCOPE=off); (3) if nothing is detectable, serve everything (never
-    surprise an operator with an empty server when config is ambiguous)."""
+    The ordering is load-bearing, found by dogfooding a live PVE-only box: apply_lean snapshots
+    the searchable catalog at call time, so if plane scoping hasn't run yet the facade advertises
+    pmg_/pdm_ tools on a host with neither configured. Calling one can only fail — capability the
+    deployment does not have, spending a small model's turns to discover it. Lean is a context
+    choice; it must not widen what is reachable."""
+    keep = _autoscope_keep(server_mcp._tool_manager._tools.keys())
+    if keep is not None:
+        _prune_registry(server_mcp, keep, "lean: auto-scoped to configured planes")
+    apply_lean(server_mcp)
+
+
+def _apply_catalog(server_mcp) -> None:
+    """The pre-0.30 default door by name: full schemas, auto-scoped to configured planes."""
+    planes = _autoscope_planes()
+    if planes is None:   # autoscope off, or no data plane detected → ambiguous, touch nothing
+        return
+    registry = server_mcp._tool_manager._tools
+    keep = surface_keep(registry.keys(), ",".join(sorted(planes)))
+    if len(keep) < len(registry):   # only announce/prune when it actually narrows
+        _prune_registry(server_mcp, keep,
+                        f"auto-scoped to configured planes ({','.join(sorted(planes))})")
+
+
+def _apply_surfaces(server_mcp=mcp) -> None:
+    """Scope the live registry to the door the operator picked. ValueError propagates to main().
+
+    Precedence: (1) explicit PROXIMO_TOOLS wins verbatim; (2) PROXIMO_TOOLSETS — domains, or the
+    keywords `dynamic` (the facade), `catalog` (auto-scoped plane catalog, the pre-0.30 default)
+    and `all` (full surface); (3) PROXIMO_SURFACES — planes, or `all`; (4) nothing picked → the
+    dynamic facade (the 0.30 flip: a default install must fit a default local model's window;
+    every tool stays reachable via proximo_find_tools → proximo_tool_schema → proximo_call)."""
     # Layers, most specific first. The first one SET wins outright — they do not intersect,
     # because an operator who names exact tools has already answered the coarser question, and
     # silently ANDing a leftover PROXIMO_SURFACES from their env would serve them less than they
     # asked for with no way to see why.
     #
-    # `_tool_manager` is read INSIDE each branch, never hoisted: the no-op paths must not touch
-    # the server object at all (pinned by test_apply_surfaces_*_touches_nothing). Hoisting it
-    # broke both of those the first time through.
+    # `_tool_manager` is read INSIDE each branch, never hoisted: the pass-through paths
+    # (`all`) must not touch the server object at all.
     tools_spec = os.environ.get("PROXIMO_TOOLS")
     if tools_spec and tools_spec.strip():
         _prune_registry(server_mcp, tool_keep(server_mcp._tool_manager._tools.keys(), tools_spec),
@@ -1251,16 +1310,10 @@ def _apply_surfaces(server_mcp=mcp) -> None:
     if toolsets_spec and toolsets_spec.strip():
         picked = toolsets_spec.strip().lower()
         if picked == LEAN_KEYWORD:
-            # Auto-scope FIRST, then snapshot. Found by dogfooding a live PVE-only box: because
-            # this branch wins precedence over autoscope, the catalog was snapshotted before any
-            # plane scoping ran, so `find_tools("cluster status")` offered pmg_ and pdm_ tools on
-            # a host with neither configured. Calling one can only fail — the facade was
-            # advertising capability the deployment does not have and spending a small model's
-            # turns to discover it. Lean is a context choice; it must not widen what is reachable.
-            keep = _autoscope_keep(server_mcp._tool_manager._tools.keys())
-            if keep is not None:
-                _prune_registry(server_mcp, keep, "lean: auto-scoped to configured planes")
-            apply_lean(server_mcp)
+            _apply_dynamic(server_mcp)
+            return
+        if picked == CATALOG_KEYWORD:
+            _apply_catalog(server_mcp)
             return
         if picked != "all":
             _prune_registry(server_mcp,
@@ -1275,13 +1328,7 @@ def _apply_surfaces(server_mcp=mcp) -> None:
         _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
                         f"PROXIMO_SURFACES={spec.strip()}")
         return
-    planes = _autoscope_planes()
-    if planes is None:   # autoscope off, or no data plane detected → ambiguous, touch nothing
-        return
-    registry = server_mcp._tool_manager._tools
-    keep = surface_keep(registry.keys(), ",".join(sorted(planes)))
-    if len(keep) < len(registry):   # only announce/prune when it actually narrows
-        _prune_registry(server_mcp, keep, f"auto-scoped to configured planes ({','.join(sorted(planes))})")
+    _apply_dynamic(server_mcp)
 
 
 # --- schema slimming — the fixed cost every client pays before asking anything. ---
@@ -1400,6 +1447,9 @@ def tool_keep(names: Iterable[str], spec: str | None) -> set[str]:
 # still needs somewhere to look the tool up. Getting that order wrong yields a server that lists
 # three tools and can call none of them.
 LEAN_KEYWORD = "dynamic"
+# The pre-0.30 default door, kept as a one-word rollback in the upgrade note: full schemas,
+# auto-scoped to configured planes. (`all` is the other, older escape: full surface, no scoping.)
+CATALOG_KEYWORD = "catalog"
 
 
 async def dispatch_tool(server_mcp, catalog: dict, name: str, arguments: dict):
@@ -1434,6 +1484,60 @@ async def dispatch_tool(server_mcp, catalog: dict, name: str, arguments: dict):
             registry.pop(name, None)
 
 
+# The COMPLETE registry, frozen before any scoping layer runs — the escape hatch's dispatch
+# source. Populated at import time at the bottom of this module, the one point where every
+# @mcp.tool() decorator has fired and no _apply_surfaces() has happened yet (main() runs from a
+# console-script entry point, which is structurally after import).
+#
+# This is LEAN_CATALOG's idea one step earlier. LEAN_CATALOG snapshots at apply_lean() call time
+# and is therefore narrowed by whatever ran first — load-bearing and unchanged, because what the
+# facade ADVERTISES must not exceed what this deployment can serve. FULL_CATALOG snapshots before
+# the first prune of ANY layer, because what a caller can REACH by exact name must not shrink at
+# all. Advertising and reachability are different questions and this module now answers them
+# separately; conflating them is what made four scoping layers able to strand a working tool.
+FULL_CATALOG: dict = {}
+
+
+def _snapshot_full_catalog(server_mcp=mcp) -> dict:
+    global FULL_CATALOG
+    FULL_CATALOG = dict(server_mcp._tool_manager._tools)
+    return FULL_CATALOG
+
+
+def escape_catalog(server_mcp=mcp) -> dict:
+    """The dispatch source for `proximo_call`: the full pre-prune registry when we have it.
+
+    Falls back to the live registry only when the snapshot is empty — an embedder that built its
+    own FastMCP never ran our import-time snapshot, and a hatch that reached nothing at all would
+    be worse than one that reaches what is left.
+    """
+    return FULL_CATALOG or server_mcp._tool_manager._tools
+
+
+# A tool description is a PROMPT, and this one is resident in every mode including the leanest —
+# so it carries only what a model needs to ACT, and the rationale lives here where it costs no
+# runtime tokens. (Measured: the first draft's four-paragraph docstring moved the lean doorway
+# 555 -> 665 tokens, a 20% regression on the figure the README publishes. Pinned by
+# tests/test_schema_budget.py, which is why it was caught rather than shipped.)
+#
+# Why it exists: scoping changes what is ADVERTISED; it must never change what is REACHABLE.
+# Four layers prune the registry and every one of them could otherwise strand a working tool on
+# every transport with no recovery inside a live session.
+#
+# Why a tool for an unconfigured plane is still reachable rather than hidden: it fails with its
+# OWN named config error ("Missing required PMG env var: PROXIMO_PMG_BASE_URL"), which tells an
+# operator what to fix, where "unknown tool" would send them to build something that exists.
+@mcp.tool()
+async def proximo_call(tool: str, arguments: dict | None = None) -> Any:
+    """Call any Proximo tool by exact name, including ones not in this server's listed tools.
+
+    Get the argument shape from proximo_tool_schema first. Same gates as calling it directly:
+    dry-run PLAN, ledger entry, token ACL. A smaller doorway, not a looser one.
+    """
+    return await dispatch_tool(server_mcp=mcp, catalog=escape_catalog(),
+                               name=tool, arguments=arguments or {})
+
+
 # The catalog the facade dispatches into. Module-level so it is inspectable (tests, diagnostics)
 # rather than sealed inside a closure — what lean mode offers is a real property of the running
 # server, and a property nothing can read is a property nothing can check.
@@ -1450,6 +1554,11 @@ def apply_lean(server_mcp=mcp) -> dict:
     from proximo.memory import memory_enabled
 
     global LEAN_CATALOG
+    # Idempotence guard (redteam, 2026-08-01): a second pass would snapshot the FACADE itself
+    # as the searchable catalog — 906 searchable silently becomes 6. Once the facade is the
+    # registry, there is nothing left to lean.
+    if "proximo_find_tools" in server_mcp._tool_manager._tools:
+        return LEAN_CATALOG
     catalog = dict(server_mcp._tool_manager._tools)
     LEAN_CATALOG = catalog
 
@@ -1496,16 +1605,11 @@ def apply_lean(server_mcp=mcp) -> dict:
         """Full description + JSON input schema for one tool found via proximo_find_tools."""
         return lean.tool_schema(catalog, name)
 
-    @server_mcp.tool()
-    async def proximo_call(tool: str, arguments: dict | None = None) -> Any:
-        """Run a catalogued tool by name. Get its argument shape from proximo_tool_schema first.
-
-        Governed identically to calling the tool directly: the same dry-run PLAN gate, the same
-        tamper-evident ledger entry, the same token ACL. This is a smaller doorway, not a
-        looser one.
-        """
-        return await dispatch_tool(server_mcp, catalog, tool, arguments or {})
-
+    # proximo_call is NOT redefined here. It is a module-level tool in _ALWAYS_REGISTERED, so it
+    # is already resident, and it dispatches from FULL_CATALOG rather than this narrowed snapshot.
+    # A facade-local redefinition would collide by name (ToolManager.add_tool returns the existing
+    # tool and only WARNS), so the shadow would be silent, and it would re-narrow reachability to
+    # exactly the set the escape hatch exists to see past.
     facade = {"proximo_find_tools", "proximo_tool_schema", "proximo_call"}
     if recall_resident:
         facade.add("proximo_recall")
@@ -1595,11 +1699,18 @@ def main() -> None:
     # set in the documented file actually reaches the stdio server — otherwise it is silently ignored,
     # which is fail-dangerous for a security gate like PROXIMO_CONSENT_DIR. Real/inline env still wins.
     load_env_file()
-    try:
-        _apply_surfaces()
-    except ValueError as e:
-        print(f"proximo: {e}", file=sys.stderr)
-        raise SystemExit(1) from None
+    # Scope the registry only where the registry is USED: `doctor` reports what this box serves,
+    # and the server itself serves it. The other CLI verbs neither serve nor report tools — and
+    # since the 0.30 flip the DEFAULT path announces itself (the lean-mode line on stderr), which
+    # would prefix every `proximo badge`/`mint` error with scoping noise (pinned by
+    # test_badge_cli's err.startswith contracts).
+    if not (len(sys.argv) > 1 and sys.argv[1] in ("mint", "arm", "disarm", "reap", "hello",
+                                                  "badge")):
+        try:
+            _apply_surfaces()
+        except ValueError as e:
+            print(f"proximo: {e}", file=sys.stderr)
+            raise SystemExit(1) from None
     # `proximo doctor` — verify your token/config (read-only preflight) BEFORE wiring Proximo into
     # an AI client. Prints what THIS token can and cannot do; never starts the server.
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
@@ -2810,6 +2921,11 @@ from proximo.tools.wiki_tools import (  # noqa: E402,F401
 # this is the first point where the whole surface can be slimmed in one pass. Import-time, not
 # main()-time, so embedders and the test suite see the same payload the stdio server serves.
 _slim_registry_schemas()
+
+# The escape hatch's dispatch source, frozen here: every decorator has fired and no scoping layer
+# has run. AFTER slimming, deliberately — the snapshot holds references to the same Tool objects,
+# so a caller reaching a tool by name gets the same slimmed schema tools/list would have shown.
+_snapshot_full_catalog()
 
 
 if __name__ == "__main__":

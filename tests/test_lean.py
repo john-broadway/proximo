@@ -95,13 +95,32 @@ def test_multi_word_query_matches_terms_separately():
     Whole-phrase substring matching returned 0 hits for every natural multi-word query
     ('firewall lockout', 'ceph pool status'). A model types phrases, not identifiers.
     """
-    hits = lean.search_tools(CATALOG, "guest power")
+    hits = [h for h in lean.search_tools(CATALOG, "guest power") if "match" not in h]
     assert [h["name"] for h in hits] == ["pve_guest_power"]
 
 
-def test_multi_word_query_requires_all_terms():
-    """AND, not OR — 'quarantine backup' matches neither tool, and must not return both."""
+def test_multi_word_query_requires_all_terms(monkeypatch):
+    """AND, not OR — 'quarantine backup' matches neither tool, and must not return both.
+
+    Asserted on the KEYWORD tier specifically (lexical off), because as of 2026-08-01
+    search_tools is a stack: keyword first, then optional neural, then the in-wheel
+    lexical tier, which by design ANSWERS queries keyword calls a miss. Testing the
+    composite here would pin "a miss stays a miss", which is the opposite of what the
+    lower tiers exist to do. The property this test protects is that the keyword tier
+    never widens to OR — that is still exactly true, and still what would flood a
+    900-tool catalog if it broke.
+    """
+    monkeypatch.setenv("PROXIMO_LEXICAL", "off")
     assert lean.search_tools(CATALOG, "quarantine backup") == []
+
+
+def test_lower_tiers_answer_what_keyword_calls_a_miss():
+    """The other half of the test above, so the pair states the whole contract: with the
+    default (in-wheel lexical on) the same query is ANSWERED, bounded, and marked."""
+    rows = lean.search_tools(CATALOG, "quarantine backup", limit=3)
+    assert rows, "the lexical tier did not answer a keyword miss"
+    assert all(r["match"] == "lexical" for r in rows), "an unmarked row appeared"
+    assert len(rows) <= 3
 
 
 def test_name_matches_outrank_description_only_matches():
@@ -225,3 +244,15 @@ def test_dispatch_tool_unknown_name_suggests_near_matches():
     with pytest.raises(ProximoError) as exc:
         anyio.run(go)
     assert "pve_delete_guest" in str(exc.value)
+
+
+def test_find_tools_surfaces_audit_entries_for_the_words_a_model_typed():
+    """Live 8B, 2026-08-01, audit_entries non-resident: five of five runs searched
+    "configuration change audit" / "configuration change" and concluded no who-changed tool
+    exists — the AND-filter needs every term to land in a tool's name+summary, and
+    audit_entries' first line carried none of the words operators (and models) actually
+    type. Pinned against the REAL registry so a summary rewrite cannot silently regress it."""
+    registry = server.mcp._tool_manager._tools
+    for q in ("configuration change audit", "configuration change"):
+        hits = lean.search_tools(registry, q, limit=5)
+        assert any(h["name"] == "audit_entries" for h in hits), (q, [h["name"] for h in hits])

@@ -329,7 +329,7 @@ the configured paths back — a hijacked session shouldn't learn where you put y
 |---|---|---|---|
 | **PLAN** | A mutation landing with no preview, no blast-radius accounting, no chance to review first | **On**, always | n/a — not optional |
 | **PROVE** | An edited, reordered, or silently truncated mutation history | **On** (keyed HMAC-SHA256 ledger) | `PROXIMO_AUDIT_KEYED` (default `true`; `off` downgrades to unkeyed — not recommended). Catching *tail truncation / full wipe* needs an off-box head anchor — that's opt-in: `PROXIMO_AUDIT_EXPECTED_HEAD` / `PROXIMO_AUDIT_ANCHOR_*`. |
-| **UNDO** | An unrecoverable mistake on a plane Proxmox can snapshot | **On** for the planes it covers (fail-closed) | n/a — always applied where a rollback primitive exists (guest config, `ct_exec`/`ct_psql`, guest snapshot/rollback). No env var; firewall/SDN/ACL/token have no Proxmox rollback primitive by design, not by configuration. |
+| **UNDO** | An unrecoverable mistake on a plane Proxmox can snapshot | **On** for the planes it covers (fail-closed) | No env var, but **not uniform**: `pve_guest_config_set` returns `prior_config` on every confirmed call (revertible via `pve_guest_config_revert`) and `pve_rollback` restores a guest snapshot — both always available. The **`ct_exec`/`ct_psql` auto-snapshot is OPT-IN PER CALL** (`snapshot=true`, default `false`); when requested it is fail-closed — the command does not run if the snapshot cannot be taken — but a default exec call takes no snapshot. firewall/SDN/ACL/token have no Proxmox rollback primitive by design, not by configuration. |
 | **DIAGNOSE** | Acting on a guest/node with no read-only evidence gathered first | **On**, always | n/a — read-only, always available |
 | **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS` for grant expiry) |
 | **CONTAIN** (kill-switch) | Needing to halt *every* mutation immediately, mid-incident, without a redeploy or restart | **Off** | `PROXIMO_CONTAIN_TRIP_PATH` |
@@ -350,11 +350,21 @@ to the planes you've configured**: a plane's tools are registered only when its
 `PROXIMO_*_BASE_URL` is set (or a target of that kind exists), so a PVE+PBS-only box
 never puts pmg_/pdm_ tools in the client's context. To pin an exact set, `PROXIMO_SURFACES`
 (e.g. `pve,exec`) registers only the named planes — everything else is removed from the MCP
-registry before serving (a structural gate, not a runtime refusal; `audit_verify` is always
-kept). Precedence: an explicit `PROXIMO_SURFACES` wins (`=all` forces the full surface);
-`PROXIMO_AUTOSCOPE=off` disables auto-scoping; nothing detectable = full surface (never a
-surprise-empty server). An unknown surface name refuses startup rather than silently serving
-a surface you didn't pick. This is context hygiene and attack-surface reduction, not an
+registry before serving, so it is not advertised in `tools/list` and does not cost your model
+context. **It is NOT removed from reach.** `proximo_call` is resident in every mode and
+dispatches by exact name from a snapshot taken before any scoping ran, so a scoped-away tool is
+still callable if a caller names it — with every gate intact, because the gates live in each
+tool's own body, not in whether it was registered. Treat surface scoping as CONTEXT SIZING, never
+as a brake: if you need a capability to be unavailable, withhold it in the Proxmox token's ACL or
+disable its call-time flag (`PROXIMO_ENABLE_EXEC` and `PROXIMO_WIKI` are opt-in and off unless
+set; estate memory is on by default and `PROXIMO_MEMORY=0` opts out) — these are enforced at
+call time and `proximo_call` cannot defeat them. `audit_verify` and `proximo_call` are always
+kept. Precedence: `PROXIMO_TOOLS`, then `PROXIMO_TOOLSETS` (including the keywords `dynamic`,
+`catalog`, `all`), then an explicit `PROXIMO_SURFACES` (`=all` forces the full surface);
+`PROXIMO_AUTOSCOPE=off` disables plane auto-scoping; with nothing picked the default is the
+dynamic facade — a small resident door with everything this box serves still callable through
+it, never a surprise-empty server. An unknown surface name refuses startup rather than silently
+serving a surface you didn't pick. This is context hygiene, not attack-surface reduction and not an
 authorization control — the token's ACL remains the real boundary.
 
 *Status note: CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE/TAINT/PRINCIPAL are present in this repository's
@@ -480,8 +490,10 @@ access is broadest:
   spine path an MCP client takes — A2A and HTTP via the shared dispatch
   (`proximo.governed.call_governed`, the same `mcp.call_tool` path), the MCP-HTTP face by
   serving the FastMCP instance itself — so PLAN-by-default, PROVE, UNDO, the gates, and the
-  Proxmox token scope apply identically, and there is no second mutate path. The surface is
-  scoped only by `PROXIMO_SURFACES` + the token ACL, uniform for every transport. Auth bypass,
+  Proxmox token scope apply identically, and there is no second mutate path. What each transport ADVERTISES is
+  scoped by `PROXIMO_TOOLS`/`PROXIMO_TOOLSETS`/`PROXIMO_SURFACES`/autoscope; what any of them can
+  REACH is the full registry via `proximo_call`, uniform for every transport, bounded by the token
+  ACL and the per-tool gates. Auth bypass,
   header smuggling, rebind escape, a path that invokes a tool bypassing the spine, or a mutation
   that fires without the tool's own confirm gate are all in scope. One deliberate asymmetry: the
   A2A/HTTP dispatch sanitizes a failing tool's error text before returning it (the exec plane's
