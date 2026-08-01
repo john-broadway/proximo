@@ -39,8 +39,19 @@ def _restore_the_shared_registry():
     without restore, the first main()-shaped test narrows every later registry-wide structural
     test (tool counts, taint classification, wrapper sweeps) to the 4-tool facade. Snapshot the
     registry and the two catalog globals, restore after every test. Production narrows once per
-    process BY DESIGN; that design assumption is exactly what a shared-process suite violates."""
-    import proximo.server as _server
+    process BY DESIGN; that design assumption is exactly what a shared-process suite violates.
+
+    Degrades to a NO-OP when `proximo` is not importable: the `requirements-drift` CI job runs
+    ONLY the lockfile tests in a dependency-light env (`uv run --no-project --with pytest`),
+    where an unconditional import here errored every collected test — caught by the v0.30.0
+    release CI, invisible locally because this box always has the package importable. Repro the
+    real condition with: `env -u VIRTUAL_ENV uv run --isolated --no-project --with pytest
+    pytest tests/test_requirements_lock.py -q`."""
+    try:
+        import proximo.server as _server
+    except ImportError:   # the dependency-light job — nothing to snapshot, nothing to restore
+        yield
+        return
     tools = dict(_server.mcp._tool_manager._tools)
     lean_catalog = _server.LEAN_CATALOG
     full_catalog = _server.FULL_CATALOG
