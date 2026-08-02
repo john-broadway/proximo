@@ -834,3 +834,29 @@ def test_next_pointer_names_the_reader_and_says_what_is_never_here(tmp_path, mon
     assert "not_held" in nxt
     low = nxt["not_held"].lower()
     assert "never" in low and "mem" in low
+
+
+def test_startup_names_the_memory_file_while_it_is_on(tmp_path, monkeypatch, capsys):
+    """EXTERNAL VET 2026-08-02: default-on must not mean unannounced.
+
+    The objection was never to the rails (0600-before-open, O_NOFOLLOW — the reviewer rated
+    those solid); it was that 0.30.0 made every existing install grow a plaintext inventory of
+    its guests, nodes and targets with nothing said. John's call was keep the default, make it
+    loud. "Loud" means the PATH: "memory is on" is not something an operator can act on.
+    """
+    import proximo.server as server
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
+    server._announce_estate_memory()
+    err = capsys.readouterr().err
+    assert str(tmp_path / "memory.db") in err, err
+    assert "PROXIMO_MEMORY=0" in err          # the opt-out travels with the announcement
+
+
+def test_startup_says_nothing_when_memory_is_off(tmp_path, monkeypatch, capsys):
+    """Opted out is opted out: no file, and no line about a file."""
+    import proximo.server as server
+    monkeypatch.setenv("PROXIMO_MEMORY", "0")
+    monkeypatch.setenv("PROXIMO_MEMORY_PATH", str(tmp_path / "memory.db"))
+    server._announce_estate_memory()
+    assert capsys.readouterr().err == ""

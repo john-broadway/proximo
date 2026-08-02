@@ -276,6 +276,32 @@ def _principal_report() -> dict:
         }
 
 
+def _searchable_narrowing(spec: str, autoscope_off: bool) -> str:
+    """How the SEARCHABLE catalog behind the facade got narrowed — derived, never assumed.
+
+    Three mechanisms can narrow it: an explicit ``PROXIMO_SURFACES`` spec prunes to those planes
+    and autoscope never runs; ``PROXIMO_SURFACES=all`` overrides autoscope and prunes nothing;
+    otherwise autoscope narrows to the configured planes unless it is off. Reporting "still
+    auto-scoped to configured planes" in the surfaces case would name a mechanism that did not
+    run — the same class of misreport that let the 0.30.0 door bug stay silent.
+
+    *spec* MUST be the EFFECTIVE surfaces spec, not the raw env var. An earlier version of this
+    docstring claimed the three cases were "mutually exclusive in ``server._apply_surfaces``",
+    and that premise was false: ``PROXIMO_TOOLSETS`` outranks ``PROXIMO_SURFACES``, so with
+    ``TOOLSETS=dynamic`` set the surfaces var is read by nobody and autoscope does the narrowing.
+    Passing the raw var made this report ``narrowed to PROXIMO_SURFACES=pmg`` on a box serving
+    only pve tools, and ``NOT plane-narrowed`` on a box where hundreds of tools had just been
+    pruned (external vet, 2026-08-02). The caller resolves precedence; this only renders.
+    """
+    if spec and spec.lower() != "all":
+        return f"narrowed to PROXIMO_SURFACES={spec}"
+    if spec:
+        return "NOT plane-narrowed (PROXIMO_SURFACES=all)"
+    if autoscope_off:
+        return "NOT plane-narrowed (PROXIMO_AUTOSCOPE=off)"
+    return "still auto-scoped to configured planes"
+
+
 def _surfaces_report() -> dict:
     """The tool-surface picture: what this server serves, per plane, and why.
 
@@ -317,37 +343,52 @@ def _surfaces_report() -> dict:
         spec = os.environ.get("PROXIMO_SURFACES", "").strip()
         autoscope_off = os.environ.get("PROXIMO_AUTOSCOPE", "").strip().lower() in (
             "off", "0", "false", "no")
+        # PRECEDENCE, not mere presence. `_apply_surfaces` consults PROXIMO_SURFACES only when
+        # neither finer layer is set — with PROXIMO_TOOLSETS=dynamic it is IGNORED and autoscope
+        # narrows instead. Crediting a var that was read but never acted on is how doctor came to
+        # say "narrowed to PROXIMO_SURFACES=pmg" on a box serving pve tools, and (the dangerous
+        # direction) "NOT plane-narrowed" while hundreds of tools had been pruned.
+        effective_spec = spec if not (tools_spec or toolsets_spec) else ""
         if tools_spec:
             scoping = f"PROXIMO_TOOLS={tools_spec} — exact tools"
-        elif toolsets_spec.lower() == "dynamic" or not (toolsets_spec or spec):
-            # The dynamic facade — picked explicitly, or the default since the 0.30 flip.
-            # The count comes from the composition, never a constant: with memory on the facade
-            # is 4, and a doctor that states a number it did not derive is a doctor that will
-            # misreport the box it exists to describe.
-            from proximo.memory import memory_enabled
-            memory_first = memory_enabled()
-            label = ("PROXIMO_TOOLSETS=dynamic" if toolsets_spec
-                     else "dynamic facade (the default)")
+        elif toolsets_spec.lower() == "dynamic" or not toolsets_spec:
+            # The dynamic facade — picked explicitly, the default since the 0.30 flip, or the
+            # default surviving a PROXIMO_SURFACES scope (surfaces choose planes, not the door;
+            # external vet 2026-08-02). A doctor that could not name the surfaces case reported
+            # "PROXIMO_SURFACES=… — explicit" on a box serving the facade, which is exactly the
+            # silence that let the door bug live: the operator had no line to disagree with.
+            # The count comes from the composition, never a constant, and — since the external
+            # vet, 2026-08-02 — from the REGISTRY rather than the env. `memory_enabled()` knows
+            # whether memory is switched ON, not whether `proximo_recall` survived scoping: under
+            # PROXIMO_SURFACES=pve,pbs the memory surface is not named, recall is pruned, and
+            # doctor still announced "4 facade tools resident" plus "memory-first: proximo_recall
+            # answers estate questions in one call" while the server's own stderr said 3. It
+            # pointed a MODEL at a tool that box does not serve. This line is the rule the
+            # sentence above it already stated, finally applied.
+            memory_first = "proximo_recall" in registry
+            resident_facade = sum(1 for n in registry
+                                  if n not in ("audit_verify", "audit_entries"))
+            if toolsets_spec:
+                label = "PROXIMO_TOOLSETS=dynamic"
+            elif effective_spec:
+                label = f"dynamic facade (the default), scoped to PROXIMO_SURFACES={effective_spec}"
+            else:
+                label = "dynamic facade (the default)"
             scoping = (
                 f"{label} — search facade "
-                f"({4 if memory_first else 3} facade tools resident + audit_verify"
+                f"({resident_facade} facade tools resident + the ledger pair"
                 + ("; memory-first: proximo_recall answers estate questions in one call"
                    if memory_first else "")
                 + "; the rest searchable via proximo_find_tools, "
-                + ("NOT plane-narrowed (PROXIMO_AUTOSCOPE=off)" if autoscope_off
-                   else "still auto-scoped to configured planes")
+                + _searchable_narrowing(effective_spec, autoscope_off)
                 + ")")
         elif toolsets_spec.lower() == "catalog":
             scoping = ("PROXIMO_TOOLSETS=catalog — full schemas, auto-scoped to configured "
                        "planes (the pre-0.30 default door)")
         elif toolsets_spec.lower() == "all":
             scoping = "PROXIMO_TOOLSETS=all — full surface (auto-scope overridden)"
-        elif toolsets_spec:
-            scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
-        elif spec.lower() == "all":
-            scoping = "PROXIMO_SURFACES=all — full surface (auto-scope overridden)"
         else:
-            scoping = f"PROXIMO_SURFACES={spec} — explicit"
+            scoping = f"PROXIMO_TOOLSETS={toolsets_spec} — explicit toolsets"
 
         return {
             "served_tools": len(registry),

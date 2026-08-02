@@ -232,7 +232,12 @@ DOC_PRINTED_TOKEN_FIGURES = {
     "three exact tools (PROXIMO_TOOLS)": 1_579,
     "two domain toolsets (pve.guests,pve.storage)": 15_783,
     "one domain toolset (pve.guests)": 9_123,
-    "one plane (PROXIMO_SURFACES=pve)": 97_432,
+    # Relabelled 2026-08-02: this measures the pve PLANE CATALOG, and PROXIMO_SURFACES=pve stopped
+    # producing it when surfaces became scope-only — that config now serves the facade (~868
+    # tokens). The measurement is unchanged and still real; it is what `PROXIMO_TOOLSETS=catalog`
+    # costs on a pve-only box. The old label was true of the filter and false of the env var, the
+    # same shape as the README line the external vet caught.
+    "one plane catalog (PROXIMO_TOOLSETS=catalog on a pve-only box)": 97_432,
     # Label updated at the 0.30 flip: nothing-configured now serves the dynamic facade;
     # the full surface is an explicit choice.
     "full surface (PROXIMO_TOOLSETS=all)": 277_376,

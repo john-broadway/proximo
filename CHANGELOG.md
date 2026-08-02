@@ -2,6 +2,78 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.31.0] — 2026-08-02
+
+Minor, not patch, and deliberately: every change below is a fix, but an install that sets
+`PROXIMO_SURFACES` goes from 569 advertised tools to 5 on upgrade. Nothing becomes unreachable
+(a 800-combination matrix against 0.30.0 confirms zero reachability regressions) and the old
+door is one named variable away, but a version that says "take me blindly" would be the wrong
+signal for a surface that changes that much.
+
+### Fixed
+- **`PROXIMO_SURFACES` no longer opts you out of the default doorway.** Surfaces choose *which
+  planes exist here*; they never choose *how many schemas load*. Shipped 0.30.0 treated them as
+  one question, so scoping your planes silently kept the pre-0.30 catalog door: on a PVE+PBS box,
+  `PROXIMO_SURFACES=pve,pbs` served **569 resident tools where the facade serves 5**, and removing
+  a `PROXIMO_TOOLSETS=catalog` pin to "adopt the new default" bought **2 tools (571 → 569)**
+  instead of the reduction 0.30.0 was built for. It failed silently: a working server, the old
+  bill, no warning. Surfaces now narrow the searchable world and leave the door at the default
+  facade;
+  `PROXIMO_SURFACES=all` means every plane is *reachable*, not every schema *resident*, matching
+  the shape `PROXIMO_AUTOSCOPE=off` already shipped. Ask for a door by name to get the old
+  behavior: `PROXIMO_TOOLSETS=catalog` (auto-scoped full schemas) or `=all` (everything).
+  Found by an external security/behaviour re-vet that probed the running server instead of
+  trusting this changelog — the setup docs encourage `PROXIMO_SURFACES`, so the adopters most
+  likely to hit it were the ones who followed them.
+  **Five (5), not six:** naming planes scopes away the `memory` utility surface, so
+  `proximo_recall` is not resident under `PROXIMO_SURFACES=pve,pbs` (measured: 5 tools,
+  ~868 tokens). Name it to keep the one-call estate answer: `PROXIMO_SURFACES=pve,pbs,memory`.
+  Estate memory itself stays on and keeps recording either way.
+- **`PROXIMO_SURFACES=<utility surface>` no longer hides a five-tool server behind a search
+  facade.** `memory`, `wiki` and `exec` are cross-plane utilities, not planes; scoped to those
+  alone the searchable world is a handful of tools while the facade's own description told the
+  model ~900 were searchable. Those tools are now served directly. Relatedly, that description
+  now counts **this** server (312 on a PVE-only box) instead of always claiming ~900.
+- **A second `_apply_surfaces()` no longer collapses the searchable catalog.** The prune removes
+  `proximo_find_tools`, which defeated `apply_lean`'s idempotence guard, so a second pass
+  snapshotted the 3-tool facade as the whole searchable world: measured **314 → 4** on the
+  default door and **312 → 3** under surfaces. Pre-existing in 0.30.0 and embedder-facing only
+  (every shipped entry point applies surfaces once). The guard that was supposed to cover this
+  had a test that deleted every base-URL var, so no prune ran and it passed in the single
+  configuration where the bug cannot fire.
+- **The LobeHub manifest generator asked for a scope instead of a door.** It forced
+  `PROXIMO_SURFACES=all`, which stopped meaning "full surface" the moment surfaces became
+  scope-only — it would have published a **6-tool** manifest, and `docs/TOOLS.md` is generated
+  from that same file. Now `PROXIMO_TOOLSETS=all`, pinned by a test, with a floor on the
+  committed manifest so a thin regeneration cannot land silently.
+
+### Corrected in this entry (stated, not rewritten away)
+- An earlier draft of the bullet above said the facade serves **6** under
+  `PROXIMO_SURFACES=pve,pbs`. It serves **5**; the sixth is `proximo_recall`, and the omission
+  hid the memory interaction now documented above.
+- It also credited 0.30.0 with announcing a "~99% reduction". 0.30.0 printed no such figure —
+  that was a paraphrase presented as a prior claim.
+- `docs/SETUP.md`'s cost table said `PROXIMO_SURFACES=pve` serves "a whole plane (311 tools)" at
+  "~97,432 tokens". Both were wrong after this change and the count was wrong before it
+  (`surface_keep` resolves **312**). The row now names the facade, the 312-tool searchable
+  catalog, and the measured **~868 tokens**; the 97,432 figure belongs to the catalog door.
+- `SECURITY.md` said `PROXIMO_SURFACES=all` "forces the full surface". It makes every plane
+  searchable; `PROXIMO_TOOLSETS=all` is what serves the full surface.
+- **`proximo doctor` now names the door it actually came in through.** With surfaces set it
+  reported `PROXIMO_SURFACES=… — explicit` and said nothing about residency, so the operator had
+  no line to disagree with — the silence that let the bug above live. It now names the facade and
+  the scope together, and derives *how* the searchable catalog was narrowed (surfaces spec vs
+  autoscope vs not narrowed) rather than asserting one mechanism for all three.
+
+### Changed
+- **Estate memory stays on by default, and now says so on every start**, naming the file:
+  `estate memory ON — local inventory at <path>`, with the opt-out (`PROXIMO_MEMORY=0`) and the
+  relocation (`PROXIMO_MEMORY_PATH`) in the same line. Same re-vet: the rails on that file
+  (0600 before sqlite opens it, `O_NOFOLLOW`) were not the objection — a default that grows a
+  plaintext inventory of your guests, nodes and targets *unannounced* was. A search index
+  defaulting on is a small ask; an infrastructure inventory is a larger one, and an operator
+  cannot weigh a file nobody told them about.
+
 ## [0.30.0] — 2026-08-01
 
 ### Changed
@@ -140,7 +212,6 @@ All notable changes to Proximo. Format loosely follows Keep a Changelog; version
   the lean facade *advertises* is still narrowed to the configured planes — that separation is
   the point, and the dogfood lesson behind it is unchanged.
 
-### Fixed
 - **A published claim that was false: "every other tool still callable" in dynamic mode.**
   README, `docs/SETUP.md` and — worse, because a model reads it — `pve_doctor`'s own surfaces
   note all said it, in a sentence anchored to 904. Measured on a PVE-only box the callable set

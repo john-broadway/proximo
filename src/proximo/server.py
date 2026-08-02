@@ -1288,11 +1288,39 @@ def _apply_catalog(server_mcp) -> None:
 def _apply_surfaces(server_mcp=mcp) -> None:
     """Scope the live registry to the door the operator picked. ValueError propagates to main().
 
+    TWO AXES, not one ladder. SCOPE answers "which planes/tools exist here"; DOOR answers "how
+    are they presented" (resident schemas vs the searchable facade). PROXIMO_TOOLS and
+    PROXIMO_TOOLSETS answer BOTH — naming exact tools or a domain is itself a residency choice.
+    PROXIMO_SURFACES answers ONLY scope, so it narrows the world and then leaves the door at the
+    default: the dynamic facade.
+
     Precedence: (1) explicit PROXIMO_TOOLS wins verbatim; (2) PROXIMO_TOOLSETS — domains, or the
     keywords `dynamic` (the facade), `catalog` (auto-scoped plane catalog, the pre-0.30 default)
-    and `all` (full surface); (3) PROXIMO_SURFACES — planes, or `all`; (4) nothing picked → the
-    dynamic facade (the 0.30 flip: a default install must fit a default local model's window;
-    every tool stays reachable via proximo_find_tools → proximo_tool_schema → proximo_call)."""
+    and `all` (full surface); (3) PROXIMO_SURFACES — planes, or `all` — scope only, facade door;
+    (4) nothing picked → the dynamic facade (the 0.30 flip: a default install must fit a default
+    local model's window; every tool stays reachable via proximo_find_tools →
+    proximo_tool_schema → proximo_call).
+
+    EXTERNAL VET 2026-08-02, and the reason (3) is no longer a `return`: shipped 0.30.0 treated
+    SURFACES as a door, so scoping your planes silently opted you OUT of the flip. Measured on a
+    live PVE+PBS box: SURFACES=pve,pbs served 569 resident tools where the facade serves 6, and
+    removing a `catalog` pin bought 2 tools (571 -> 569) instead of the ~99% reduction the
+    changelog promised. No error, no warning; the reviewer found it only by probing the running
+    server. apply_lean's docstring had promised this composition since the flip landed — the
+    ladder never routed SURFACES into it. Anyone who wants the resident catalog asks for a DOOR
+    by name: PROXIMO_TOOLSETS=catalog (auto-scoped) or =all (everything)."""
+    # ALREADY-LEANED GUARD. apply_lean has its own idempotence check, but it is unreachable on a
+    # second _apply_surfaces: the prune runs FIRST and removes proximo_find_tools (it matches no
+    # surface prefix and is not in _ALWAYS_REGISTERED), so apply_lean then snapshots the 3-tool
+    # facade as the searchable catalog. Measured on a PVE box: a second call took the searchable
+    # world 314 -> 4 on the default door and 312 -> 3 under PROXIMO_SURFACES, silently. No
+    # production path calls this twice — main() and all three faces call it once — but embedders
+    # do, which is precisely the audience test_apply_surfaces_twice_... names. That test could
+    # not see this: it deletes every base-URL var, so autoscope declines to narrow, no prune
+    # runs, and the guard it means to exercise is never reached. Refusing a re-scope is strictly
+    # safer than collapsing the catalog; re-scoping a live server was never supported anyway.
+    if "proximo_find_tools" in server_mcp._tool_manager._tools and LEAN_CATALOG:
+        return
     # Layers, most specific first. The first one SET wins outright — they do not intersect,
     # because an operator who names exact tools has already answered the coarser question, and
     # silently ANDing a leftover PROXIMO_SURFACES from their env would serve them less than they
@@ -1323,10 +1351,23 @@ def _apply_surfaces(server_mcp=mcp) -> None:
 
     spec = os.environ.get("PROXIMO_SURFACES")
     if spec and spec.strip():
-        if spec.strip().lower() == "all":   # explicit escape hatch: serve the full surface
-            return
-        _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
-                        f"PROXIMO_SURFACES={spec.strip()}")
+        # `all` = every plane searchable (autoscope overridden), NOT every schema resident. Same
+        # shape PROXIMO_AUTOSCOPE=off already ships: turning narrowing off does not change the
+        # door. Prune BEFORE apply_lean — it snapshots the searchable catalog at call time, so
+        # the order is what makes the operator's plane choice narrow the facade's world too.
+        if spec.strip().lower() != "all":
+            _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
+                            f"PROXIMO_SURFACES={spec.strip()}")
+        # A facade over a UTILITY-ONLY world is worse than no facade. `memory`/`wiki`/`exec` are
+        # cross-plane utility surfaces, not planes: scoped to those alone the searchable catalog
+        # is a handful of tools, and the facade's own description tells the model "the other ~900
+        # are searchable" over a world of five — a tool description is a prompt, so that is a lie
+        # the model acts on. `_autoscope_planes` refuses to narrow on exactly this condition
+        # (`planes - _UTILITY_SURFACES` empty); the door layer needs the same refusal, and the
+        # operator who asked for five tools should simply be served those five.
+        picked = {s.strip().lower() for s in spec.split(",") if s.strip()}
+        if picked - _UTILITY_SURFACES:
+            apply_lean(server_mcp)
         return
     _apply_dynamic(server_mcp)
 
@@ -1575,6 +1616,12 @@ def apply_lean(server_mcp=mcp) -> dict:
     # PROXIMO_SURFACES) it stays absent: that was the operator's choice, not ours to overrule.
     recall_resident = memory_enabled() and "proximo_recall" in catalog
 
+    # COUNT THIS BOX, NOT THE PROJECT. Both descriptions said "the other ~900", which is true
+    # only of an unscoped server: a PVE-only box searches 312 and PROXIMO_SURFACES=pve,exec
+    # searches 316. A tool description is a prompt — an inflated number tells a model to keep
+    # searching for tools this deployment does not have. Derived from the snapshot, so it tracks
+    # whatever scoping ran before it.
+    searchable = len(catalog)
     if recall_resident:
         find_tools_doc = (
             "Search Proximo's full tool catalog by keyword.\n\n"
@@ -1582,18 +1629,18 @@ def apply_lean(server_mcp=mcp) -> dict:
             "or when something last happened, call proximo_recall instead — it answers from "
             "local memory in one call, with no search and no schema lookup, and it stamps how "
             "old the answer is. Come here for everything else.\n\n"
-            "The facade is resident; the other ~900 tools are searchable but not. Search for "
-            "what you want (\"guest power\", \"ceph pool\", \"firewall\"), then call "
-            "proximo_tool_schema on a result to get its arguments, then proximo_call to run "
+            f"The facade is resident; {searchable} more tools on this server are searchable but "
+            "not. Search for what you want (\"guest power\", \"ceph pool\", \"firewall\"), then "
+            "call proximo_tool_schema on a result to get its arguments, then proximo_call to run "
             "it. All terms must match."
         )
     else:
         find_tools_doc = (
             "Search Proximo's full tool catalog by keyword. START HERE.\n\n"
-            "Only three tools are loaded; the other ~900 are searchable but not resident. "
-            "Search for what you want (\"guest power\", \"ceph pool\", \"firewall\"), then "
-            "call proximo_tool_schema on a result to get its arguments, then proximo_call to "
-            "run it. All terms must match."
+            f"Only three tools are loaded; {searchable} more on this server are searchable but "
+            "not resident. Search for what you want (\"guest power\", \"ceph pool\", "
+            "\"firewall\"), then call proximo_tool_schema on a result to get its arguments, "
+            "then proximo_call to run it. All terms must match."
         )
 
     @server_mcp.tool(description=find_tools_doc)
@@ -1694,6 +1741,28 @@ def _record_session(kind: str) -> None:
                      remote=ledger_remote())
 
 
+def _announce_estate_memory() -> None:
+    """Name the estate-memory file on startup, every start, while it is on.
+
+    EXTERNAL VET 2026-08-02: estate memory went default-on in 0.30.0, so every existing install
+    silently gained a plaintext file inventorying its guests, nodes and targets. The rails around
+    that file are solid (0600 before sqlite opens it, O_NOFOLLOW) and the reviewer said so; the
+    objection was to a DEFAULT that appears unannounced. A search index defaulting on is a small
+    ask, an infrastructure inventory is a larger one, and an operator cannot weigh a file they
+    were never told about. So: keep the default, name the file — path included, because
+    "memory is on" is not actionable and a path is.
+
+    Deliberately unconditional rather than once-per-box: a line the operator has already read
+    costs one line, and a state file nobody knows about costs them the choice.
+    """
+    from proximo.memory import memory_enabled, memory_path
+    if not memory_enabled():
+        return
+    print(f"proximo: estate memory ON — local inventory at {memory_path()} "
+          f"(nothing leaves this box; PROXIMO_MEMORY=0 opts out, "
+          f"PROXIMO_MEMORY_PATH moves it)", file=sys.stderr)
+
+
 def main() -> None:
     # Source ~/.config/proximo/proximo.env FIRST (before doctor or any from_env) so a PROXIMO_* var
     # set in the documented file actually reaches the stdio server — otherwise it is silently ignored,
@@ -1711,6 +1780,7 @@ def main() -> None:
         except ValueError as e:
             print(f"proximo: {e}", file=sys.stderr)
             raise SystemExit(1) from None
+        _announce_estate_memory()
     # `proximo doctor` — verify your token/config (read-only preflight) BEFORE wiring Proximo into
     # an AI client. Prints what THIS token can and cannot do; never starts the server.
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":

@@ -1,3 +1,19 @@
+proximo (0.31.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.31.0 (minor - PROXIMO_SURFACES scopes planes, it no longer
+    picks the doorway. Setting it silently kept the pre-0.30 catalog door: on a
+    PVE+PBS box it served 569 resident tools where the facade serves 5. Surfaces
+    now narrow the searchable catalog and leave the door at the default facade;
+    PROXIMO_TOOLSETS=catalog or =all ask for the old doors by name. Nothing
+    becomes unreachable. Also: doctor derives the facade size and the narrowing
+    mechanism from the registry instead of the environment, a utility-only
+    surface is served plainly rather than behind a search facade, a second
+    scoping pass no longer collapses the searchable catalog, estate memory
+    announces its file on every start, and the LobeHub manifest generator asks
+    for a door instead of a scope.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 02 Aug 2026 02:50:00 +0000
+
 proximo (0.30.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.30.0 (minor - the default flip: with nothing configured the

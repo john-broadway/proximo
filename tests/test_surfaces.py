@@ -72,21 +72,56 @@ def test_every_registered_tool_belongs_to_exactly_one_surface():
 
 
 def test_apply_surfaces_prunes_a_registry(monkeypatch):
-    """_apply_surfaces drives mcp.remove_tool from the env spec — proven on a fake."""
+    """_apply_surfaces drives mcp.remove_tool from the env spec — proven on a fake.
+
+    The double gained a `tool()` decorator when SURFACES stopped being a door (2026-08-02): the
+    facade is installed AFTER the plane prune, so a double that cannot register a tool can no
+    longer stand in for the server. Both halves are asserted separately below, because the
+    ordering is the load-bearing part — pruning after the swap would snapshot the wrong catalog.
+    """
     removed: list[str] = []
 
     class _FakeTM:
-        _tools = {n: None for n in ("pve_doctor", "pbs_prune", "ct_exec", "audit_verify")}
+        def __init__(self):
+            self._tools = {n: None for n in ("pve_doctor", "pbs_prune", "ct_exec", "audit_verify")}
 
     class _FakeMCP:
-        _tool_manager = _FakeTM()
+        def __init__(self):
+            self._tool_manager = _FakeTM()
 
         def remove_tool(self, name: str) -> None:
+            # Mirrors FastMCP: removing an unregistered name RAISES. A double that silently
+            # pop()s and still records the name would feed `removed` with calls that would
+            # crash a real server at startup (mutation review, 2026-08-02).
+            if name not in self._tool_manager._tools:
+                raise KeyError(f"Unknown tool: {name}")
             removed.append(name)
+            del self._tool_manager._tools[name]
 
+        def tool(self, *a, **kw):   # FastMCP's decorator: registers by function name
+            def deco(fn):
+                self._tool_manager._tools.setdefault(fn.__name__, fn)   # real one keeps existing
+                return fn
+            return deco
+
+    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
     monkeypatch.setenv("PROXIMO_SURFACES", "pve")
-    server._apply_surfaces(_FakeMCP())
-    assert sorted(removed) == ["ct_exec", "pbs_prune"]
+    monkeypatch.delenv("PROXIMO_TOOLS", raising=False)
+    monkeypatch.delenv("PROXIMO_TOOLSETS", raising=False)
+    fake = _FakeMCP()
+    server._apply_surfaces(fake)
+
+    # 1. THE PRUNE RAN, AND RAN FIRST. Asserted on the snapshot, not on `removed`: apply_lean
+    #    also removes every non-facade tool, so `removed` contains ct_exec/pbs_prune whether or
+    #    not the surface prune happened — deleting the prune entirely left this test green
+    #    (mutation M01). What only the prune can produce is a CATALOG that never saw them.
+    assert "pve_doctor" in server.LEAN_CATALOG          # the named plane survived into the catalog
+    assert "ct_exec" not in server.LEAN_CATALOG         # off-plane: pruned BEFORE the snapshot
+    assert "pbs_prune" not in server.LEAN_CATALOG
+    # 2. the removals really were driven by name...
+    assert {"ct_exec", "pbs_prune"} <= set(removed)
+    # 3. ...and the door stayed the default facade, which is what makes SURFACES scope-only.
+    assert "proximo_find_tools" in fake._tool_manager._tools
 
 
 def test_nothing_configured_defaults_to_the_dynamic_facade(monkeypatch):
@@ -148,6 +183,45 @@ def test_empty_string_scoping_envs_mean_the_default_door(monkeypatch):
     monkeypatch.setenv("PROXIMO_SURFACES", "")
     rep = doctor._surfaces_report()
     assert rep["scoping"].startswith("dynamic facade (the default)"), rep["scoping"]
+
+
+def test_surfaces_scopes_the_plane_without_picking_the_door(monkeypatch):
+    """PROXIMO_SURFACES answers WHICH PLANES, never WHICH DOOR. Regression, external vet 2026-08-02.
+
+    Shipped 0.30.0 collapsed two orthogonal axes into one precedence ladder: _apply_surfaces
+    returned on the SURFACES layer, so the layer below it — the dynamic facade, the whole point
+    of the 0.30 flip — was unreachable for anyone who had scoped their planes. An adopter who
+    followed the setup docs (which encourage PROXIMO_SURFACES) and then removed their catalog
+    pin expecting the new default got 569 resident tools instead of 6, with no error and no
+    signal. Measured on a live PVE+PBS box by driving the real binary over stdio JSON-RPC:
+    unpinning bought 2 tools (571 -> 569), not the facade.
+
+    apply_lean's own docstring already promised this composition ("any scoping applied first
+    (auto-scope to configured planes, PROXIMO_SURFACES) narrows the catalog too") — the ladder
+    simply never routed SURFACES into it. This pins the promise.
+    """
+    kept = _probe_registry(monkeypatch, PROXIMO_SURFACES="pve,pbs")
+    assert {"proximo_find_tools", "proximo_tool_schema", "proximo_call"} <= kept
+    assert "pve_doctor" not in kept          # the catalog is searchable, not resident
+    # ...and the operator's plane choice still scopes the SEARCHABLE world behind the facade.
+    assert any(n.startswith("pve_") for n in server.LEAN_CATALOG)
+    assert any(n.startswith("pbs_") for n in server.LEAN_CATALOG)
+    assert not any(n.startswith(("pmg_", "pdm_")) for n in server.LEAN_CATALOG)
+
+
+def test_surfaces_all_is_a_scope_not_a_door(monkeypatch):
+    """PROXIMO_SURFACES=all widens the SEARCHABLE world; it does not make the catalog resident.
+
+    Same shape already shipped for PROXIMO_AUTOSCOPE=off (see
+    test_autoscope_off_still_serves_the_facade_unnarrowed): turning OFF narrowing does not
+    change which door you came in. `all` means every plane is reachable, not every schema is
+    resident. The named door escapes stay PROXIMO_TOOLSETS=catalog / =all.
+    """
+    kept = _probe_registry(monkeypatch, PROXIMO_SURFACES="all")
+    assert "proximo_find_tools" in kept
+    assert "pve_doctor" not in kept
+    assert any(n.startswith("pmg_") for n in server.LEAN_CATALOG)   # nothing narrowed away
+    assert any(n.startswith("pdm_") for n in server.LEAN_CATALOG)
 
 
 def test_toolsets_catalog_restores_the_preflip_door(monkeypatch):
@@ -275,3 +349,68 @@ def test_a_utility_surface_alone_does_not_narrow_the_SEARCHABLE_world(monkeypatc
         f"ambiguous config narrowed the searchable catalog {len(full)} -> "
         f"{len(server.LEAN_CATALOG)}; a utility surface is not a data plane")
     assert "proximo_find_tools" in m._tool_manager._tools
+
+
+# --- external re-vet, 2026-08-02: three gaps an independent lens + a mutation run found -------
+
+def test_double_apply_on_a_CONFIGURED_box_does_not_collapse_the_catalog(monkeypatch):
+    """The sibling of test_apply_surfaces_twice_..., in the config where the bug actually fires.
+
+    That test deletes every base-URL var, so autoscope declines to narrow and NO prune runs —
+    the one configuration in which a double apply is harmless. On a box with a plane configured,
+    the prune removes proximo_find_tools (no surface prefix, not in _ALWAYS_REGISTERED), which
+    defeats apply_lean's idempotence guard, and the second pass snapshots the 3-tool facade as
+    the searchable world. Measured before the fix: 314 -> 4 on the default door, 312 -> 3 under
+    PROXIMO_SURFACES. Embedder-facing only; every shipped entry point applies surfaces once.
+    """
+    from mcp.server.fastmcp import FastMCP
+    for door in ({}, {"PROXIMO_SURFACES": "pve"}):
+        for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE",
+                    "PROXIMO_TARGETS", "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL",
+                    "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
+        for k, v in door.items():
+            monkeypatch.setenv(k, v)
+
+        m = FastMCP("probe")
+        m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+        server._apply_surfaces(m)
+        once = len(server.LEAN_CATALOG)
+        assert once > 100, f"precondition: a real catalog was snapshotted, got {once}"
+        server._apply_surfaces(m)
+        assert len(server.LEAN_CATALOG) == once, (
+            f"door={door or 'default'}: double apply collapsed the searchable catalog "
+            f"{once} -> {len(server.LEAN_CATALOG)}")
+        assert "proximo_find_tools" in m._tool_manager._tools
+
+
+def test_a_utility_only_surface_is_served_plainly_not_behind_a_facade(monkeypatch):
+    """`memory`/`wiki`/`exec` are cross-plane utilities, not planes.
+
+    Scoped to those alone the searchable world is a handful of tools, and the facade's own
+    description tells the model "the other ~900 are searchable but not resident" — a tool
+    description is a prompt, so that is a claim the model acts on. `_autoscope_planes` already
+    refuses to narrow on this exact condition; the door layer now refuses too, and the operator
+    who asked for a few tools is served those few directly.
+    """
+    kept = _probe_registry(monkeypatch, PROXIMO_SURFACES="memory", PROXIMO_MEMORY="1")
+    assert "proximo_find_tools" not in kept, "a facade over a five-tool world is a false map"
+    assert "proximo_recall" in kept          # what they actually asked for is served
+    # ...and a REAL plane alongside the utility surface still gets the facade.
+    kept = _probe_registry(monkeypatch, PROXIMO_SURFACES="pve,memory", PROXIMO_MEMORY="1")
+    assert "proximo_find_tools" in kept
+    assert "proximo_recall" in kept          # naming `memory` keeps the one-call estate answer
+
+
+def test_the_all_escape_is_case_insensitive(monkeypatch):
+    """`PROXIMO_SURFACES=ALL` must mean the same as `all` — surviving mutant, mutation run 2026-08-02.
+
+    Dropping `.lower()` sent `ALL` down the prune path, where `surface_keep` refuses an unknown
+    surface named "ALL" and the server exits 1. A config that works lowercase and refuses
+    uppercase is the "typo'd surface refuses startup" promise firing on a VALID value.
+    """
+    for spec in ("ALL", " All "):
+        kept = _probe_registry(monkeypatch, PROXIMO_SURFACES=spec)
+        assert "proximo_find_tools" in kept, spec
+        assert any(n.startswith(("pmg_", "pdm_")) for n in server.LEAN_CATALOG), spec

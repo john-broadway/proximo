@@ -360,7 +360,9 @@ disable its call-time flag (`PROXIMO_ENABLE_EXEC` and `PROXIMO_WIKI` are opt-in 
 set; estate memory is on by default and `PROXIMO_MEMORY=0` opts out) — these are enforced at
 call time and `proximo_call` cannot defeat them. `audit_verify` and `proximo_call` are always
 kept. Precedence: `PROXIMO_TOOLS`, then `PROXIMO_TOOLSETS` (including the keywords `dynamic`,
-`catalog`, `all`), then an explicit `PROXIMO_SURFACES` (`=all` forces the full surface);
+`catalog`, `all`), then an explicit `PROXIMO_SURFACES` — which scopes *planes* only and leaves
+the door at the default facade (`=all` makes every plane searchable; it does not make the
+catalog resident, and `PROXIMO_TOOLSETS=all` is what serves the full surface);
 `PROXIMO_AUTOSCOPE=off` disables plane auto-scoping; with nothing picked the default is the
 dynamic facade — a small resident door with everything this box serves still callable through
 it, never a surprise-empty server. An unknown surface name refuses startup rather than silently

@@ -443,19 +443,44 @@ def test_doctor_report_carries_no_secret_material(tmp_path):
 # from the composition is the same defect class this file already caught once, when doctor said
 # "auto-scoped" on a box actually scoped by PROXIMO_TOOLSETS.
 
+def _leaned_registry(monkeypatch):
+    """Install a real leaned registry as `server.mcp`, the way main() leaves it before doctor runs.
+
+    These two tests used to assert "4"/"3" against the UNLEANED global registry, which meant they
+    could only ever be checking a constant doctor computed from PROXIMO_MEMORY. Once the count
+    became derived (external vet, 2026-08-02 — doctor was promising a `proximo_recall` that
+    scoping had pruned), the constant had nothing behind it. Leaning a registry here is what
+    makes the number under test the number an operator actually gets.
+
+    LEAN_CATALOG is module-global and apply_lean assigns it, so it is saved/restored via
+    monkeypatch rather than left for the next test to inherit.
+    """
+    from mcp.server.fastmcp import FastMCP
+    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
+    m = FastMCP("probe")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    server.apply_lean(m)
+    monkeypatch.setattr(server, "mcp", m)
+    return m
+
+
 def test_dynamic_scoping_line_counts_the_memory_first_facade(monkeypatch):
     monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    m = _leaned_registry(monkeypatch)
+    assert "proximo_recall" in m._tool_manager._tools          # precondition, not an assumption
     scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
-    assert "4 facade tools resident + audit_verify" in scoping
+    assert "4 facade tools resident" in scoping, scoping
     assert "proximo_recall" in scoping
 
 
 def test_dynamic_scoping_line_stays_three_without_memory(monkeypatch):
     monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
     monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
+    m = _leaned_registry(monkeypatch)
+    assert "proximo_recall" not in m._tool_manager._tools
     scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
-    assert "3 facade tools resident + audit_verify" in scoping
+    assert "3 facade tools resident" in scoping, scoping
     assert "proximo_recall" not in scoping
 
 
@@ -627,3 +652,74 @@ def test_surfaces_note_does_not_promise_more_than_dynamic_mode_delivers():
     assert "with everything still callable" not in note, (
         "the unqualified 0.29.0 claim is back — it is false on any autoscoped box, which is "
         "every real deployment")
+
+
+# --- the scoping line must describe the box, not the env (external re-vet, 2026-08-02) --------
+#
+# Two defects shipped together and a mutation run proved BOTH were unpinned: mutating
+# _searchable_narrowing to return the wrong string for the surfaces case, and deleting its
+# `!= "all"` branch, each survived the entire 11k suite. A doctor line no test reads is prose.
+
+def test_narrowing_names_the_mechanism_that_actually_ran(monkeypatch):
+    """_searchable_narrowing renders the EFFECTIVE spec; the caller resolves precedence."""
+    from proximo.doctor import _searchable_narrowing
+    # an explicit plane spec: surfaces pruned, autoscope never ran
+    assert _searchable_narrowing("pve,pbs", False) == "narrowed to PROXIMO_SURFACES=pve,pbs"
+    # `all`: autoscope overridden, nothing pruned — NOT the same as a plane spec
+    assert _searchable_narrowing("all", False) == "NOT plane-narrowed (PROXIMO_SURFACES=all)"
+    # no spec: autoscope is the mechanism, and its off-switch is reported as its own case
+    assert _searchable_narrowing("", False) == "still auto-scoped to configured planes"
+    assert _searchable_narrowing("", True) == "NOT plane-narrowed (PROXIMO_AUTOSCOPE=off)"
+    # the four cases are genuinely distinct strings — a collapsed branch cannot hide here
+    assert len({_searchable_narrowing("pve", False), _searchable_narrowing("all", False),
+                _searchable_narrowing("", False), _searchable_narrowing("", True)}) == 4
+
+
+def test_toolsets_dynamic_outranks_surfaces_so_surfaces_is_not_reported(monkeypatch):
+    """PROXIMO_TOOLSETS=dynamic IGNORES PROXIMO_SURFACES — doctor must not credit the ignored var.
+
+    The dangerous direction is `SURFACES=all` + `TOOLSETS=dynamic`: autoscope really does prune,
+    and doctor used to answer "NOT plane-narrowed" while hundreds of tools had been removed.
+    """
+    from proximo import doctor
+    for var in ("PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
+    monkeypatch.setenv("PROXIMO_SURFACES", "pmg")
+    rep = doctor._surfaces_report()
+    assert "PROXIMO_SURFACES" not in rep["scoping"], rep["scoping"]
+    assert "auto-scoped" in rep["scoping"], rep["scoping"]
+
+    monkeypatch.setenv("PROXIMO_SURFACES", "all")
+    rep = doctor._surfaces_report()
+    assert "NOT plane-narrowed" not in rep["scoping"], rep["scoping"]
+
+
+def test_facade_count_and_memory_first_are_read_from_the_registry(monkeypatch):
+    """Doctor must not promise a tool the prune removed.
+
+    Under PROXIMO_SURFACES=pve,pbs the `memory` utility surface is not named, so proximo_recall
+    is scoped away — but doctor derived "memory-first" from PROXIMO_MEMORY (an env var that is
+    still ON) and told a model to call a tool this box does not serve.
+    """
+    from mcp.server.fastmcp import FastMCP
+
+    from proximo import doctor
+    for var in ("PROXIMO_TOOLS", "PROXIMO_TOOLSETS", "PROXIMO_AUTOSCOPE", "PROXIMO_TARGETS",
+                "PROXIMO_PMG_BASE_URL", "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")          # memory is ON at the env level...
+    monkeypatch.setenv("PROXIMO_SURFACES", "pve,pbs")  # ...but not among the named planes
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example.lan:8007/api2/json")
+
+    m = FastMCP("probe")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    server._apply_surfaces(m)
+    monkeypatch.setattr(server, "mcp", m)
+
+    rep = doctor._surfaces_report()
+    assert "proximo_recall" not in m._tool_manager._tools     # precondition: really pruned
+    assert "memory-first" not in rep["scoping"], rep["scoping"]
+    assert "proximo_recall" not in rep["scoping"], rep["scoping"]
+    assert f"{rep['served_tools'] - 2} facade tools resident" in rep["scoping"], rep["scoping"]

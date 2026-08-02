@@ -253,8 +253,8 @@ below was measured against the full 906-tool registry:
 | `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those, plus the audit trail and `proximo_call` | **~1,579 tokens** |
 | `PROXIMO_TOOLSETS=pve.guests` | one domain (28 tools) | ~9,123 tokens |
 | `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (49 tools) | ~15,783 tokens |
-| `PROXIMO_SURFACES=pve` | a whole plane (311 tools) | ~97,432 tokens |
-| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes | up to ~277,376 tokens |
+| `PROXIMO_SURFACES=pve` | the dynamic facade, with the *searchable* catalog scoped to that plane (312 tools). `proximo_recall` is **not** resident here: `memory` is a utility surface, not a plane, so naming planes scopes it away — add it (`PROXIMO_SURFACES=pve,memory`) to keep the one-call estate answer | **~868 tokens** |
+| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes (~97,432 tokens on a pve-only box) | up to ~277,376 tokens |
 | `PROXIMO_TOOLSETS=all` | the full surface, auto-scope overridden | ~277,376 tokens |
 
 > These figures were **revised upward 16-20% on 2026-08-01**, and the surface did not grow.

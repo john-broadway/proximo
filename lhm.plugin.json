@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "tools": [
     {
       "name": "ct_exec",

@@ -69,8 +69,17 @@ def list_capabilities(timeout: float = 90.0) -> dict[str, list[dict]]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("PROXIMO")}
     # The marketplace listing must declare the FULL catalog, not a surface auto-scoped to this
     # box. main() re-loads ~/.config/proximo/proximo.env from disk (bypassing the strip above),
-    # so its PROXIMO_API_BASE_URL would trigger auto-scope → a truncated tool list. Force full.
-    env["PROXIMO_SURFACES"] = "all"
+    # so its PROXIMO_API_BASE_URL would trigger auto-scope → a truncated tool list.
+    #
+    # Ask for a DOOR, not a scope. This said PROXIMO_SURFACES=all until 2026-08-02, which meant
+    # "full surface" only while surfaces still picked the door; once they became scope-only it
+    # meant "every plane searchable behind the 6-tool facade", and this generator would have
+    # published a SIX-tool manifest. LobeHub grades a listing that extracts no real tools an F
+    # (recovered F→A on 2026-07-05 by publishing an authoritative array), and docs/TOOLS.md is
+    # regenerated from this same manifest — so the blast radius of a thin extraction is the
+    # public listing AND the published tool reference. Pinned by
+    # tests/test_lobehub_manifest.py::test_generator_env_asks_for_a_door_not_a_scope.
+    env["PROXIMO_TOOLSETS"] = "all"
     proc = subprocess.Popen(
         ["uv", "run", "proximo"],  # noqa: S603, S607  # dev/release helper; fixed argv, uv on PATH
         cwd=ROOT,

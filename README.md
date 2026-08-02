@@ -201,17 +201,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.30.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.30.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.31.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.30.0 — the default door fits a local model.** With nothing configured, `tools/list`
-> now serves the search-and-call facade — ~1,449 tokens, 18% of a stock 8k window — instead of a
-> ~97k catalog, with every tool this box serves still callable through it. Estate memory is on by
-> default (`PROXIMO_MEMORY=0` opts out), so what-exists / what-changed / who-did-it answer in one
-> call: `audit_entries` reads the ledger back, and recall now states plainly what the map never
-> holds. `PROXIMO_TOOLSETS=catalog` restores the previous default by name, `all` the full
-> surface. Tool count 905 → 906.
+> **New in 0.31.0 — scoping your planes no longer opts you out of the door.** `PROXIMO_SURFACES`
+> picked the doorway as well as the planes, so an install that scoped itself silently kept the
+> pre-0.30 catalog: on a PVE+PBS box, 569 resident tools where the facade serves 5. Surfaces now
+> scope the searchable catalog and leave the door at the default; `PROXIMO_TOOLSETS=catalog` or
+> `all` ask for the old doors by name, and nothing becomes unreachable either way. `proximo
+> doctor` now derives the facade size and how the catalog was narrowed from the live registry
+> instead of the environment, so it can no longer name a tool the box does not serve.
 >
-> Recent: **0.29.0** put *who asked* in the PROVE ledger (principal tags, signed caller badges) and turned command-body redaction on by default. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.30.0** made the search-and-call facade the default door (~1,449 tokens instead of a ~97k catalog) and turned Tier-1 estate memory on by default. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -230,7 +230,7 @@ Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env 
 
 > **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist.
 >
-> **Smallest footprint by design:** you don't have to load the whole estate — what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` registers just that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. The default doorway (dynamic mode) keeps three search-and-call tools resident plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out) — with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
+> **Smallest footprint by design:** you don't have to load the whole estate — what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load* — the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps three search-and-call tools resident plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out) — with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
 
 **The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's.
 
@@ -248,11 +248,11 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.30.0** — **the honest door became the default.** A bare install used to serve ~97k
-  tokens of schema — 12x over a stock local model's 8,192-token window, dead on connect. Now it
-  serves six resident tools at ~1,449 with the whole estate still callable through them, measured
-  end-to-end on a real adopter install. The residency call was settled by live model runs, not
-  taste — and the same runs caught one fabricated answer, fixed in the response, not the prose.
+- 🩸 **0.31.0** — **the door fix the flip needed.** 0.30.0 made the facade the default, but an
+  install that scoped its planes silently kept the old catalog: 569 resident tools where the
+  facade serves 5, no error, no warning. An outside re-vet found it by probing the running
+  server; our own suite could not, because the test guarding the very sentence that was wrong
+  checks the filter rather than what a client is served. The fix held under three lenses.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
