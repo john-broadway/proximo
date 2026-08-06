@@ -2,6 +2,51 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.31.1] — 2026-08-06
+
+**A HIGH advisory landed against `cryptography`, and our own published metadata was what kept
+adopters from taking the patch.** GHSA-g6cj-pr64-35w5 (CVSS 8.2, published 2026-08-03) — PKCS#7
+EnvelopedData decryption exposes a Bleichenbacher oracle through distinguishable errors and
+timing — affects `cryptography>=44.0.0,<50.0.0` and is fixed in 50.0.0. The 0.31.0 wheel declares
+`cryptography<50,>=49.0.0` on the `[a2a]`, `[http]` and `[mcp-http]` extras, so every adopter of a
+face extra was held *inside* the affected range by a bound we shipped, with no resolution path out
+of it. Nothing else in the graph capped it — `google-auth` and `pyjwt` both take cryptography
+unbounded. We were the sole blocker.
+
+- **Proximo does not call the vulnerable surface, and that does not settle it.** There are zero
+  references to PKCS#7, EnvelopedData or S/MIME anywhere in the package; cryptography is used only
+  for EC/ES256 JWS (caller badges, SIGNET card signing) and key serialization. So proximo's own
+  exposure is nil. The defect being fixed here is what we *published*: a cap that made someone
+  else's security patch unreachable, and a container that shipped the vulnerable library outright
+  (`requirements/runtime.txt` is installed into the image under `--require-hashes`).
+- **Both bounds move, not just the cap** — now `cryptography>=50.0.0,<51`. Widening `<50` to `<51`
+  alone would still *permit* 49.0.0, so a constrained resolve could sit on the vulnerable pin with
+  every check in this repo green. The floor is the half that expresses the security property, and
+  it is now marked in `pyproject.toml` as a security bound rather than a feature floor, because the
+  instinct next time will be to lower it.
+- **The floor is now guarded, and it wasn't before.** The bounds test added in 0.27.1 asks only
+  whether *some* upper bound closes the next major, so a floor lowered back to `>=49.0.0` — or all
+  the way to `>=44.0.0`, re-admitting the entire affected range — left it green. A named test now
+  asserts the floor separately. Both guards were proven by mutation and they are orthogonal: lower
+  the floor and only the new one fires; remove the cap and only the old one fires.
+- **Verified on the artifact, not the source.** The built wheel's `METADATA` reads
+  `cryptography<51,>=50.0.0`; resolved in a clean environment, `proximo-proxmox[http]` takes
+  cryptography 50.0.0, and forcing `cryptography==49.0.0` alongside it is *unsatisfiable*. A
+  constraint that merely allows the fix would have passed the same checks while still permitting a
+  vulnerable resolve, so the refusal is the half worth proving.
+- **Neither automated path could land it**, which is why it needed a release rather than a merge.
+  Dependabot's pip PR edits `requirements/*.txt` but cannot run `uv`, so `uv.lock` stayed at 49.0.0
+  and the `requirements-drift` guard correctly refused it; the uv-ecosystem security job that would
+  have moved the lock failed outright. The exports here are a real re-lock: exactly one pin moved.
+- **Also in this release, from 0.31.0's deferred review findings:** `pve_doctor` no longer tells a
+  correctly-configured plane to configure itself (its hint keyed on "serves zero tools", which is
+  true of *every* plane under the default facade by design), the pinning test for a narrowing that
+  never happens now asserts the silence instead of a bound, and two comments were corrected — one
+  of which cited a pinning test that has never existed.
+- Pinned GitHub Actions moved to current SHAs (CodeQL, docker/login-action,
+  pypa/gh-action-pypi-publish and the release/mirror/Trivy workflows). No tool, behavior, or
+  interface change in any of the above; the tool estate is unchanged.
+
 ## [0.31.0] — 2026-08-02
 
 Minor, not patch, and deliberately: every change below is a fix, but an install that sets

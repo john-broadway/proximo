@@ -723,3 +723,36 @@ def test_facade_count_and_memory_first_are_read_from_the_registry(monkeypatch):
     assert "memory-first" not in rep["scoping"], rep["scoping"]
     assert "proximo_recall" not in rep["scoping"], rep["scoping"]
     assert f"{rep['served_tools'] - 2} facade tools resident" in rep["scoping"], rep["scoping"]
+
+
+def test_enable_with_is_absent_for_a_plane_you_already_configured(monkeypatch):
+    """`enable_with` answers "how do I light up a plane I do not have" — nothing else.
+
+    Keyed on served==0 alone it fired for CONFIGURED planes too, because under the facade every
+    plane serves 0 resident tools by design. A PVE box on the default door was told to "set
+    PROXIMO_API_BASE_URL (or add a pve target)" that it had already set. Absent capability and
+    non-resident capability are different facts (external vet, 2026-08-02).
+    """
+    from mcp.server.fastmcp import FastMCP
+
+    from proximo import doctor
+    for var in ("PROXIMO_TOOLS", "PROXIMO_TOOLSETS", "PROXIMO_SURFACES", "PROXIMO_AUTOSCOPE",
+                "PROXIMO_TARGETS", "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL",
+                "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
+
+    m = FastMCP("probe")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
+    server._apply_surfaces(m)                       # default door => facade => 0 resident per plane
+    monkeypatch.setattr(server, "mcp", m)
+
+    planes = doctor._surfaces_report()["planes"]
+    assert planes["pve"]["configured"] is True
+    assert planes["pve"]["served_tools"] == 0       # precondition: the facade really is the door
+    assert "enable_with" not in planes["pve"], (
+        f"told a configured plane to configure itself: {planes['pve']}")
+    # ...and a plane that genuinely is not configured STILL gets its instruction.
+    assert planes["pmg"]["configured"] is False
+    assert "enable_with" in planes["pmg"]

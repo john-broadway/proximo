@@ -1227,8 +1227,12 @@ def _autoscope_planes() -> set[str] | None:
 
     Split out from _autoscope_keep so BOTH callers share one guard, and so the decision can be
     made without touching the server object: the no-op paths of _apply_surfaces must not read
-    `_tool_manager` (pinned by test_apply_surfaces_*_touches_nothing, whose double defines only
-    remove_tool). The duplicate that this split removes had drifted — the default branch still
+    `_tool_manager` unnecessarily. (This once cited a pinning test by name;
+    NO SUCH TEST EXISTS — verified 2026-08-02. The citation was wrong when written, which is
+    worse than no citation, because it reads as coverage. What actually exercises the
+    minimal-double path is test_surfaces.py::test_apply_surfaces_prunes_a_registry, and its
+    double now needs `tool()` too, so the "must not touch" claim is narrower than it sounds.)
+    The duplicate that this split removes had drifted — the default branch still
     read `planes - {"exec"}` after _UTILITY_SURFACES grew memory and wiki, so `PROXIMO_MEMORY=1`
     with an undetectable data plane narrowed 904 tools to 5.
 
@@ -1326,8 +1330,11 @@ def _apply_surfaces(server_mcp=mcp) -> None:
     # silently ANDing a leftover PROXIMO_SURFACES from their env would serve them less than they
     # asked for with no way to see why.
     #
-    # `_tool_manager` is read INSIDE each branch, never hoisted: the pass-through paths
-    # (`all`) must not touch the server object at all.
+    # `_tool_manager` is read INSIDE each branch, never hoisted. This used to claim the
+    # pass-through paths "(`all`) must not touch the server object at all" — true only of
+    # PROXIMO_TOOLSETS=all, which still returns without touching it. It is FALSE for
+    # PROXIMO_SURFACES=all since 0.31.0: that path skips the prune but still installs the
+    # facade, so it reads and mutates the registry (external vet, 2026-08-02).
     tools_spec = os.environ.get("PROXIMO_TOOLS")
     if tools_spec and tools_spec.strip():
         _prune_registry(server_mcp, tool_keep(server_mcp._tool_manager._tools.keys(), tools_spec),

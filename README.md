@@ -201,17 +201,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.31.0`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.31.1`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.31.0 — scoping your planes no longer opts you out of the door.** `PROXIMO_SURFACES`
-> picked the doorway as well as the planes, so an install that scoped itself silently kept the
-> pre-0.30 catalog: on a PVE+PBS box, 569 resident tools where the facade serves 5. Surfaces now
-> scope the searchable catalog and leave the door at the default; `PROXIMO_TOOLSETS=catalog` or
-> `all` ask for the old doors by name, and nothing becomes unreachable either way. `proximo
-> doctor` now derives the facade size and how the catalog was narrowed from the live registry
-> instead of the environment, so it can no longer name a tool the box does not serve.
+> **New in 0.31.1 — a HIGH advisory in `cryptography`, and our own bound was blocking the patch.**
+> GHSA-g6cj-pr64-35w5 affects `cryptography >=44.0.0,<50.0.0`. The `[a2a]`, `[http]` and
+> `[mcp-http]` extras capped it at `<50`, so an adopter of a face extra had no resolution path to
+> the fixed 50.0.0, and the published image shipped the vulnerable library. Both bounds move to
+> `>=50.0.0,<51` — the floor, not just the cap, because widening the cap alone would still permit
+> 49.0.0. Proximo itself never calls the vulnerable PKCS#7 path. **Upgrade if you install any
+> face extra or run the container.**
 >
-> Recent: **0.30.0** made the search-and-call facade the default door (~1,449 tokens instead of a ~97k catalog) and turned Tier-1 estate memory on by default. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.31.0** stopped `PROXIMO_SURFACES` from picking the doorway as well as the planes. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -248,11 +248,11 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.31.0** — **the door fix the flip needed.** 0.30.0 made the facade the default, but an
-  install that scoped its planes silently kept the old catalog: 569 resident tools where the
-  facade serves 5, no error, no warning. An outside re-vet found it by probing the running
-  server; our own suite could not, because the test guarding the very sentence that was wrong
-  checks the filter rather than what a client is served. The fix held under three lenses.
+- 🩸 **0.31.1** — **our own metadata stood between adopters and a security patch.** A HIGH
+  advisory landed against `cryptography`; the face extras capped it below the fixed version, so
+  the patch was unreachable, and the container shipped the vulnerable library. Both bounds moved.
+  What failed review was not the fix but the comment beside it, claiming the floor was guarded
+  when only the ceiling ever was — so the floor got a test that refuses a lowered bound.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

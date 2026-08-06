@@ -330,7 +330,12 @@ def _surfaces_report() -> dict:
         for plane in server.SURFACES:
             served = _served(plane)
             row = {"configured": plane in configured, "served_tools": served}
-            if served == 0:
+            # `enable_with` answers "how do I light up a plane I do not have". Keying it on
+            # served==0 alone told a CONFIGURED plane to configure itself: under the facade every
+            # plane serves 0 resident tools by design, so a PVE box running the default door was
+            # advised to "set PROXIMO_API_BASE_URL" it had already set. Absent capability and
+            # non-resident capability are different facts (external vet, 2026-08-02).
+            if served == 0 and plane not in configured:
                 row["enable_with"] = enable.get(plane, "")
             planes[plane] = row
 

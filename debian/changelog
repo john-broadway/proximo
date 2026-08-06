@@ -1,3 +1,15 @@
+proximo (0.31.1-1) UNRELEASED; urgency=high
+
+  * Track upstream 0.31.1 (patch - security: GHSA-g6cj-pr64-35w5 (HIGH) affects
+    cryptography >=44.0.0,<50.0.0; proximo's own published metadata capped the
+    a2a/http/mcp-http extras at <50, holding adopters inside the affected range
+    with no path to the patched 50.0.0, and the container shipped the vulnerable
+    library. Both bounds now move to >=50.0.0,<51 - the floor, not just the cap,
+    because widening the cap alone would still permit 49.0.0. Proximo does not
+    call the vulnerable PKCS#7 surface. Adds a named test guarding the floor,
+    which the existing bounds test could not see. Also carries the three deferred
+    0.31.0 review findings and current GitHub Actions SHA pins.)
+
 proximo (0.31.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.31.0 (minor - PROXIMO_SURFACES scopes planes, it no longer

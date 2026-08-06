@@ -414,3 +414,36 @@ def test_the_all_escape_is_case_insensitive(monkeypatch):
         kept = _probe_registry(monkeypatch, PROXIMO_SURFACES=spec)
         assert "proximo_find_tools" in kept, spec
         assert any(n.startswith(("pmg_", "pdm_")) for n in server.LEAN_CATALOG), spec
+
+
+def test_catalog_door_stays_silent_when_it_narrows_nothing(monkeypatch, capsys):
+    """_apply_catalog announces ONLY when it actually prunes — mutant M08, 2026-08-02.
+
+    The guard is `len(keep) < len(registry)`; relaxing it to `<=` survived the entire suite,
+    because the only observable difference is a stderr line. That line matters: on a box where
+    every plane is configured, `<=` prints "auto-scoped to configured planes (...)" having
+    removed nothing, which is a doctor-grade lie about what the server just did to itself.
+    """
+    from mcp.server.fastmcp import FastMCP
+    for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE", "PROXIMO_TARGETS"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("PROXIMO_TOOLSETS", "catalog")
+    # every plane configured => keep == registry => nothing to narrow
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example.lan:8007/api2/json")
+    monkeypatch.setenv("PROXIMO_PMG_BASE_URL", "https://pmg.example.lan:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_PDM_BASE_URL", "https://pdm.example.lan:8443/api2/json")
+    monkeypatch.setenv("PROXIMO_ENABLE_EXEC", "1")
+    monkeypatch.setenv("PROXIMO_MEMORY", "1")
+    monkeypatch.setenv("PROXIMO_WIKI", "1")
+
+    m = FastMCP("probe")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    before = len(m._tool_manager._tools)
+    capsys.readouterr()                      # drop anything buffered before the call
+    server._apply_surfaces(m)
+    err = capsys.readouterr().err
+
+    assert len(m._tool_manager._tools) == before, "precondition: nothing should have been pruned"
+    assert "auto-scoped" not in err, (
+        f"announced a narrowing that did not happen: {err!r}")
