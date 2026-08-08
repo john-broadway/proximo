@@ -8,8 +8,25 @@
 # together. That produces un-installable PRs (e.g. bumping pydantic-core past pydantic's exact pin,
 # or protobuf past the proto-plus/grpc cap). Python dependency currency is handled by
 # `uv lock --upgrade` + re-export (the four commands in each requirements/*.txt header), gated by
-# the full test suite. Dependabot SECURITY updates still cover CVEs — they run off the dependency
-# graph, independent of this file (automated-security-fixes + vulnerability-alerts are ENABLED).
+# the full test suite.
+#
+# SECURITY updates run off the dependency graph, independent of this file
+# (automated-security-fixes + vulnerability-alerts are ENABLED), so a CVE is reliably DETECTED.
+# It is NOT reliably REMEDIATED, and an earlier version of this note claimed otherwise. The
+# 2026-08-05/06 cryptography advisory showed all three ways the auto-fix arm fails here:
+#   * `uv in /.` errors "Declaration not found for <pkg>" when the package is declared only under
+#     [project.optional-dependencies]. cryptography lives in the a2a/http/mcp-http extras, never
+#     in [project] dependencies, so that updater cannot edit the bound at all.
+#   * `pip in /requirements` CAN edit requirements/*.txt, but those are `uv export` artifacts, so
+#     the PR arrives out of step with uv.lock and the requirements-drift test fails it. That PR
+#     shape is un-mergeable by construction; do not "fix" it by editing the exports by hand.
+#   * When the patched version sits OUTSIDE our own cap, no updater can reach it at all.
+#     GHSA-g6cj-pr64-35w5 was patched in 50.0.0 while the extras still said `cryptography<50`, so
+#     our own published metadata held adopters inside the advisory (fixed by hand in a7d2d22).
+# So: treat a RED "Dependabot Updates" run as the actual signal, not as noise. Fix by hand, and
+# move BOTH bounds — widening the cap alone still permits the vulnerable pin, which is why the
+# floor is written as a security bound. Then `uv lock --upgrade-package <pkg>` + re-export, and
+# prove it on the built wheel's METADATA rather than on the source.
 version: 2
 updates:
   # Keep GitHub Actions current — especially the SHA-pinned privileged actions in the release
