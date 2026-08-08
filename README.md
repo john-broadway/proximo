@@ -141,7 +141,7 @@ Proximo builds the principled whole. Both halves, one audited surface, least-pri
 
 ## The trust layer — what makes Proximo different
 
-Four controls on by default:
+The spine has six pillars. Four stand by default:
 
 | Control | What it does |
 |---|---|
@@ -150,7 +150,14 @@ Four controls on by default:
 | **UNDO** | Where the platform has a primitive: a config change returns its `prior_config` automatically (revert with `pve_guest_config_revert`), `ct_exec`/`ct_psql` take `snapshot=true` for an auto-snapshot and then **fail closed** — if the snapshot can't be taken the command does not run — and `pve_rollback` restores a guest snapshot. The exec snapshot is **per call, not automatic**. Planes with no snapshot primitive (firewall/SDN/ACL) have no rollback — said plainly. |
 | **DIAGNOSE** | Read-only evidence battery + node health → advisory flags that surface *incompleteness* too, so an empty list never reads as a false clean bill. |
 
-Six more ship **off** until you configure them — per-plan **CONSENT**, a **CONTAIN** kill-switch, an arm-**LEASE**, an arm-time **SCOPE**, a FORBID/RATE **ENVELOPE**, and **TAINT** (the prompt-injection mitigation). What each one actually defends against: **[SECURITY.md](SECURITY.md)**.
+Two are **yours to raise, by design** — off until their state paths exist, because both are only worth having if those paths sit outside the agent's reach. A pillar Proximo raised for you would be a pillar the agent could lower for itself:
+
+| Pillar (off until configured) | What it holds |
+|---|---|
+| **CONSENT** | Independent, out-of-band approval per plan: an agent — compromised, confused, or steered by injected text — cannot confirm its own mutation. Grants live in a directory only you write (`PROXIMO_CONSENT_DIR`), expire on a TTL, and never clear a taint. |
+| **CONTAIN** | The kill-switch: one trip file halts every mutation immediately, mid-incident, no redeploy and no restart. Checked fresh on every mutation; fails closed. Put the trip path where only you can write (`PROXIMO_CONTAIN_TRIP_PATH`). |
+
+`proximo doctor` reports the spine: which pillars stand, which sockets are empty, and exactly how to fill them. Five more controls ship off until configured — an arm-**LEASE**, an arm-time **SCOPE**, a FORBID/RATE **ENVELOPE**, **TAINT** (the prompt-injection mitigation), and **PRINCIPAL** (who-asked attribution). What each one defends against: **[SECURITY.md](SECURITY.md)**.
 
 > **Honesty note (load-bearing):** risk ratings are an *advisory heuristic*, not a sandbox — `LOW` means "no state change," **not** "safe," and the absence of a `HIGH` flag is not a safety signal. Review every change yourself.
 > **The floor beneath it all is the token you mint:** Proxmox RBAC holds even if Proximo's process is fully compromised — a stronger guarantee than anything Proximo's own code provides. Scope it to exactly what you mean to grant: [SECURITY.md](SECURITY.md).
