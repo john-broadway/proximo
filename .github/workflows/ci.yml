@@ -4,6 +4,25 @@ on:
   push:
     branches: [main]
   pull_request:
+  # DAILY, and this is the gate's whole point rather than a nicety. The pip-audit job below is
+  # a BLOCKING dependency-CVE gate, but a blocking gate only blocks when it RUNS, and until
+  # this trigger existed CI ran on push alone. GHSA-g6cj-pr64-35w5 (HIGH, CVSS 8.2) published
+  # 2026-08-03 against the pinned cryptography and this repo did not notice for three days,
+  # because nothing pushed to main between 08-02 and 08-06 — it was caught by a human reading
+  # the advisory feed, not by us. A quiet main was an unexamined main, and "we scan
+  # dependencies" read as a continuous promise while being a per-push one.
+  #
+  # Daily rather than the weekly cadence codeql/trivy/scorecard use: those watch a base image
+  # and source that change slowly, while a dependency CVE is disclosed against code we have
+  # ALREADY shipped and pinned. Weekly would have left that same advisory sitting up to seven
+  # days. Slot picked clear of the other three (03:27 / 04:41 / 05:23 Monday).
+  #
+  # It re-runs the whole suite, not just the audit, and that is deliberate: a scheduled run is
+  # also the only thing that catches a test which rots without a commit behind it (see the
+  # pacioli close-window fixtures, which expired on a calendar boundary and went red on an
+  # innocent release commit a week later).
+  schedule:
+    - cron: "13 6 * * *"   # daily, 06:13 UTC
   # Manual re-run, and it is not decoration. v0.31.1 landed on main during a GitHub Actions
   # outage (incident opened 2026-08-06T15:22Z, impact critical), so no CI run was ever created
   # for that commit — GitHub does not backfill runs for a push its fleet missed. With push as
@@ -82,9 +101,18 @@ jobs:
     # a blocking gate only blocks when it RUNS, and nothing had pushed to main since
     # 08-02. It was found by reading the advisory feed, not by CI.
     #
-    # So: no standing claim about the baseline lives here. The gate's guarantee is
-    # narrower than it reads — it covers whatever was pushed, when it was pushed, and a
-    # quiet main means an unexamined main.
+    # CLOSED 2026-08-08 by the daily `schedule:` trigger at the top of this file. The
+    # miss was never pip-audit's detection, it was the trigger: a quiet main was an
+    # unexamined main. This job now runs every day whether or not anyone pushed, so a
+    # CVE disclosed against already-shipped pins reds CI on the next morning's run
+    # instead of waiting for unrelated activity.
+    #
+    # Still no standing claim about the baseline lives here, and the honest bound is
+    # unchanged in two places. (1) This gate DETECTS; it does not remediate. Dependabot's
+    # auto-fix arm cannot open a mergeable PR for this repo (see .github/dependabot.yml
+    # for the three reasons), so the fix is a human moving both bounds and relocking.
+    # (2) It audits what is PINNED here, so it speaks for this repo's own resolve, not
+    # for whatever an adopter's resolver picks inside our published ranges.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

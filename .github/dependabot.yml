@@ -23,10 +23,18 @@
 #   * When the patched version sits OUTSIDE our own cap, no updater can reach it at all.
 #     GHSA-g6cj-pr64-35w5 was patched in 50.0.0 while the extras still said `cryptography<50`, so
 #     our own published metadata held adopters inside the advisory (fixed by hand in a7d2d22).
-# So: treat a RED "Dependabot Updates" run as the actual signal, not as noise. Fix by hand, and
-# move BOTH bounds — widening the cap alone still permits the vulnerable pin, which is why the
-# floor is written as a security bound. Then `uv lock --upgrade-package <pkg>` + re-export, and
-# prove it on the built wheel's METADATA rather than on the source.
+# Because that auto-fix arm cannot be trusted to produce a mergeable PR here, the DETECTOR we
+# rely on is ours, not Dependabot's: the blocking `pip-audit` job in ci.yml, which since
+# 2026-08-08 runs DAILY on a schedule rather than only on push. That trigger is the actual
+# repair for this whole failure mode. The cryptography advisory sat unnoticed for three days
+# not because nothing was watching, but because the thing that was watching only woke on a
+# push, and nobody pushed. A red "Dependabot Updates" run is still worth reading, but it is
+# now the secondary signal, and it is allowed to stay red for the structural reasons above.
+#
+# When the gate fires, fix by hand: move BOTH bounds (widening the cap alone still permits the
+# vulnerable pin, which is why the floor is written as a security bound), then
+# `uv lock --upgrade-package <pkg>` + re-export, and prove it on the built wheel's METADATA
+# rather than on the source.
 version: 2
 updates:
   # Keep GitHub Actions current — especially the SHA-pinned privileged actions in the release
