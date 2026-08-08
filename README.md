@@ -67,8 +67,8 @@ vendor. Demand them everywhere.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark.svg">
-    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the trust spine (PLAN, PROVE, UNDO, DIAGNOSE), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light.svg" width="860">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark-ab52d834.svg">
+    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light-5e79dd0b.svg" width="860">
   </picture>
 </p>
 

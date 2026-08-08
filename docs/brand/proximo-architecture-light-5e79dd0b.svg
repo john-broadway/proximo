@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 640" role="img" aria-label="Proximo architecture: MCP (stdio and Streamable HTTP), A2A, and API clients over one governed spine, the trust spine, the token floor, four Proxmox products">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 688" role="img" aria-label="Proximo architecture: MCP (stdio and Streamable HTTP), A2A, and API clients over one governed spine, the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), the token floor, four Proxmox products">
   <style>
     .t  { font: 600 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #1f2328; }
     .s  { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #57606a; }
     .m  { font: 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #57606a; }
     .h  { font: 700 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #8a5716; letter-spacing: .4px; }
     .p  { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #8a5716; }
+    .po { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #8a5716; opacity: .62; }
     .pd { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #1f2328; }
     .cap{ font: 600 13px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #57606a; }
   </style>
@@ -43,41 +44,43 @@
   <path d="M430 192 V216" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
 
   <!-- trust spine -->
-  <rect x="110" y="224" width="640" height="178" rx="8" fill="#8a571614" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="430" y="250" text-anchor="middle" class="h">THE TRUST SPINE — ON BY DEFAULT</text>
+  <rect x="110" y="224" width="640" height="226" rx="8" fill="#8a571614" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="430" y="250" text-anchor="middle" class="h">THE TRUST SPINE — SIX PILLARS</text>
   <text x="140" y="278" class="p">PLAN</text>     <text x="255" y="278" class="pd">dry-run preview + blast radius before any mutation runs</text>
   <text x="140" y="302" class="p">PROVE</text>    <text x="255" y="302" class="pd">keyed, hash-chained, tamper-evident audit ledger</text>
   <text x="140" y="326" class="p">UNDO</text>     <text x="255" y="326" class="pd">snapshot first, wherever the platform can snapshot</text>
   <text x="140" y="350" class="p">DIAGNOSE</text> <text x="255" y="350" class="pd">read-only evidence battery, advisory flags</text>
-  <text x="430" y="384" text-anchor="middle" class="s">opt-in: CONSENT · CONTAIN · LEASE · SCOPE · ENVELOPE · TAINT</text>
+  <text x="140" y="374" class="po">CONSENT</text>  <text x="255" y="374" class="pd">yours to raise — out-of-band approval per plan; an agent can't grant itself</text>
+  <text x="140" y="398" class="po">CONTAIN</text>  <text x="255" y="398" class="pd">yours to raise — one trip file halts every mutation, mid-incident</text>
+  <text x="430" y="432" text-anchor="middle" class="s">also opt-in: LEASE · SCOPE · ENVELOPE · TAINT · PRINCIPAL</text>
 
-  <path d="M430 402 V426" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M430 450 V474" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
 
   <!-- token floor -->
-  <rect x="110" y="434" width="640" height="56" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="430" y="457" text-anchor="middle" class="t">THE TOKEN FLOOR — enforced by Proxmox itself, not by Proximo</text>
-  <text x="430" y="477" text-anchor="middle" class="s">your scoped RBAC token bounds everything above — it holds even if Proximo is fully compromised</text>
+  <rect x="110" y="482" width="640" height="56" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="430" y="505" text-anchor="middle" class="t">THE TOKEN FLOOR — enforced by Proxmox itself, not by Proximo</text>
+  <text x="430" y="525" text-anchor="middle" class="s">your scoped RBAC token bounds everything above — it holds even if Proximo is fully compromised</text>
 
-  <path d="M430 490 V514" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
-  <path d="M184 514 H676" fill="none" stroke="#8a5716" stroke-width="1"/>
-  <path d="M184 514 V520 M348 514 V520 M512 514 V520 M676 514 V520" fill="none" stroke="#8a5716" stroke-width="1"/>
+  <path d="M430 538 V562" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M184 562 H676" fill="none" stroke="#8a5716" stroke-width="1"/>
+  <path d="M184 562 V568 M348 562 V568 M512 562 V568 M676 562 V568" fill="none" stroke="#8a5716" stroke-width="1"/>
 
   <!-- products -->
-  <rect x="110" y="522" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="184" y="548" text-anchor="middle" class="t">Proxmox VE</text>
-  <text x="184" y="567" text-anchor="middle" class="s">guests · storage · HA</text>
+  <rect x="110" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="184" y="596" text-anchor="middle" class="t">Proxmox VE</text>
+  <text x="184" y="615" text-anchor="middle" class="s">guests · storage · HA</text>
 
-  <rect x="274" y="522" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="348" y="548" text-anchor="middle" class="t">Backup Server</text>
-  <text x="348" y="567" text-anchor="middle" class="s">datastores · verify</text>
+  <rect x="274" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="348" y="596" text-anchor="middle" class="t">Backup Server</text>
+  <text x="348" y="615" text-anchor="middle" class="s">datastores · verify</text>
 
-  <rect x="438" y="522" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="512" y="548" text-anchor="middle" class="t">Mail Gateway</text>
-  <text x="512" y="567" text-anchor="middle" class="s">mail flow · quarantine</text>
+  <rect x="438" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="512" y="596" text-anchor="middle" class="t">Mail Gateway</text>
+  <text x="512" y="615" text-anchor="middle" class="s">mail flow · quarantine</text>
 
-  <rect x="602" y="522" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
-  <text x="676" y="548" text-anchor="middle" class="t">Datacenter Mgr</text>
-  <text x="676" y="567" text-anchor="middle" class="s">federated fleet</text>
+  <rect x="602" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <text x="676" y="596" text-anchor="middle" class="t">Datacenter Mgr</text>
+  <text x="676" y="615" text-anchor="middle" class="s">federated fleet</text>
 
-  <text x="430" y="622" text-anchor="middle" class="cap">906 tools · one audited control plane · every mutation planned, proven, undoable where the platform allows</text>
+  <text x="430" y="670" text-anchor="middle" class="cap">906 tools · one audited control plane · every mutation planned, proven, undoable where the platform allows</text>
 </svg>
