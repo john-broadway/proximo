@@ -72,7 +72,7 @@ vendor. Demand them everywhere.
   </picture>
 </p>
 
-<p align="center"><sub>Every transport enters <b>one governed dispatch</b> and crosses the <b>same trust spine</b>; the token floor beneath it all is enforced by Proxmox itself. <br>Watch it hold in the <a href="#demo">Demo</a>.</br></sub></p>
+<p align="center"><sub>Every transport enters <b>one governed dispatch</b> and crosses the <b>same trust spine</b>; the token floor beneath it all is enforced by Proxmox itself. <br>Watch it hold in the <a href="#demo">Demo</a>.</sub></p>
 
 ## What it does
 
