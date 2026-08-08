@@ -340,7 +340,7 @@ class PbsConfig:
         ca_bundle = os.environ.get("PROXIMO_PBS_CA_BUNDLE") or None
         fingerprint = os.environ.get("PROXIMO_PBS_FINGERPRINT") or None
 
-        if not verify_tls and not ca_bundle:
+        if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
                 "PROXIMO_PBS_VERIFY_TLS=false with no CA bundle — "
                 "talking to the PBS API without cert validation.",
@@ -369,7 +369,7 @@ class PbsConfig:
         verify_tls = parse_verify_tls(fields.get("verify_tls", "true"))
         ca_bundle = fields.get("ca_bundle") or None
         fingerprint = fields.get("fingerprint") or None
-        if not verify_tls and not ca_bundle:
+        if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
                 "PBS target verify_tls=false with no CA bundle — "
                 "talking to the PBS API without cert validation.",

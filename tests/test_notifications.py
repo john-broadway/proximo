@@ -433,6 +433,19 @@ class TestPlanNotificationEndpointCreate:
         assert "LIVEPW" not in plan.change
         assert "[redacted]" in plan.change
 
+    def test_redacts_webhook_secret_from_change(self):
+        # webhook's `secret` array carries HMAC/auth secrets (value base64-encoded by PVE).
+        # Same leak surface as token/password: change is returned AND ledgered on confirm=False.
+        plan = plan_notification_endpoint_create("webhook", "hook1", secret="LIVEHMAC")
+        assert "LIVEHMAC" not in plan.change
+        assert "[redacted]" in plan.change
+
+    def test_redacts_webhook_header_from_change(self):
+        # webhook's `header` can carry `Authorization=Bearer ...`.
+        plan = plan_notification_endpoint_create("webhook", "hook1", header="Authorization=Bearer LIVEBEARER")
+        assert "LIVEBEARER" not in plan.change
+        assert "[redacted]" in plan.change
+
 
 class TestPlanNotificationEndpointUpdate:
     def test_reads_current_from_api(self):
@@ -474,6 +487,18 @@ class TestPlanNotificationEndpointDelete:
         plan = plan_notification_endpoint_delete(api, "smtp", "mail1")
         note_upper = plan.note.upper()
         assert "WARN" in note_upper
+
+    def test_redacts_webhook_secret_and_header_from_current(self):
+        # A webhook endpoint's stored secret/header come back from the live GET and land in
+        # plan.current (returned to caller AND written to the tamper-evident ledger). The
+        # delete path previously stored current unredacted.
+        api = _Api(get_return={"name": "hook1", "type": "webhook",
+                               "secret": "LIVEHMAC", "header": "Authorization=Bearer LIVEBEARER"})
+        plan = plan_notification_endpoint_delete(api, "webhook", "hook1")
+        assert "LIVEHMAC" not in str(plan.current)
+        assert "LIVEBEARER" not in str(plan.current)
+        assert plan.current["secret"] == "[redacted]"
+        assert plan.current["header"] == "[redacted]"
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,24 @@ from __future__ import annotations
 import hashlib
 import re
 
-__all__ = ["redact", "redact_structure", "fingerprint", "render", "WHERE"]
+__all__ = ["redact", "redact_structure", "fingerprint", "render", "compile_denylist", "WHERE"]
+
+
+def compile_denylist(tokens: list[str]) -> re.Pattern[str] | None:
+    """Compile an operator-supplied list of BARE estate tokens (node/cluster names a regex can't
+    tell from an English word) into a redaction pattern, or None if empty.
+
+    Kept PURE (``re`` only, no ``os``/file/env) so this module keeps its structural 'no I/O, no side
+    channel' guarantee (see the module docstring and test_receipt's import pin): the CALLER reads the
+    file/env — it already has ``os`` — and passes the tokens here. A literal, operator-supplied list
+    redacts only real estate names, so there is no over-redaction the way a generic bare-word rule
+    would gut the receipt. Case-insensitive, word-bounded; longest-first so a token that is a prefix
+    of another can't be half-matched."""
+    cleaned = sorted({t.strip() for t in tokens if t.strip()}, key=len, reverse=True)
+    if not cleaned:
+        return None
+    alts = "|".join(re.escape(t) for t in cleaned)
+    return re.compile(rf"\b(?:{alts})\b", re.IGNORECASE)
 
 # The destination is part of the artifact. An emitter with nowhere to send its output is a dead end
 # with good formatting, not a loop — which is exactly what the first version of Pacioli's was.
@@ -80,25 +97,32 @@ _IDENTIFYING_KEYS = frozenset({
 })
 
 
-def redact(text: object) -> str:
-    """Strip an operator's estate out of one string, leaving a marker in its place."""
+def redact(text: object, deny: re.Pattern[str] | None = None) -> str:
+    """Strip an operator's estate out of one string, leaving a marker in its place.
+
+    ``deny`` (from compile_denylist) additionally strips operator-listed bare estate names the
+    regex rules can't see — a node named ``pve01`` matches no pattern."""
     out = str(text)
     for pattern, marker in _RULES:
         out = pattern.sub(marker, out)
+    if deny is not None:
+        out = deny.sub("[redacted-id]", out)
     return out
 
 
-def redact_structure(obj: object, _key: str | None = None) -> object:
+def redact_structure(obj: object, _key: str | None = None,
+                     deny: re.Pattern[str] | None = None) -> object:
     """Walk a doctor report and redact it whole.
 
     Two passes at once, and both are needed: string VALUES go through the regex rules, and values
     under an identifying KEY are replaced outright regardless of shape. A node named `pve01` matches
-    no pattern; a node named `mail` matches an English word. Only the key knows what it is.
+    no pattern; a node named `mail` matches an English word. Only the key knows what it is. An
+    optional ``deny`` (compile_denylist) catches a bare estate name embedded in a free-text value.
     """
     if isinstance(obj, dict):
-        return {k: redact_structure(v, _key=str(k).lower()) for k, v in obj.items()}
+        return {k: redact_structure(v, _key=str(k).lower(), deny=deny) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [redact_structure(v, _key=_key) for v in obj]
+        return [redact_structure(v, _key=_key, deny=deny) for v in obj]
     if isinstance(obj, bool) or obj is None:
         return obj
     if isinstance(obj, (int, float)):
@@ -106,18 +130,19 @@ def redact_structure(obj: object, _key: str | None = None) -> object:
         return "[redacted-id]" if _key in _IDENTIFYING_KEYS else obj
     if _key in _IDENTIFYING_KEYS:
         return "[redacted-id]"
-    return redact(obj)
+    return redact(obj, deny=deny)
 
 
-def fingerprint(report: object) -> str:
+def fingerprint(report: object, deny: re.Pattern[str] | None = None) -> str:
     """A short stable id, computed on the REDACTED structure.
 
     Same defect on two different clusters => same fingerprint. That is the whole point: two
     operators can discover they are hitting the same thing without either revealing whose cluster
-    it was.
+    it was. A ``deny`` denylist makes it MORE stable — two clusters whose only difference was their
+    node names now fingerprint identically once each redacts its own names.
     """
     import json
-    payload = json.dumps(redact_structure(report), sort_keys=True, default=str)
+    payload = json.dumps(redact_structure(report, deny=deny), sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
@@ -142,14 +167,16 @@ def _lines(obj: object, indent: int = 0) -> list[str]:
     return out
 
 
-def render(report: object, *, version: str, generated_at: str) -> str:
+def render(report: object, *, version: str, generated_at: str,
+           deny: re.Pattern[str] | None = None) -> str:
     """Render a doctor report into the pasteable artifact. Pure: no I/O, no clock, no api handle.
 
     `version` and `generated_at` are passed IN rather than read here, so the same report always
-    renders identically and the caller owns every fact the receipt asserts.
+    renders identically and the caller owns every fact the receipt asserts. `deny` (compile_denylist)
+    is likewise passed in — the caller reads the operator's node-name list, keeping this module I/O-free.
     """
-    safe = redact_structure(report)
-    fp = fingerprint(report)
+    safe = redact_structure(report, deny=deny)
+    fp = fingerprint(report, deny=deny)
 
     head = [
         "proximo receipt",

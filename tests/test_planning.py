@@ -232,6 +232,37 @@ def test_plan_exec_redacts_command_when_asked():
     assert "sha256:" in p.change
 
 
+# --- L2: the CONSENT approver must be able to read what the redacted hash stands for ---
+
+def test_redacted_plan_surfaces_operator_cleartext_for_approver():
+    # The redacted `change` is a hash the approver can't read; the un-redacted command is surfaced
+    # in as_dict (operator_cleartext) so they see WHAT they authorize.
+    p = plan_exec("105", ["mysql", "--password", "hunter2"], redact=True)
+    assert "hunter2" not in p.change                        # ledger-bound field stays redacted
+    assert p.as_dict()["operator_cleartext"] == "mysql --password hunter2"
+
+
+def test_unredacted_plan_omits_operator_cleartext():
+    p = plan_exec("105", ["rm", "-rf", "/x"], redact=False)
+    assert "operator_cleartext" not in p.as_dict()          # change already shows it; no duplicate
+
+
+def test_psql_redacted_plan_surfaces_cleartext():
+    p = plan_psql("105", "DROP TABLE secrets", db="appdb", redact=True)
+    assert "DROP TABLE secrets" not in p.change
+    assert "DROP TABLE secrets" in p.as_dict()["operator_cleartext"]
+
+
+def test_operator_cleartext_excluded_from_consent_id():
+    # The preview-only field must NOT enter the consent_id hash, or a grant for the redacted plan
+    # would not match and the gate would break.
+    from proximo.consent import consent_id_for
+    a = plan_exec("105", ["mysql", "--password", "hunter2"], redact=True)
+    b = plan_exec("105", ["mysql", "--password", "hunter2"], redact=True)
+    b.operator_cleartext = ""                               # differ ONLY in the preview field
+    assert consent_id_for(a) == consent_id_for(b)
+
+
 # === Redteam regressions: guard every path to LOW ============================
 # A destructive command/SQL must NEVER rate "low" ("looks read-only"). MEDIUM is the
 # honest floor; HIGH is enrichment. These were confirmed bypasses (2026-06-07 redteam).

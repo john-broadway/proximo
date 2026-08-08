@@ -587,17 +587,27 @@ def in_flight(entries: list[dict]) -> list[dict]:
 
     An entry with no `intent` in its detail is ignored rather than guessed at: pre-intent ledgers
     are still valid chains, and inventing pairings across them would report phantom crashes.
+
+    intent_id hashes only action+target, so two IDENTICAL ops that overlap in time share one
+    intent. A per-intent STACK (not a last-writer-wins dict) is required: each terminal closes the
+    most-recent still-open executing for that intent, so N executing minus M terminals leaves the
+    correct N-M open. The old dict overwrote the first executing with the second, then a single
+    terminal cleared it — a genuinely stranded twin vanished from the forensic view.
     """
-    open_by_intent: dict[str, dict] = {}
-    for entry in entries:
+    open_by_intent: dict[str, list[tuple[int, dict]]] = {}
+    for i, entry in enumerate(entries):
         intent = (entry.get("detail") or {}).get("intent")
         if not intent:
             continue
         if entry.get("outcome") == EXECUTING:
-            open_by_intent[intent] = entry
+            open_by_intent.setdefault(intent, []).append((i, entry))
         else:
-            open_by_intent.pop(intent, None)
-    return list(open_by_intent.values())
+            stack = open_by_intent.get(intent)
+            if stack:
+                stack.pop()  # a terminal closes the most-recent open executing for this intent
+    still_open = [pair for stack in open_by_intent.values() for pair in stack]
+    still_open.sort(key=lambda p: p[0])  # oldest first by position in the append-only chain
+    return [entry for _, entry in still_open]
 
 
 def read_entries(limit: int = 20, target: str | None = None, action: str | None = None,

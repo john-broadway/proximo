@@ -266,7 +266,15 @@ class CrossOriginGuardMiddleware(BaseHTTPMiddleware):
                 if media_type != "application/json":
                     return JSONResponse(
                         {"error": "Content-Type must be application/json"}, status_code=415)
-                if cl is not None and cl.isdigit() and int(cl) > MAX_BODY_BYTES:
+                # DoS floor: the body-size cap can only be enforced pre-buffer from a declared
+                # Content-Length. A chunked body (Transfer-Encoding, no Content-Length) would
+                # otherwise skip this check and buffer unbounded in the downstream handler, so
+                # require a usable declared length for any body.
+                if cl is None or not cl.isdigit():
+                    return JSONResponse(
+                        {"error": "Content-Length required (chunked request bodies are not accepted)"},
+                        status_code=411)
+                if int(cl) > MAX_BODY_BYTES:
                     return JSONResponse({"error": "request body too large"}, status_code=413)
         return await call_next(request)
 

@@ -38,11 +38,12 @@ _ENDPOINT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 # Smoke-confirm: exact accepted charset and length limit.
 _METRICS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
-# Credential-shaped fields some endpoint types carry (gotify `token`, smtp SMTP-AUTH
-# `password`). plan.change/current are BOTH returned to the caller AND written to the
-# tamper-evident PROVE ledger, so the raw value must never appear there — mirrors
-# acme_certs.py's _redact_plugin_kw.
-_SECRET_KEYS = frozenset({"token", "password"})
+# Credential-shaped fields endpoint types carry: gotify `token`, smtp SMTP-AUTH `password`,
+# webhook `secret` (HMAC/auth secret array, value base64-encoded by PVE) and `header` (can
+# carry `Authorization: Bearer ...`). plan.change/current are BOTH returned to the caller AND
+# written to the tamper-evident PROVE ledger, so the raw value must never appear there.
+# WIDENED to match pbs_notifications.py's set — the two earlier keys missed webhook secrets.
+_SECRET_KEYS = frozenset({"token", "password", "secret", "header"})
 
 
 def _redact_secrets(d: dict) -> dict:
@@ -289,7 +290,7 @@ def plan_notification_endpoint_delete(api, ep_type: str, name: str) -> Plan:
     """Plan deleting a PVE notification endpoint. Reads current config for honesty."""
     _check_endpoint_type(ep_type)
     _check_endpoint_name(name)
-    current = notification_endpoint_get(api, ep_type, name)
+    current = _redact_secrets(notification_endpoint_get(api, ep_type, name))
     return Plan(
         action="pve_notification_endpoint_delete",
         target=f"cluster/notifications/endpoints/{ep_type}/{name}",

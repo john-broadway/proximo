@@ -201,3 +201,48 @@ def test_a_url_is_redacted_whole_not_mangled():
 def test_path_bearing_keys_are_redacted_by_key_too():
     out = redact_structure({"ca_bundle": "/some/where/leaf.pem", "audit_log": "/var/log/x.jsonl"})
     assert out == {"ca_bundle": "[redacted-id]", "audit_log": "[redacted-id]"}
+
+
+# --- L6: opt-in denylist strips bare estate names (node/cluster) the regex rules can't see.
+# The list is compiled by the caller (compile_denylist) and passed in, so receipt.py stays I/O-free. ---
+
+def test_denylist_redacts_bare_node_name_in_free_text():
+    from proximo.receipt import compile_denylist, redact_structure
+    deny = compile_denylist(["pve01", "mailhost"])
+    # a bare node name inside a free-text value under a NON-identifying key (survived before)
+    out = redact_structure({"summary": "guest on pve01 failed to start; check mailhost"}, deny=deny)
+    assert "pve01" not in str(out)
+    assert "mailhost" not in str(out)
+    assert "[redacted-id]" in out["summary"]
+
+
+def test_denylist_is_case_insensitive_and_word_bounded():
+    from proximo.receipt import compile_denylist, redact
+    deny = compile_denylist(["pve01"])
+    out = redact("PVE01 is down but pve01xtra is a different token", deny=deny)
+    assert "PVE01" not in out and " pve01 " not in out
+    assert "pve01xtra" in out                      # word-bounded: not a substring match
+
+
+def test_compile_denylist_empty_is_none_and_inert():
+    from proximo.receipt import compile_denylist, redact_structure
+    assert compile_denylist([]) is None
+    assert compile_denylist(["  ", ""]) is None
+    out = redact_structure({"summary": "guest on pve01 failed"}, deny=None)
+    assert "pve01" in out["summary"]               # documents the residual: no denylist, name survives
+
+
+def test_denylist_makes_fingerprint_stable_across_node_names():
+    # Two clusters differing only in node name fingerprint identically once each redacts its own.
+    from proximo.receipt import compile_denylist, fingerprint
+    a = fingerprint({"summary": "boot failed on pve01"}, deny=compile_denylist(["pve01"]))
+    b = fingerprint({"summary": "boot failed on node9"}, deny=compile_denylist(["node9"]))
+    assert a == b
+
+
+def test_render_applies_denylist_end_to_end():
+    from proximo.receipt import compile_denylist, render
+    out = render({"summary": "boot failed on pve01"}, version="1", generated_at="t",
+                 deny=compile_denylist(["pve01"]))
+    assert "pve01" not in out
+    assert "[redacted-id]" in out

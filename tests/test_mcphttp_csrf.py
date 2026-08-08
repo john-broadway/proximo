@@ -66,3 +66,14 @@ def test_oversized_body_is_refused():
 
 def test_health_get_is_never_csrf_checked():
     assert _client().get("/healthz", headers={"sec-fetch-site": "cross-site"}).status_code == 200
+
+
+def test_chunked_body_without_content_length_is_refused():
+    # A Transfer-Encoding: chunked body carries no Content-Length, so the pre-buffer size cap
+    # (MAX_BODY_BYTES) cannot fire. The guard must refuse it (411) rather than let the downstream
+    # handler buffer it unbounded — the memory-DoS gap the size cap claims to close.
+    def _gen():
+        yield b"{}"
+
+    r = _client().post("/mcp", content=_gen(), headers={"content-type": "application/json"})
+    assert r.status_code == 411

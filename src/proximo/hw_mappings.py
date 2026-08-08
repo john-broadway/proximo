@@ -39,6 +39,24 @@ _NODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 # Hardware type — closed set; no arbitrary string into URL path.
 _VALID_HW_TYPES = frozenset({"pci", "usb"})
 
+# Free-text body fields (description, map) are forwarded to PVE verbatim. Reject control chars/
+# newlines so a mapping create/update can't smuggle one into the config write. Mirrors the
+# _check_freetext guard in the firewall/access planes; the value is form-encoded (no URL-path
+# injection), so this is body hygiene, applied here for parity with the sibling planes.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _check_mapping_freetext(kw: dict) -> None:
+    # `map` is often a repeated per-node LIST, so scan list elements too — not just str values.
+    for field in ("description", "map"):
+        v = kw.get(field)
+        parts = v if isinstance(v, (list, tuple)) else [v]
+        for part in parts:
+            if isinstance(part, str) and _CONTROL_RE.search(part):
+                raise ProximoError(
+                    f"invalid {field}: control characters and newlines are not allowed"
+                )
+
 
 def _check_mapping_id(mapping_id: str) -> str:
     # Do NOT strip — stripping defeats \\Z trailing-newline protection.
@@ -118,6 +136,7 @@ def mapping_pci_create(api, mapping_id: str, **kw) -> None:
     MUTATION — confirm-gated + audited at the server layer.
     """
     _check_mapping_id(mapping_id)
+    _check_mapping_freetext(kw)
     data = {"id": mapping_id, **kw}
     # MUTATION — confirm-gated + audited at the server layer.
     api._post("/cluster/mapping/pci", {k: v for k, v in data.items() if v is not None})
@@ -132,6 +151,7 @@ def mapping_pci_update(api, mapping_id: str, **kw) -> None:
     MUTATION — confirm-gated + audited at the server layer.
     """
     _check_mapping_id(mapping_id)
+    _check_mapping_freetext(kw)
     # MUTATION — confirm-gated + audited at the server layer.
     api._put(f"/cluster/mapping/pci/{mapping_id}", {k: v for k, v in kw.items() if v is not None})
 
@@ -171,6 +191,7 @@ def mapping_usb_create(api, mapping_id: str, **kw) -> None:
     MUTATION — confirm-gated + audited at the server layer.
     """
     _check_mapping_id(mapping_id)
+    _check_mapping_freetext(kw)
     data = {"id": mapping_id, **kw}
     # MUTATION — confirm-gated + audited at the server layer.
     api._post("/cluster/mapping/usb", {k: v for k, v in data.items() if v is not None})
@@ -185,6 +206,7 @@ def mapping_usb_update(api, mapping_id: str, **kw) -> None:
     MUTATION — confirm-gated + audited at the server layer.
     """
     _check_mapping_id(mapping_id)
+    _check_mapping_freetext(kw)
     # MUTATION — confirm-gated + audited at the server layer.
     api._put(f"/cluster/mapping/usb/{mapping_id}", {k: v for k, v in kw.items() if v is not None})
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import os
+import subprocess
 import sys
 import time
 import warnings
@@ -418,10 +419,25 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
     try:
         result = fn()
     except Exception as e:
-        audit.record(action, target=target, mutation=mutation, outcome="error",
+        # A subprocess timeout is NOT a clean failure: exec runs `ssh <host> pct exec ...`, and
+        # killing the local ssh on timeout can ORPHAN the remote command — so the in-container
+        # mutation may have partly or fully run. Recording a plain "error" would tell a forensic
+        # reader it did not happen. Record "error:timeout" (kept in the "error:" subtype family so
+        # error-filters still catch it) so PROVE stays honest about "ran, outcome unknown".
+        timed_out = isinstance(e, subprocess.TimeoutExpired)
+        audit.record(action, target=target, mutation=mutation,
+                     outcome="error:timeout" if timed_out else "error",
                      detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
                                                        "error": type(e).__name__}),
                      principal=ledger_principal(), remote=ledger_remote())
+        if timed_out:
+            secs = getattr(e, "timeout", None)
+            raise ProximoError(
+                f"{action}: the in-container command exceeded its "
+                f"{f'{int(secs)}s ' if secs else ''}timeout and was killed locally; the remote "
+                "command MAY still be running in the container. Recorded as 'error:timeout' "
+                "(ran, outcome unknown) — verify guest state before assuming it failed or retrying."
+            ) from e
         if isinstance(e, httpx.TransportError):
             # Same class of failure `doctor` already degrades gracefully (verdict 1.4): a
             # connection-level httpx failure (DNS/refused/timeout/TLS) must not hand the caller
@@ -430,6 +446,15 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
             raise ProximoError(
                 f"{action}: cannot reach / authenticate to the Proxmox API — check "
                 f"{_unreachable_hint(action)}."
+            ) from e
+        if isinstance(e, httpx.HTTPStatusError):
+            # str(HTTPStatusError) embeds the full request URL — the operator's internal Proxmox
+            # host:port and API path — which FastMCP would hand back to the calling model in the
+            # ToolError text. Scrub it: raise only the action and the HTTP status/reason, matching
+            # the ledger, which already records only type(e).__name__.
+            resp = e.response
+            raise ProximoError(
+                f"{action}: Proxmox API returned HTTP {resp.status_code} {resp.reason_phrase}."
             ) from e
         raise
     if callable(outcome):
@@ -898,7 +923,12 @@ def audit_verify(
             ) from e
         head_now = audit.head()
         prev_head = prev["head"] if prev else None
-        if prev_head is None or prev_head == head_now:
+        # v.ok guard: NEVER publish off a ledger we just failed to verify. An interior-body tamper
+        # leaves the tail head untouched, so head_now still equals the pin and this branch would
+        # otherwise overwrite the anchor's good entries count with the tampered count. A failed
+        # verify with a MOVED head (benign forward-growth lag, or a shrink) falls to the else and
+        # still gets its directional anchor_hint — only the pin-advancing publish is withheld.
+        if v.ok and (prev_head is None or prev_head == head_now):
             # First run (establish the pin) or head unchanged (idempotent re-pin): safe to publish.
             ts = datetime.now(UTC).isoformat()
             try:
@@ -911,10 +941,12 @@ def audit_verify(
                 ) from e
             anchor_last_export = ts
         else:
-            # Head MOVED from the pinned head: do NOT auto-advance (anti-poisoning). Explain which
-            # way it moved via the pinned vs live entry count so a forward-grow reads as benign lag
-            # and a shrink reads as a real truncation/wipe alarm.
-            anchor_hint = _anchor_moved_hint(prev.get("entries"), v.entries)
+            # Reached when the publish was withheld: either the head MOVED from the pin, or the
+            # verify FAILED (v.ok False) so we refused to advance. `prev` is None on a first run
+            # whose verify failed — guard it (_anchor_moved_hint already handles prev_entries None).
+            # Explain which way it moved via the pinned vs live entry count so a forward-grow reads
+            # as benign lag and a shrink reads as a real truncation/wipe alarm.
+            anchor_hint = _anchor_moved_hint(prev.get("entries") if prev else None, v.entries)
     return {
         "ok": v.ok,
         "entries": v.entries,
@@ -1770,11 +1802,123 @@ def _announce_estate_memory() -> None:
           f"PROXIMO_MEMORY_PATH moves it)", file=sys.stderr)
 
 
+def _load_receipt_denylist():
+    """Compile PROXIMO_RECEIPT_DENYLIST (operator bare-name list) at the impure CLI edge, so
+    receipt.py stays I/O-free. Returns a compiled pattern or None; warns loudly (never silently
+    drops the requested redaction) if the env is set but the file is unreadable."""
+    from proximo.receipt import compile_denylist
+    deny_path = os.environ.get("PROXIMO_RECEIPT_DENYLIST")
+    if not deny_path:
+        return None
+    try:
+        with open(deny_path, encoding="utf-8") as df:
+            toks = [ln.strip() for ln in df if ln.strip() and not ln.lstrip().startswith("#")]
+        return compile_denylist(toks)
+    except OSError as e:
+        print(f"warning: PROXIMO_RECEIPT_DENYLIST={deny_path!r} unreadable ({e}); bare estate names "
+              "were NOT redacted from free text — read the receipt before you share it.",
+              file=sys.stderr)
+        return None
+
+
+def _print_stdio_usage() -> None:
+    print(
+        "proximo — Proxmox MCP server (stdio) + operator CLI.\n\n"
+        "Usage:\n"
+        "  proximo                start the MCP stdio server (wire into an MCP client)\n"
+        "  proximo doctor         read-only token/config preflight (never starts the server)\n"
+        "  proximo mint           print a least-privilege credential runbook\n"
+        "  proximo badge ...      mint / inspect a caller badge\n"
+        "  proximo arm | disarm   operator arm-lease control\n"
+        "  proximo reap           drop an expired arm lease\n"
+        "  proximo hello          connectivity smoke\n\n"
+        "Network faces are separate console scripts: proximo-http, proximo-mcp-http, proximo-a2a\n"
+        "(each --help too). Configuration is via PROXIMO_* env — see packaging/proximo.env.example."
+    )
+
+
+def _cmd_badge() -> None:
+    """`proximo badge mint|inspect` — extracted from main() to keep main under the mccabe
+    ceiling (the badge subcommand carries its own argparse + mint/inspect branches)."""
+    import argparse
+    import json as _json
+
+    from .principal import _b64url_dec, mint_badge, public_jwk
+    parser = argparse.ArgumentParser(prog="proximo badge")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    m = sub.add_parser("mint")
+    m.add_argument("--key", required=True, help="EC P-256 private key PEM (caller keeps this)")
+    m.add_argument("--sub", required=True, help="caller name — must match the pinned filename stem")
+    m.add_argument("--exp", default=None, help="optional lifetime, e.g. 90d / 12h / 30m")
+    m.add_argument("--jwk-out", default=None, help="where to write the public .jwk to pin")
+    i = sub.add_parser("inspect")
+    i.add_argument("badge")
+    args = parser.parse_args(sys.argv[2:])
+    try:
+        if args.cmd == "mint":
+            # Same floor every other secret this codebase loads by path gets (PVE/PBS/PMG/PDM
+            # tokens, bearer-token files, the A2A signing key). This one mints identities, so
+            # it is not a weaker class of secret — it was just the one that never got wired.
+            from ._secretfile import refuse_exposed_secret  # noqa: PLC0415
+
+            refuse_exposed_secret(args.key, "caller badge signing key")
+            with open(args.key, "rb") as f:
+                pem = f.read()
+            exp = None
+            if args.exp:
+                try:
+                    unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}[args.exp[-1]]
+                    exp = int(time.time()) + int(args.exp[:-1]) * unit
+                except (KeyError, ValueError) as e:
+                    raise ValueError(
+                        f"malformed --exp {args.exp!r} — expected <int><s|m|h|d>, e.g. 90d") from e
+            jwk = public_jwk(pem, args.sub)
+            if args.jwk_out:
+                out = args.jwk_out
+            else:
+                # Default is "beside the key" (never cwd-relative), and --sub must be a bare
+                # filename stem — reject anything a path separator would let escape that
+                # directory (basename() alone would silently swallow the traversal instead
+                # of refusing it, so also require safe == args.sub).
+                safe = os.path.basename(args.sub)
+                if not safe or safe in (".", "..") or safe != args.sub:
+                    raise ValueError(
+                        f"--sub {args.sub!r} is not a safe filename stem for the default "
+                        f"JWK path; pass --jwk-out explicitly")
+                out = os.path.join(os.path.dirname(os.path.abspath(args.key)), f"{safe}.jwk")
+            if os.path.islink(out):
+                raise ValueError(f"refusing to write JWK to a symlink: {out}")
+            with open(out, "w", encoding="utf-8") as f:
+                _json.dump(jwk, f, indent=2)
+            print(mint_badge(pem, args.sub, exp=exp))
+            if exp is None:
+                print("no --exp given — badge expires after the default 30d (never minted "
+                      "without an expiry); pass --exp <int><s|m|h|d> to change the lifetime.",
+                      file=sys.stderr)
+            print(f"pinned public key written to {out} — copy it into the operator's "
+                  f"PROXIMO_CALLER_KEYS_DIR", file=sys.stderr)
+        else:
+            h_b64, p_b64, _ = args.badge.strip().split(".")
+            print(_json.dumps({"header": _json.loads(_b64url_dec(h_b64)),
+                               "payload": _json.loads(_b64url_dec(p_b64)),
+                               "note": "NOT VERIFIED — inspection only"}, indent=2))
+    except Exception as e:
+        print(f"proximo badge: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
+
+
 def main() -> None:
     # Source ~/.config/proximo/proximo.env FIRST (before doctor or any from_env) so a PROXIMO_* var
     # set in the documented file actually reaches the stdio server — otherwise it is silently ignored,
     # which is fail-dangerous for a security gate like PROXIMO_CONSENT_DIR. Real/inline env still wins.
     load_env_file()
+    # `proximo --help` / `proximo -h` (help as the FIRST arg) prints usage and exits — never starts
+    # the stdio server and never applies surfaces. A subcommand's own --help (e.g. `proximo doctor
+    # --help`) is left to that subcommand and not intercepted here. (Single-branch form — no boolean
+    # operator — to stay under the mccabe ceiling: sys.argv[1:2] is ["-h"]/["--help"] or something else.)
+    if sys.argv[1:2] in (["-h"], ["--help"]):
+        _print_stdio_usage()
+        raise SystemExit(0)
     # Scope the registry only where the registry is USED: `doctor` reports what this box serves,
     # and the server itself serves it. The other CLI verbs neither serve nor report tools — and
     # since the 0.30 flip the DEFAULT path announces itself (the lean-mode line on stderr), which
@@ -1822,10 +1966,11 @@ def main() -> None:
 
             from proximo import __version__
             from proximo.receipt import render
-            # The clock lives at this impure edge on purpose, so `render` stays pure and the same
-            # report always produces the same artifact.
+            # The clock AND the optional bare-name denylist live at this impure edge on purpose, so
+            # `render` stays pure/I/O-free and the same report always produces the same artifact.
             print(render(result, version=__version__,
-                         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                         deny=_load_receipt_denylist()),
                   end="")
             return
         print(json.dumps(result, indent=2))
@@ -1928,67 +2073,7 @@ def main() -> None:
     # badge's claims. Makes NO API call, writes NO session/ledger entries, never starts the
     # server.
     if len(sys.argv) > 1 and sys.argv[1] == "badge":
-        import argparse
-        import json as _json
-
-        from .principal import _b64url_dec, mint_badge, public_jwk
-        parser = argparse.ArgumentParser(prog="proximo badge")
-        sub = parser.add_subparsers(dest="cmd", required=True)
-        m = sub.add_parser("mint")
-        m.add_argument("--key", required=True, help="EC P-256 private key PEM (caller keeps this)")
-        m.add_argument("--sub", required=True, help="caller name — must match the pinned filename stem")
-        m.add_argument("--exp", default=None, help="optional lifetime, e.g. 90d / 12h / 30m")
-        m.add_argument("--jwk-out", default=None, help="where to write the public .jwk to pin")
-        i = sub.add_parser("inspect")
-        i.add_argument("badge")
-        args = parser.parse_args(sys.argv[2:])
-        try:
-            if args.cmd == "mint":
-                # Same floor every other secret this codebase loads by path gets (PVE/PBS/PMG/PDM
-                # tokens, bearer-token files, the A2A signing key). This one mints identities, so
-                # it is not a weaker class of secret — it was just the one that never got wired.
-                from ._secretfile import refuse_exposed_secret  # noqa: PLC0415
-
-                refuse_exposed_secret(args.key, "caller badge signing key")
-                with open(args.key, "rb") as f:
-                    pem = f.read()
-                exp = None
-                if args.exp:
-                    try:
-                        unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}[args.exp[-1]]
-                        exp = int(time.time()) + int(args.exp[:-1]) * unit
-                    except (KeyError, ValueError) as e:
-                        raise ValueError(
-                            f"malformed --exp {args.exp!r} — expected <int><s|m|h|d>, e.g. 90d") from e
-                jwk = public_jwk(pem, args.sub)
-                if args.jwk_out:
-                    out = args.jwk_out
-                else:
-                    # Default is "beside the key" (never cwd-relative), and --sub must be a bare
-                    # filename stem — reject anything a path separator would let escape that
-                    # directory (basename() alone would silently swallow the traversal instead
-                    # of refusing it, so also require safe == args.sub).
-                    safe = os.path.basename(args.sub)
-                    if not safe or safe in (".", "..") or safe != args.sub:
-                        raise ValueError(
-                            f"--sub {args.sub!r} is not a safe filename stem for the default "
-                            f"JWK path; pass --jwk-out explicitly")
-                    out = os.path.join(os.path.dirname(os.path.abspath(args.key)), f"{safe}.jwk")
-                if os.path.islink(out):
-                    raise ValueError(f"refusing to write JWK to a symlink: {out}")
-                with open(out, "w", encoding="utf-8") as f:
-                    _json.dump(jwk, f, indent=2)
-                print(mint_badge(pem, args.sub, exp=exp))
-                print(f"pinned public key written to {out} — copy it into the operator's "
-                      f"PROXIMO_CALLER_KEYS_DIR", file=sys.stderr)
-            else:
-                h_b64, p_b64, _ = args.badge.strip().split(".")
-                print(_json.dumps({"header": _json.loads(_b64url_dec(h_b64)),
-                                   "payload": _json.loads(_b64url_dec(p_b64)),
-                                   "note": "NOT VERIFIED — inspection only"}, indent=2))
-        except Exception as e:
-            print(f"proximo badge: {e}", file=sys.stderr)
-            raise SystemExit(1) from None
+        _cmd_badge()
         return
     # Register as a live holder of this session's arm, if it has one. This is the entire liveness
     # signal `proximo reap` reads: the kernel drops this lock on exit, crash or kill, so a session

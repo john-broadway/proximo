@@ -496,3 +496,40 @@ class TestMappingListReads:
         api = _Api()
         assert mapping_usb_list(api) == []
         assert api.got == ["/cluster/mapping/usb"]
+
+
+# ---------------------------------------------------------------------------
+# Free-text body hygiene (description/map) — reject control chars/newlines,
+# for parity with the firewall/access _check_freetext guard.
+# ---------------------------------------------------------------------------
+
+class TestMappingFreetext:
+    def test_pci_create_rejects_newline_in_description(self):
+        api = _Api()
+        with pytest.raises(ProximoError):
+            mapping_pci_create(api, "gpu0", description="line1\nline2")
+        assert api.posts == []  # refused before any write
+
+    def test_pci_update_rejects_control_char_in_description(self):
+        api = _Api()
+        with pytest.raises(ProximoError):
+            mapping_pci_update(api, "gpu0", description="bad\x00desc")
+        assert api.puts == []
+
+    def test_usb_create_rejects_newline_in_map(self):
+        api = _Api()
+        with pytest.raises(ProximoError):
+            mapping_usb_create(api, "yubi0", map="host=1050:0407\ninjected")
+        assert api.posts == []
+
+    def test_clean_description_is_accepted(self):
+        api = _Api()
+        mapping_pci_create(api, "gpu0", description="RTX 4090 passthrough")
+        assert len(api.posts) == 1
+
+    def test_rejects_newline_in_list_valued_map_element(self):
+        # PVE `map` is often a repeated per-node LIST; a newline in an element must still be caught.
+        api = _Api()
+        with pytest.raises(ProximoError):
+            mapping_pci_create(api, "gpu0", map=["node=pve1,path=0000:01:00.0", "node=pve2\ninjected"])
+        assert api.posts == []

@@ -137,16 +137,26 @@ def public_jwk(private_key_pem: bytes, name: str) -> dict:
             "proximo_caller": sanitize_id(name)}
 
 
+# A badge is an IDENTITY, but one that CANNOT expire is an indefinite replay primitive: a captured
+# badge is good forever. So mint_badge never emits a badge without an exp — an absent exp gets this
+# bounded default rather than "forever". Operators choose a different lifetime with the CLI --exp.
+_DEFAULT_BADGE_TTL_SECONDS = 2592000  # 30 days
+
+
 def mint_badge(private_key_pem: bytes, sub: str, *, iat: int | None = None,
                exp: int | None = None) -> str:
-    """Sign a compact ES256 badge claiming ``sub``, under ``private_key_pem``."""
+    """Sign a compact ES256 badge claiming ``sub``, under ``private_key_pem``.
+
+    An absent ``exp`` is defaulted to ``iat + _DEFAULT_BADGE_TTL_SECONDS`` — a badge is NEVER minted
+    without an expiry, so a captured badge cannot be replayed indefinitely (verify_badge enforces exp).
+    """
     ec_mod, utils, hashes, serialization = _require_crypto()
     key = serialization.load_pem_private_key(private_key_pem, password=None)
     jwk = public_jwk(private_key_pem, sub)
     header = {"alg": "ES256", "typ": "JOSE", "kid": jwk["kid"]}
-    payload: dict = {"sub": sanitize_id(sub), "iat": iat or int(time.time())}
-    if exp is not None:
-        payload["exp"] = exp
+    iat_val = iat if iat is not None else int(time.time())
+    payload: dict = {"sub": sanitize_id(sub), "iat": iat_val,
+                     "exp": exp if exp is not None else iat_val + _DEFAULT_BADGE_TTL_SECONDS}
     signing_input = f"{_b64url(json.dumps(header, separators=(',', ':')).encode())}." \
                     f"{_b64url(json.dumps(payload, separators=(',', ':')).encode())}"
     der = key.sign(signing_input.encode(), ec_mod.ECDSA(hashes.SHA256()))

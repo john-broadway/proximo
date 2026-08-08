@@ -1040,6 +1040,7 @@ _SENSITIVE_PORTS: dict[int, str] = {
     5432: "Postgres", 6379: "Redis", 27017: "MongoDB", 9200: "Elasticsearch",
     2375: "Docker API", 2376: "Docker API (TLS)", 111: "rpcbind", 445: "SMB",
     135: "MSRPC", 139: "NetBIOS", 5985: "WinRM", 5986: "WinRM (TLS)",
+    389: "LDAP", 636: "LDAPS",
 }
 
 # VNC display ports (5900-5999) are a remote-desktop admin surface — sensitive as a RANGE, not

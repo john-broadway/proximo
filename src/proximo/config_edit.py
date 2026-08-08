@@ -39,8 +39,14 @@ SHAPE-RISKS (unverifiable without a live PVE call — verify at smoke):
                      computed keys from revert. The full list is PVE version-dependent.
 7. Key formats:      net* values are complex strings (e.g. "virtio=...,bridge=vmbr0"); we allow
                      them by key-name prefix. The format is validated only by PVE at write time.
-8. QEMU-only keys:   Some keys (args, cpu, machine, bios) exist only on QEMU; we allow them only
-                     when kind="qemu". This set is curated and may be incomplete.
+                     A value that attaches to a host bridge or passes a host device in is a
+                     host-boundary crossing — plan_config_set escalates those to HIGH and names
+                     the crossing (see _host_crossings), since the key-name allowlist alone does
+                     not see the value.
+8. QEMU-only keys:   serial*/parallel*/usb* are admitted only when kind="qemu" (host character/
+                     USB devices — treated as a host crossing, above). Escape-prone keys like
+                     args/cpu/machine/bios are NOT on the allowlist and are refused for both
+                     kinds. This set is curated and may be incomplete.
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ import re
 
 from .backends import ProximoError, _check_kind, _check_node, _check_vmid
 from .cloudinit import _mask_secrets
-from .planning import RISK_LOW, RISK_MEDIUM, Plan
+from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
 # ---------------------------------------------------------------------------
 # Allowed config keys — conservative allowlist.
@@ -106,6 +112,41 @@ _REBOOT_KEYS = frozenset({
 
 # LXC raw-config keys that are not settable via the API config endpoint.
 _LXC_READONLY_PREFIX = re.compile(r"^lxc\.")
+
+# Host-boundary crossings. The allowlist admits net/usb/serial/parallel keys by NAME, but the
+# VALUE decides whether the edit crosses a host boundary: a NIC bound to a host bridge/VLAN
+# (lateral network reach), a per-NIC firewall turned off, or a host character/USB device passed
+# into the guest (host-resource grant). These are HIGH risk and the plan must name the crossing
+# rather than fold it into a routine MEDIUM edit. Value validation is still PVE's at write time;
+# this is plan-honesty, not enforcement.
+_NET_KEY_RE = re.compile(r"^net\d+\Z")
+_HOSTDEV_KEY_RE = re.compile(r"^(serial|parallel|usb)\d+\Z")
+_BRIDGE_ATTACH_RE = re.compile(r"(?:^|,)bridge=([^,]+)", re.I)
+_NIC_FIREWALL_OFF_RE = re.compile(r"(?:^|,)firewall=0(?:,|\Z)", re.I)
+# `host=<id>` (direct), `mapping=<id>` (PVE resource-mapping — a first-class host-device
+# passthrough form), or a bare `/dev/...` path all pass a host device into the guest.
+_HOST_DEVICE_RE = re.compile(r"(?:(?:^|,)(?:host|mapping)=)|(?:^|[,=])/dev/", re.I)
+
+
+def _host_crossings(to_set: dict) -> list[str]:
+    """Return human-readable blast lines for any value that crosses a host boundary."""
+    crossings: list[str] = []
+    for k, v in to_set.items():
+        val = str(v)
+        if _NET_KEY_RE.match(k):
+            m = _BRIDGE_ATTACH_RE.search(val)
+            if m:
+                crossings.append(
+                    f"{k} attaches the guest NIC to host bridge {m.group(1)!r} "
+                    "(network-boundary crossing — lateral reach onto that bridge/VLAN)"
+                )
+            if _NIC_FIREWALL_OFF_RE.search(val):
+                crossings.append(f"{k} sets firewall=0 — disables the per-NIC firewall")
+        elif _HOSTDEV_KEY_RE.match(k) and _HOST_DEVICE_RE.search(val):
+            crossings.append(
+                f"{k}={val!r} passes a HOST device into the guest (host-resource grant)"
+            )
+    return crossings
 
 
 def _allowed_key(key: str, kind: str) -> bool:
@@ -392,6 +433,15 @@ def plan_config_set(api, vmid: str, changes: dict, kind: str = "lxc",
     reasons = ["modifies guest config; may require reboot for cpu/memory changes"]
     if needs_reboot:
         reasons.insert(0, "cpu/memory/ostype key change requires guest reboot to take effect")
+
+    # A value that attaches to a host bridge or passes a host device in crosses a host boundary:
+    # escalate to HIGH and name the crossing so a reviewer (or an agent) is not told MEDIUM for
+    # what is really lateral network reach or a host-resource grant.
+    crossings = _host_crossings(to_set)
+    if crossings:
+        risk = RISK_HIGH
+        blast.extend(crossings)
+        reasons.insert(0, "host-boundary crossing: guest gains a host device or attaches to a host bridge/VLAN")
 
     return Plan(
         action="pve_guest_config_set",

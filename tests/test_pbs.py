@@ -130,6 +130,22 @@ def test_pbsconfig_from_env_warns_on_no_tls_verify_no_bundle(monkeypatch):
         PbsConfig.from_env()
 
 
+def test_pbsconfig_from_env_no_tls_warning_when_fingerprint_pinned(monkeypatch):
+    # A fingerprint pin IS wire-enforced cert validation. The "no cert validation" warning must
+    # NOT fire — matching the PMG/PDM sibling loaders, which include `and not fingerprint`.
+    import warnings
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs:8007/api2/json")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", "/run/tok")
+    monkeypatch.setenv("PROXIMO_PBS_VERIFY_TLS", "false")
+    monkeypatch.delenv("PROXIMO_PBS_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("PROXIMO_PBS_FINGERPRINT", "aa:bb:cc:dd")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = PbsConfig.from_env()
+    assert not any("without cert validation" in str(w.message) for w in caught)
+    assert cfg.fingerprint == "aa:bb:cc:dd"
+
+
 # ---------------------------------------------------------------------------
 # PbsBackend._auth_header — token format + never-inlined contract
 # ---------------------------------------------------------------------------

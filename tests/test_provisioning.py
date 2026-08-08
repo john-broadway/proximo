@@ -416,22 +416,40 @@ def test_delete_guest_rejects_invalid_node():
 # plan_create
 # ---------------------------------------------------------------------------
 
-def test_plan_create_is_medium_risk():
+def test_plan_create_unprivileged_lxc_is_medium():
+    # An explicitly unprivileged LXC is the isolated, MEDIUM-risk case.
     api = _ListApi([])
-    p = plan_create(api, "500")
+    p = plan_create(api, "500", "lxc", None, {"unprivileged": 1})
+    assert p.risk == RISK_MEDIUM
+
+
+def test_plan_create_qemu_is_medium():
+    # QEMU has no privileged/unprivileged notion — never escalated on that axis.
+    api = _ListApi([])
+    p = plan_create(api, "500", "qemu")
     assert p.risk == RISK_MEDIUM
 
 
 def test_plan_create_action_string():
     api = _ListApi([])
-    p = plan_create(api, "500")
+    p = plan_create(api, "500", "lxc", None, {"unprivileged": 1})
     assert p.action == "pve_create"
 
 
-def test_plan_create_privileged_is_high_risk():
-    # a privileged LXC is host-equivalent root — the plan must escalate to HIGH and say so
+def test_plan_create_default_lxc_is_privileged_high():
+    # PVE creates LXC PRIVILEGED by default (real param `unprivileged` default 0). A create with
+    # no options — the common path — is privileged and must flag HIGH, not MEDIUM.
     api = _ListApi([])
-    p = plan_create(api, "500", "lxc", None, {"privileged": 1})
+    p = plan_create(api, "500")
+    assert p.risk == RISK_HIGH
+    assert any("privileged" in b.lower() for b in p.blast_radius)
+
+
+def test_plan_create_explicit_unprivileged_zero_is_high():
+    # The real key is `unprivileged`; unprivileged=0 == privileged. (The old code checked a
+    # non-existent `privileged` key, so this created-privileged container read as MEDIUM.)
+    api = _ListApi([])
+    p = plan_create(api, "500", "lxc", None, {"unprivileged": 0})
     assert p.risk == RISK_HIGH
     assert any("privileged" in b.lower() for b in p.blast_radius)
 

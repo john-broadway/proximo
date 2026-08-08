@@ -89,3 +89,82 @@ def test_unreachable_failure_still_records_to_the_ledger(tmp_path, monkeypatch):
     with open(ledger.path, encoding="utf-8") as f:
         entries = [json.loads(line) for line in f if line.strip()]
     assert any(e["action"] == "pve_list_guests" and e["outcome"] == "error" for e in entries)
+
+
+def test_httpstatuserror_url_is_scrubbed_from_raised_error(tmp_path, monkeypatch):
+    """A 4xx/5xx from raise_for_status() carries the FULL request URL — the operator's internal
+    Proxmox host:port and API path — in its str(). _audited scrubbed only TransportError before;
+    an HTTPStatusError leaked the internal host into the caller's (model's) transcript. Pin that
+    only the action + HTTP status survive, not the host."""
+    _wire(tmp_path, monkeypatch)
+    req = httpx.Request("GET", "https://pve.example.invalid:8006/api2/json/nodes/pve/status")
+    resp = httpx.Response(403, request=req)
+
+    def boom():
+        raise httpx.HTTPStatusError("403 Forbidden", request=req, response=resp)
+
+    with pytest.raises(ProximoError) as exc_info:
+        server._audited("pve_guest_power", "lxc/100", boom, mutation=True)
+    msg = str(exc_info.value)
+    assert "pve.example.invalid" not in msg
+    assert "8006" not in msg
+    assert "403" in msg
+
+
+def test_httpstatuserror_is_not_a_bare_httpx_exception(tmp_path, monkeypatch):
+    _wire(tmp_path, monkeypatch)
+    req = httpx.Request("GET", "https://pve.example.invalid:8006/api2/json")
+    resp = httpx.Response(500, request=req)
+
+    def boom():
+        raise httpx.HTTPStatusError("500", request=req, response=resp)
+
+    try:
+        server._audited("pve_guest_power", "lxc/100", boom, mutation=True)
+    except httpx.HTTPStatusError:
+        pytest.fail("raw httpx.HTTPStatusError leaked through the _audited seam")
+    except ProximoError:
+        pass
+
+
+def test_exec_timeout_records_error_timeout_and_says_may_still_be_running(tmp_path, monkeypatch):
+    """L8: an in-container exec that exceeds its timeout is KILLED locally but may still run in the
+    container (ssh orphans the remote pct exec). It must NOT be recorded as a plain 'error' (which
+    reads as 'did not happen'); PROVE records 'error:timeout' and the caller is told it may have run."""
+    import json
+    import subprocess
+
+    _, _, ledger = _wire(tmp_path, monkeypatch)
+
+    def slow():
+        raise subprocess.TimeoutExpired(cmd=["pct", "exec"], timeout=60)
+
+    with pytest.raises(ProximoError) as exc_info:
+        server._audited("ct_exec", "lxc/100", slow, mutation=True)
+    msg = str(exc_info.value).lower()
+    assert "still be running" in msg
+    assert "60s" in msg
+
+    with open(ledger.path, encoding="utf-8") as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    ct = [e for e in entries if e["action"] == "ct_exec"]
+    assert ct and ct[-1]["outcome"] == "error:timeout"
+
+
+def test_non_timeout_exception_still_records_plain_error(tmp_path, monkeypatch):
+    """Control: a genuine (non-timeout) failure still records the plain 'error' outcome and
+    re-raises the original exception unchanged."""
+    import json
+
+    _, _, ledger = _wire(tmp_path, monkeypatch)
+
+    def boom():
+        raise RuntimeError("kaboom")
+
+    with pytest.raises(RuntimeError):
+        server._audited("ct_exec", "lxc/100", boom, mutation=True)
+
+    with open(ledger.path, encoding="utf-8") as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    ct = [e for e in entries if e["action"] == "ct_exec"]
+    assert ct and ct[-1]["outcome"] == "error"

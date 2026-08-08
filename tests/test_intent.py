@@ -109,6 +109,18 @@ def test_reads_are_not_pre_recorded(ledger):
     assert [r["outcome"] for r in _entries(ledger)] == ["ok"]
 
 
+def test_redacted_exec_plan_does_not_ledger_the_operator_cleartext(ledger):
+    """L2: operator_cleartext is a PREVIEW-only field. _record_plan must not write it (nor the raw
+    command it holds) into the durable, redaction-protected ledger — only the dry-run return carries it."""
+    from proximo.planning import plan_exec
+    p = plan_exec("105", ["mysql", "--password", "hunter2"], redact=True)
+    assert p.as_dict()["operator_cleartext"] == "mysql --password hunter2"  # present in the preview
+    server._record_plan(p)
+    blob = json.dumps(_entries(ledger))
+    assert "hunter2" not in blob             # raw secret never persisted to the ledger
+    assert "operator_cleartext" not in blob  # the preview field is not written to the ledger
+
+
 def test_a_retry_reuses_the_intent_across_attempts(ledger):
     """Attempt 1 fails, attempt 2 succeeds: one intent, four entries, no caller cooperation."""
     with pytest.raises(RuntimeError):
@@ -141,6 +153,33 @@ def test_in_flight_is_empty_when_everything_completed(ledger):
     assert audit.in_flight(_entries(ledger)) == []
 
 
+def test_in_flight_reports_stranded_op_when_two_identical_ops_overlap(ledger):
+    # intent_id hashes only action+target, so two IDENTICAL ops share one intent. One terminates,
+    # one is stranded. The old dict (last-writer-wins) reported ZERO in-flight; the per-intent
+    # stack reports the one that never terminated.
+    intent = server.intent_id("pve_delete_guest", "nodes/n1/qemu/999")
+    ledger.record("pve_delete_guest", target="nodes/n1/qemu/999", mutation=True,
+                  outcome="executing", detail={"intent": intent})
+    ledger.record("pve_delete_guest", target="nodes/n1/qemu/999", mutation=True,
+                  outcome="executing", detail={"intent": intent})
+    ledger.record("pve_delete_guest", target="nodes/n1/qemu/999", mutation=True,
+                  outcome="ok", detail={"intent": intent})  # only ONE of the two terminates
+    stranded = audit.in_flight(_entries(ledger))
+    assert [s["action"] for s in stranded] == ["pve_delete_guest"]
+
+
+def test_in_flight_empty_when_both_identical_ops_complete(ledger):
+    # Guard against over-reporting: two identical-intent ops that BOTH terminate -> nothing open.
+    intent = server.intent_id("pve_delete_guest", "nodes/n1/qemu/999")
+    for _ in range(2):
+        ledger.record("pve_delete_guest", target="nodes/n1/qemu/999", mutation=True,
+                      outcome="executing", detail={"intent": intent})
+    for _ in range(2):
+        ledger.record("pve_delete_guest", target="nodes/n1/qemu/999", mutation=True,
+                      outcome="ok", detail={"intent": intent})
+    assert audit.in_flight(_entries(ledger)) == []
+
+
 def test_in_flight_ignores_reads_and_refusals(ledger):
     """Only `executing` opens an interval; a refusal never ran and must not look stranded."""
     ledger.record("pve_delete_guest", target="nodes/n1/qemu/5", mutation=True,
@@ -156,3 +195,22 @@ def test_the_chain_still_verifies_with_executing_entries(ledger):
     result = ledger.verify()
     assert result.ok is True
     assert result.entries == 2, "executing + outcome should both be in the chain"
+
+
+def test_in_flight_terminal_on_empty_stack_is_ignored(ledger):
+    # A terminal whose intent has no open executing (e.g. the log starts mid-operation) must not
+    # crash (stack .get is None) nor report anything.
+    intent = server.intent_id("pve_delete_guest", "nodes/n1/qemu/7")
+    ledger.record("pve_delete_guest", target="nodes/n1/qemu/7", mutation=True, outcome="ok",
+                  detail={"intent": intent})
+    assert audit.in_flight(_entries(ledger)) == []
+
+
+def test_in_flight_more_terminals_than_executing_never_goes_negative(ledger):
+    intent = server.intent_id("pve_delete_guest", "nodes/n1/qemu/7")
+    ledger.record("pve_delete_guest", target="nodes/n1/qemu/7", mutation=True,
+                  outcome="executing", detail={"intent": intent})
+    for _ in range(3):  # 3 terminals for 1 executing
+        ledger.record("pve_delete_guest", target="nodes/n1/qemu/7", mutation=True,
+                      outcome="ok", detail={"intent": intent})
+    assert audit.in_flight(_entries(ledger)) == []

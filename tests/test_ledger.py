@@ -913,3 +913,66 @@ def test_record_principal_tamper_detected(tmp_path):
     tampered = p.read_text().replace('"fleet-7"', '"mallory"')
     p.write_text(tampered)
     assert not AuditLedger(str(p)).verify().ok
+
+
+def test_audit_verify_does_not_publish_anchor_when_verify_fails(tmp_path, monkeypatch):
+    """L4: audit_verify() published to the off-box anchor with entries=v.entries even when the
+    just-computed verify FAILED — overwriting the anchor's good entry count with a count sourced
+    from a tampered ledger. An interior-body tamper leaves the tail head unchanged, so the old
+    head-equality gate still fired. Pin that a failed verify leaves the anchor intact."""
+    import proximo.server as server
+    from proximo.audit_anchor import FileSink
+
+    led = AuditLedger(str(tmp_path / "audit.log"))
+    led.record("a", target="t1")
+    led.record("b", target="t2")
+    led.record("c", target="t3")
+    good_head = led.head()
+    good_entries = led.verify().entries
+    assert good_entries == 3
+
+    sink = FileSink(str(tmp_path / "anchor.json"))
+    sink.publish(good_head, "t0", "pve", led.path, entries=good_entries)  # pin the GOOD count
+
+    cfg = SimpleNamespace(expected_head=None, node="pve", anchor_sink=sink)
+    monkeypatch.setattr(server, "_svc", lambda: (cfg, None, None, led))
+
+    # Tamper an INTERIOR line's body; leave every entry_hash (incl. the tail) intact so head()
+    # is unchanged and the old head-equality publish gate would fire.
+    p = tmp_path / "audit.log"
+    lines = p.read_text().splitlines()
+    obj = json.loads(lines[0])
+    obj["action"] = "TAMPERED"
+    lines[0] = json.dumps(obj)
+    p.write_text("\n".join(lines) + "\n")
+
+    out = server.audit_verify()
+    assert not out["ok"]                                  # tamper detected
+    assert AuditLedger(str(p)).head() == good_head        # tail head genuinely unchanged
+    assert sink.last_pin()["entries"] == good_entries     # anchor NOT overwritten by tampered count
+
+
+def test_audit_verify_first_anchor_run_with_failed_verify_does_not_crash(tmp_path, monkeypatch):
+    """The v.ok publish guard must not crash on a FIRST anchor run (no prior pin, prev=None) whose
+    verify FAILED: the else branch reads prev.get(...) and would AttributeError on None."""
+    import proximo.server as server
+    from proximo.audit_anchor import FileSink
+
+    led = AuditLedger(str(tmp_path / "audit.log"))
+    led.record("a", target="t1")
+    led.record("b", target="t2")
+    # Tamper an interior line so verify fails; the anchor sink is EMPTY (first run -> prev None).
+    p = tmp_path / "audit.log"
+    lines = p.read_text().splitlines()
+    obj = json.loads(lines[0])
+    obj["action"] = "TAMPERED"
+    lines[0] = json.dumps(obj)
+    p.write_text("\n".join(lines) + "\n")
+
+    sink = FileSink(str(tmp_path / "anchor.json"))  # never published -> last_pin() is None
+    cfg = SimpleNamespace(expected_head=None, node="pve", anchor_sink=sink)
+    monkeypatch.setattr(server, "_svc", lambda: (cfg, None, None, led))
+
+    out = server.audit_verify()          # must return, not raise
+    assert out["ok"] is False
+    assert sink.last_pin() is None       # nothing published off the tampered first-run ledger

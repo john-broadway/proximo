@@ -15,6 +15,12 @@ _EXTRA_MODULES = ("a2a", "uvicorn", "starlette")
 
 
 def main() -> None:
+    # --help must print usage and EXIT — never bind a socket. Checked FIRST, before load_env_file()
+    # and the extra-probe, and stdlib-only so it works on a wheel without the [a2a] extra.
+    from proximo.config import print_face_usage, wants_help
+    if wants_help(sys.argv[1:]):
+        print_face_usage("proximo-a2a", "A2A", 41241, "a2a")
+        raise SystemExit(0)
     # Source proximo.env before the A2A app reads any config (same footgun + fail-dangerous shape as
     # the stdio path — the A2A face routes through the same trust core, so a silently-inert
     # PROXIMO_CONSENT_DIR would leave it ungated too). Real/inline env still wins.

@@ -2,6 +2,55 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.31.2] — 2026-08-08
+
+**A full adversarial audit of 0.31.1 — eight independent finder teams, every finding
+adversarially verified before it was believed, and every survivor fixed.** Thirty raw findings
+reduced to twelve confirmed, a completeness pass surfaced three more (two medium, one
+low-medium), and two independent review rounds on the fix diff itself caught defects in the
+fixes before they shipped. Every fix carries a test proven red against the pre-fix source. No
+new tools and no removed ones; the tool estate is unchanged at 906.
+
+- **Webhook secrets no longer land in the audit ledger** (medium). The notifications plane
+  widened its redaction key set to `{token, password, secret, header}` and redacts the
+  `current` value on a delete plan — a webhook secret or custom auth header previously landed
+  verbatim in the PROVE ledger and the returned plan. Mirrors what the PBS notifications plane
+  already did.
+- **Guest-config changes that cross into the host now rate HIGH and say why** (medium).
+  `plan_config_set` escalates and names the crossing when a `net` value attaches a guest NIC to
+  a host bridge or disables its firewall, or a `usb`/`serial`/`parallel` value passes a host
+  device through — including the resource-mapping form `usbN=mapping=<id>`.
+- **Container-create privilege was keyed on a parameter that does not exist** (low-medium).
+  `plan_create` read a `privileged` key; the real PVE parameter is `unprivileged`, whose
+  absence means privileged. The plan now reports the truth of the default instead of silently
+  rating a privileged create as if it were confined.
+- **PROVE fidelity: an in-container exec timeout is recorded as `error:timeout`, not a bare
+  error.** On an ssh-transport timeout the remote command may be orphaned and still running, so
+  a plain "error" (which reads as "did not happen") understated the state. The ledger outcome
+  and the caller's message now both say the mutation may have partly or fully happened —
+  verify guest state before assuming failure or retrying.
+- **Caller badges always expire.** `mint_badge` never emits a badge without an `exp`; an absent
+  expiry now gets a bounded 30-day default (previously: never-expiring, indefinitely
+  replayable). The CLI says when the default applied.
+- **Consent approvers see the real command.** The redacted `change` an approver sees is a hash.
+  `plan_exec`/`plan_psql` now carry the un-redacted command in a preview-only field
+  (`operator_cleartext`) surfaced in the dry-run the approver reads — never written to the
+  ledger, and not part of the consent id, so existing consents are unaffected.
+- **`--help` no longer starts a live server.** All four entrypoints (`proximo`,
+  `proximo-http`, `proximo-mcp-http`, `proximo-a2a`) bound a socket or entered the stdio loop
+  on `--help`, because no entrypoint parsed argv. Each now prints usage and exits before any
+  env load or bind.
+- **Smaller hardening, each with its own red-proven test:** `audit_verify` withholds its anchor
+  publish when the verify failed (and no longer crashes when a first-run verify fails); HTTP
+  errors are scrubbed to action + status before the ledger sees them (no internal host:port
+  URLs); the web face rejects a body request with no usable Content-Length with 411, restoring
+  the pre-buffer size cap; hardware-mapping free text rejects control characters and
+  list-valued map entries are scanned too; LDAP 389 / LDAPS 636 join the sensitive-port list;
+  the PBS "no cert validation" warning honors an active fingerprint pin; audit `in_flight`
+  pairs executing/terminal entries per intent with a stack, so two identical overlapping ops
+  cannot mask a stranded one; and an opt-in `PROXIMO_RECEIPT_DENYLIST` lets an operator name
+  bare tokens (such as node names) that the receipt redaction regexes cannot see.
+
 ## [0.31.1] — 2026-08-06
 
 **A HIGH advisory landed against `cryptography`, and our own published metadata was what kept

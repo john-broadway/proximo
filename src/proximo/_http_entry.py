@@ -17,6 +17,12 @@ _EXTRA_MODULES = ("starlette", "uvicorn")
 
 
 def main() -> None:
+    # --help must print usage and EXIT — never bind a socket. Checked FIRST, before load_env_file()
+    # and before the extra-probe, and stdlib-only so it works on a wheel without the [http] extra.
+    from proximo.config import print_face_usage, wants_help
+    if wants_help(sys.argv[1:]):
+        print_face_usage("proximo-http", "HTTP", 41242, "http")
+        raise SystemExit(0)
     # Source proximo.env before the app reads any config (same footgun + fail-dangerous shape as
     # the stdio path — the HTTP face routes through the same trust core, so a silently-inert
     # PROXIMO_CONSENT_DIR would leave it ungated too). Real/inline env still wins.

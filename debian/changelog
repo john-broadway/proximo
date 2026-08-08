@@ -1,3 +1,16 @@
+proximo (0.31.2-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.31.2 (patch - security hardening from a full adversarial
+    audit of 0.31.1: webhook secrets/headers redacted from the PROVE ledger,
+    plan_config_set escalates host-crossing guest-config changes to HIGH,
+    plan_create keys privilege on the real PVE unprivileged param, exec
+    timeouts recorded as error:timeout with an honest may-still-be-running
+    message, caller badges get a bounded 30d default expiry, consent approvers
+    see the un-redacted command in the dry-run preview only, all four
+    entrypoints print usage on --help instead of binding a socket, plus
+    smaller hardening across audit_verify/webguard/hw_mappings/blast/pbs/
+    receipt. No tool-surface change.)
+
 proximo (0.31.1-1) UNRELEASED; urgency=high
 
   * Track upstream 0.31.1 (patch - security: GHSA-g6cj-pr64-35w5 (HIGH) affects

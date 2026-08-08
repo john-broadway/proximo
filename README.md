@@ -201,17 +201,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.31.1`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.31.2`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.2), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.31.1 — a HIGH advisory in `cryptography`, and our own bound was blocking the patch.**
-> GHSA-g6cj-pr64-35w5 affects `cryptography >=44.0.0,<50.0.0`. The `[a2a]`, `[http]` and
-> `[mcp-http]` extras capped it at `<50`, so an adopter of a face extra had no resolution path to
-> the fixed 50.0.0, and the published image shipped the vulnerable library. Both bounds move to
-> `>=50.0.0,<51` — the floor, not just the cap, because widening the cap alone would still permit
-> 49.0.0. Proximo itself never calls the vulnerable PKCS#7 path. **Upgrade if you install any
-> face extra or run the container.**
+> **New in 0.31.2 — an adversarial audit of 0.31.1, every surviving finding fixed.** Webhook
+> secrets no longer land in the PROVE ledger; guest-config changes that cross into the host rate
+> HIGH and name the crossing; container-create privilege reads the real PVE default; an exec
+> timeout is recorded as `error:timeout` — the command may still be running, and the ledger says
+> so; caller badges always expire; consent approvers see the un-redacted command in the dry-run
+> preview only; and `--help` prints usage instead of starting a live server. No tool-surface change.
 >
-> Recent: **0.31.0** stopped `PROXIMO_SURFACES` from picking the doorway as well as the planes. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.31.1** moved both `cryptography` bounds off a HIGH advisory that our own published cap was blocking. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -248,11 +247,11 @@ One container is the demo. A cluster is the point.
 
 ## Status — the arena record
 
-- 🩸 **0.31.1** — **our own metadata stood between adopters and a security patch.** A HIGH
-  advisory landed against `cryptography`; the face extras capped it below the fixed version, so
-  the patch was unreachable, and the container shipped the vulnerable library. Both bounds moved.
-  What failed review was not the fix but the comment beside it, claiming the floor was guarded
-  when only the ceiling ever was — so the floor got a test that refuses a lowered bound.
+- 🩸 **0.31.2** — **the audit we ran against ourselves.** Eight finder teams over 0.31.1, every
+  finding independently verified before it was believed: thirty raw claims, fifteen survived,
+  every survivor fixed with a test proven red against the pre-fix source. Two review rounds on
+  the fix diff itself caught defects in the fixes before they shipped. Webhook secrets out of
+  the ledger, host-crossing config rated honestly, badges that expire, a `--help` that helps.
 
 _Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

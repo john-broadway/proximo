@@ -36,7 +36,7 @@ from proximo.config_edit import (
     plan_config_revert,
     plan_config_set,
 )
-from proximo.planning import RISK_LOW, RISK_MEDIUM
+from proximo.planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM
 
 # ---------------------------------------------------------------------------
 # Test fakes
@@ -584,6 +584,48 @@ def test_plan_config_set_action_string():
     api = _fake_api()
     p = plan_config_set(api, "102", {"cores": 4})
     assert p.action == "pve_guest_config_set"
+
+
+# --- host-boundary crossings: the allowlist admits net/usb/serial by key name, but a value
+# that attaches to a host bridge or passes a host device in is a HIGH-risk host crossing the
+# plan must name, not a routine MEDIUM edit. ---
+
+def test_plan_config_set_net_bridge_is_high_risk_and_named():
+    api = _fake_api()
+    p = plan_config_set(api, "102", {"net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0"})
+    assert p.risk == RISK_HIGH
+    blast = " ".join(p.blast_radius).lower()
+    assert "vmbr0" in blast and "bridge" in blast
+
+
+def test_plan_config_set_usb_host_passthrough_is_high_risk_and_named():
+    api = _fake_api()
+    p = plan_config_set(api, "200", {"usb0": "host=1050:0407"}, kind="qemu")
+    assert p.risk == RISK_HIGH
+    blast = " ".join(p.blast_radius).lower()
+    assert "host device" in blast or "host-resource" in blast
+
+
+def test_plan_config_set_serial_host_device_is_high_risk():
+    api = _fake_api()
+    p = plan_config_set(api, "200", {"serial0": "/dev/ttyS0"}, kind="qemu")
+    assert p.risk == RISK_HIGH
+
+
+def test_plan_config_set_usb_mapping_passthrough_is_high_risk():
+    # PVE resource-mapping form: usb0=mapping=<id> passes a host device in exactly as host= does.
+    api = _fake_api()
+    p = plan_config_set(api, "200", {"usb0": "mapping=host-yubikey"}, kind="qemu")
+    assert p.risk == RISK_HIGH
+    blast = " ".join(p.blast_radius).lower()
+    assert "host device" in blast or "host-resource" in blast
+
+
+def test_plan_config_set_ordinary_net_without_bridge_stays_medium():
+    # A net value with no host-bridge attach is not a host crossing.
+    api = _fake_api()
+    p = plan_config_set(api, "200", {"net0": "virtio=AA:BB:CC:DD:EE:FF"}, kind="qemu")
+    assert p.risk == RISK_MEDIUM
 
 
 def test_plan_config_set_target_includes_kind_vmid():

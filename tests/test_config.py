@@ -597,3 +597,15 @@ def test_from_target_world_readable_token_refused(tmp_path):
             "kind": "pve", "base_url": "https://192.0.2.20:8006/api2/json",
             "node": "edge", "token_path": str(tok),
         })
+
+
+def test_consent_active_plus_redaction_warns_approver_to_read_cleartext(monkeypatch):
+    # L2: with CONSENT active AND ledger redaction on (both defaults), the ledger `change` is a
+    # hash; startup must warn the approver to read the plan's operator_cleartext, not the hash.
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://x:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/run/x")
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", "/some/grants")
+    monkeypatch.delenv("PROXIMO_LEDGER_REDACT", raising=False)  # default = redaction ON
+    with pytest.warns(UserWarning, match="operator_cleartext"):
+        ProximoConfig.from_env()

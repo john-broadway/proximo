@@ -82,10 +82,39 @@ def test_unpinned_key_refused(pin_dir):
         verify_badge(mint_badge(stranger, "fleet-7"), load_pins(d))
 
 
-def test_exp_absent_accepted_present_enforced(pin_dir):
+def test_absent_exp_gets_bounded_default_never_forever(pin_dir):
+    # I3: a badge minted with no explicit exp must NOT be never-expiring — mint_badge applies a
+    # bounded default so a captured badge cannot be replayed indefinitely.
+    import json
+
+    from proximo.principal import _b64url_dec
     d, pem = pin_dir
     now = int(time.time())
-    assert verify_badge(mint_badge(pem, "fleet-7"), load_pins(d)) == "fleet-7"          # badge model
+    badge = mint_badge(pem, "fleet-7")
+    assert verify_badge(badge, load_pins(d), now=now) == "fleet-7"   # valid now (within default TTL)
+    _, p_b64, _ = badge.split(".")
+    payload = json.loads(_b64url_dec(p_b64))
+    assert payload.get("exp", 0) > now                              # carries an expiry, not forever
+    with pytest.raises(BadgeError, match="expired"):
+        verify_badge(badge, load_pins(d), now=payload["exp"] + 1)   # refused past its default exp
+
+
+def test_absent_exp_default_is_thirty_days(pin_dir):
+    # Pin the DEFAULT magnitude, not just "has an exp": a future typo shrinking it to seconds (or
+    # growing it unbounded) must fail here.
+    import json
+
+    from proximo.principal import _DEFAULT_BADGE_TTL_SECONDS, _b64url_dec
+    d, pem = pin_dir
+    _, p_b64, _ = mint_badge(pem, "fleet-7").split(".")
+    payload = json.loads(_b64url_dec(p_b64))
+    assert payload["exp"] - payload["iat"] == _DEFAULT_BADGE_TTL_SECONDS
+    assert _DEFAULT_BADGE_TTL_SECONDS == 2592000  # 30 days
+
+
+def test_explicit_exp_present_enforced(pin_dir):
+    d, pem = pin_dir
+    now = int(time.time())
     ok = mint_badge(pem, "fleet-7", exp=now + 60)
     assert verify_badge(ok, load_pins(d), now=now) == "fleet-7"
     stale = mint_badge(pem, "fleet-7", exp=now - 1)

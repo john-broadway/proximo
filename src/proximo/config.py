@@ -32,6 +32,33 @@ _FALSY = frozenset({"0", "false", "off", "no"})  # generic opt-OUT set (same wor
 _DEFAULT_ENV_FILE = "~/.config/proximo/proximo.env"
 
 
+def wants_help(argv: list[str]) -> bool:
+    """True if -h/--help appears in argv. Stdlib-only so a face shim can call it BEFORE probing an
+    optional extra — `proximo-http --help` must print usage and exit, never bind a socket."""
+    return any(a in ("-h", "--help") for a in argv)
+
+
+def print_face_usage(command: str, face_prefix: str, default_port: int, extra: str) -> None:
+    """Print usage for a network-face console script (to stdout) — the `--help` a server-shim owes.
+
+    Deliberately stdlib-only and importing nothing from the optional extra, so it runs on a wheel
+    that has no starlette/uvicorn installed.
+    """
+    face = face_prefix.replace("_", "-")
+    print(
+        f"{command} — Proximo {face} face (server).\n\n"
+        f"Runs a server on foreground; it takes NO configuration flags (only -h/--help). Everything\n"
+        f"is set via PROXIMO_* environment variables:\n"
+        f"  PROXIMO_{face_prefix}_HOST           bind host (default 127.0.0.1)\n"
+        f"  PROXIMO_{face_prefix}_PORT           bind port (default {default_port})\n"
+        f"  PROXIMO_{face_prefix}_TOKEN_FILE     bearer-token file (REQUIRED for a non-local bind)\n"
+        f"  PROXIMO_{face_prefix}_ALLOWED_HOSTS  comma-separated Host allowlist\n"
+        f"  ...plus the core PROXIMO_API_BASE_URL / PROXIMO_NODE / PROXIMO_TOKEN_PATH and the\n"
+        f"     trust-spine vars (see packaging/proximo.env.example).\n\n"
+        f'Install this face:  pip install "proximo-proxmox[{extra}]"'
+    )
+
+
 # Secret-file permission floor — shared with the PBS/PMG/PDM loaders and the network
 # faces so every secret Proximo reads by path gets the same READ-side guard.
 _refuse_exposed_secret = refuse_exposed_secret
@@ -348,6 +375,17 @@ class ProximoConfig:
                 "directory somewhere the agent cannot reach (a separate UID, or media/a host it lacks).",
                 stacklevel=2,
             )
+            if redact_ledger:
+                # Symmetric to the redaction-OFF warning above: with redaction ON (the default) the
+                # ledger `change` an approver sees is a sha256 fingerprint, NOT the command/SQL, so a
+                # consent given off the ledger alone is blind. Point them at the leak-free channel.
+                warnings.warn(
+                    "CONSENT is active AND PROXIMO_LEDGER_REDACT is ON (the default): the ledger "
+                    "'change' is a sha256 fingerprint, not the command/SQL. Approve ct_exec/ct_psql "
+                    "from the dry-run plan's 'operator_cleartext' field (the un-redacted command, "
+                    "preview-only — never written to the durable ledger), NOT from the redacted hash.",
+                    stacklevel=2,
+                )
 
         # Off-box PROVE anchor (PROXIMO_AUDIT_ANCHOR_*). build_anchor_sink raises RuntimeError on a
         # misconfigured sink (unknown type / file sink with no path). When a sink IS configured, fetch

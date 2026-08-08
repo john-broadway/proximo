@@ -59,9 +59,15 @@ class Plan:
     note: str = ""            # honesty disclaimer for heuristic classifications
     affected: list[dict] = field(default_factory=list)  # computed downstream impact (blast engine)
     complete: bool = True     # False => the blast computation was incomplete (a read failed) — honesty signal
+    # The un-redacted command/SQL, for the CONSENT approver to read what the redacted `change` hash
+    # stands for. PREVIEW-ONLY by construction: surfaced in as_dict() (the dry-run the operator
+    # reads) but NOT written by _record_plan (the ledger stays a fingerprint — no secret persisted)
+    # and NOT in consent._STABLE_FIELDS (consent_id is unchanged, the gate keeps working). The agent
+    # already holds this string — it passed it as the tool arg — so echoing it is not a new leak.
+    operator_cleartext: str = ""
 
     def as_dict(self) -> dict:
-        return {
+        d = {
             "action": self.action,
             "target": self.target,
             "change": self.change,
@@ -74,6 +80,10 @@ class Plan:
             "affected": self.affected,
             "complete": self.complete,
         }
+        if self.operator_cleartext:
+            # Only present on a redacted exec/psql plan — a preview-only field for the approver.
+            d["operator_cleartext"] = self.operator_cleartext
+        return d
 
 
 # --- power planning -----------------------------------------------------------
@@ -329,15 +339,18 @@ def command_fingerprint(command: list[str]) -> dict:
 
 def plan_exec(ctid: str, command: list[str], redact: bool = False) -> Plan:
     risk, reasons = classify_command(command)
+    cleartext = ""
     if redact:
         fp = command_fingerprint(command)
         shown = f"[redacted {fp['cmd_kind']}, {fp['cmd_len']} chars, sha256:{fp['cmd_sha256'][:12]}]"
+        cleartext = shlex.join(command)  # preview-only, for the CONSENT approver (never ledgered)
     else:
         shown = shlex.join(command)
     return Plan(
         action="ct_exec", target=str(ctid),
         change=f"run in {ctid}: {shown}",
         current={}, blast_radius=[], risk=risk, risk_reasons=reasons, note=_HEURISTIC_NOTE,
+        operator_cleartext=cleartext,
     )
 
 
@@ -363,15 +376,18 @@ def sql_fingerprint(sql: str) -> dict:
 
 def plan_psql(ctid: str, sql: str, db: str = "postgres", redact: bool = False) -> Plan:
     risk, reasons = classify_sql(sql)
+    cleartext = ""
     if redact:
         fp = sql_fingerprint(sql)
         shown = f"[redacted {fp['sql_kind']}, {fp['sql_len']} chars, sha256:{fp['sql_sha256'][:12]}]"
+        cleartext = f"psql {db}: {sql}"  # preview-only, for the CONSENT approver (never ledgered)
     else:
         shown = sql
     return Plan(
         action="ct_psql", target=str(ctid),
         change=f"psql {db} in {ctid}: {shown}",
         current={}, blast_radius=[], risk=risk, risk_reasons=reasons, note=_HEURISTIC_NOTE,
+        operator_cleartext=cleartext,
     )
 
 

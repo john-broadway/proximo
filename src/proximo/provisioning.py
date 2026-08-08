@@ -19,6 +19,11 @@ from .cluster_ops import cluster_resources
 from .planning import RISK_HIGH, RISK_MEDIUM, Plan
 
 
+def _truthy_option(v) -> bool:
+    """Interpret a PVE-style boolean option value (1/0, true/false, yes/no, on/off)."""
+    return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _cluster_guests(api, node: str | None) -> tuple[list[dict], str | None, bool]:
     """Guest list for VMID collision / source-exists checks. PVE VMIDs are CLUSTER-unique, so read
     cluster-wide (cluster_resources) first; fall back to the node-scoped list_guests if that read
@@ -204,9 +209,10 @@ def plan_create(
     If the collision check itself fails, that uncertainty is disclosed — the absence
     of a HIGH flag is not a safety signal.
 
-    *options* are the create params that will actually be sent (cores, memory, privileged,
+    *options* are the create params that will actually be sent (cores, memory, unprivileged,
     password, …). They are surfaced in the plan so the preview/ledger reflect the real mutation
-    (the `password` option is redacted); a privileged LXC escalates the plan to RISK_HIGH.
+    (the `password` option is redacted). An LXC created privileged — i.e. `unprivileged` absent
+    or falsy, which is the PVE default — escalates the plan to RISK_HIGH.
     """
     vmid = _check_vmid(vmid)
     kind = _check_kind(kind)
@@ -238,13 +244,21 @@ def plan_create(
         ]
 
     options = options or {}
-    privileged = bool(options.get("privileged"))
+    # PVE LXC create is PRIVILEGED BY DEFAULT: the real API param is `unprivileged` (default 0);
+    # there is NO `privileged` param (PVE silently ignores one). A container is privileged unless
+    # `unprivileged` is truthy — INCLUDING when the option is omitted entirely (the PVE default),
+    # which is the common path. QEMU has no such notion. The old check read a non-existent
+    # `privileged` key, so an actually-privileged container was planned MEDIUM with no warning.
+    privileged = kind == "lxc" and not _truthy_option(options.get("unprivileged", 0))
     # surface what will actually be created — redact the `password` create-option (a secret)
     opt_display = {k: ("[redacted]" if k == "password" else v) for k, v in options.items()}
     if opt_display:
         blast = blast + [f"create options: {opt_display}"]
     if privileged:
-        blast = blast + ["privileged=1: container shares host UID 0 — guest-root escape == host-root"]
+        blast = blast + [
+            "PRIVILEGED container (unprivileged=0 — the PVE create default): shares host UID 0, "
+            "guest-root escape == host-root; pass unprivileged=1 for an isolated container"
+        ]
         reasons = reasons + ["privileged LXC: host-equivalent root; container isolation is weaker (HIGH)"]
     return Plan(
         action="pve_create",

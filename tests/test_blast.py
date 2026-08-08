@@ -284,3 +284,23 @@ def test_classify_tpmstate_only_slot_on_target_is_boot_critical_high():
            "bootdisk": "scsi0"}
     e = _classify_guest("nas", _guest(status="stopped"), cfg)
     assert e.severity == "high" and "UEFI/TPM" in e.effect
+
+
+# ---------------------------------------------------------------------------
+# Sensitive-port coverage: a numeric admin/auth port whose SERVICE name is
+# sensitive must also be flagged by NUMBER (the "over-flag, never under-flag"
+# contract). LDAP 389 / LDAPS 636 were named-only before.
+# ---------------------------------------------------------------------------
+
+class TestSensitivePortNumbers:
+    def test_ldaps_636_is_sensitive_by_number(self):
+        from proximo.blast import _port_is_sensitive
+        assert _port_is_sensitive("636") is True
+
+    def test_ldap_389_is_sensitive_by_number(self):
+        from proximo.blast import _port_is_sensitive
+        assert _port_is_sensitive("389") is True
+
+    def test_random_high_port_is_not_sensitive(self):
+        from proximo.blast import _port_is_sensitive
+        assert _port_is_sensitive("49123") is False

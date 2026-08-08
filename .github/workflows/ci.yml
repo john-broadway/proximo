@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual re-run, and it is not decoration. v0.31.1 landed on main during a GitHub Actions
+  # outage (incident opened 2026-08-06T15:22Z, impact critical), so no CI run was ever created
+  # for that commit — GitHub does not backfill runs for a push its fleet missed. With push as
+  # the only trigger there is NO way to verify such a commit here afterwards: the gap closes
+  # only if some later, unrelated push happens to cover it. trivy.yml already carries this
+  # trigger for the same reason. Dispatch against the ref you need (a release tag works).
+  workflow_dispatch:
 
 # Explicit read-only floor (fork PRs already get this, but be unambiguous).
 permissions:
@@ -67,9 +74,17 @@ jobs:
 
   pip-audit:
     runs-on: ubuntu-latest
-    # Blocking gate. The dependency baseline is clean (verified 2026-06-24, after
-    # bumping cryptography/starlette/pydantic-settings off their advisories). A new CVE
-    # in a dependency now reds CI until it's patched — which is the point of the gate.
+    # Blocking gate: a new CVE in a dependency reds CI until it's patched.
+    #
+    # This comment used to assert "the dependency baseline is clean (verified 2026-06-24)".
+    # That claim went stale and then went false: GHSA-g6cj-pr64-35w5 (HIGH) published
+    # 2026-08-03 against the pinned cryptography, and this job did not catch it — because
+    # a blocking gate only blocks when it RUNS, and nothing had pushed to main since
+    # 08-02. It was found by reading the advisory feed, not by CI.
+    #
+    # So: no standing claim about the baseline lives here. The gate's guarantee is
+    # narrower than it reads — it covers whatever was pushed, when it was pushed, and a
+    # quiet main means an unexamined main.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
