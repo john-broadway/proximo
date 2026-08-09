@@ -122,3 +122,50 @@ jobs:
         uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         with:
           local: true
+
+  # Every public ref must stay curated. This repo's public main is a curated
+  # fast-forward tree; its safety rests on ONE invariant — no public ref points
+  # into the internal line. Tag v0.24.0 broke it silently (a July `--tags`
+  # accident) and exposed 592 uncurated commits for ~3 weeks; every per-push
+  # gate was blind because a tag pushed once is in no future diff, ever. Found
+  # 2026-08-09 by the first scheduled full-history scan — by luck, via fixture
+  # false-positives that happened to live in the leaked history. This job is
+  # that detection made deliberate: it walks EVERY branch and tag daily and
+  # reds if any strays off main or carries an internal-only path. The local
+  # pre-push guard blocks the same class at the muzzle; this is the net if
+  # anything ever gets past it.
+  ref-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0   # all branches + tags — standing refs are the audit surface
+      - name: Every public ref is an ancestor of main, or tiny and clean
+        run: |
+          set -euo pipefail
+          main=$(git rev-parse origin/main)
+          deny='^(\.gitea/|docs/plans/|docs/specs/|docs/internal/)|(^|/)(CLAUDE|POSITIONING|LANDSCAPE|ROADMAP|CEILING|LAB)\.md$'
+          fail=0
+          for ref in $(git for-each-ref --format='%(refname)' refs/remotes/origin refs/tags \
+                       | grep -v '^refs/remotes/origin/HEAD$'); do
+            tip=$(git rev-parse "$ref^{commit}")
+            n=$(git rev-list --count "$main..$tip")
+            [ "$n" -eq 0 ] && continue
+            # The only legitimate off-main refs are short-lived PR branches
+            # (dependabot: main + a commit or two). Hundreds off-main = an
+            # uncurated history is reachable, exactly the v0.24.0 shape.
+            if [ "$n" -gt 25 ]; then
+              echo "::error::$ref exposes $n commits not on main — uncurated history reachable"
+              fail=1
+              continue
+            fi
+            for c in $(git rev-list "$main..$tip"); do
+              hits=$(git ls-tree -r "$c" --name-only | grep -cE "$deny" || true)
+              if [ "$hits" -gt 0 ]; then
+                echo "::error::$ref commit $c carries $hits internal-only path(s)"
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" -eq 0 ] && echo "every public ref is curated: on main, or ≤25 clean commits ahead"
+          exit "$fail"
