@@ -15,4 +15,19 @@ paths = [
 regexes = [
   # Test sentinels follow the SENTINEL_* naming convention, e.g. SENTINEL_PW_123.
   '''SENTINEL_[A-Z0-9_]+''',
+  # Pre-convention test sentinel that lives in history (tests/test_wrapper_shapes.py
+  # until v0.24.0-era; commits 96815ee3, 60d89f3b). The daily scheduled scan walks
+  # full history, where a fixed tree can't reach.
+  '''SentinelPlaceholderPass1''',
+]
+
+# False-positive fixture commits in history: a test local named `api` next to an
+# ordinary quoted string (a timezone, a cipher suite) trips generic-api-key. The
+# trees were fixed in-place long ago; history is immutable. These are reachable
+# only via the pre-2026-08-09 v0.24.0 tag — removable once no public ref carries
+# that line.
+commits = [
+  "f55e8127b631d72271571158eeb6a1b796dc0136",
+  "4245a72fabdf4bd920124ef5f6283fb1a6b7a9c5",
+  "8c57763b3937e316297fecc716fd4253c80d3797",
 ]
