@@ -18,7 +18,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-uv export --no-dev --no-emit-project --format requirements-txt -o requirements/runtime.txt
-uv export --extra dev --no-emit-project --format requirements-txt -o requirements/dev.txt
+# --frozen: export from uv.lock AS COMMITTED. Without it a stale lock is silently re-resolved
+# first, so the exports would track a lock nobody reviewed. Matches tests/test_requirements_lock.py.
+uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements/runtime.txt
+uv export --frozen --extra dev --no-emit-project --format requirements-txt -o requirements/dev.txt
 uv pip compile --generate-hashes --universal -c requirements/dev.txt requirements/build.in -o requirements/build.txt
 uv pip compile --generate-hashes --universal -c requirements/runtime.txt requirements/sbom.in -o requirements/sbom.txt
+# Stamp build.txt/sbom.txt with a hash of their inputs (.in + constraint), so the offline drift
+# guard in tests/test_requirements_lock.py reds if either is edited without recompiling. (uv export
+# files are guarded by re-export; these `uv pip compile` outputs had no watcher until 2026-08-10.)
+python3 scripts/_reqstamp.py stamp

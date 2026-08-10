@@ -36,7 +36,9 @@ RC=0
 uv run python scripts/version_tools.py check || RC=1
 # Hash-pinned lockfiles must match uv.lock — CI/Docker install them with --require-hashes.
 ./scripts/gen_requirements.sh >/dev/null 2>&1 || { printf 'release: gen_requirements.sh failed\n' >&2; RC=1; }
-git diff --exit-code --stat requirements/ || { printf 'release: requirements/ drifted — commit the regenerated lockfiles.\n' >&2; RC=1; }
+# Diff uv.lock too: a lock rewritten so its EXPORTS coincide (same pins, different lock metadata)
+# would otherwise slip through unreviewed, since --frozen exports from whatever lock is committed.
+git diff --exit-code --stat requirements/ uv.lock || { printf 'release: requirements/ or uv.lock drifted — commit the regenerated files.\n' >&2; RC=1; }
 # TOOLS.md is generated (version banner + tool surface) — regenerate and fail on drift.
 # (Redteam catch on v0.21.1: the banner shipped one release stale; nothing gated it.)
 uv run python scripts/gen_tools_doc.py >/dev/null 2>&1 || { printf 'release: gen_tools_doc.py failed\n' >&2; RC=1; }

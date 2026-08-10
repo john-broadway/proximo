@@ -43,3 +43,4 @@ trove-classifiers==2026.6.1.19 \
     --hash=sha256:ab4c4ec93cc4a4e7815fa759906e05e6bb3f2fbd92ea0f897288c6a43efd15b3 \
     --hash=sha256:c5132b4b61a829d11cfbd2d72e97f20a45ed6edb95e45c5efdeb5e00836b2745
     # via hatchling
+# input-sha256: e2f0d5284a561a08928ba7304385588932f9980ad2a3f7cb64a4b8b53d427ce6

@@ -152,6 +152,47 @@ jobs:
           require-hashes: true
           no-deps: true
 
+  # GitHub disables `schedule:` triggers on a PUBLIC repo after 60 days of repo inactivity — and a
+  # quiet repo is exactly when the security net matters, since a solo project's default state IS
+  # quiet. Left alone, the whole cron-driven net (this daily CVE gate, the daily ref-audit, the
+  # nightly gitleaks history scan, weekly codeql/trivy/scorecard) evaporates silently. This job is
+  # the keepalive: daily, it re-enables every workflow that carries a `schedule:` trigger. The list
+  # is DISCOVERED from the checkout (`grep -l schedule:`), not hand-maintained — a new scheduled
+  # workflow is covered the day it lands, with nothing to remember to update.
+  #
+  # Honest bound, stated so nobody over-trusts it: the keepalive heals the OTHER workflows, but
+  # nothing heals the keepalive. If ci.yml's own schedule is the one that lapses, the net is down
+  # until the next push re-arms it. That residual is irreducible from inside Actions; the external
+  # freshness check (a monitor asserting "last scheduled CI run < 48h old") is where it closes, and
+  # that lives outside this repo.
+  keepalive:
+    runs-on: ubuntu-latest
+    # Only the scheduled/manual fire needs to re-arm; skip it on ordinary push/PR (a push already
+    # re-arms schedules, and PRs from forks get no token for this).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      actions: write   # enable-workflow on this repo's own Actions
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Re-enable every scheduled workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          rc=0
+          for f in $(grep -lE '^[[:space:]]*schedule:' .github/workflows/*.yml); do
+            wf=$(basename "$f")
+            # enable is idempotent — a HTTP 204 whether it was disabled or already active.
+            if gh api -X PUT "repos/$REPO/actions/workflows/$wf/enable" >/dev/null 2>&1; then
+              echo "re-enabled (or already active): $wf"
+            else
+              echo "::warning::could not enable $wf — it may be new/unregistered this run"
+              rc=1
+            fi
+          done
+          exit "$rc"
+
   # Every public ref must stay curated. This repo's public main is a curated
   # fast-forward tree; its safety rests on ONE invariant — no public ref points
   # into the internal line. Tag v0.24.0 broke it silently (a July `--tags`
@@ -160,20 +201,30 @@ jobs:
   # 2026-08-09 by the first scheduled full-history scan — by luck, via fixture
   # false-positives that happened to live in the leaked history. This job is
   # that detection made deliberate: it walks EVERY branch and tag daily and
-  # reds if any strays off main or carries an internal-only path. The local
-  # pre-push guard blocks the same class at the muzzle; this is the net if
-  # anything ever gets past it.
+  # reds if any strays off main or carries an internal-only path OR a leak shape
+  # in its changed contents. The local pre-push guard blocks the same class at
+  # the muzzle; this is the net if anything ever gets past it.
+  #
+  # The content scan (not just path names) and the denied-path decision both come
+  # from release_leak_audit.py's constants via its `ref-scan` subcommand — the ci
+  # side no longer hand-copies the deny regex, which drifted from the Python source
+  # every time one was edited without the other. Honest bound: the PUBLIC checkout
+  # has no `.gitea/*deny.txt` files (they are stripped from the mirror), so off-main
+  # scanning here is shape-only — a degrade from the internal gate that also carries
+  # the site-literal and competitor denylists, not a gap in the shape coverage.
   ref-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0   # all branches + tags — standing refs are the audit surface
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Every public ref is an ancestor of main, or tiny and clean
         run: |
           set -euo pipefail
           main=$(git rev-parse origin/main)
-          deny='^(\.gitea/|docs/plans/|docs/specs/|docs/internal/)|(^|/)(CLAUDE|POSITIONING|LANDSCAPE|ROADMAP|CEILING|LAB)\.md$'
           fail=0
           refs=0
           offmain=0
@@ -193,11 +244,9 @@ jobs:
               continue
             fi
             for c in $(git rev-list "$main..$tip"); do
-              hits=$(git ls-tree -r "$c" --name-only | grep -cE "$deny" || true)
-              if [ "$hits" -gt 0 ]; then
-                echo "::error::$ref commit $c carries $hits internal-only path(s)"
-                fail=1
-              fi
+              # Denied internal-only PATH present, or a leak SHAPE in the changed
+              # contents, either reds — decided by the release audit's own rules.
+              python scripts/release_leak_audit.py ref-scan "$c" "$main" || fail=1
             done
           done
           tags=$(git for-each-ref --format='%(refname)' refs/tags | wc -l)

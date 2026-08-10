@@ -368,3 +368,95 @@ def test_cast_scan_still_reads_the_raw_envelope():
     assert any(f.kind.startswith("root-path") for f in findings), (
         "a /root path in the cast HEADER was missed — the decoder replaced the raw scan instead "
         "of adding to it")
+
+
+# --- F9c: the internal-host pattern grew local/corp/home.arpa (2026-08-10) -----------------
+def test_internal_local_corp_homearpa_hosts_are_flagged():
+    for host in ("pve1.corp", "backup.home.arpa", "node7.local"):  # leak-audit: allow
+        res = rla.audit_files({"README.md": f"connect to {host}:8006"})
+        assert any(f.kind == "internal-host" for f in res.findings), f"{host} not flagged"
+
+
+def test_sanctioned_example_hosts_on_new_tlds_are_allowed():
+    # The two-sided proof: these tracked test fixtures live on the new TLDs and must NOT flag,
+    # or the current-surface audit reds on them. (The other side — that a REAL such host DOES
+    # flag — is the test above; together they prove the allowlist exempts examples, not the class.)
+    for host in ("corp.local", "dc1.corp.local", "node.local", "surface.lab.local", "pve-test1.lab.local"):
+        assert rla.audit_files({"tests/x.py": f'realm = "{host}"'}).ok, f"{host} wrongly flagged"
+
+
+# --- F9b: typed stdin ("i") events are part of the visible recording ----------------------
+def test_cast_scan_sees_text_typed_as_input_events():
+    import json as _json
+    secret = "10.1.2.99"  # leak-audit: allow
+    lines = [_json.dumps({"version": 2, "width": 80, "height": 24})]
+    # "i" (stdin) events — what an asciinema --stdin recording emits for typed keystrokes.
+    lines += [_json.dumps([0.1 * i, "i", ch]) for i, ch in enumerate(f"ssh root@{secret}\n")]
+    cast = "\n".join(lines)
+    assert not rla.scan_text("notes.txt", cast), "precondition: raw line scan already catches it"
+    findings = rla.scan_text("docs/demo/typed.cast", cast)
+    assert any(secret in f.match for f in findings), "a private IP typed as stdin was not caught"
+
+
+# --- F9a: allow-marker skips are reported, not silent --------------------------------------
+def test_allow_marker_lines_are_recorded_on_the_result():
+    files = {"t.md": "ip 172.31.0.5  # leak-audit: allow\nclean line\n"}  # leak-audit: allow
+    res = rla.audit_files(files)
+    assert ("t.md", 1) in res.marker_skips
+    assert all(p != "t.md" or ln != 2 for p, ln in res.marker_skips)
+
+
+# --- F3: binaries are string-scanned, and unknown binaries need review --------------------
+def test_unreviewed_binary_is_flagged():
+    res = rla.audit_files({}, binaries={"data/mystery.bin": b"\x00\x01harmless"})
+    assert any(f.kind == "unreviewed-binary" for f in res.findings)
+    assert not res.ok
+
+
+def test_known_brand_binary_is_not_flagged_as_unreviewed():
+    res = rla.audit_files({}, binaries={"docs/brand/logo.png": b"\x89PNG\x00 clean bytes"})
+    assert not any(f.kind == "unreviewed-binary" for f in res.findings)
+
+
+def test_leak_shape_inside_a_binary_is_caught():
+    # An internal host embedded in a brand asset's bytes (e.g. EXIF) — allowlisted PATH, dirty CONTENT.
+    blob = b"\x89PNG\x00\x00exif: shot on host build7.lan \x00\xff"  # leak-audit: allow
+    res = rla.audit_files({}, binaries={"docs/brand/social.png": blob})
+    assert any(f.kind.startswith("internal-host") and "binary" in f.kind for f in res.findings)
+
+
+def test_utf16_encoded_leak_inside_a_binary_is_caught():
+    blob = "config /root/secrets/key".encode("utf-16-le")  # leak-audit: allow
+    res = rla.audit_files({}, binaries={"docs/brand/wide.png": blob})
+    assert any(f.kind.startswith("root-path") and "binary" in f.kind for f in res.findings)
+
+
+def test_read_ref_tree_returns_binaries_separately():
+    files, binaries = rla.read_ref_tree("HEAD")
+    assert any(p.startswith("docs/brand/") and p.endswith(".png") for p in binaries), (
+        "the brand PNGs should surface as binaries in the tree read")
+    assert all(not (p.endswith(".png")) for p in files), "a PNG leaked into the text file map"
+
+
+# --- F5: ref-scan CLI reds on a denied-path commit, passes a clean delta -------------------
+def test_ref_scan_cli_passes_a_clean_delta():
+    import subprocess as _sp
+    script = str(REPO_ROOT / "scripts" / "release_leak_audit.py")
+    r = _sp.run([sys.executable, script, "ref-scan", "HEAD", "HEAD~1"],  # noqa: S603
+                cwd=str(REPO_ROOT), capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_ref_scan_cli_reds_on_an_internal_only_path():
+    import subprocess as _sp
+    script = str(REPO_ROOT / "scripts" / "release_leak_audit.py")
+    # A commit that touched a `.gitea/` path — an internal-only surface the public mirror strips.
+    c = _sp.run(["git", "log", "--format=%H", "-n1", "--", ".gitea/"],  # noqa: S603, S607
+                cwd=str(REPO_ROOT), capture_output=True, text=True).stdout.strip()
+    if not c:
+        import pytest as _pytest
+        _pytest.skip("no commit touching .gitea/ in this clone's history")
+    r = _sp.run([sys.executable, script, "ref-scan", c, c + "~1"],  # noqa: S603
+                cwd=str(REPO_ROOT), capture_output=True, text=True)
+    assert r.returncode == 1, "ref-scan did not red on a commit carrying an internal-only path"
+    assert "internal-only path" in r.stderr

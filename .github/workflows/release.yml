@@ -92,6 +92,32 @@ jobs:
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
+      # Cold-start smoke BEFORE the push: build amd64 only, load it into the local daemon, and run
+      # the entrypoint. Until now the multi-arch build pushed an image whose ENTRYPOINT was never
+      # executed — an import error in any wrapper module would ship and only surface on an adopter's
+      # first run. `proximo --help` imports the whole tool surface (server.py registers every tool
+      # at import), so a broken import crashes here instead of in a registry. The real multi-arch
+      # build+push below reuses these layers from the gha cache, so the second build is cheap.
+      # Bound: this proves amd64 only; arm64 rides on the same source + manylinux/musllinux wheels.
+      - name: Build amd64 image for the cold-start smoke (load, don't push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: proximo:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The entrypoint must actually run
+        run: |
+          set -euo pipefail
+          out="$(docker run --rm proximo:smoke --help)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'Proxmox MCP server' || {
+            echo "::error::image entrypoint did not print the expected usage — the wheel may not import"
+            exit 1
+          }
+
       - name: Log in to GHCR
         # The next three actions are SHA-pinned (not floating tags): they hold the
         # token, publish the image, and sign provenance — a re-pointed tag here would

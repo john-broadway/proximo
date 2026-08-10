@@ -8,11 +8,15 @@ CI env) — the dev environment and the release gate both run it with uv present
 """
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import _reqstamp  # noqa: E402  — stdlib-only input-hash stamp for build.txt/sbom.txt
 
 # Scoped per-test, NOT module-level. A module-level skipif here would also disable the
 # tracked-lockfile guard below, which needs git and not uv — and that guard is the one
@@ -73,3 +77,25 @@ def test_uv_lock_is_tracked_by_git():
         "untracked lock makes every committed pin unreproducible off this one machine. "
         "Remove the uv.lock line from .gitignore and commit the lock."
     )
+
+
+def test_compiled_requirements_input_stamps_match():
+    """build.txt and sbom.txt are `uv pip compile` outputs, NOT uv exports — the re-export guard
+    above never watched them, so an edit to build.in or its constraint could ship a stale compiled
+    pin (build.txt builds the published wheel and the container). Each carries a hash of its inputs;
+    this reds when the inputs moved without a recompile. Pure stdlib + file reads, so unlike the
+    export guard it runs in the pip-only `test` job too — no uv, no network, no skip.
+    """
+    problems = _reqstamp.check()
+    assert not problems, "compiled-requirements input drift:\n  " + "\n  ".join(problems)
+
+
+def test_the_input_stamp_actually_catches_drift(tmp_path):
+    """Prove the guard bites: a copy of requirements/ with build.in mutated but NOT re-stamped must
+    be reported as drift. Without this, a stamp that never fails would pass the guard above blind.
+    """
+    import shutil as _sh
+    req = tmp_path / "requirements"
+    _sh.copytree(REPO_ROOT / "requirements", req)
+    (req / "build.in").write_text((req / "build.in").read_text() + "\nsomething-new\n")
+    assert _reqstamp.check(req_dir=req), "stamp check did not notice a changed build.in"

@@ -7,6 +7,11 @@ on:
     branches: [main]
   schedule:
     - cron: "27 3 * * 1"   # weekly, Monday 03:27 UTC
+  # Manual re-run — same reason ci.yml and trivy.yml carry it: GitHub never backfills a
+  # scheduled/push run its fleet missed during an outage (v0.31.1 landed during the 2026-08-06
+  # Actions outage with no run created). Without this there is no way to analyze such a commit
+  # until the next push happens to cover it.
+  workflow_dispatch:
 
 permissions:
   contents: read

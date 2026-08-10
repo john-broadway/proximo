@@ -76,7 +76,7 @@ _RFC1918 = re.compile(
 )
 _INTERNAL_HOST = re.compile(
     r"\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)*"
-    r"\.(?:lan|internal|intranet)\b",
+    r"\.(?:lan|internal|intranet|local|corp|home\.arpa)\b",
     re.IGNORECASE,
 )
 # Real absolute home path: `/root/` followed by a path segment (NOT the `/root/...` ellipsis
@@ -132,6 +132,14 @@ ALLOW_EXACT: frozenset[str] = frozenset({
     "192.168.0.0", "192.168.0.99", "192.168.1.0", "192.168.1.1",
     # live-smoke SDN fixtures + the a2a allowed-host fixture
     "10.99.99.0", "10.99.99.1", "10.99.99.2", "10.99.99.5", "10.1.2.3",
+    # Example HOSTNAMES on the internal TLDs the host pattern grew 2026-08-10. EXACT-matched (not
+    # prefix) on purpose: a prefix would also clear any longer host that merely ends in the same
+    # label, and a leading-dot prefix does not even clear its own bare token — so a prefix entry
+    # here sprang the scanner on this very file. Each below is a full example host from a tracked
+    # fixture (realm-config, mappings, and the pmg/pve cert-fingerprint tests). Proven both ways in
+    # tests/test_release_leak_audit.py: a REAL internal host flags, these examples do not. (This
+    # comment names no host literal on those TLDs on purpose — writing one would trip this scanner.)
+    "corp.local", "dc1.corp.local", "node.local", "surface.lab.local", "pve-test1.lab.local",
 })
 
 
@@ -148,6 +156,10 @@ class AuditResult:
     kept: list[str] = field(default_factory=list)
     stripped: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    # Lines skipped by the inline `leak-audit: allow` marker — reported, not silent. A marker
+    # silences EVERY pattern on its line, so an audit that prints CLEAN while carrying markers is
+    # only as trustworthy as those markers; surface them so a human sees where the gate looked away.
+    marker_skips: list[tuple[str, int]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -188,8 +200,11 @@ def cast_visible_text(text: str) -> str:
     most likely to expose — typed infra names — while still reporting the file CLEAN. Found by an
     adversarial pass on the demo assets, 2026-08-01, not by a leak.
 
-    Concatenating the output payloads and stripping ANSI gives the visible frame text, which is
-    what a human reviewing the recording would read, and what this scan should see.
+    Concatenating the payloads and stripping ANSI gives the visible frame text, which is what a
+    human reviewing the recording would read, and what this scan should see. BOTH `o` (terminal
+    output) and `i` (typed stdin, present when a cast is recorded with `--stdin`) events count:
+    input events are the per-keystroke channel where a typed hostname would otherwise stay
+    invisible even after this reconstruction (2026-08-10).
     """
     out: list[str] = []
     for line in text.splitlines():
@@ -200,7 +215,7 @@ def cast_visible_text(text: str) -> str:
             ev = json.loads(line)
         except (ValueError, TypeError):
             continue
-        if isinstance(ev, list) and len(ev) >= 3 and ev[1] == "o" and isinstance(ev[2], str):
+        if isinstance(ev, list) and len(ev) >= 3 and ev[1] in ("o", "i") and isinstance(ev[2], str):
             out.append(ev[2])
     return _ANSI.sub("", "".join(out))
 
@@ -208,9 +223,12 @@ def cast_visible_text(text: str) -> str:
 def scan_text(
     path: str, text: str,
     extra_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (),
+    marker_skips: list[tuple[str, int]] | None = None,
 ) -> list[Finding]:
     """Leak shapes in one file's content, honoring the documented-example allowlist. *extra_patterns*
-    scan alongside the built-ins (e.g. the site-specific internal-identifier denylist).
+    scan alongside the built-ins (e.g. the site-specific internal-identifier denylist). When
+    *marker_skips* is given, each line silenced by the inline allow-marker is appended as
+    ``(path, lineno)`` so the caller can report where the gate deliberately looked away.
 
     A `.cast` is scanned TWICE: once raw (so a leak in the JSON envelope or the header still
     fires) and once over its reconstructed visible text (so per-keystroke-encoded text fires too).
@@ -221,10 +239,12 @@ def scan_text(
         if visible:
             findings += [
                 Finding(path, 0, f"{f.kind} (in recorded terminal output)", f.match)
-                for f in scan_text(path + "::visible", visible, extra_patterns)
+                for f in scan_text(path + "::visible", visible, extra_patterns, marker_skips)
             ]
     for lineno, line in enumerate(text.splitlines(), start=1):
         if ALLOW_MARKER in line:
+            if marker_skips is not None:
+                marker_skips.append((path, lineno))
             continue
         for kind, pattern in (*PATTERNS, *extra_patterns):
             for m in pattern.finditer(line):
@@ -232,6 +252,44 @@ def scan_text(
                 if _allowed(token):
                     continue
                 findings.append(Finding(path, lineno, kind, token))
+    return findings
+
+
+# Binary blobs publish in the tree but neither this shape-audit (which decoded to text and split
+# on lines) nor gitleaks (which skips binaries) ever looked inside them — so a PNG carrying an
+# internal hostname in its EXIF, a UTF-16 "text" file, or a stray sqlite would sail out unscanned.
+# Two guards close that: (1) every kept binary is decoded to its extractable strings and run through
+# the SAME leak patterns; (2) any binary OUTSIDE the known-clean allowlist is itself a finding, so a
+# NEW binary kind gets a human before it ships. Added 2026-08-10 (audit finding F3).
+#
+# Known-clean = the brand art under docs/brand/. Matched by directory+extension, not exact name, so a
+# re-exported titlecard whose filename carries a fresh content-hash stays covered without a list edit.
+def _is_allowed_binary(path: str) -> bool:
+    return path.startswith("docs/brand/") and path.endswith(".png")
+
+
+def _extract_strings(blob: bytes) -> str:
+    """Everything a shape pattern could match inside a binary: the single-byte-encoded text (latin-1
+    is a total 1:1 byte map, so all ASCII survives and nothing raises) plus a UTF-16 decode both
+    ways (so wide-encoded hostnames/paths surface). Joined with newlines so line-oriented scan_text
+    treats each decode as its own span."""
+    parts = [blob.decode("latin-1")]
+    for enc in ("utf-16-le", "utf-16-be"):
+        parts.append(blob.decode(enc, "ignore"))
+    return "\n".join(parts)
+
+
+def scan_binary(
+    path: str, blob: bytes,
+    extra_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (),
+) -> list[Finding]:
+    """Leak shapes inside one binary blob, plus an `unreviewed-binary` finding for any path not on
+    the known-clean allowlist. Line numbers are meaningless here, so findings report line 0."""
+    findings: list[Finding] = []
+    if not _is_allowed_binary(path):
+        findings.append(Finding(path, 0, "unreviewed-binary", path))
+    for f in scan_text(path + "::bytes", _extract_strings(blob), extra_patterns):
+        findings.append(Finding(path, 0, f"{f.kind} (in binary)", f.match))
     return findings
 
 
@@ -251,20 +309,31 @@ def audit_files(
     files: dict[str, str], deny: tuple[str, ...] = DENY_PREFIXES,
     deny_literals: tuple[str, ...] = (),
     competitor_names: tuple[str, ...] = (),
+    binaries: dict[str, bytes] | None = None,
 ) -> AuditResult:
     """Audit a path->content map AS IF published: deny paths are stripped (and NOT scanned —
     they won't be public); kept files are scanned for leak shapes, any site-specific internal
-    identifiers in *deny_literals*, and any rival handles/products in *competitor_names*."""
-    kept, stripped = partition_paths(files.keys(), deny)
+    identifiers in *deny_literals*, and any rival handles/products in *competitor_names*. When
+    *binaries* (path->bytes) is given, kept binaries are string-scanned for the same shapes and any
+    binary outside the known-clean allowlist is flagged for review."""
+    all_paths = list(files.keys()) + list((binaries or {}).keys())
+    kept, stripped = partition_paths(all_paths, deny)
+    kept_set = set(kept)
     extra: list[tuple[str, re.Pattern[str]]] = []
     for kind, names in (("internal-literal", deny_literals), ("competitor-name", competitor_names)):
         pat = _deny_literal_pattern(names)
         if pat is not None:
             extra.append((kind, pat))
     findings: list[Finding] = []
-    for p in sorted(kept):
-        findings.extend(scan_text(p, files[p], tuple(extra)))
-    return AuditResult(kept=sorted(kept), stripped=sorted(stripped), findings=findings)
+    marker_skips: list[tuple[str, int]] = []
+    for p in sorted(kept_set & set(files)):
+        findings.extend(scan_text(p, files[p], tuple(extra), marker_skips))
+    for p in sorted(kept_set & set(binaries or {})):
+        findings.extend(scan_binary(p, binaries[p], tuple(extra)))
+    return AuditResult(
+        kept=sorted(kept), stripped=sorted(stripped),
+        findings=findings, marker_skips=marker_skips,
+    )
 
 
 # --- git I/O: read the real publish surface --------------------------------------------
@@ -309,18 +378,49 @@ def _git(args: list[str], cwd: Path, env: dict | None = None) -> str:
                           capture_output=True, text=True, check=True).stdout
 
 
-def files_in_ref(ref: str = "HEAD", root: Path | None = None) -> dict[str, str]:
-    """The tracked text files in `ref`'s tree = exactly the publish surface. Binaries skipped."""
+def read_ref_tree(
+    ref: str = "HEAD", root: Path | None = None
+) -> tuple[dict[str, str], dict[str, bytes]]:
+    """Walk `ref`'s tree ONCE and split it into (text files, binary blobs) — together the exact
+    publish surface. Text is decoded UTF-8 (lossy); binaries are kept as raw bytes so the binary
+    string-scan can look inside them."""
     root = root or _repo_root()
     names = _git(["ls-tree", "-r", "--name-only", "-z", ref], root).split("\0")
     files: dict[str, str] = {}
+    binaries: dict[str, bytes] = {}
     for name in filter(None, names):
         blob = subprocess.run(["git", "show", f"{ref}:{name}"], cwd=str(root),  # noqa: S603, S607
                               capture_output=True, check=True).stdout
-        if b"\0" in blob[:8192]:   # binary-ish — not a text leak surface
-            continue
-        files[name] = blob.decode("utf-8", "replace")
-    return files
+        if b"\0" in blob[:8192]:   # binary-ish — string-scanned separately, not decoded as text
+            binaries[name] = blob
+        else:
+            files[name] = blob.decode("utf-8", "replace")
+    return files, binaries
+
+
+def files_in_ref(ref: str = "HEAD", root: Path | None = None) -> dict[str, str]:
+    """The tracked TEXT files in `ref`'s tree. Binaries are returned by `read_ref_tree` instead."""
+    return read_ref_tree(ref, root)[0]
+
+
+def changed_blobs(
+    base: str, commit: str, root: Path | None = None
+) -> tuple[dict[str, str], dict[str, bytes]]:
+    """The files added/modified between `base` and `commit`, split (text, binary). This is the delta
+    an off-main ref introduces on top of an already-curated main — the only surface worth scanning
+    to decide whether that ref is publish-safe. Deleted paths are omitted (nothing to leak)."""
+    root = root or _repo_root()
+    names = _git(["diff", "--name-only", "--diff-filter=d", "-z", base, commit], root).split("\0")
+    files: dict[str, str] = {}
+    binaries: dict[str, bytes] = {}
+    for name in filter(None, names):
+        blob = subprocess.run(["git", "show", f"{commit}:{name}"], cwd=str(root),  # noqa: S603, S607
+                              capture_output=True, check=True).stdout
+        if b"\0" in blob[:8192]:
+            binaries[name] = blob
+        else:
+            files[name] = blob.decode("utf-8", "replace")
+    return files, binaries
 
 
 def build_public_tree(
@@ -357,16 +457,19 @@ def _main(argv: list[str]) -> int:
     ref = argv[1] if len(argv) > 1 else "HEAD"
 
     if cmd == "audit":
-        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals(),
-                          competitor_names=load_competitor_names())
+        files, binaries = read_ref_tree(ref)
+        res = audit_files(files, deny_literals=load_deny_literals(),
+                          competitor_names=load_competitor_names(), binaries=binaries)
         for p in res.stripped:
             print(f"strip (internal-only, won't publish): {p}")
+        for p, ln in res.marker_skips:
+            print(f"marker-skip (allow-marker silenced this line): {p}:{ln}")
         for f in res.findings:
             print(f"LEAK [{f.kind}] {f.path}:{f.line}: {f.match}", file=sys.stderr)
         if res.ok:
             print(
                 f"leak-audit: CLEAN — {len(res.kept)} files would publish, "
-                f"{len(res.stripped)} stripped"
+                f"{len(res.stripped)} stripped, {len(res.marker_skips)} allow-marker line(s)"
             )
             return 0
         print(
@@ -377,8 +480,9 @@ def _main(argv: list[str]) -> int:
         return 1
 
     if cmd == "build-tree":
-        res = audit_files(files_in_ref(ref), deny_literals=load_deny_literals(),
-                          competitor_names=load_competitor_names())
+        files, binaries = read_ref_tree(ref)
+        res = audit_files(files, deny_literals=load_deny_literals(),
+                          competitor_names=load_competitor_names(), binaries=binaries)
         if not res.ok:
             for f in res.findings:
                 print(f"LEAK [{f.kind}] {f.path}:{f.line}: {f.match}", file=sys.stderr)
@@ -387,7 +491,34 @@ def _main(argv: list[str]) -> int:
         print(build_public_tree(ref))   # the ONLY stdout: the clean tree SHA
         return 0
 
-    print("usage: release_leak_audit.py [audit|build-tree] [ref]", file=sys.stderr)
+    if cmd == "ref-scan":
+        # Judge whether an OFF-MAIN commit is publish-safe, by the SAME rules as a release:
+        # a denied internal-only PATH present (v0.24.0's shape) is a failure, and so is a leak
+        # SHAPE in the changed CONTENTS — which the old ci.yml ref-audit never looked at, it
+        # matched path names only. `base` defaults to origin/main.
+        # Usage: ref-scan <commit> [base]
+        commit = argv[1] if len(argv) > 1 else "HEAD"
+        base = argv[2] if len(argv) > 2 else "origin/main"
+        files, binaries = changed_blobs(base, commit)
+        res = audit_files(files, deny_literals=load_deny_literals(),
+                          competitor_names=load_competitor_names(), binaries=binaries)
+        for p in res.stripped:
+            print(f"::error::{commit} carries internal-only path: {p}", file=sys.stderr)
+        for f in res.findings:
+            print(f"::error::{commit} leak [{f.kind}] {f.path}:{f.line}: {f.match}", file=sys.stderr)
+        # An off-main ref is UNTRUSTED, and its author could add a `leak-audit: allow` marker to
+        # smuggle a leak past this scan. The marker is still honored (the changed line might be a
+        # legitimate test fixture), but it is never invisible here — surface every skip so a human
+        # sees exactly where this scan looked away on a ref that is not curated main.
+        for p, ln in res.marker_skips:
+            print(f"::warning::{commit} allow-marker silenced a scanned line: {p}:{ln}", file=sys.stderr)
+        if res.stripped or res.findings:
+            return 1
+        print(f"ref-scan: {commit} clean vs {base} "
+              f"({len(files)} text + {len(binaries)} binary file(s) changed)")
+        return 0
+
+    print("usage: release_leak_audit.py [audit|build-tree|ref-scan] [ref]", file=sys.stderr)
     return 2
 
 
