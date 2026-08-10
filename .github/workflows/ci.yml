@@ -146,11 +146,15 @@ jobs:
           main=$(git rev-parse origin/main)
           deny='^(\.gitea/|docs/plans/|docs/specs/|docs/internal/)|(^|/)(CLAUDE|POSITIONING|LANDSCAPE|ROADMAP|CEILING|LAB)\.md$'
           fail=0
+          refs=0
+          offmain=0
           for ref in $(git for-each-ref --format='%(refname)' refs/remotes/origin refs/tags \
                        | grep -v '^refs/remotes/origin/HEAD$'); do
+            refs=$((refs + 1))
             tip=$(git rev-parse "$ref^{commit}")
             n=$(git rev-list --count "$main..$tip")
             [ "$n" -eq 0 ] && continue
+            offmain=$((offmain + n))
             # The only legitimate off-main refs are short-lived PR branches
             # (dependabot: main + a commit or two). Hundreds off-main = an
             # uncurated history is reachable, exactly the v0.24.0 shape.
@@ -167,5 +171,14 @@ jobs:
               fi
             done
           done
+          tags=$(git for-each-ref --format='%(refname)' refs/tags | wc -l)
+          echo "audited $refs public ref(s), $tags of them tags; $offmain commit(s) reachable off main"
+          # A silent pass over an empty ref list reads EXACTLY like a clean audit: same
+          # line, same exit 0. What leaked in July was a TAG, so a run that fetched no
+          # tags proves nothing and must not be allowed to report a clean surface.
+          if [ "$refs" -lt 2 ] || [ "$tags" -lt 1 ]; then
+            echo "::error::ref-audit saw $refs ref(s) and $tags tag(s) — the ref list is empty or unfetched, so this scan proves nothing"
+            fail=1
+          fi
           [ "$fail" -eq 0 ] && echo "every public ref is curated: on main, or ≤25 clean commits ahead"
           exit "$fail"
