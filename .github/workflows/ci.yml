@@ -93,35 +93,64 @@ jobs:
 
   pip-audit:
     runs-on: ubuntu-latest
-    # Blocking gate: a new CVE in a dependency reds CI until it's patched.
+    # Blocking gate: a new CVE in a pinned dependency reds CI until it's patched.
     #
-    # This comment used to assert "the dependency baseline is clean (verified 2026-06-24)".
-    # That claim went stale and then went false: GHSA-g6cj-pr64-35w5 (HIGH) published
-    # 2026-08-03 against the pinned cryptography, and this job did not catch it — because
-    # a blocking gate only blocks when it RUNS, and nothing had pushed to main since
-    # 08-02. It was found by reading the advisory feed, not by CI.
+    # Two lessons live here, each earned as a miss:
     #
-    # CLOSED 2026-08-08 by the daily `schedule:` trigger at the top of this file. The
-    # miss was never pip-audit's detection, it was the trigger: a quiet main was an
-    # unexamined main. This job now runs every day whether or not anyone pushed, so a
-    # CVE disclosed against already-shipped pins reds CI on the next morning's run
-    # instead of waiting for unrelated activity.
+    # 1) THE TRIGGER (2026-08-08): GHSA-g6cj-pr64-35w5 (HIGH) published 2026-08-03
+    #    against the pinned cryptography and sat unseen for 3 days, because this
+    #    workflow was push-only and nobody pushed to a quiet main. Closed by the
+    #    daily `schedule:` at the top of this file — a quiet main is no longer an
+    #    unexamined main.
     #
-    # Still no standing claim about the baseline lives here, and the honest bound is
-    # unchanged in two places. (1) This gate DETECTS; it does not remediate. Dependabot's
-    # auto-fix arm cannot open a mergeable PR for this repo (see .github/dependabot.yml
-    # for the three reasons), so the fix is a human moving both bounds and relocking.
-    # (2) It audits what is PINNED here, so it speaks for this repo's own resolve, not
-    # for whatever an adopter's resolver picks inside our published ranges.
+    # 2) THE SUBJECT (2026-08-10): the fix above armed a detector that was auditing
+    #    an EMPTY environment. The old step ran the action with `local: true`, no
+    #    install step, and no `inputs:` — so it audited the action's own venv
+    #    (pip-audit's dependencies), never this repo's. Every green it ever
+    #    produced was vacuous, and the advisory in (1) would not have fired even
+    #    with the schedule. A gate can only refuse what it is given. Closed by
+    #    auditing the hash-pinned requirement exports directly, and by the
+    #    bite-check below: every run first proves pip-audit REDS on the exact pin
+    #    this gate once missed, so a blind audit can never read as green again.
+    #    (If the bite step ever passes, either the audit went blind again or the
+    #    advisory DB dropped cryptography==49.0.0 — update the bite pin, don't
+    #    delete the check. The quieter decay: if that pin is ever yanked from
+    #    PyPI the bite reds for the wrong reason and proves nothing, while the
+    #    real audit below still gates — on a bite red with no vuln table in its
+    #    log, update the pin.)
+    #
+    # Honest bounds, unchanged: this gate DETECTS, it does not remediate
+    # (Dependabot's auto-fix arm cannot open a mergeable PR here — see
+    # .github/dependabot.yml for the three reasons, so the fix is a human moving
+    # both bounds and relocking), and it speaks for this repo's own pinned resolve
+    # (the runtime + dev exports), not for whatever an adopter's resolver picks
+    # inside our published ranges.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Audit dependencies for known CVEs
+      - name: Stage the bite-check pin (the CVE this gate once missed)
+        run: printf 'cryptography==49.0.0\n' > "$RUNNER_TEMP/bite-check.txt"
+      - name: Bite check — pip-audit must red on a known-vulnerable pin
+        id: bite
+        continue-on-error: true
         uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         with:
-          local: true
+          inputs: ${{ runner.temp }}/bite-check.txt
+          no-deps: true
+          summary: false
+      - name: Refuse a blind detector
+        if: steps.bite.outcome != 'failure'
+        run: |
+          echo "::error::pip-audit passed cryptography==49.0.0 — the detector is blind (or the advisory moved); do not trust the audit below"
+          exit 1
+      - name: Audit the pinned dependency exports for known CVEs
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: requirements/runtime.txt requirements/dev.txt
+          require-hashes: true
+          no-deps: true
 
   # Every public ref must stay curated. This repo's public main is a curated
   # fast-forward tree; its safety rests on ONE invariant — no public ref points
