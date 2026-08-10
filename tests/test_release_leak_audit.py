@@ -9,6 +9,7 @@ NOTE: fixtures here use FAKE-but-flaggable values (a made-up internal-TLD host, 
 IP, a fake /root-style path), never real infrastructure, and each fixture line carries a
 `leak-audit: allow` marker so this file stays clean under its own live gate.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -439,24 +440,65 @@ def test_read_ref_tree_returns_binaries_separately():
 
 
 # --- F5: ref-scan CLI reds on a denied-path commit, passes a clean delta -------------------
-def test_ref_scan_cli_passes_a_clean_delta():
+# Self-contained: build a throwaway two-commit repo per test. The earlier version ran against the
+# real repo's HEAD~1, which does not exist in CI's shallow (depth-1) checkout — it exited 128 there
+# while passing on a full local clone. A synthetic repo exercises both directions in EVERY
+# environment and never depends on what the last real commit happened to touch.
+def _init_repo(path: Path):
+    import subprocess as _sp
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    _sp.run(["git", "init", "-q", str(path)], check=True)  # noqa: S603, S607
+    return env
+
+
+def _commit(path: Path, env, msg: str):
+    import subprocess as _sp
+    _sp.run(["git", "add", "-A"], cwd=str(path), check=True)  # noqa: S603, S607
+    _sp.run(["git", "commit", "-q", "-m", msg], cwd=str(path), env=env, check=True)  # noqa: S603, S607
+
+
+def test_ref_scan_cli_passes_a_clean_delta(tmp_path):
     import subprocess as _sp
     script = str(REPO_ROOT / "scripts" / "release_leak_audit.py")
+    env = _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("clean base\n")
+    _commit(tmp_path, env, "base")
+    (tmp_path / "notes.md").write_text("still clean, connect to pve.example.com\n")
+    _commit(tmp_path, env, "clean change")
     r = _sp.run([sys.executable, script, "ref-scan", "HEAD", "HEAD~1"],  # noqa: S603
-                cwd=str(REPO_ROOT), capture_output=True, text=True)
+                cwd=str(tmp_path), capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
 
-def test_ref_scan_cli_reds_on_an_internal_only_path():
+def test_ref_scan_cli_reds_on_an_internal_only_path(tmp_path):
     import subprocess as _sp
     script = str(REPO_ROOT / "scripts" / "release_leak_audit.py")
-    # A commit that touched a `.gitea/` path — an internal-only surface the public mirror strips.
-    c = _sp.run(["git", "log", "--format=%H", "-n1", "--", ".gitea/"],  # noqa: S603, S607
-                cwd=str(REPO_ROOT), capture_output=True, text=True).stdout.strip()
-    if not c:
-        import pytest as _pytest
-        _pytest.skip("no commit touching .gitea/ in this clone's history")
-    r = _sp.run([sys.executable, script, "ref-scan", c, c + "~1"],  # noqa: S603
-                cwd=str(REPO_ROOT), capture_output=True, text=True)
+    env = _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("clean base\n")
+    _commit(tmp_path, env, "base")
+    # A commit adding a `.gitea/` path — an internal-only surface the public mirror strips; a
+    # public ref pointing at it is the v0.24.0 shape ref-scan exists to catch.
+    (tmp_path / ".gitea").mkdir()
+    (tmp_path / ".gitea" / "leak-deny.txt").write_text("some-internal-host\n")
+    _commit(tmp_path, env, "carries an internal-only path")
+    r = _sp.run([sys.executable, script, "ref-scan", "HEAD", "HEAD~1"],  # noqa: S603
+                cwd=str(tmp_path), capture_output=True, text=True)
     assert r.returncode == 1, "ref-scan did not red on a commit carrying an internal-only path"
     assert "internal-only path" in r.stderr
+
+
+def test_ref_scan_cli_reds_on_a_leak_shape_in_changed_content(tmp_path):
+    import subprocess as _sp
+    script = str(REPO_ROOT / "scripts" / "release_leak_audit.py")
+    env = _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("clean base\n")
+    _commit(tmp_path, env, "base")
+    # A private IP introduced in changed CONTENT (not a denied path) — the class the old
+    # path-name-only ref-audit never saw.
+    (tmp_path / "config.md").write_text("api at 172.31.4.4:8006\n")  # leak-audit: allow
+    _commit(tmp_path, env, "leak in content")
+    r = _sp.run([sys.executable, script, "ref-scan", "HEAD", "HEAD~1"],  # noqa: S603
+                cwd=str(tmp_path), capture_output=True, text=True)
+    assert r.returncode == 1, "ref-scan did not red on a leak shape in changed content"
+    assert "rfc1918-ip" in r.stderr
