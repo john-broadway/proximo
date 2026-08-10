@@ -156,6 +156,7 @@ Example — Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "proximo": {
       "command": "proximo",
+      "timeout": 60,
       "env": {
         "PROXIMO_API_BASE_URL": "https://YOUR-PVE-HOST:8006/api2/json",
         "PROXIMO_NODE": "YOUR-NODE-NAME",
@@ -166,6 +167,11 @@ Example — Claude Desktop (`claude_desktop_config.json`):
   }
 }
 ```
+
+`timeout` is not optional decoration. Proximo answers `initialize` in about 3.5 seconds because it
+registers its whole tool surface first, and some clients — Cline among them — give up after 3 and
+drop the server **without telling you**: you get a session with no Proximo tools and no error. If
+your client names this setting something else, raise that instead.
 
 Restart the client, then ask it: **"run pve_doctor."** You'll see the same boundary you verified in
 Step 4 — now the AI can answer questions about your cluster (what's running, is it healthy, is it
@@ -524,6 +530,7 @@ closed (it rewrites that file from memory on exit, clobbering edits made while i
   "mcpServers": {
     "proximo": {
       "command": "uvx",
+      "timeout": 60,
       "args": [
         "mcp-proxy",
         "--transport", "streamablehttp",

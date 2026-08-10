@@ -95,6 +95,7 @@ The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your
     "proximo": {
       "command": "uvx",
       "args": ["proximo-proxmox"],
+      "timeout": 60,                                     // startup is ~3.5s; a 3s client default drops the server silently
       "env": {
         "PROXIMO_API_BASE_URL": "https://your-pve:8006/api2/json",
         "PROXIMO_NODE": "your-node",

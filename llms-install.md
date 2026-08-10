@@ -56,6 +56,7 @@ MCP client):
     "proximo": {
       "command": "uvx",
       "args": ["proximo-proxmox"],
+      "timeout": 60,
       "env": {
         "PROXIMO_API_BASE_URL": "https://your-pve:8006/api2/json",
         "PROXIMO_NODE": "your-node",
@@ -67,6 +68,13 @@ MCP client):
 ```
 
 Replace the three values with the user's answers from step 3.
+
+**Keep the `timeout`.** Proximo takes about 3.5 seconds to answer `initialize` — it
+registers its whole tool surface first — and `uvx` adds a little more, much more on the
+first run while it downloads the package. Cline's default is 3 seconds, so the server is
+dropped and the session simply has no Proximo tools, with nothing shown to the user.
+This is not a `uvx` cost: a `pip`-installed `proximo` measures the same. Any client with
+a short `initialize` timeout needs this raised, whatever the key is called there.
 
 ## 5. Verify
 
@@ -105,3 +113,8 @@ Replace the three values with the user's answers from step 3.
   `pip install proximo-proxmox` and use `"command": "proximo", "args": []` in the config.
 - **Tools list but calls fail with 401/403**: the token lacks a role for that path —
   run the doctor preflight; its report names the missing privilege.
+- **The server is configured but NO Proximo tools appear, and nothing errors**: the
+  client gave up waiting for `initialize`. This is the `timeout` in step 4 — set it to
+  60 and reload. The failure is silent by design in most clients; in Cline the evidence
+  is one line in `~/.cline/data/logs/cline.log` reading `[mcp] Failed to load tools from
+  MCP server "proximo", skipping: ... timed out after 3s`.
