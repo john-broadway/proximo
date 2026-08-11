@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import inspect
 import os
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from typing import Annotated, Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from . import __version__, lean
@@ -91,17 +93,45 @@ mcp = FastMCP("proximo")
 mcp._mcp_server.version = __version__
 
 
+# Does the installed FastMCP.tool accept an `annotations=` kwarg? (Added to the SDK well after our
+# floor of mcp>=1.2.0.) Feature-detected rather than floor-bumped: on a modern mcp every plane tool
+# ships a readOnlyHint derived from its own MUTATION/READ-ONLY prose; on an older mcp the hint is
+# simply absent and the prose still carries the same information — graceful, never a crash.
+_MCP_TOOL_SUPPORTS_ANNOTATIONS = "annotations" in inspect.signature(mcp.tool).parameters
+
+
+def _annotations_from_doc(doc: str | None) -> ToolAnnotations | None:
+    """Derive MCP tool annotations from the docstring's leading marker. Clients (Claude Code among
+    them) use readOnlyHint for permission-prompt policy. Read-only tools mark readOnlyHint=True;
+    mutating tools mark readOnlyHint=False (destructiveHint then defaults per the MCP spec). A
+    docstring with neither marker (a handful) gets no annotation rather than a guessed one."""
+    if not doc:
+        return None
+    first = doc.lstrip().split("\n", 1)[0].strip()
+    if first.startswith("READ-ONLY"):
+        return ToolAnnotations(readOnlyHint=True)
+    if first.startswith("MUTATION"):
+        return ToolAnnotations(readOnlyHint=False)
+    return None
+
+
 def tool(*d_args: Any, **d_kwargs: Any):
     """Target-aware tool decorator: like FastMCP's, but the tool also advertises
     `proximo_target` and routes the call to that registered box (via the active-target
     contextvar). Apply to every plane tool. Instance-level tools that act on THIS Proximo
     (e.g. audit_verify) intentionally keep the plain FastMCP decorator — they have no
     remote to target.
-    """
-    inner = mcp.tool(*d_args, **d_kwargs)
 
+    Also derives an MCP readOnlyHint from the tool's own MUTATION/READ-ONLY marker (see
+    _annotations_from_doc), unless the caller passed `annotations=` explicitly. Deferred into
+    `deco` because the marker lives in fn.__doc__, which isn't in scope until fn arrives.
+    """
     def deco(fn):
-        return inner(target_aware(fn))
+        kwargs = dict(d_kwargs)
+        if (_MCP_TOOL_SUPPORTS_ANNOTATIONS and "annotations" not in kwargs
+                and (ann := _annotations_from_doc(fn.__doc__)) is not None):
+            kwargs["annotations"] = ann
+        return mcp.tool(*d_args, **kwargs)(target_aware(fn))
 
     return deco
 
@@ -645,7 +675,7 @@ def _blocked_allowlist(action: str, target: str, detail: dict | None = None,
     — checked at the server layer BEFORE any snapshot/exec, so a forbidden CTID never gets touched.
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
     return _blocked(action, target, "blocked:allowlist",
-                    f"CTID {target} is not permitted by the allowlist (fail-closed).",
+                    f"CTID {target} is not in PROXIMO_CT_ALLOWLIST (fail-closed) — add it there to permit.",
                     detail, mutation=mutation)
 
 
@@ -655,7 +685,7 @@ def _exec_disabled(action: str, target: str, detail: dict | None = None,
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
     return _blocked(action, target, "blocked:exec_disabled",
                     ("In-container exec is disabled (safe default: API-only). It grants near-root on the "
-                     "PVE host; enable deliberately with PROXIMO_ENABLE_EXEC=1."),
+                     "PVE host; enable deliberately with PROXIMO_ENABLE_EXEC=1 and set PROXIMO_CT_ALLOWLIST."),
                     detail, mutation=mutation)
 
 
@@ -674,7 +704,7 @@ def _blocked_agent_allowlist(action: str, target: str, detail: dict | None = Non
     """Refuse + audit a qemu-agent op whose VMID isn't on the allowlist (fail-closed).
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
     return _blocked(action, target, "blocked:allowlist",
-                    f"Guest {target} is not permitted by the agent allowlist (fail-closed).",
+                    f"Guest {target} is not in PROXIMO_AGENT_ALLOWLIST (fail-closed) — add it there to permit.",
                     detail, mutation=mutation)
 
 
@@ -1604,6 +1634,7 @@ async def dispatch_tool(server_mcp, catalog: dict, name: str, arguments: dict):
     schema-lookup step entirely, so this is its only chance at a recoverable error instead of a
     dead end.
     """
+    name = lean.resolve_alias(name)  # a fabricated verb-order guess resolves to the real tool
     if name not in catalog:
         near = difflib.get_close_matches(name, catalog, n=3, cutoff=0.6)
         hint = f" — did you mean: {', '.join(near)}" if near else ""
@@ -1662,7 +1693,13 @@ def escape_catalog(server_mcp=mcp) -> dict:
 # OWN named config error ("Missing required PMG env var: PROXIMO_PMG_BASE_URL"), which tells an
 # operator what to fix, where "unknown tool" would send them to build something that exists.
 @mcp.tool()
-async def proximo_call(tool: str, arguments: dict | None = None) -> Any:
+async def proximo_call(
+    tool: Annotated[str, Field(description="Exact tool name to run, e.g. 'pve_guest_power' "
+                                          "(from proximo_find_tools). Non-resident names are fine.")],
+    arguments: Annotated[dict | None, Field(description="The tool's arguments as an object, e.g. "
+                                            "{'vmid': 100, 'action': 'reboot'}. Get the shape from "
+                                            "proximo_tool_schema. Omit/null for a no-arg tool.")] = None,
+) -> Any:
     """Call any Proximo tool by exact name, including ones not in this server's listed tools.
 
     Get the argument shape from proximo_tool_schema first. Same gates as calling it directly:
@@ -1737,8 +1774,17 @@ def apply_lean(server_mcp=mcp) -> dict:
         )
 
     @server_mcp.tool(description=find_tools_doc)
-    def proximo_find_tools(query: str, limit: int = 25) -> list[dict]:
-        return lean.search_tools(catalog, query, limit=limit)
+    def proximo_find_tools(query: str, limit: int = 25) -> list[dict] | dict:
+        # L5: a bare [] on a no-match query reads as a dead end and invites the model to force a
+        # near-miss tool or fabricate a name. On no match, return an explicit signal + what to do
+        # next instead (matches are still the plain list, so a hit path is unchanged).
+        results = lean.search_tools(catalog, query, limit=limit)
+        if not results:
+            return {"matches": [], "note": (
+                f"No tool matched {query!r}. Try broader or different terms; Proximo may simply "
+                "not have this capability. If you already know the exact tool name, call it with "
+                "proximo_call(tool=..., arguments=...).")}
+        return results
 
     @server_mcp.tool()
     def proximo_tool_schema(name: str) -> dict:
@@ -3142,6 +3188,40 @@ _slim_registry_schemas()
 # has run. AFTER slimming, deliberately — the snapshot holds references to the same Tool objects,
 # so a caller reaching a tool by name gets the same slimmed schema tools/list would have shown.
 _snapshot_full_catalog()
+
+
+def _unknown_tool_error(name: str) -> str:
+    """The message for a direct tools/call naming a tool this server does not have resident. A REAL
+    tool that is merely non-resident (the dynamic door lists only the facade) gets a precise pointer
+    to proximo_call; a fabricated verb-order guess resolves through the alias map first; anything
+    else gets did-you-mean over the full catalog. Keeps the lowercase 'unknown tool' substring the
+    governed/lean faces already return, so error-matching stays uniform."""
+    real = lean.resolve_alias(name)
+    if real in FULL_CATALOG:
+        return (f"{name!r} is not a resident tool on this server (the dynamic door lists only the "
+                f"facade); call it with proximo_call(tool={real!r}, arguments=...), or search with "
+                "proximo_find_tools.")
+    near = difflib.get_close_matches(name, FULL_CATALOG, n=3, cutoff=0.6)
+    hint = f" — did you mean: {', '.join(near)}" if near else ""
+    return (f"unknown tool {name!r}{hint}. Reach any Proximo tool by name via "
+            "proximo_call(tool=..., arguments=...); search the catalog with proximo_find_tools.")
+
+
+# H1: a direct tools/call for a NON-resident name would otherwise dead-end on FastMCP's bare
+# "Unknown tool: X" (tool_manager raises it, the low-level server turns it into an isError result) —
+# no did-you-mean, no pointer to proximo_call. On the dynamic default door only the ~6 facade tools
+# are resident, so an agent naming a real tool directly, or fabricating a verb-order variant, lands
+# exactly here. A dead-end error is what makes an agent fabricate the NEXT wrong name; give it a
+# recoverable pointer instead. Re-registering the CallToolRequest handler is last-write-wins over
+# FastMCP's own; resident tools still dispatch through FastMCP's original handler unchanged.
+_fastmcp_call_tool = mcp.call_tool  # FastMCP's own handler (bound), captured before we replace it
+
+
+@mcp._mcp_server.call_tool(validate_input=False)  # match FastMCP's own registration flag
+async def _proximo_call_tool(name: str, arguments: dict):
+    if name not in mcp._tool_manager._tools:
+        raise ProximoError(_unknown_tool_error(name))
+    return await _fastmcp_call_tool(name, arguments)
 
 
 if __name__ == "__main__":

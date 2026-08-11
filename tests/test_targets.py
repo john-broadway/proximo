@@ -149,3 +149,49 @@ def test_load_registry_reparses_when_file_changes(monkeypatch, tmp_path):
     st = p.stat()
     os.utime(str(p), (st.st_atime + 10, st.st_mtime + 10))  # force a new mtime
     assert set(targets.load_registry()) == {"b"}, "cached registry not invalidated on file change"
+
+
+# --- M3: vmid/ctid params accept an int and hand the body a str (pydantic would else reject int) --
+def test_vmid_int_is_coerced_to_str_at_the_boundary():
+    """An agent naturally sends the 'Numeric VMID' as an int; the param is typed str (a VMID is an
+    opaque token). target_aware injects an int->str coercion so pydantic accepts the int and the
+    body still receives the str it expects. Proven through FastMCP's validated call path."""
+    from typing import Annotated
+
+    from mcp.server.fastmcp import FastMCP
+    from pydantic import Field
+
+    seen = {}
+
+    def probe(vmid: Annotated[str, Field(description="Numeric VMID or CTID.")]) -> dict:
+        seen["type"] = type(vmid).__name__
+        seen["value"] = vmid
+        return {"ok": True}
+
+    m = FastMCP("proximo-m3-test")
+    m.tool(name="probe")(targets.target_aware(probe))
+
+    import anyio
+    anyio.run(lambda: m._tool_manager.call_tool("probe", {"vmid": 100}))
+    assert seen["type"] == "str"   # body got a str, not an int
+    assert seen["value"] == "100"  # coerced from the int
+
+
+def test_plain_str_vmid_still_passes_through():
+    from typing import Annotated
+
+    from mcp.server.fastmcp import FastMCP
+    from pydantic import Field
+
+    seen = {}
+
+    def probe(ctid: Annotated[str, Field(description="Numeric CTID.")]) -> dict:
+        seen["value"] = ctid
+        return {"ok": True}
+
+    m = FastMCP("proximo-m3-test2")
+    m.tool(name="probe")(targets.target_aware(probe))
+
+    import anyio
+    anyio.run(lambda: m._tool_manager.call_tool("probe", {"ctid": "105"}))
+    assert seen["value"] == "105"  # a string still works unchanged

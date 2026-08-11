@@ -182,6 +182,7 @@
       "inputSchema": {
         "properties": {
           "tool": {
+            "description": "Exact tool name to run, e.g. 'pve_guest_power' (from proximo_find_tools). Non-resident names are fine.",
             "type": "string"
           },
           "arguments": {
@@ -194,7 +195,8 @@
                 "type": "null"
               }
             ],
-            "default": null
+            "default": null,
+            "description": "The tool's arguments as an object, e.g. {'vmid': 100, 'action': 'reboot'}. Get the shape from proximo_tool_schema. Omit/null for a no-arg tool."
           }
         },
         "required": [

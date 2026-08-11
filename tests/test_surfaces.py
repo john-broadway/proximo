@@ -447,3 +447,26 @@ def test_catalog_door_stays_silent_when_it_narrows_nothing(monkeypatch, capsys):
     assert len(m._tool_manager._tools) == before, "precondition: nothing should have been pruned"
     assert "auto-scoped" not in err, (
         f"announced a narrowing that did not happen: {err!r}")
+
+
+# --- L5: proximo_find_tools gives a "no tool does this" signal instead of a bare [] on no match --
+def test_find_tools_no_match_returns_a_recoverable_note():
+    """A bare [] on a no-match query reads as a dead end and invites a fabricated/near-miss call.
+    On no match, proximo_find_tools returns an explicit note pointing at broader terms / proximo_call;
+    a real match still returns the plain list of {name, summary}."""
+    from mcp.server.fastmcp import FastMCP
+
+    from proximo import server
+
+    m = FastMCP("l5-test")
+    m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
+    server.apply_lean(m)
+    find = m._tool_manager._tools["proximo_find_tools"].fn
+
+    miss = find(query="zzzznotarealcapability")
+    assert isinstance(miss, dict)
+    assert miss["matches"] == []
+    assert "proximo_call" in miss["note"]
+
+    hit = find(query="guest power")
+    assert isinstance(hit, list) and hit  # a real match is still the plain list

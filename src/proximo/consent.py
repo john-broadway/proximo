@@ -205,7 +205,9 @@ def enforce_consent(action: str, target: str, audit: AuditLedger, *,
         # just with a note for DIAGNOSE that taint made this mandatory) — never change the outcome.
         no_grant_detail = {**(detail or {}), "taint_required": True} if tainted_mandatory else detail
         _refuse(action, target, audit, "blocked:consent_required", consent_id, no_grant_detail,
-                "no out-of-band grant present for this exact plan — approve it via the operator helper")
+                f"no out-of-band grant for this exact plan — an operator approves it by placing an "
+                f"empty file at {path!r} from OUTSIDE this agent (the consent_id is not a secret; "
+                f"Proximo never writes it itself)")
     except (OSError, ValueError):
         # perm denied / garbled path / non-directory component in PROXIMO_CONSENT_DIR => fail-closed,
         # exactly like contain_state()'s os.stat split between clean-absent and errored.

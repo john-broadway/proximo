@@ -469,3 +469,87 @@ def test_dispatch_leaves_the_registry_unchanged(monkeypatch):
     finally:
         server.mcp._tool_manager._tools.clear()
         server.mcp._tool_manager._tools.update(saved)
+
+
+# === M2: verb-first legacy names — the fabricated noun_verb guess routes to the real tool ========
+def test_resolve_alias_maps_guesses_and_passes_others_through():
+    from proximo import lean
+    assert lean.resolve_alias("pve_vm_create") == "pve_create_vm"
+    assert lean.resolve_alias("pve_guests_list") == "pve_list_guests"
+    assert lean.resolve_alias("pve_guest_status") == "pve_guest_status"  # real name unchanged
+    assert lean.resolve_alias("nonsense") == "nonsense"
+
+
+def _empty_mcp():
+    from mcp.server.fastmcp import FastMCP
+    return FastMCP("proximo-alias-test")
+
+
+def test_dispatch_routes_an_alias_guess_to_the_real_tool():
+    """proximo_call(tool='pve_vm_create') must reach the REAL tool pve_create_vm, not dead-end.
+    The verb-first legacy names are the only ones where did-you-mean mis-ranks the natural guess."""
+    ran = {}
+
+    def pve_create_vm() -> dict:
+        ran["hit"] = True
+        return {"ok": True}
+
+    m = _empty_mcp()
+    m.tool(name="pve_create_vm")(pve_create_vm)
+    catalog = dict(m._tool_manager._tools)
+
+    async def go():
+        return await server.dispatch_tool(m, catalog, "pve_vm_create", {})
+
+    anyio.run(go)
+    assert ran.get("hit") is True
+
+
+def test_tool_schema_resolves_an_alias_guess():
+    from proximo import lean
+
+    def pve_create_vm() -> dict:
+        return {"ok": True}
+
+    m = _empty_mcp()
+    m.tool(name="pve_create_vm", description="MUTATION: make a VM")(pve_create_vm)
+    catalog = dict(m._tool_manager._tools)
+    got = lean.tool_schema(catalog, "pve_vm_create")
+    assert got["name"] == "pve_create_vm"
+
+
+# === H1: a direct call for a non-resident/unknown name gets a proximo_call pointer, not a dead end =
+def test_unknown_tool_error_points_a_nonresident_real_name_at_proximo_call():
+    # A real catalog tool named directly on the dynamic door (where it isn't resident) -> pointer.
+    real = next(iter(server.FULL_CATALOG))  # any real tool name
+    msg = server._unknown_tool_error(real)
+    assert "proximo_call" in msg
+    assert real in msg
+
+
+def test_unknown_tool_error_resolves_an_alias_guess_in_the_pointer():
+    msg = server._unknown_tool_error("pve_vm_create")
+    assert "pve_create_vm" in msg  # the pointer names the REAL tool, not the guess
+    assert "proximo_call" in msg
+
+
+def test_unknown_tool_error_gives_did_you_mean_and_keeps_the_substring():
+    msg = server._unknown_tool_error("totally_made_up_xyz")
+    assert "unknown tool" in msg  # lowercase substring the governed/lean faces already return
+    assert "proximo_call" in msg
+
+
+def test_interceptor_returns_a_helpful_error_over_the_protocol():
+    """The re-registered CallToolRequest handler turns a non-resident name into an isError result
+    carrying the proximo_call pointer — not FastMCP's bare 'Unknown tool: X' dead end."""
+    import mcp.types as mt
+    handler = server.mcp._mcp_server.request_handlers[mt.CallToolRequest]
+
+    async def call(name):
+        req = mt.CallToolRequest(method="tools/call",
+                                 params=mt.CallToolRequestParams(name=name, arguments={}))
+        return (await handler(req)).root
+
+    res = anyio.run(call, "pve_vm_create")
+    assert res.isError
+    assert "proximo_call" in res.content[0].text

@@ -52,6 +52,15 @@ def type_str(prop: dict) -> str:
         return "enum(" + ", ".join(str(v) for v in prop["enum"]) + ")"
     if "type" in prop:
         t = prop["type"]
+        if isinstance(t, list):
+            # pydantic v2 emits LIST-form types for a nullable/union scalar, e.g.
+            # ["string", "null"] for `str | None`. Rendering str(t) leaked "['string', 'null']"
+            # into ~1,100 doc cells; strip null, mark nullable, join the rest (works for any
+            # list-form, e.g. ["integer", "null"] too).
+            nullable = "null" in t
+            parts = [str(x) for x in t if x != "null"]
+            base = " | ".join(dict.fromkeys(parts)) or "any"
+            return f"{base} (nullable)" if nullable else base
         if t == "array":
             items = prop.get("items") or {}
             inner = items.get("type") or (type_str(items) if items else "any")

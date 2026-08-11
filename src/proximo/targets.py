@@ -13,11 +13,33 @@ import inspect
 import os
 import tomllib
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, get_args, get_origin
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from .backends import ProximoError
+
+# Params that name a Proxmox object ID. Their descriptions say "Numeric VMID/CTID", so an agent
+# naturally sends the int `100` — but they are typed `str` (a VMID is an opaque token that must
+# never be arithmetic'd), and pydantic v2 REJECTS an int for a `str` field before any body runs,
+# costing a wasted round-trip per call. A BeforeValidator coerces int -> str at the boundary, so
+# the natural int call is accepted and every tool body still receives the str it already expects.
+# Injected once here (target_aware wraps every plane tool), not edited into ~48 wrappers.
+_ID_PARAM_NAMES = frozenset({"vmid", "ctid"})
+
+
+def _coerce_object_id(v):
+    return str(v) if isinstance(v, int) else v
+
+
+def _with_id_coercion(annotation):
+    """Add the int->str BeforeValidator to a vmid/ctid param's annotation, preserving its existing
+    Annotated metadata (the Field description) and its base `str` type (so the schema is unchanged
+    and the description still reads Numeric — the runtime just stops rejecting the int)."""
+    if get_origin(annotation) is Annotated:
+        base, *meta = get_args(annotation)
+        return Annotated[(base, BeforeValidator(_coerce_object_id), *meta)]
+    return Annotated[annotation, BeforeValidator(_coerce_object_id)]
 
 VALID_KINDS = frozenset({"pve", "pbs", "pmg", "pdm"})
 
@@ -128,6 +150,10 @@ def target_aware(fn):
         if p.kind is inspect.Parameter.VAR_KEYWORD:
             insert_at = i
             break
+        # Widen a vmid/ctid param so pydantic coerces an int argument to str instead of rejecting
+        # it (see _with_id_coercion). Keyed on the param NAME, so it never touches an unrelated str.
+        if p.name in _ID_PARAM_NAMES and p.annotation is not inspect.Parameter.empty:
+            params[i] = p.replace(annotation=_with_id_coercion(p.annotation))
     params.insert(insert_at, _TARGET_PARAM)
     wrapper.__signature__ = sig.replace(parameters=params)  # type: ignore[attr-defined]
     return wrapper

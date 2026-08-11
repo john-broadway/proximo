@@ -40,6 +40,27 @@ from typing import Any
 _SUMMARY_MAX = 140
 _DEFAULT_LIMIT = 25
 
+# Legacy verb-first names are the only tools not in `plane_noun_verb` form, and did-you-mean ranks
+# on the shared verb SUFFIX — so the natural noun_verb name an agent fabricates (`pve_vm_create`)
+# mis-ranks to an unrelated tool (`pve_realm_create`) instead of the real one. Map those fabricated
+# guesses to the real tools so a direct call, proximo_call, and the unknown-name interceptor all
+# route them correctly rather than dead-ending. Keys are the guesses; values are real tool names.
+ALIASES: dict[str, str] = {
+    "pve_vm_create": "pve_create_vm",
+    "pve_container_create": "pve_create_container",
+    "pve_ct_create": "pve_create_container",
+    "pve_guest_delete": "pve_delete_guest",
+    "pve_vm_delete": "pve_delete_guest",
+    "pve_container_delete": "pve_delete_guest",
+    "pve_guests_list": "pve_list_guests",
+    "pve_guest_list": "pve_list_guests",
+}
+
+
+def resolve_alias(name: str) -> str:
+    """Map a fabricated verb-order guess to the real tool name; pass any other name through."""
+    return ALIASES.get(name, name)
+
 def _term_variants(term: str) -> tuple[str, ...]:
     """A query term plus its synonyms, so any spelling finds a tool.
 
@@ -187,6 +208,7 @@ def tool_schema(catalog: dict[str, Any], name: str) -> dict:
     names, and a KeyError carrying candidates is recoverable where an empty schema is not — a
     model handed `{}` would call blind, which is the worst outcome available here.
     """
+    name = resolve_alias(name)  # a fabricated verb-order guess resolves to the real tool
     if name not in catalog:
         near = difflib.get_close_matches(name, catalog, n=3, cutoff=0.6)
         hint = f" — did you mean: {', '.join(near)}" if near else ""
