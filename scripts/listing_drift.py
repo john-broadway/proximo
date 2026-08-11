@@ -66,6 +66,11 @@ SURFACES = [
     ("glama",          "https://glama.ai/mcp/servers/john-broadway/proximo"),
     ("pulsemcp",       "https://www.pulsemcp.com/servers/john-broadway-proximo"),
     ("lobehub",        "https://lobehub.com/mcp/john-broadway-proximo"),
+    # A shared directory page — hundreds of OTHER servers' counts live in the same body, so
+    # the third field scopes matching to lines naming proximo. Sat at "365 tools" unwatched
+    # until 2026-08-11; if the entry vanishes the scope yields NO CLAIM, never CURRENT.
+    ("awesome-mcp",    "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md",
+     "proximo"),
 ]
 
 
@@ -94,12 +99,14 @@ def fetch(url: str) -> tuple[str | None, str]:
 
 def audit(count: int, version: str) -> list[dict]:
     rows = []
-    for name, url in SURFACES:
+    for name, url, *scope in SURFACES:
         body, note = fetch(url)
         if body is None:
             rows.append({"surface": name, "url": url, "state": "UNREACHABLE",
                          "note": note, "counts": [], "versions": []})
             continue
+        if scope:  # shared-page surface: only the lines naming us carry claims that are ours
+            body = "\n".join(ln for ln in body.splitlines() if scope[0] in ln.lower())
         counts = sorted({int(c) for c in _COUNT_RE.findall(body)})
         vers = sorted({v for v in _VER_RE.findall(body)})
         wrong = [c for c in counts if c != count]
