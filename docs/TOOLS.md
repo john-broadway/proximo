@@ -543,12 +543,14 @@ pve_backup_job_create; to remove one use pve_backup_job_delete.
 
 READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —
 a backup missing from a pve_tasks_list slice (other node, or outside its limit window)
-still shows here. Returns a list of dicts (volid, size, ctime, …).
+still shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only
+the newest N — a capped slice is never evidence a backup is absent; omit it to verify one.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage ID to list backup archives from. |
 | `node` | string (nullable) | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N archives by ctime. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected. (default: `null`) |
 
 #### `pve_ceph_cfg_db`
 
@@ -4425,13 +4427,15 @@ READ-ONLY: list the volumes a storage holds — ISO images, container templates,
 
 No state change. Optionally filter by content type (iso | vztmpl | backup); omit to list all.
 Returns a list of volume dicts (volid, size, content type, …); use it to find a volid to pass to
-restore/clone tools. To *define* a new storage use pve_storage_create.
+restore/clone tools. `limit` returns only the newest N — a capped slice is never evidence a
+volume is absent. To *define* a new storage use pve_storage_create.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage backend name to list content from. |
 | `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
 | `content` | string (nullable) | no | Filter by content type: `iso`, `vztmpl`, or `backup`. Omit to list all content. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N volumes by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pve_storage_content_delete`
 
@@ -7422,9 +7426,10 @@ Smoke-confirm: exact path + param names (backup-type, backup-id, backup-time, pr
 
 READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns
 snapshot metadata including backup type, ID, timestamp, size, owner, and protection
-status; filter by namespace, backup_type (vm/ct/host), or backup_id. To delete one use
-pbs_snapshot_delete; to change its protected flag or notes use pbs_snapshot_protected_set
-or pbs_snapshot_notes_set.
+status; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only
+the newest N — a capped slice is never evidence a snapshot is absent; omit it to verify
+one. To delete one use pbs_snapshot_delete; to change its protected flag or notes use
+pbs_snapshot_protected_set or pbs_snapshot_notes_set.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -7432,6 +7437,7 @@ or pbs_snapshot_notes_set.
 | `ns` | string (nullable) | no | Namespace path to filter by; omit for the root namespace. (default: `null`) |
 | `backup_type` | string (nullable) | no | Backup type filter: 'vm', 'ct', or 'host'. (default: `null`) |
 | `backup_id` | string (nullable) | no | Backup group ID (e.g. VMID/CTID or host name) to filter by. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected. (default: `null`) |
 
 #### `pbs_tape_backup`
 

@@ -58,3 +58,28 @@ def project_rows(rows: list, fields: str | None, lean: tuple[str, ...]) -> list:
         {k: r[k] for k in wanted if k in r} if isinstance(r, dict) else r
         for r in rows
     ]
+
+
+def cap_newest(rows: list, limit: int | None, ts_key: str) -> list:
+    """Opt-in newest-first cap for hazard-class listings (backups, snapshots, volumes).
+
+    These surfaces are absence-check ground truth — "never conclude a backup failed from
+    absence" — so ``limit=None`` returns the rows UNTOUCHED (order included), and a capped
+    slice is only ever something the caller explicitly asked for. A positive limit returns
+    the newest N by ``ts_key`` (rows missing the key sort oldest); zero/negative is refused
+    outright, never coerced to "all".
+    """
+    if limit is None:
+        return rows
+    n = int(limit)
+    if n <= 0:
+        raise ProximoError(f"limit must be a positive integer, got {limit!r}")
+    def _ts(r) -> float:  # noqa: ANN001 — row shape is heterogeneous by design
+        v = r.get(ts_key) if isinstance(r, dict) else None
+        if v is None:
+            return 0.0       # missing sorts oldest
+        try:
+            return float(v)  # a backend handing epoch-as-string still sorts by its value
+        except (TypeError, ValueError):
+            return 0.0       # non-numeric sorts oldest, never crashes the listing
+    return sorted(rows, key=_ts, reverse=True)[:n]

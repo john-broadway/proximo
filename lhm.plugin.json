@@ -321,7 +321,7 @@
     },
     {
       "name": "pbs_snapshots_list",
-      "description": "READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns\nsnapshot metadata including backup type, ID, timestamp, size, owner, and protection\nstatus; filter by namespace, backup_type (vm/ct/host), or backup_id. To delete one use\npbs_snapshot_delete; to change its protected flag or notes use pbs_snapshot_protected_set\nor pbs_snapshot_notes_set.",
+      "description": "READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns\nsnapshot metadata including backup type, ID, timestamp, size, owner, and protection\nstatus; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only\nthe newest N — a capped slice is never evidence a snapshot is absent; omit it to verify\none. To delete one use pbs_snapshot_delete; to change its protected flag or notes use\npbs_snapshot_protected_set or pbs_snapshot_notes_set.",
       "inputSchema": {
         "properties": {
           "store": {
@@ -349,6 +349,14 @@
             "description": "Backup group ID (e.g. VMID/CTID or host name) to filter by.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected.",
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -21719,7 +21727,7 @@
     },
     {
       "name": "pve_backup_list",
-      "description": "READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —\na backup missing from a pve_tasks_list slice (other node, or outside its limit window)\nstill shows here. Returns a list of dicts (volid, size, ctime, …).",
+      "description": "READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —\na backup missing from a pve_tasks_list slice (other node, or outside its limit window)\nstill shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only\nthe newest N — a capped slice is never evidence a backup is absent; omit it to verify one.",
       "inputSchema": {
         "properties": {
           "storage": {
@@ -21731,6 +21739,14 @@
             "description": "Proxmox node hosting the storage; defaults to the configured node if omitted.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N archives by ctime. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected.",
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -26664,7 +26680,7 @@
     },
     {
       "name": "pve_storage_content",
-      "description": "READ-ONLY: list the volumes a storage holds — ISO images, container templates, backups, disks.\n\nNo state change. Optionally filter by content type (iso | vztmpl | backup); omit to list all.\nReturns a list of volume dicts (volid, size, content type, …); use it to find a volid to pass to\nrestore/clone tools. To *define* a new storage use pve_storage_create.",
+      "description": "READ-ONLY: list the volumes a storage holds — ISO images, container templates, backups, disks.\n\nNo state change. Optionally filter by content type (iso | vztmpl | backup); omit to list all.\nReturns a list of volume dicts (volid, size, content type, …); use it to find a volid to pass to\nrestore/clone tools. `limit` returns only the newest N — a capped slice is never evidence a\nvolume is absent. To *define* a new storage use pve_storage_create.",
       "inputSchema": {
         "properties": {
           "storage": {
@@ -26684,6 +26700,14 @@
             "description": "Filter by content type: `iso`, `vztmpl`, or `backup`. Omit to list all content.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N volumes by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
               "null"
             ]
           }

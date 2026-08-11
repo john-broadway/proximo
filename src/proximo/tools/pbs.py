@@ -177,6 +177,7 @@ from proximo.pbs_config import (
 from proximo.pbs_config import (
     traffic_controls_list as pbs_cfg_traffic_controls_list,
 )
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
@@ -227,15 +228,19 @@ def pbs_snapshots_list(
     backup_id: Annotated[
         str | None, Field(description="Backup group ID (e.g. VMID/CTID or host name) to filter by."),
     ] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns
     snapshot metadata including backup type, ID, timestamp, size, owner, and protection
-    status; filter by namespace, backup_type (vm/ct/host), or backup_id. To delete one use
-    pbs_snapshot_delete; to change its protected flag or notes use pbs_snapshot_protected_set
-    or pbs_snapshot_notes_set."""
+    status; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only
+    the newest N — a capped slice is never evidence a snapshot is absent; omit it to verify
+    one. To delete one use pbs_snapshot_delete; to change its protected flag or notes use
+    pbs_snapshot_protected_set or pbs_snapshot_notes_set."""
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_snapshots_list", f"pbs/{store}",
-                    lambda: pbs_snapshots_list_op(pbs, store, ns, backup_type, backup_id))
+                    lambda: cap_newest(
+                        pbs_snapshots_list_op(pbs, store, ns, backup_type, backup_id),
+                        limit, "backup-time"))
 
 
 @tool()

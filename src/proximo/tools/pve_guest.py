@@ -45,7 +45,7 @@ from proximo.planning import (
     plan_snapshot_create,
     plan_snapshot_delete,
 )
-from proximo.projection import envelope_rows, project_rows
+from proximo.projection import cap_newest, envelope_rows, project_rows
 from proximo.provisioning import (
     clone_guest,
     create_container,
@@ -431,15 +431,17 @@ def pve_storage_content(
     storage: Annotated[str, Field(description="Storage backend name to list content from.")],
     node: Annotated[str | None, Field(description="PVE node hosting the storage. Omit to use the configured default node.")] = None,
     content: Annotated[str | None, Field(description="Filter by content type: `iso`, `vztmpl`, or `backup`. Omit to list all content.")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N volumes by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list the volumes a storage holds — ISO images, container templates, backups, disks.
 
     No state change. Optionally filter by content type (iso | vztmpl | backup); omit to list all.
     Returns a list of volume dicts (volid, size, content type, …); use it to find a volid to pass to
-    restore/clone tools. To *define* a new storage use pve_storage_create."""
+    restore/clone tools. `limit` returns only the newest N — a capped slice is never evidence a
+    volume is absent. To *define* a new storage use pve_storage_create."""
     _, api, _, _ = _proximo_server._svc()
     return _audited("pve_storage_content", storage,
-                    lambda: storage_content(api, storage, node, content))
+                    lambda: cap_newest(storage_content(api, storage, node, content), limit, "ctime"))
 
 
 @tool()

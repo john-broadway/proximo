@@ -48,6 +48,7 @@ from proximo.backup_schedules import (
     pbs_realm_sync as pbs_realm_sync_op,
 )
 from proximo.freshness import backup_freshness
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
@@ -83,12 +84,15 @@ def pve_backup(
 def pve_backup_list(
     storage: Annotated[str, Field(description="Storage ID to list backup archives from.")],
     node: Annotated[str | None, Field(description="Proxmox node hosting the storage; defaults to the configured node if omitted.")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N archives by ctime. A limited listing is NOT evidence of absence — omit for the complete ground-truth list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —
     a backup missing from a pve_tasks_list slice (other node, or outside its limit window)
-    still shows here. Returns a list of dicts (volid, size, ctime, …)."""
+    still shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only
+    the newest N — a capped slice is never evidence a backup is absent; omit it to verify one."""
     _, api, _, _ = _proximo_server._svc()
-    return _audited("pve_backup_list", storage, lambda: backup_list(api, storage, node))
+    return _audited("pve_backup_list", storage,
+                    lambda: cap_newest(backup_list(api, storage, node), limit, "ctime"))
 
 
 @tool()

@@ -216,3 +216,91 @@ def test_pve_cluster_resources_fields_all_keeps_raw_rows(monkeypatch, tmp_path):
     server = _wire(monkeypatch, tmp_path, _ResourcesApi())
     out = server.pve_cluster_resources(fields="all")
     assert "plugintype" in out["resources"][1] and "netin" in out["resources"][0]
+
+
+# ---------------------------------------------------------------------------
+# cap_newest — the opt-in hazard-class cap (M4 option D, John 2026-08-11)
+# ---------------------------------------------------------------------------
+# Backup/snapshot/volume listings are ABSENCE-CHECK ground truth: a row missing from a
+# capped slice must never read as "the backup failed". So the cap is opt-in (None =
+# untouched passthrough, order included), newest-first when asked, and zero/negative is
+# refused outright — never coerced to "all".
+
+_CAP_ROWS = [
+    {"volid": "old", "ctime": 100},
+    {"volid": "new", "ctime": 300},
+    {"volid": "mid", "ctime": 200},
+    {"volid": "no-ts"},
+]
+
+
+def test_cap_newest_none_is_untouched_passthrough():
+    from proximo.projection import cap_newest
+    rows = [dict(r) for r in _CAP_ROWS]
+    out = cap_newest(rows, None, "ctime")
+    assert out == _CAP_ROWS          # same rows, same ORDER — the wire's promise intact
+
+
+def test_cap_newest_returns_newest_first():
+    from proximo.projection import cap_newest
+    out = cap_newest([dict(r) for r in _CAP_ROWS], 2, "ctime")
+    assert [r["volid"] for r in out] == ["new", "mid"]
+
+
+def test_cap_newest_rows_missing_the_key_sort_oldest():
+    from proximo.projection import cap_newest
+    out = cap_newest([dict(r) for r in _CAP_ROWS], 4, "ctime")
+    assert out[-1]["volid"] == "no-ts"
+
+
+def test_cap_newest_limit_beyond_len_returns_all():
+    from proximo.projection import cap_newest
+    assert len(cap_newest([dict(r) for r in _CAP_ROWS], 99, "ctime")) == 4
+
+
+def test_cap_newest_rejects_zero_and_negative():
+    from proximo.projection import cap_newest
+    for bad in (0, -1):
+        with pytest.raises(ProximoError, match="positive"):
+            cap_newest([dict(r) for r in _CAP_ROWS], bad, "ctime")
+
+
+class _BackupApi:
+    class config:  # backup_list/storage_content default the node from api.config
+        node = "pve"
+
+    def _get(self, path, params=None):
+        return [
+            {"volid": f"backup/vzdump-{i}", "ctime": i, "content": "backup"}
+            for i in (5, 1, 3)
+        ]
+
+
+def test_pve_backup_list_limit_is_opt_in_and_newest_first(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _BackupApi())
+    full = server.pve_backup_list(storage="local")
+    assert [r["ctime"] for r in full] == [5, 1, 3]     # untouched without limit
+    capped = server.pve_backup_list(storage="local", limit=2)
+    assert [r["ctime"] for r in capped] == [5, 3]
+
+
+def test_pve_storage_content_limit_is_opt_in_and_newest_first(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _BackupApi())
+    full = server.pve_storage_content(storage="local")
+    assert len(full) == 3
+    capped = server.pve_storage_content(storage="local", limit=1)
+    assert [r["ctime"] for r in capped] == [5]
+
+
+def test_cap_newest_survives_string_timestamps_and_honors_numeric_ones():
+    # A backend row carrying ctime as a numeric STRING must not crash sorted() with a
+    # mixed int/str TypeError, and its value must still count as its timestamp; a
+    # non-numeric string sorts oldest like a missing key (redteam finding, 2026-08-11).
+    from proximo.projection import cap_newest
+    rows = [
+        {"volid": "int", "ctime": 200},
+        {"volid": "numstr", "ctime": "300"},
+        {"volid": "garbage", "ctime": "not-a-time"},
+    ]
+    out = cap_newest(rows, 3, "ctime")
+    assert [r["volid"] for r in out] == ["numstr", "int", "garbage"]
