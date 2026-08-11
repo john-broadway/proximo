@@ -18,39 +18,45 @@
 </p>
 
 <p align="center">
-  <a href="https://john-broadway.github.io/proximo/">Enter the ludus ↗</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/SETUP.md">Setup</a> · <a href="#the-trust-layer--what-makes-proximo-different">Trust layer</a> · <a href="#demo">Demo</a> · <a href="#surfaces--tools--one-control-plane">Tools</a> · <a href="#install--run">Install</a> · <a href="SECURITY.md">Security</a> · <a href="#documentation">Docs</a>
+  <a href="https://john-broadway.github.io/proximo/">Enter the ludus ↗</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/SETUP.md">Setup</a> · <a href="#the-trust-layer-what-makes-proximo-different">Trust layer</a> · <a href="#demo">Demo</a> · <a href="#surfaces--tools-one-control-plane">Tools</a> · <a href="#install--run">Install</a> · <a href="SECURITY.md">Security</a> · <a href="#documentation">Docs</a>
 </p>
 
 *Named for Proximo, the lanista of* Gladiator. *The story is the design, joint for joint.*
 
-He armed his fighter with exactly what he needed, never more. He answered for every move in the arena. A lanista, not a jailer.
-
-The Spaniard doesn't get his name up front. He **earns** it, by conduct, on the record. The helmet comes off: truth said plainly, at cost. That's the "not yet proven, said plainly" section below, and [`AGENTS.md`](./AGENTS.md) leading with Proximo's own sharp edges.
-
-His last act opened the cages, holding the wooden sword of his own freedom. *A tool should hope to end that well.*
+He armed his fighter with exactly what he needed, never more. He answered for every move in the arena. A lanista, not a jailer. The Spaniard earns his name by conduct, on the record, and the helmet comes off: truth said plainly, at cost. His last act opened the cages, holding the wooden sword of his own freedom. *A tool should hope to end that well.*
 
 >*"Win the crowd and you will win your freedom."*
 
-The others make you choose. A read-only inspector that's safe because it can't touch anything. Or a loaded gun aimed at a cluster you care about.
-
-Proximo refuses the trade. Every dangerous move is **planned**: see the blast radius first. Every move is **proven**: a tamper-evident record. And **undoable wherever the platform gives us a primitive**: a config change hands back the exact prior state, and a risky in-container command can take a snapshot first — and refuses to run if it can't.
+The others make you pick: a read-only toy, or full keys and pray. Proximo won't. Every dangerous move is **planned**: see the blast radius first. Every move is **proven**: a tamper-evident record. And **undoable wherever the platform gives us a primitive**: a config change hands back the exact prior state, and a risky in-container command can take a snapshot first, and refuses to run if it can't.
 
 Trust built into the substrate, not bolted on after. **Hand an AI agent the keys; keep the receipts.**
 
 **Sovereign and agent-agnostic.** Your metal, your token, a ledger you own. No cloud, no phone-home, no standing server unless you opt in.
 
+## What it does
+
+Ask, in plain English: *"why is ct 105 thrashing?"* An AI agent pulls node and guest status, tails the logs, and runs a diagnostic *inside* the container to find out.
+
+If there's a fix, it shows you the plan before it touches anything. Takes a snapshot first if you ask it to, and won't run if it can't. Applies. Hands you a signed receipt of exactly what changed.
+
+That's the product: **a hypervisor an AI can operate without being able to wreck it.**
+
+Read-only by default. No mutation runs on the first call: it returns its blast radius as a plan for you to see first. A tamper-evident receipt for every change.
+
+The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your root token and hoping.**
+
 **Don't take our word for any of it. [Verify it yourself](VERIFY.md).**
 
 <details>
-<summary><b>Verify in 60 seconds</b> — three receipts, no trust required</summary>
+<summary><b>Verify in 60 seconds</b>: three receipts, no trust required</summary>
 
 ```bash
-# 1. The tool count is real — ask the server itself, cold (=> 906).
+# 1. The tool count is real. Ask the server itself, cold (=> 906).
 #    (in a clone of this repo, after `uv sync`)
 uv run python -c "import asyncio; from proximo import server; \
 print(len(asyncio.run(server.mcp.list_tools())))"
 
-# 2. The container image is what the repo built — sigstore provenance (exit 0 = verified):
+# 2. The container image is what the repo built. Sigstore provenance (exit 0 = verified):
 gh attestation verify oci://ghcr.io/john-broadway/proximo:latest --owner john-broadway
 
 # 3. The security posture is graded by a third party, not by us:
@@ -74,18 +80,6 @@ vendor. Demand them everywhere.
 
 <p align="center"><sub>Every transport enters <b>one governed dispatch</b> and crosses the <b>same trust spine</b>; the token floor beneath it all is enforced by Proxmox itself. <br>Watch it hold in the <a href="#demo">Demo</a>.</sub></p>
 
-## What it does
-
-Ask, in plain English: *"why is ct 105 thrashing?"* An AI agent pulls node and guest status, tails the logs, and runs a diagnostic *inside* the container to find out.
-
-If there's a fix, it shows you the plan before it touches anything. Takes a snapshot first if you ask it to — and won't run if it can't. Applies. Hands you a signed receipt of exactly what changed.
-
-That's the product: **a hypervisor an AI can operate without being able to wreck it.**
-
-Read-only by default. No mutation runs on the first call: it returns its blast radius as a plan for you to see first. A tamper-evident receipt for every change.
-
-The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your root token and hoping.**
-
 ## Quickstart
 
 ```jsonc
@@ -99,11 +93,18 @@ The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your
       "env": {
         "PROXIMO_API_BASE_URL": "https://your-pve:8006/api2/json",
         "PROXIMO_NODE": "your-node",
-        "PROXIMO_TOKEN_PATH": "/path/to/token-file"   // USER@REALM!TOKENID=SECRET — by reference, never inlined
+        "PROXIMO_TOKEN_PATH": "/path/to/token-file"   // USER@REALM!TOKENID=SECRET, by reference, never inlined
       }
     }
   }
 }
+```
+
+Claude Code, one line:
+
+```bash
+claude mcp add proximo --env PROXIMO_API_BASE_URL=https://your-pve:8006/api2/json \
+  --env PROXIMO_NODE=your-node --env PROXIMO_TOKEN_PATH=/path/to/token-file -- uvx proximo-proxmox
 ```
 
 Or install with one click:
@@ -130,35 +131,35 @@ Proximo builds the principled whole. Both halves, one audited surface, least-pri
 
 | | Read-only inspector | Full-access executor | **Proximo** |
 |---|---|---|---|
-| Can mutate | no — that's the safety | yes | yes — plan recorded first, then `confirm=true` |
-| Preview before a change | n/a | rarely | **default** — blast radius + live state, every mutation |
+| Can mutate | no, that's the safety | yes | yes, plan recorded first, then `confirm=true` |
+| Preview before a change | n/a | rarely | **default**: blast radius + live state, every mutation |
 | Record of what happened | no | app logs, editable | **keyed hash-chained ledger, tamper-evident, on by default** |
 | Undo | n/a | rare | snapshot-first, wherever the platform can snapshot |
 | Command inside an LXC | no | broad SSH | opt-in, fail-closed CTID allowlist |
-| Products covered | usually PVE | usually PVE | **PVE + PBS + PMG + PDM** — one audited plane |
+| Products covered | usually PVE | usually PVE | **PVE + PBS + PMG + PDM**, one audited plane |
 | Verify the artifact you run | varies | varies | signed image · PyPI provenance · SBOM · [Scorecard](https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo) |
 
 *(The archetype columns describe the split above, not any specific project. There is no official Proxmox MCP; Proximo is a community project, standing on its own.)*
 
-## The trust layer — what makes Proximo different
+## The trust layer: what makes Proximo different
 
 The spine has six pillars. Four stand by default:
 
 | Control | What it does |
 |---|---|
-| **PLAN** | Every mutation first returns a recorded preview — the exact change, live state, blast radius, an advisory risk rating. Nothing mutates without its plan recorded; one `confirm=true` call records and performs. |
-| **PROVE** | Keyed (HMAC-SHA256), hash-chained audit ledger — `audit_verify` catches edits, reordering, insertion. Pin the head off-box (`expected_head`) to catch truncation too: that's the strong guarantee, and it's opt-in. |
-| **UNDO** | Where the platform has a primitive: a config change returns its `prior_config` automatically (revert with `pve_guest_config_revert`), `ct_exec`/`ct_psql` take `snapshot=true` for an auto-snapshot and then **fail closed** — if the snapshot can't be taken the command does not run — and `pve_rollback` restores a guest snapshot. The exec snapshot is **per call, not automatic**. Planes with no snapshot primitive (firewall/SDN/ACL) have no rollback — said plainly. |
+| **PLAN** | Every mutation first returns a recorded preview: the exact change, live state, blast radius, an advisory risk rating. Nothing mutates without its plan recorded; one `confirm=true` call records and performs. |
+| **PROVE** | Keyed (HMAC-SHA256), hash-chained audit ledger; `audit_verify` catches edits, reordering, insertion. Pin the head off-box (`expected_head`) to catch truncation too: that's the strong guarantee, and it's opt-in. |
+| **UNDO** | Where the platform has a primitive: a config change returns its `prior_config` automatically (revert with `pve_guest_config_revert`), `ct_exec`/`ct_psql` take `snapshot=true` for an auto-snapshot and then **fail closed** (if the snapshot can't be taken the command does not run) and `pve_rollback` restores a guest snapshot. The exec snapshot is **per call, not automatic**. Planes with no snapshot primitive (firewall/SDN/ACL) have no rollback, said plainly. |
 | **DIAGNOSE** | Read-only evidence battery + node health → advisory flags that surface *incompleteness* too, so an empty list never reads as a false clean bill. |
 
-Two are **yours to raise, by design** — off until their state paths exist, because both are only worth having if those paths sit outside the agent's reach. A pillar Proximo raised for you would be a pillar the agent could lower for itself:
+Two are **yours to raise, by design**, off until their state paths exist, because both are only worth having if those paths sit outside the agent's reach. A pillar Proximo raised for you would be a pillar the agent could lower for itself:
 
 | Pillar (off until configured) | What it holds |
 |---|---|
-| **CONSENT** | Independent, out-of-band approval per plan: an agent — compromised, confused, or steered by injected text — cannot confirm its own mutation. Grants live in a directory only you write (`PROXIMO_CONSENT_DIR`), expire on a TTL, and never clear a taint. |
+| **CONSENT** | Independent, out-of-band approval per plan: an agent (compromised, confused, or steered by injected text) cannot confirm its own mutation. Grants live in a directory only you write (`PROXIMO_CONSENT_DIR`), expire on a TTL, and never clear a taint. |
 | **CONTAIN** | The kill-switch: one trip file halts every mutation immediately, mid-incident, no redeploy and no restart. Checked fresh on every mutation; fails closed. Put the trip path where only you can write (`PROXIMO_CONTAIN_TRIP_PATH`). |
 
-`proximo doctor` reports the spine: which pillars stand, which sockets are empty, and exactly how to fill them. Five more controls ship off until configured — an arm-**LEASE**, an arm-time **SCOPE**, a FORBID/RATE **ENVELOPE**, **TAINT** (the prompt-injection mitigation), and **PRINCIPAL** (who-asked attribution). What each one defends against: **[SECURITY.md](SECURITY.md)**.
+`proximo doctor` reports the spine: which pillars stand, which sockets are empty, and exactly how to fill them. Five more controls ship off until configured: an arm-**LEASE**, an arm-time **SCOPE**, a FORBID/RATE **ENVELOPE**, **TAINT** (the prompt-injection mitigation), and **PRINCIPAL** (who-asked attribution). What each one defends against: **[SECURITY.md](SECURITY.md)**.
 
 > **Honesty note (load-bearing):** risk ratings are an *advisory heuristic*, not a sandbox — `LOW` means "no state change," **not** "safe," and the absence of a `HIGH` flag is not a safety signal. Review every change yourself.
 > **The floor beneath it all is the token you mint:** Proxmox RBAC holds even if Proximo's process is fully compromised — a stronger guarantee than anything Proximo's own code provides. Scope it to exactly what you mean to grant: [SECURITY.md](SECURITY.md).
@@ -173,22 +174,22 @@ The record defends itself:
   <img src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/demo/hand-the-keys.svg" alt="Hand-the-keys demo: three agent moves land in the keyed hash-chained ledger and audit_verify answers ok=True keyed=True; an in-place edit breaks the chain at the exact line (ok=False); a truncation that fools the forward walk is caught by the pinned head" width="860">
 </p>
 
-<p align="center"><sub>Three agent moves land in the keyed ledger; one entry gets edited in place — <code>audit_verify()</code> breaks at the exact line, <b>ok=False</b>; the truncation a forward walk would miss is caught against the pinned head. Real code, real crypto, nothing staged — recorded on 0.30.0.
+<p align="center"><sub>Three agent moves land in the keyed ledger; one entry gets edited in place; <code>audit_verify()</code> breaks at the exact line, <b>ok=False</b>; the truncation a forward walk would miss is caught against the pinned head. Real code, real crypto, nothing staged, recorded on 0.30.0.
 Run it yourself anywhere: <a href="./scripts/demo/hand_the_keys.py"><code>scripts/demo/hand_the_keys.py</code></a> (needs only the pip package) · against your own host: <code>--live</code> · verify by hand: <a href="VERIFY.md">VERIFY.md</a>.</sub></p>
 
-## Surfaces & tools — one control plane
+## Surfaces & tools: one control plane
 
 | Surface | Backend | For |
 |---|---|---|
 | **Proxmox VE** | REST API + scoped token | node/guest lifecycle, storage, SDN, identity, HA, firewall |
 | **Proxmox Backup Server** | REST API + scoped token | datastores, namespaces, snapshots, sync, GC, verify, tape |
 | **Proxmox Mail Gateway** | Ticket auth | mail flow, quarantine, filtering rules, domains, services |
-| **Proxmox Datacenter Manager** | API token | federated fleet — reads plus governed control (power/snapshot/migrate, dry-run-first) |
-| **Container exec** | `ssh` → `pct exec` | run-command-in-container, `psql`, log tailing — what the API structurally can't do |
+| **Proxmox Datacenter Manager** | API token | federated fleet: reads plus governed control (power/snapshot/migrate, dry-run-first) |
+| **Container exec** | `ssh` → `pct exec` | run-command-in-container, `psql`, log tailing: what the API structurally can't do |
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
-906 tools is an estate, not a starting point — and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,449 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,123, a whole plane ~97,432, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 906. The doorway is yours to size.** Coverage and context stopped being the same number.
+906 tools is an estate, not a starting point, and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,449 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,123, a whole plane ~97,432, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 906. The doorway is yours to size.** Coverage and context stopped being the same number.
 
 Where an operator actually starts:
 
@@ -197,9 +198,9 @@ Where an operator actually starts:
 | See the whole cluster at once | `pve_cluster_resources`, `pve_list_guests` | one call, every node |
 | Find out why a container is sick | `ct_diagnose`, `ct_logs`, `pve_guest_status` | read-only evidence battery |
 | Preflight a token / config | `proximo doctor` (CLI) or `pve_doctor`, `pve_overbroad_grants` | run this before wiring an agent |
-| Power / lifecycle | `pve_guest_power` | returns a PLAN first — nothing moves without `confirm=true` |
+| Power / lifecycle | `pve_guest_power` | returns a PLAN first; nothing moves without `confirm=true` |
 | Snapshot before touching anything | `pve_snapshot_create`, `pve_rollback` | UNDO's foundation |
-| Check backups are actually fresh | `pve_backup_freshness`, `pbs_snapshots_list` | walks real archives — "task OK" is never evidence |
+| Check backups are actually fresh | `pve_backup_freshness`, `pbs_snapshots_list` | walks real archives; "task OK" is never evidence |
 | Run a command in a container | `ct_exec` | opt-in (`PROXIMO_ENABLE_EXEC=1`), fail-closed allowlist |
 | Trace / release mail | `pmg_tracker_list`, `pmg_quarantine_spam` | full PMG plane behind it |
 | Operate the federated fleet | `pdm_resources_list`, `pdm_pve_lxc_list` | governed control, dry-run-first |
@@ -209,13 +210,13 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.31.2`** — on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.2), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.31.2`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.2), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.31.2 — an adversarial audit of 0.31.1, every surviving finding fixed.** Webhook
+> **New in 0.31.2 (an adversarial audit of 0.31.1): every surviving finding fixed.** Webhook
 > secrets no longer land in the PROVE ledger; guest-config changes that cross into the host rate
 > HIGH and name the crossing; container-create privilege reads the real PVE default; an exec
-> timeout is recorded as `error:timeout` — the command may still be running, and the ledger says
-> so; caller badges always expire; consent approvers see the un-redacted command in the dry-run
+> timeout is recorded as `error:timeout` (the command may still be running, and the ledger says
+> so); caller badges always expire; consent approvers see the un-redacted command in the dry-run
 > preview only; and `--help` prints usage instead of starting a live server. No tool-surface change.
 >
 > Recent: **0.31.1** moved both `cryptography` bounds off a HIGH advisory that our own published cap was blocking. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
@@ -231,13 +232,13 @@ uvx proximo-proxmox            # zero-install run (PyPI package: proximo-proxmox
 # or, from source:  git clone https://github.com/john-broadway/proximo.git && cd proximo && uv pip install -e .
 ```
 
-Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env vars — see `packaging/proximo.env.example`.
+Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env vars; see `packaging/proximo.env.example`.
 
 **Docker (GHCR):** `docker run -i --rm … ghcr.io/john-broadway/proximo:latest`. Multi-arch, SBOM, sigstore-signed provenance (`gh attestation verify oci://ghcr.io/john-broadway/proximo --owner john-broadway`). Mirrored to Docker Hub (`docker.io/jebroadway/proximo`, identical digest); GHCR stays the signed primary.
 
 > **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist.
 >
-> **Smallest footprint by design:** you don't have to load the whole estate — what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load* — the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps three search-and-call tools resident plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out) — with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
+> **Smallest footprint by design:** you don't have to load the whole estate: what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load*; the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps three search-and-call tools resident plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out), with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
 
 **The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's.
 
@@ -253,15 +254,15 @@ One container is the demo. A cluster is the point.
 
 **Many boxes, one Proximo:** register remotes in a TOML file (secrets by reference, never inlined), point `PROXIMO_TARGETS` at it, aim any tool with `proximo_target="edge-pve"`. The target travels with the call. PLAN and EXECUTE hit the same box, the ledger records which, cross-plane calls error. Config shape: `packaging/targets.example.toml`.
 
-## Status — the arena record
+## Status: the arena record
 
-- 🩸 **0.31.2** — **the audit we ran against ourselves.** Eight finder teams over 0.31.1, every
+- 🩸 **0.31.2**: **the audit we ran against ourselves.** Eight finder teams over 0.31.1, every
   finding independently verified before it was believed: thirty raw claims, fifteen survived,
   every survivor fixed with a test proven red against the pre-fix source. Two review rounds on
   the fix diff itself caught defects in the fixes before they shipped. Webhook secrets out of
   the ledger, host-crossing config rated honestly, badges that expire, a `--help` that helps.
 
-_Every release before it — every pillar, every redteam, every fix — lives in [`CHANGELOG.md`](./CHANGELOG.md)._
+_Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
 **The numbers, honestly:** 906 MCP tools, proved in two deliberate layers. **11,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.
 
@@ -273,23 +274,23 @@ _Every release before it — every pillar, every redteam, every fix — lives in
 | Document | What it answers |
 |---|---|
 | **[Setup](docs/SETUP.md)** | Token-first walkthrough: mint a least-privilege token, verify it, widen deliberately. |
-| **[Verify](VERIFY.md)** | Every trust claim paired with the command that proves it — run them cold. |
+| **[Verify](VERIFY.md)** | Every trust claim paired with the command that proves it. Run them cold. |
 | **[Security](SECURITY.md)** | The two-deployment trust model, all ten controls, what each honestly holds, reporting. |
 | **[Threat model](docs/THREAT_MODEL.md)** | What Proximo defends against, what it doesn't, where the boundaries sit. |
 | **[Tools](docs/TOOLS.md)** | All 906 tools, grouped by surface, typed inputs. |
-| **[Agents](AGENTS.md)** | The page written for the agent itself — Proximo's sharp edges, stated first. |
+| **[Agents](AGENTS.md)** | The page written for the agent itself: Proximo's sharp edges, stated first. |
 | **[Known issues](docs/known-issues.md)** | What's broken or odd right now, said plainly. |
 | **[Contributing](.github/CONTRIBUTING.md)** | Dev setup, the CI gates, what a PR is expected to keep intact. |
-| **[Changelog](CHANGELOG.md)** | Every release, every redteam, every fix — the full build history. |
+| **[Changelog](CHANGELOG.md)** | Every release, every redteam, every fix: the full build history. |
 
 ## License
 
-Apache-2.0 — chosen for the patent grant that suits infrastructure tooling. Full text in [`LICENSE`](./LICENSE).
+Apache-2.0, chosen for the patent grant that suits infrastructure tooling. Full text in [`LICENSE`](./LICENSE).
 
 ## Credits
 
-Built by **John Broadway** with **Claude** and **Maude** — a human–AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer. And to **meyergru**, who put a real measurement on the table instead of an opinion — the context-cost work above exists because of that report.
+Built by **John Broadway** with **Claude** and **Maude**: a human-AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer.
 
 ---
 
-*"Are you not entertained?"* — stars, issues, and sparring partners welcome. **Strength and honor.** ⚔️
+*"Are you not entertained?"* Stars, issues, and sparring partners welcome. **Strength and honor.** ⚔️
