@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.31.2**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.32.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -1993,9 +1993,10 @@ UPID. To re-add HA management use pve_ha_resource_add.
 #### `pve_ha_resources_list`
 
 List all guests managed by HA (High Availability) with their current HA settings
-(read-only). Returns a list of HA resource dicts with SID, type, state, group, and restart
-settings. Use pve_ha_groups_list or pve_ha_rules_list to view HA placement rules, not for
-resource enumeration.
+(read-only). Returns a counted envelope — total, by_state, and `resources`: HA resource
+dicts with SID, type, state, group, and restart settings. Trust total/by_state for count
+questions; they are computed server-side from the full listing. Use pve_ha_groups_list or
+pve_ha_rules_list to view HA placement rules, not for resource enumeration.
 
 _No parameters._
 
@@ -6189,14 +6190,16 @@ PROXIMO_PBS_* config.
 #### `pbs_node_journal`
 
 READ-ONLY: fetch systemd journal lines from a PBS node. Returns a list of journal-line
-strings. Note: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS
+strings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —
+NOT the full journal; widen with an explicit lastentries, a time range, or cursors.
+Note: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS
 and PVE); the free-text date-time-string form is on the /syslog endpoint, not here. For the
 classic syslog view use pbs_node_syslog. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name (or 'localhost'). (default: `"localhost"`) |
-| `lastentries` | integer (nullable) | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
+| `lastentries` | integer (nullable) | no | Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range. (default: `null`) |
 | `since` | integer (nullable) | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
 | `until` | integer (nullable) | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
 | `startcursor` | string (nullable) | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
@@ -10694,7 +10697,9 @@ config.
 #### `pmg_node_journal`
 
 READ-ONLY: fetch systemd journal lines from a PMG node. Returns a list of journal-line
-strings. ADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/
+strings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —
+NOT the full journal; widen with an explicit lastentries, a time range, or cursors.
+ADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/
 pbs_node_journal). since/until are UNIX-epoch INTEGERS (PMG's own live schema — not the
 pre-existing PVE since/until-typed-as-str bug logged elsewhere in this campaign). Needs
 PROXIMO_PMG_* config.
@@ -10702,7 +10707,7 @@ PROXIMO_PMG_* config.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
-| `lastentries` | integer (nullable) | no | Limit to the last N lines; conflicts with a cursor/time range. (default: `null`) |
+| `lastentries` | integer (nullable) | no | Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range. (default: `null`) |
 | `since` | integer (nullable) | no | Display log since this UNIX epoch (integer); conflicts with startcursor. (default: `null`) |
 | `until` | integer (nullable) | no | Display log until this UNIX epoch (integer); conflicts with endcursor. (default: `null`) |
 | `startcursor` | string (nullable) | no | Start after this journal cursor token; conflicts with since. (default: `null`) |
@@ -12179,10 +12184,12 @@ pmg_spam_config. Dry-run returns a PLAN; confirm=True executes and returns {"sta
 
 READ-ONLY (ADVERSARIAL): get per-contact-address mail statistics. Needs PROXIMO_PMG_* config.
 
-Returns a list of per-contact-address stat dicts (bytes/contact/count/viruscount) —
-`contact` is an EXTERNAL address literal, match-twins to pmg_statistics_sender/receiver/
-domains. For per-sender or per-recipient stats use pmg_statistics_sender /
-pmg_statistics_receiver instead.
+Returns a counted envelope — total, returned, and `contacts`: per-contact-address stat
+dicts (bytes/contact/count/viruscount), the top `limit` by count (descending) when
+capped. Rows scale with the estate's mail history; trust total for population questions —
+a capped list is NOT the full set. `contact` is an EXTERNAL address literal, match-twins
+to pmg_statistics_sender/receiver/domains. For per-sender or per-recipient stats use
+pmg_statistics_sender / pmg_statistics_receiver instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -12193,13 +12200,16 @@ pmg_statistics_receiver instead.
 | `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
 | `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
 | `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
+| `limit` | integer (nullable) | no | Top N contact addresses by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected. (default: `100`) |
 
 #### `pmg_statistics_detail`
 
 READ-ONLY (ADVERSARIAL): get detailed per-message statistics for one address. Needs PROXIMO_PMG_* config.
 
-Returns a list of per-message stat dicts (blocked/bytes/receiver/sender/spamlevel/time/
-virusinfo) — `sender`/`receiver` are EXTERNAL address literals, match-twins to
+Returns a counted envelope — total, returned, and `messages`: per-message stat dicts
+(blocked/bytes/receiver/sender/spamlevel/time/virusinfo), the newest `limit` by time
+when capped. Trust total for count questions — a capped list is NOT the full history.
+`sender`/`receiver` are EXTERNAL address literals, match-twins to
 pmg_statistics_sender/receiver. address + type_ are both REQUIRED.
 
 | Parameter | Type | Required | Description |
@@ -12213,6 +12223,7 @@ pmg_statistics_sender/receiver. address + type_ are both REQUIRED.
 | `day` | integer (nullable) | no | Day of month, 1-31 — statistics for a single day. (default: `null`) |
 | `month` | integer (nullable) | no | Month, 1-12 — statistics for the whole month if day is omitted. (default: `null`) |
 | `year` | integer (nullable) | no | Year, 1900-3000 — defaults to the current year. (default: `null`) |
+| `limit` | integer (nullable) | no | Newest N messages by time, default 100. The envelope's total always counts the COMPLETE set — a capped list is not the full history and absence from it proves nothing. Pass null explicitly for all rows; zero/negative is rejected. (default: `100`) |
 
 #### `pmg_statistics_domains`
 
@@ -12270,9 +12281,11 @@ Count for score 10 includes mails with spam score > 10 (PMG's own description).
 
 READ-ONLY: get per-recipient mail statistics. Needs PROXIMO_PMG_* config.
 
-Returns a list of per-recipient stat dicts. orderby is a raw sort-spec passthrough here
-(unlike pmg_statistics_sender, which ignores it). For per-sender stats use
-pmg_statistics_sender.
+Returns a counted envelope — total, returned, and `receivers`: per-recipient stat dicts,
+the top `limit` by count (descending) when capped. Rows scale with the estate's mail
+history; trust total for population questions — a capped list is NOT the full set.
+orderby is a raw sort-spec passthrough here (unlike pmg_statistics_sender, which ignores
+it). For per-sender stats use pmg_statistics_sender.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -12280,6 +12293,7 @@ pmg_statistics_sender.
 | `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 | `filter_` | string (nullable) | no | Optional search string to filter recipients. (default: `null`) |
 | `orderby` | string (nullable) | no | Raw sort spec passed through to the PMG API. (default: `null`) |
+| `limit` | integer (nullable) | no | Top N recipients by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected. (default: `100`) |
 
 #### `pmg_statistics_recent`
 
@@ -12336,7 +12350,10 @@ counters, no address/free-text field. Twin of pmg_statistics_mailcount.
 
 READ-ONLY: get per-sender mail statistics. Needs PROXIMO_PMG_* config.
 
-Returns a list of per-sender stat dicts. orderby is accepted for compatibility but IGNORED —
+Returns a counted envelope — total, returned, and `senders`: per-sender stat dicts,
+the top `limit` by count (descending) when capped. Rows scale with the estate's mail
+history (every distinct sender in the window); trust total for population questions —
+a capped list is NOT the full set. orderby is accepted for compatibility but IGNORED —
 PMG rejects it here (HTTP 400) unlike pmg_statistics_receiver, which does honor it. For
 per-recipient stats use pmg_statistics_receiver.
 
@@ -12346,6 +12363,7 @@ per-recipient stats use pmg_statistics_receiver.
 | `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
 | `filter_` | string (nullable) | no | Optional search string to filter senders. (default: `null`) |
 | `orderby` | string (nullable) | no | Accepted for compatibility but ignored — PMG 9.1 rejects orderby on this endpoint. (default: `null`) |
+| `limit` | integer (nullable) | no | Top N senders by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected. (default: `100`) |
 
 #### `pmg_statistics_spamscores`
 
@@ -13247,9 +13265,11 @@ directly without PDM, use pve_guest_config_get. Needs PROXIMO_PDM_* config.
 READ-ONLY: list LXC containers across a PDM-registered PVE remote (cluster-wide), proxied
 through PDM.
 
-No state change. Returns a list of dicts shaped like PVE's lxc list (live-proven 2026-06-27);
-node optionally filters to one PVE node. For one container's config use pdm_pve_lxc_config;
-to query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_* config.
+No state change. Returns a counted envelope — total, by_status, and `containers`: dicts
+shaped like PVE's lxc list (live-proven 2026-06-27); node optionally filters to one PVE
+node. Trust total/by_status for count questions. For one container's config use
+pdm_pve_lxc_config; to query the cluster directly without PDM, use pve_list_guests. Needs
+PROXIMO_PDM_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -13391,10 +13411,11 @@ directly without PDM, use pve_guest_config_get. Needs PROXIMO_PDM_* config.
 
 READ-ONLY: list VMs across a PDM-registered PVE remote (cluster-wide), proxied through PDM.
 
-No state change. Returns a list of dicts shaped like PVE's qemu list (live-proven
-2026-06-27); node optionally filters to one PVE node. For one VM's config use
-pdm_pve_qemu_config; to query the cluster directly without PDM, use pve_list_guests. Needs
-PROXIMO_PDM_* config.
+No state change. Returns a counted envelope — total, by_status, and `vms`: dicts shaped
+like PVE's qemu list (live-proven 2026-06-27); node optionally filters to one PVE node.
+Trust total/by_status for count questions. For one VM's config use pdm_pve_qemu_config;
+to query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_*
+config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -13507,9 +13528,10 @@ rollback. Dry-run by default (PLAN); confirm=True submits and returns the Proxmo
 
 READ-ONLY: list resources on ONE PDM-registered PVE remote, proxied through PDM.
 
-No state change. Returns a list of dicts shaped like PVE's cluster/resources (live-proven
-2026-06-27); kind optionally filters by type (vm, storage, node, sdn, ...). To query the
-cluster directly without PDM, use pve_cluster_resources. Needs PROXIMO_PDM_* config.
+No state change. Returns a counted envelope — total, by_type, and `resources`: dicts
+shaped like PVE's cluster/resources (live-proven 2026-06-27); kind optionally filters by
+type (vm, storage, node, sdn, ...). To query the cluster directly without PDM, use
+pve_cluster_resources. Needs PROXIMO_PDM_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -13553,9 +13575,10 @@ _No parameters._
 
 READ-ONLY: list every fleet resource (VMs, LXCs, storage, etc.) across ALL PDM-registered remotes.
 
-No state change. Returns a flat list of resource dicts. For counters instead of the full
-list, use pdm_resources_status; to scope to one remote, use pdm_pve_resources. Needs
-PROXIMO_PDM_* config.
+No state change. Returns a counted envelope — total, by_type, and `resources`: the
+resource dicts. Trust total/by_type for count questions; they are computed server-side
+from the full listing. For counters instead of the full list, use pdm_resources_status;
+to scope to one remote, use pdm_pve_resources. Needs PROXIMO_PDM_* config.
 
 _No parameters._
 

@@ -757,3 +757,27 @@ async def test_node_tools_registered_with_fastmcp():
     }
     assert len(expected) == 43
     assert expected <= names, f"missing from MCP surface: {expected - names}"
+
+
+def test_journal_bare_call_carries_the_default_bound(tmp_path, monkeypatch):
+    # 0.32.0 sibling-parity default bound — see the PBS twin for the rationale; the
+    # discriminating assertion is at the request seam, not the return value.
+    _, pmg, _, _ = _wire(tmp_path, monkeypatch)
+    server.pmg_node_journal()
+    call_path, call_params = pmg.gets[-1]
+    assert call_path == "/nodes/pmg/journal"
+    assert call_params == {"lastentries": 100}
+
+
+def test_journal_time_range_suppresses_the_default_bound(tmp_path, monkeypatch):
+    _, pmg, _, _ = _wire(tmp_path, monkeypatch)
+    server.pmg_node_journal(since=1700000000, until=1700003600)
+    _, call_params = pmg.gets[-1]
+    assert call_params == {"since": 1700000000, "until": 1700003600}
+
+
+def test_journal_cursor_suppresses_the_default_bound(tmp_path, monkeypatch):
+    _, pmg, _, _ = _wire(tmp_path, monkeypatch)
+    server.pmg_node_journal(startcursor="abc")
+    _, call_params = pmg.gets[-1]
+    assert call_params == {"startcursor": "abc"}

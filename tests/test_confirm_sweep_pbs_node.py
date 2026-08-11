@@ -275,3 +275,30 @@ def test_journal_read_reaches_pbs(tmp_path, monkeypatch):
     call_path, call_params = pbs.gets[-1]
     assert call_path == "/nodes/localhost/journal"
     assert call_params == {"lastentries": 50}
+
+
+def test_journal_bare_call_carries_the_default_bound(tmp_path, monkeypatch):
+    # 0.32.0: PBS/PMG journals were unbounded-by-default while PVE's defaults
+    # lastentries=100 — a sibling inconsistency. The bound must appear in the OUTGOING
+    # request; a return-value test cannot see this failure.
+    _, pbs, _, _ = _wire(tmp_path, monkeypatch)
+    server.pbs_node_journal()
+    call_path, call_params = pbs.gets[-1]
+    assert call_path == "/nodes/localhost/journal"
+    assert call_params == {"lastentries": 100}
+
+
+def test_journal_time_range_suppresses_the_default_bound(tmp_path, monkeypatch):
+    # lastentries conflicts with a time range on PBS's own schema — the default must
+    # never ride along with since/until.
+    _, pbs, _, _ = _wire(tmp_path, monkeypatch)
+    server.pbs_node_journal(since=1700000000)
+    _, call_params = pbs.gets[-1]
+    assert call_params == {"since": 1700000000}
+
+
+def test_journal_cursor_suppresses_the_default_bound(tmp_path, monkeypatch):
+    _, pbs, _, _ = _wire(tmp_path, monkeypatch)
+    server.pbs_node_journal(startcursor="abc")
+    _, call_params = pbs.gets[-1]
+    assert call_params == {"startcursor": "abc"}

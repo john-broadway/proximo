@@ -1,3 +1,17 @@
+proximo (0.32.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.32.0 (minor, BREAKING response shapes - M4 Bucket 2:
+    nine estate-scale list tools move from a bare list to a counted
+    envelope; five inventory tools (pdm_resources_list, pdm_pve_resources,
+    pdm_pve_qemu_list, pdm_pve_lxc_list, pve_ha_resources_list) envelope
+    without a cap, four PMG per-correspondent statistics tools
+    (sender/receiver/contact/detail) envelope with a default limit of 100;
+    pbs_node_journal and pmg_node_journal default-bound to the last 100
+    lines on a bare call; PyPI Homepage/Documentation URLs point at the
+    project page).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Tue, 11 Aug 2026 05:45:00 +0000
+
 proximo (0.31.2-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.31.2 (patch - security hardening from a full adversarial

@@ -656,7 +656,7 @@ from proximo.pmg import (
 from proximo.pmg import (
     who_groups_list as pmg_who_groups_list_op,
 )
-from proximo.projection import cap_newest
+from proximo.projection import cap_newest, cap_top, envelope_capped
 from proximo.server import (
     _audited,
     _plan,
@@ -1503,16 +1503,21 @@ def pmg_statistics_sender(
     end: Annotated[int | None, Field(description="Unix epoch end of the window; omit for no upper bound.")] = None,
     filter_: Annotated[str | None, Field(description="Optional search string to filter senders.")] = None,
     orderby: Annotated[str | None, Field(description="Accepted for compatibility but ignored — PMG 9.1 rejects orderby on this endpoint.")] = None,
-) -> list[dict]:
+    limit: Annotated[int | None, Field(description="Top N senders by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.")] = 100,
+) -> dict:
     """READ-ONLY: get per-sender mail statistics. Needs PROXIMO_PMG_* config.
 
-    Returns a list of per-sender stat dicts. orderby is accepted for compatibility but IGNORED —
+    Returns a counted envelope — total, returned, and `senders`: per-sender stat dicts,
+    the top `limit` by count (descending) when capped. Rows scale with the estate's mail
+    history (every distinct sender in the window); trust total for population questions —
+    a capped list is NOT the full set. orderby is accepted for compatibility but IGNORED —
     PMG rejects it here (HTTP 400) unlike pmg_statistics_receiver, which does honor it. For
     per-recipient stats use pmg_statistics_receiver.
     """
     _, pmg = _proximo_server._pmg()
-    return _audited("pmg_statistics_sender", "pmg/statistics/sender",
+    rows = _audited("pmg_statistics_sender", "pmg/statistics/sender",
                     lambda: pmg_statistics_sender_op(pmg, start, end, filter_, orderby))
+    return envelope_capped(rows, cap_top(rows, limit, "count"), "senders")
 
 
 @tool()
@@ -1521,16 +1526,20 @@ def pmg_statistics_receiver(
     end: Annotated[int | None, Field(description="Unix epoch end of the window; omit for no upper bound.")] = None,
     filter_: Annotated[str | None, Field(description="Optional search string to filter recipients.")] = None,
     orderby: Annotated[str | None, Field(description="Raw sort spec passed through to the PMG API.")] = None,
-) -> list[dict]:
+    limit: Annotated[int | None, Field(description="Top N recipients by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.")] = 100,
+) -> dict:
     """READ-ONLY: get per-recipient mail statistics. Needs PROXIMO_PMG_* config.
 
-    Returns a list of per-recipient stat dicts. orderby is a raw sort-spec passthrough here
-    (unlike pmg_statistics_sender, which ignores it). For per-sender stats use
-    pmg_statistics_sender.
+    Returns a counted envelope — total, returned, and `receivers`: per-recipient stat dicts,
+    the top `limit` by count (descending) when capped. Rows scale with the estate's mail
+    history; trust total for population questions — a capped list is NOT the full set.
+    orderby is a raw sort-spec passthrough here (unlike pmg_statistics_sender, which ignores
+    it). For per-sender stats use pmg_statistics_sender.
     """
     _, pmg = _proximo_server._pmg()
-    return _audited("pmg_statistics_receiver", "pmg/statistics/receiver",
+    rows = _audited("pmg_statistics_receiver", "pmg/statistics/receiver",
                     lambda: pmg_statistics_receiver_op(pmg, start, end, filter_, orderby))
+    return envelope_capped(rows, cap_top(rows, limit, "count"), "receivers")
 
 
 @tool()
@@ -1542,17 +1551,21 @@ def pmg_statistics_contact(
     day: Annotated[int | None, Field(description="Day of month, 1-31 — statistics for a single day.")] = None,
     month: Annotated[int | None, Field(description="Month, 1-12 — statistics for the whole month if day is omitted.")] = None,
     year: Annotated[int | None, Field(description="Year, 1900-3000 — defaults to the current year.")] = None,
-) -> list[dict]:
+    limit: Annotated[int | None, Field(description="Top N contact addresses by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.")] = 100,
+) -> dict:
     """READ-ONLY (ADVERSARIAL): get per-contact-address mail statistics. Needs PROXIMO_PMG_* config.
 
-    Returns a list of per-contact-address stat dicts (bytes/contact/count/viruscount) —
-    `contact` is an EXTERNAL address literal, match-twins to pmg_statistics_sender/receiver/
-    domains. For per-sender or per-recipient stats use pmg_statistics_sender /
-    pmg_statistics_receiver instead.
+    Returns a counted envelope — total, returned, and `contacts`: per-contact-address stat
+    dicts (bytes/contact/count/viruscount), the top `limit` by count (descending) when
+    capped. Rows scale with the estate's mail history; trust total for population questions —
+    a capped list is NOT the full set. `contact` is an EXTERNAL address literal, match-twins
+    to pmg_statistics_sender/receiver/domains. For per-sender or per-recipient stats use
+    pmg_statistics_sender / pmg_statistics_receiver instead.
     """
     _, pmg = _proximo_server._pmg()
-    return _audited("pmg_statistics_contact", "pmg/statistics/contact",
+    rows = _audited("pmg_statistics_contact", "pmg/statistics/contact",
                     lambda: pmg_statistics_contact_op(pmg, start, end, filter_, orderby, day, month, year))
+    return envelope_capped(rows, cap_top(rows, limit, "count"), "contacts")
 
 
 @tool()
@@ -1566,16 +1579,20 @@ def pmg_statistics_detail(
     day: Annotated[int | None, Field(description="Day of month, 1-31 — statistics for a single day.")] = None,
     month: Annotated[int | None, Field(description="Month, 1-12 — statistics for the whole month if day is omitted.")] = None,
     year: Annotated[int | None, Field(description="Year, 1900-3000 — defaults to the current year.")] = None,
-) -> list[dict]:
+    limit: Annotated[int | None, Field(description="Newest N messages by time, default 100. The envelope's total always counts the COMPLETE set — a capped list is not the full history and absence from it proves nothing. Pass null explicitly for all rows; zero/negative is rejected.")] = 100,
+) -> dict:
     """READ-ONLY (ADVERSARIAL): get detailed per-message statistics for one address. Needs PROXIMO_PMG_* config.
 
-    Returns a list of per-message stat dicts (blocked/bytes/receiver/sender/spamlevel/time/
-    virusinfo) — `sender`/`receiver` are EXTERNAL address literals, match-twins to
+    Returns a counted envelope — total, returned, and `messages`: per-message stat dicts
+    (blocked/bytes/receiver/sender/spamlevel/time/virusinfo), the newest `limit` by time
+    when capped. Trust total for count questions — a capped list is NOT the full history.
+    `sender`/`receiver` are EXTERNAL address literals, match-twins to
     pmg_statistics_sender/receiver. address + type_ are both REQUIRED.
     """
     _, pmg = _proximo_server._pmg()
-    return _audited("pmg_statistics_detail", "pmg/statistics/detail",
+    rows = _audited("pmg_statistics_detail", "pmg/statistics/detail",
                     lambda: pmg_statistics_detail_op(pmg, address, type_, start, end, filter_, orderby, day, month, year))
+    return envelope_capped(rows, cap_newest(rows, limit, "time"), "messages")
 
 
 @tool()

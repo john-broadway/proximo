@@ -10,7 +10,7 @@ from typing import Annotated
 from pydantic import Field
 
 import proximo.server as _proximo_server
-from proximo.projection import cap_newest
+from proximo.projection import cap_newest, envelope_rows
 from proximo.server import (
     _audited,
     tool,
@@ -91,14 +91,16 @@ def pdm_remote_config_get(
 
 
 @tool()
-def pdm_resources_list() -> list[dict]:
+def pdm_resources_list() -> dict:
     """READ-ONLY: list every fleet resource (VMs, LXCs, storage, etc.) across ALL PDM-registered remotes.
 
-    No state change. Returns a flat list of resource dicts. For counters instead of the full
-    list, use pdm_resources_status; to scope to one remote, use pdm_pve_resources. Needs
-    PROXIMO_PDM_* config."""
+    No state change. Returns a counted envelope — total, by_type, and `resources`: the
+    resource dicts. Trust total/by_type for count questions; they are computed server-side
+    from the full listing. For counters instead of the full list, use pdm_resources_status;
+    to scope to one remote, use pdm_pve_resources. Needs PROXIMO_PDM_* config."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_resources_list", "pdm/resources/list", lambda: pdm.resources_list())
+    rows = _audited("pdm_resources_list", "pdm/resources/list", lambda: pdm.resources_list())
+    return envelope_rows(rows, rows, "resources", "type")
 
 
 @tool()
@@ -117,15 +119,17 @@ def pdm_resources_status() -> dict:
 def pdm_pve_resources(
     remote: Annotated[str, Field(description="PDM-registered PVE remote name, from pdm_remotes_list.")],
     kind: Annotated[str | None, Field(description="Optional resource-type filter, e.g. 'vm', 'storage', 'node', 'sdn'.")] = None,
-) -> list[dict]:
+) -> dict:
     """READ-ONLY: list resources on ONE PDM-registered PVE remote, proxied through PDM.
 
-    No state change. Returns a list of dicts shaped like PVE's cluster/resources (live-proven
-    2026-06-27); kind optionally filters by type (vm, storage, node, sdn, ...). To query the
-    cluster directly without PDM, use pve_cluster_resources. Needs PROXIMO_PDM_* config."""
+    No state change. Returns a counted envelope — total, by_type, and `resources`: dicts
+    shaped like PVE's cluster/resources (live-proven 2026-06-27); kind optionally filters by
+    type (vm, storage, node, sdn, ...). To query the cluster directly without PDM, use
+    pve_cluster_resources. Needs PROXIMO_PDM_* config."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_pve_resources", f"pdm/pve/{remote}/resources",
+    rows = _audited("pdm_pve_resources", f"pdm/pve/{remote}/resources",
                     lambda: pdm.pve_resources(remote, kind))
+    return envelope_rows(rows, rows, "resources", "type")
 
 
 @tool()
@@ -159,16 +163,18 @@ def pdm_pve_node_list(
 def pdm_pve_qemu_list(
     remote: Annotated[str, Field(description="PDM-registered PVE remote name, from pdm_remotes_list.")],
     node: Annotated[str | None, Field(description="Optional PVE node name to restrict the listing to; omit to list cluster-wide.")] = None,
-) -> list[dict]:
+) -> dict:
     """READ-ONLY: list VMs across a PDM-registered PVE remote (cluster-wide), proxied through PDM.
 
-    No state change. Returns a list of dicts shaped like PVE's qemu list (live-proven
-    2026-06-27); node optionally filters to one PVE node. For one VM's config use
-    pdm_pve_qemu_config; to query the cluster directly without PDM, use pve_list_guests. Needs
-    PROXIMO_PDM_* config."""
+    No state change. Returns a counted envelope — total, by_status, and `vms`: dicts shaped
+    like PVE's qemu list (live-proven 2026-06-27); node optionally filters to one PVE node.
+    Trust total/by_status for count questions. For one VM's config use pdm_pve_qemu_config;
+    to query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_*
+    config."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_pve_qemu_list", f"pdm/pve/{remote}/qemu",
+    rows = _audited("pdm_pve_qemu_list", f"pdm/pve/{remote}/qemu",
                     lambda: pdm.pve_qemu_list(remote, node))
+    return envelope_rows(rows, rows, "vms", "status")
 
 
 @tool()
@@ -193,16 +199,19 @@ def pdm_pve_qemu_config(
 def pdm_pve_lxc_list(
     remote: Annotated[str, Field(description="PDM-registered PVE remote name, from pdm_remotes_list.")],
     node: Annotated[str | None, Field(description="Optional PVE node name to restrict the listing to; omit to list cluster-wide.")] = None,
-) -> list[dict]:
+) -> dict:
     """READ-ONLY: list LXC containers across a PDM-registered PVE remote (cluster-wide), proxied
     through PDM.
 
-    No state change. Returns a list of dicts shaped like PVE's lxc list (live-proven 2026-06-27);
-    node optionally filters to one PVE node. For one container's config use pdm_pve_lxc_config;
-    to query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_* config."""
+    No state change. Returns a counted envelope — total, by_status, and `containers`: dicts
+    shaped like PVE's lxc list (live-proven 2026-06-27); node optionally filters to one PVE
+    node. Trust total/by_status for count questions. For one container's config use
+    pdm_pve_lxc_config; to query the cluster directly without PDM, use pve_list_guests. Needs
+    PROXIMO_PDM_* config."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_pve_lxc_list", f"pdm/pve/{remote}/lxc",
+    rows = _audited("pdm_pve_lxc_list", f"pdm/pve/{remote}/lxc",
                     lambda: pdm.pve_lxc_list(remote, node))
+    return envelope_rows(rows, rows, "containers", "status")
 
 
 @tool()

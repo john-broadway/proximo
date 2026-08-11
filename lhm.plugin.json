@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.31.2",
+  "version": "0.32.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -6499,7 +6499,7 @@
     },
     {
       "name": "pbs_node_journal",
-      "description": "READ-ONLY: fetch systemd journal lines from a PBS node. Returns a list of journal-line\nstrings. Note: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS\nand PVE); the free-text date-time-string form is on the /syslog endpoint, not here. For the\nclassic syslog view use pbs_node_syslog. Needs PROXIMO_PBS_* config.",
+      "description": "READ-ONLY: fetch systemd journal lines from a PBS node. Returns a list of journal-line\nstrings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —\nNOT the full journal; widen with an explicit lastentries, a time range, or cursors.\nNote: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS\nand PVE); the free-text date-time-string form is on the /syslog endpoint, not here. For the\nclassic syslog view use pbs_node_syslog. Needs PROXIMO_PBS_* config.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -6509,7 +6509,7 @@
           },
           "lastentries": {
             "default": null,
-            "description": "Limit to the last N lines; conflicts with a cursor/time range.",
+            "description": "Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range.",
             "type": [
               "integer",
               "null"
@@ -9561,7 +9561,7 @@
     },
     {
       "name": "pdm_resources_list",
-      "description": "READ-ONLY: list every fleet resource (VMs, LXCs, storage, etc.) across ALL PDM-registered remotes.\n\nNo state change. Returns a flat list of resource dicts. For counters instead of the full\nlist, use pdm_resources_status; to scope to one remote, use pdm_pve_resources. Needs\nPROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list every fleet resource (VMs, LXCs, storage, etc.) across ALL PDM-registered remotes.\n\nNo state change. Returns a counted envelope — total, by_type, and `resources`: the\nresource dicts. Trust total/by_type for count questions; they are computed server-side\nfrom the full listing. For counters instead of the full list, use pdm_resources_status;\nto scope to one remote, use pdm_pve_resources. Needs PROXIMO_PDM_* config.",
       "inputSchema": {
         "properties": {},
         "type": "object"
@@ -9577,7 +9577,7 @@
     },
     {
       "name": "pdm_pve_resources",
-      "description": "READ-ONLY: list resources on ONE PDM-registered PVE remote, proxied through PDM.\n\nNo state change. Returns a list of dicts shaped like PVE's cluster/resources (live-proven\n2026-06-27); kind optionally filters by type (vm, storage, node, sdn, ...). To query the\ncluster directly without PDM, use pve_cluster_resources. Needs PROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list resources on ONE PDM-registered PVE remote, proxied through PDM.\n\nNo state change. Returns a counted envelope — total, by_type, and `resources`: dicts\nshaped like PVE's cluster/resources (live-proven 2026-06-27); kind optionally filters by\ntype (vm, storage, node, sdn, ...). To query the cluster directly without PDM, use\npve_cluster_resources. Needs PROXIMO_PDM_* config.",
       "inputSchema": {
         "properties": {
           "remote": {
@@ -9633,7 +9633,7 @@
     },
     {
       "name": "pdm_pve_qemu_list",
-      "description": "READ-ONLY: list VMs across a PDM-registered PVE remote (cluster-wide), proxied through PDM.\n\nNo state change. Returns a list of dicts shaped like PVE's qemu list (live-proven\n2026-06-27); node optionally filters to one PVE node. For one VM's config use\npdm_pve_qemu_config; to query the cluster directly without PDM, use pve_list_guests. Needs\nPROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list VMs across a PDM-registered PVE remote (cluster-wide), proxied through PDM.\n\nNo state change. Returns a counted envelope — total, by_status, and `vms`: dicts shaped\nlike PVE's qemu list (live-proven 2026-06-27); node optionally filters to one PVE node.\nTrust total/by_status for count questions. For one VM's config use pdm_pve_qemu_config;\nto query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_*\nconfig.",
       "inputSchema": {
         "properties": {
           "remote": {
@@ -9699,7 +9699,7 @@
     },
     {
       "name": "pdm_pve_lxc_list",
-      "description": "READ-ONLY: list LXC containers across a PDM-registered PVE remote (cluster-wide), proxied\nthrough PDM.\n\nNo state change. Returns a list of dicts shaped like PVE's lxc list (live-proven 2026-06-27);\nnode optionally filters to one PVE node. For one container's config use pdm_pve_lxc_config;\nto query the cluster directly without PDM, use pve_list_guests. Needs PROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list LXC containers across a PDM-registered PVE remote (cluster-wide), proxied\nthrough PDM.\n\nNo state change. Returns a counted envelope — total, by_status, and `containers`: dicts\nshaped like PVE's lxc list (live-proven 2026-06-27); node optionally filters to one PVE\nnode. Trust total/by_status for count questions. For one container's config use\npdm_pve_lxc_config; to query the cluster directly without PDM, use pve_list_guests. Needs\nPROXIMO_PDM_* config.",
       "inputSchema": {
         "properties": {
           "remote": {
@@ -13506,7 +13506,7 @@
     },
     {
       "name": "pmg_statistics_sender",
-      "description": "READ-ONLY: get per-sender mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a list of per-sender stat dicts. orderby is accepted for compatibility but IGNORED —\nPMG rejects it here (HTTP 400) unlike pmg_statistics_receiver, which does honor it. For\nper-recipient stats use pmg_statistics_receiver.\n",
+      "description": "READ-ONLY: get per-sender mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a counted envelope — total, returned, and `senders`: per-sender stat dicts,\nthe top `limit` by count (descending) when capped. Rows scale with the estate's mail\nhistory (every distinct sender in the window); trust total for population questions —\na capped list is NOT the full set. orderby is accepted for compatibility but IGNORED —\nPMG rejects it here (HTTP 400) unlike pmg_statistics_receiver, which does honor it. For\nper-recipient stats use pmg_statistics_receiver.\n",
       "inputSchema": {
         "properties": {
           "start": {
@@ -13540,6 +13540,14 @@
               "string",
               "null"
             ]
+          },
+          "limit": {
+            "default": 100,
+            "description": "Top N senders by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -13547,7 +13555,7 @@
     },
     {
       "name": "pmg_statistics_receiver",
-      "description": "READ-ONLY: get per-recipient mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a list of per-recipient stat dicts. orderby is a raw sort-spec passthrough here\n(unlike pmg_statistics_sender, which ignores it). For per-sender stats use\npmg_statistics_sender.\n",
+      "description": "READ-ONLY: get per-recipient mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a counted envelope — total, returned, and `receivers`: per-recipient stat dicts,\nthe top `limit` by count (descending) when capped. Rows scale with the estate's mail\nhistory; trust total for population questions — a capped list is NOT the full set.\norderby is a raw sort-spec passthrough here (unlike pmg_statistics_sender, which ignores\nit). For per-sender stats use pmg_statistics_sender.\n",
       "inputSchema": {
         "properties": {
           "start": {
@@ -13581,6 +13589,14 @@
               "string",
               "null"
             ]
+          },
+          "limit": {
+            "default": 100,
+            "description": "Top N recipients by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -13588,7 +13604,7 @@
     },
     {
       "name": "pmg_statistics_contact",
-      "description": "READ-ONLY (ADVERSARIAL): get per-contact-address mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a list of per-contact-address stat dicts (bytes/contact/count/viruscount) —\n`contact` is an EXTERNAL address literal, match-twins to pmg_statistics_sender/receiver/\ndomains. For per-sender or per-recipient stats use pmg_statistics_sender /\npmg_statistics_receiver instead.\n",
+      "description": "READ-ONLY (ADVERSARIAL): get per-contact-address mail statistics. Needs PROXIMO_PMG_* config.\n\nReturns a counted envelope — total, returned, and `contacts`: per-contact-address stat\ndicts (bytes/contact/count/viruscount), the top `limit` by count (descending) when\ncapped. Rows scale with the estate's mail history; trust total for population questions —\na capped list is NOT the full set. `contact` is an EXTERNAL address literal, match-twins\nto pmg_statistics_sender/receiver/domains. For per-sender or per-recipient stats use\npmg_statistics_sender / pmg_statistics_receiver instead.\n",
       "inputSchema": {
         "properties": {
           "start": {
@@ -13646,6 +13662,14 @@
               "integer",
               "null"
             ]
+          },
+          "limit": {
+            "default": 100,
+            "description": "Top N contact addresses by count, default 100. The envelope's total always counts the COMPLETE set — a capped list is the top slice, not the population. Pass null explicitly for all rows; zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -13653,7 +13677,7 @@
     },
     {
       "name": "pmg_statistics_detail",
-      "description": "READ-ONLY (ADVERSARIAL): get detailed per-message statistics for one address. Needs PROXIMO_PMG_* config.\n\nReturns a list of per-message stat dicts (blocked/bytes/receiver/sender/spamlevel/time/\nvirusinfo) — `sender`/`receiver` are EXTERNAL address literals, match-twins to\npmg_statistics_sender/receiver. address + type_ are both REQUIRED.\n",
+      "description": "READ-ONLY (ADVERSARIAL): get detailed per-message statistics for one address. Needs PROXIMO_PMG_* config.\n\nReturns a counted envelope — total, returned, and `messages`: per-message stat dicts\n(blocked/bytes/receiver/sender/spamlevel/time/virusinfo), the newest `limit` by time\nwhen capped. Trust total for count questions — a capped list is NOT the full history.\n`sender`/`receiver` are EXTERNAL address literals, match-twins to\npmg_statistics_sender/receiver. address + type_ are both REQUIRED.\n",
       "inputSchema": {
         "properties": {
           "address": {
@@ -13715,6 +13739,14 @@
           "year": {
             "default": null,
             "description": "Year, 1900-3000 — defaults to the current year.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": 100,
+            "description": "Newest N messages by time, default 100. The envelope's total always counts the COMPLETE set — a capped list is not the full history and absence from it proves nothing. Pass null explicitly for all rows; zero/negative is rejected.",
             "type": [
               "integer",
               "null"
@@ -17667,7 +17699,7 @@
     },
     {
       "name": "pmg_node_journal",
-      "description": "READ-ONLY: fetch systemd journal lines from a PMG node. Returns a list of journal-line\nstrings. ADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/\npbs_node_journal). since/until are UNIX-epoch INTEGERS (PMG's own live schema — not the\npre-existing PVE since/until-typed-as-str bug logged elsewhere in this campaign). Needs\nPROXIMO_PMG_* config.",
+      "description": "READ-ONLY: fetch systemd journal lines from a PMG node. Returns a list of journal-line\nstrings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —\nNOT the full journal; widen with an explicit lastentries, a time range, or cursors.\nADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/\npbs_node_journal). since/until are UNIX-epoch INTEGERS (PMG's own live schema — not the\npre-existing PVE since/until-typed-as-str bug logged elsewhere in this campaign). Needs\nPROXIMO_PMG_* config.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -17680,7 +17712,7 @@
           },
           "lastentries": {
             "default": null,
-            "description": "Limit to the last N lines; conflicts with a cursor/time range.",
+            "description": "Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range.",
             "type": [
               "integer",
               "null"
@@ -24334,7 +24366,7 @@
     },
     {
       "name": "pve_ha_resources_list",
-      "description": "List all guests managed by HA (High Availability) with their current HA settings\n(read-only). Returns a list of HA resource dicts with SID, type, state, group, and restart\nsettings. Use pve_ha_groups_list or pve_ha_rules_list to view HA placement rules, not for\nresource enumeration.",
+      "description": "List all guests managed by HA (High Availability) with their current HA settings\n(read-only). Returns a counted envelope — total, by_state, and `resources`: HA resource\ndicts with SID, type, state, group, and restart settings. Trust total/by_state for count\nquestions; they are computed server-side from the full listing. Use pve_ha_groups_list or\npve_ha_rules_list to view HA placement rules, not for resource enumeration.",
       "inputSchema": {
         "properties": {},
         "type": "object"

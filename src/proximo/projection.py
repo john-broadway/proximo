@@ -70,27 +70,59 @@ def cap_newest(rows: list, limit: int | None, ts_key: str) -> list:
     the newest N by ``ts_key`` (rows missing the key sort oldest); zero/negative is refused
     outright, never coerced to "all".
     """
-    if limit is None:
+    n = _checked_limit(limit)
+    if n is None:
         return rows
+    return sorted(rows, key=lambda r: _metric(r, ts_key), reverse=True)[:n]
+
+
+def cap_top(rows: list, limit: int | None, count_key: str) -> list:
+    """Top-N by a numeric metric column, descending (per-correspondent statistics).
+
+    These rows carry no timestamp, so "newest" is meaningless here — the honest slice is
+    the largest by ``count_key``. ``limit=None`` returns the rows UNTOUCHED (order
+    included); rows missing the metric sort as zero; zero/negative is refused outright,
+    never coerced to "all".
+    """
+    n = _checked_limit(limit)
+    if n is None:
+        return rows
+    return sorted(rows, key=lambda r: _metric(r, count_key), reverse=True)[:n]
+
+
+def envelope_capped(rows: list, capped_rows: list, key: str) -> dict:
+    """Counted envelope for capped estate-scale listings: {"total", "returned", <key>}.
+
+    The by-less sibling of envelope_rows, for rows with no categorical axis. ``total``
+    always counts the RAW rows, so a capped slice can never masquerade as the population.
+    """
+    return {"total": len(rows), "returned": len(capped_rows), key: capped_rows}
+
+
+def _checked_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
     n = int(limit)
     if n <= 0:
         raise ProximoError(f"limit must be a positive integer, got {limit!r}")
-    def _ts(r) -> float:  # noqa: ANN001 — row shape is heterogeneous by design
-        v = r.get(ts_key) if isinstance(r, dict) else None
-        if v is None:
-            return 0.0       # missing sorts oldest
-        try:
-            return float(v)  # a backend handing epoch-as-string still sorts by its value
-        except (TypeError, ValueError):
-            pass
-        # PMG's view of PBS snapshots types backup-time as an RFC 3339 STRING (its own
-        # documented divergence from the epoch-int convention) — order by the instant,
-        # never let a typed string collapse "newest N" into "first N in API order".
-        try:
-            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)  # naive pins to UTC — never box-TZ order
-            return dt.timestamp()
-        except ValueError:
-            return 0.0       # non-temporal sorts oldest, never crashes the listing
-    return sorted(rows, key=_ts, reverse=True)[:n]
+    return n
+
+
+def _metric(r, key: str) -> float:  # noqa: ANN001 — row shape is heterogeneous by design
+    v = r.get(key) if isinstance(r, dict) else None
+    if v is None:
+        return 0.0       # missing sorts oldest / last
+    try:
+        return float(v)  # a backend handing epoch-as-string still sorts by its value
+    except (TypeError, ValueError):
+        pass
+    # PMG's view of PBS snapshots types backup-time as an RFC 3339 STRING (its own
+    # documented divergence from the epoch-int convention) — order by the instant,
+    # never let a typed string collapse "newest N" into "first N in API order".
+    try:
+        dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)  # naive pins to UTC — never box-TZ order
+        return dt.timestamp()
+    except ValueError:
+        return 0.0       # non-temporal sorts oldest, never crashes the listing

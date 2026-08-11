@@ -210,16 +210,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.31.2`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.31.2), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.32.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.32.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.31.2 (an adversarial audit of 0.31.1): every surviving finding fixed.** Webhook
-> secrets no longer land in the PROVE ledger; guest-config changes that cross into the host rate
-> HIGH and name the crossing; container-create privilege reads the real PVE default; an exec
-> timeout is recorded as `error:timeout` (the command may still be running, and the ledger says
-> so); caller badges always expire; consent approvers see the un-redacted command in the dry-run
-> preview only; and `--help` prints usage instead of starting a live server. No tool-surface change.
+> **New in 0.32.0 (counted envelopes on the estate-scale listings — breaking).** Nine list
+> tools whose rows grow with the estate — fleet inventory, HA resources, mail statistics —
+> now return a counted envelope instead of a bare list: the server does the counting. The
+> three per-correspondent statistics tools default to the top 100 by count, the per-message
+> detail tool to the newest 100 (`limit=null` for all; the envelope's `total` always counts
+> the complete set). PBS/PMG journals now default to the last 100 lines, matching their PVE
+> sibling. Migration notes per tool in the CHANGELOG.
 >
-> Recent: **0.31.1** moved both `cryptography` bounds off a HIGH advisory that our own published cap was blocking. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.31.2** fixed every surviving finding from a full adversarial audit of 0.31.1. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -256,11 +257,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.31.2**: **the audit we ran against ourselves.** Eight finder teams over 0.31.1, every
-  finding independently verified before it was believed: thirty raw claims, fifteen survived,
-  every survivor fixed with a test proven red against the pre-fix source. Two review rounds on
-  the fix diff itself caught defects in the fixes before they shipped. Webhook secrets out of
-  the ledger, host-crossing config rated honestly, badges that expire, a `--help` that helps.
+- 🩸 **0.32.0**: **the estate-scale envelope batch.** The M4 sweep looked at all 229
+  list-returning tools and classified every one; the nine whose rows grow with the estate now
+  return counted envelopes — the server counts, the model reads the count — with a default
+  cap of 100 on the mail statistics (top-by-count per correspondent, newest-by-time per
+  message) and a 100-line default bound on the PBS/PMG journals. Breaking shapes batched
+  deliberately into one honest pre-1.0 minor.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

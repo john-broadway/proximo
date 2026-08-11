@@ -564,17 +564,23 @@ def pmg_node_report(
 @tool()
 def pmg_node_journal(
     node: Annotated[str | None, Field(description="PMG node name; defaults to the configured node (PROXIMO_PMG_NODE).")] = None,
-    lastentries: Annotated[int | None, Field(description="Limit to the last N lines; conflicts with a cursor/time range.")] = None,
+    lastentries: Annotated[int | None, Field(description="Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range.")] = None,
     since: Annotated[int | None, Field(description="Display log since this UNIX epoch (integer); conflicts with startcursor.")] = None,
     until: Annotated[int | None, Field(description="Display log until this UNIX epoch (integer); conflicts with endcursor.")] = None,
     startcursor: Annotated[str | None, Field(description="Start after this journal cursor token; conflicts with since.")] = None,
     endcursor: Annotated[str | None, Field(description="End before this journal cursor token; conflicts with until.")] = None,
 ) -> list[str]:
     """READ-ONLY: fetch systemd journal lines from a PMG node. Returns a list of journal-line
-    strings. ADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/
+    strings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —
+    NOT the full journal; widen with an explicit lastentries, a time range, or cursors.
+    ADVERSARIAL: free-text log content (matches pmg_node_syslog/pve_node_journal/
     pbs_node_journal). since/until are UNIX-epoch INTEGERS (PMG's own live schema — not the
     pre-existing PVE since/until-typed-as-str bug logged elsewhere in this campaign). Needs
     PROXIMO_PMG_* config."""
+    if lastentries is None and since is None and until is None \
+            and startcursor is None and endcursor is None:
+        # Same conflict rule as the PBS twin: inject the bound only on a bare call.
+        lastentries = 100
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     return _audited("pmg_node_journal", f"pmg/node/{n}/journal",

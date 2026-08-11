@@ -530,16 +530,23 @@ def pbs_node_task_stop(
 @tool()
 def pbs_node_journal(
     node: Annotated[str, Field(description="PBS node name (or 'localhost').")] = "localhost",
-    lastentries: Annotated[int | None, Field(description="Limit to the last N lines; conflicts with a cursor/time range.")] = None,
+    lastentries: Annotated[int | None, Field(description="Limit to the last N lines; defaults to 100 when no time range/cursor is given (a default-bounded listing is NOT the full journal). Conflicts with a cursor/time range.")] = None,
     since: Annotated[int | None, Field(description="Display log since this UNIX epoch (integer); conflicts with startcursor.")] = None,
     until: Annotated[int | None, Field(description="Display log until this UNIX epoch (integer); conflicts with endcursor.")] = None,
     startcursor: Annotated[str | None, Field(description="Start after this journal cursor token; conflicts with since.")] = None,
     endcursor: Annotated[str | None, Field(description="End before this journal cursor token; conflicts with until.")] = None,
 ) -> list[str]:
     """READ-ONLY: fetch systemd journal lines from a PBS node. Returns a list of journal-line
-    strings. Note: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS
+    strings. A bare call returns the last 100 lines (sibling parity with pve_node_journal) —
+    NOT the full journal; widen with an explicit lastentries, a time range, or cursors.
+    Note: since/until here are UNIX-epoch INTEGERS (the /journal convention on both PBS
     and PVE); the free-text date-time-string form is on the /syslog endpoint, not here. For the
     classic syslog view use pbs_node_syslog. Needs PROXIMO_PBS_* config."""
+    if lastentries is None and since is None and until is None \
+            and startcursor is None and endcursor is None:
+        # lastentries conflicts with a range/cursor on PBS's own schema, so the default
+        # is injected only on a bare call — a ranged query must never carry it.
+        lastentries = 100
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_node_journal", f"pbs/node/{node}/journal",
                     lambda: journal(pbs, node, lastentries, since, until, startcursor, endcursor))

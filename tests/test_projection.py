@@ -351,3 +351,213 @@ def test_cap_newest_naive_iso_is_deterministic_regardless_of_box_timezone(monkey
     monkeypatch.delenv("TZ")
     time.tzset()
     assert results[0] == results[1] == ["aware", "naive"]   # naive pinned to UTC
+
+
+# ---------------------------------------------------------------------------
+# cap_top + envelope_capped — the estate-scale statistics envelope (0.32.0 Bucket 2)
+# ---------------------------------------------------------------------------
+# Per-correspondent statistics scale with the estate's mail history, not its config.
+# The envelope's `total` is the complete count (the server's job); a capped row list is
+# the top slice by a metric column, never the population — and never "newest", because
+# these rows carry no timestamp.
+
+_TOP_ROWS = [
+    {"who": "a@x", "count": 5},
+    {"who": "b@x", "count": 40},
+    {"who": "c@x", "count": "12"},   # backend handing a numeric string still sorts by value
+    {"who": "d@x"},                  # missing metric sorts last
+]
+
+
+def test_cap_top_returns_top_n_by_metric_descending():
+    from proximo.projection import cap_top
+    out = cap_top([dict(r) for r in _TOP_ROWS], 2, "count")
+    assert [r["who"] for r in out] == ["b@x", "c@x"]
+
+
+def test_cap_top_none_is_untouched_passthrough():
+    from proximo.projection import cap_top
+    rows = [dict(r) for r in _TOP_ROWS]
+    assert cap_top(rows, None, "count") == _TOP_ROWS
+
+
+def test_cap_top_zero_and_negative_are_refused_never_coerced():
+    import pytest as _pytest
+
+    from proximo.backends import ProximoError
+    from proximo.projection import cap_top
+    for bad in (0, -3):
+        with _pytest.raises(ProximoError):
+            cap_top([dict(r) for r in _TOP_ROWS], bad, "count")
+
+
+def test_cap_top_missing_metric_sorts_last():
+    from proximo.projection import cap_top
+    out = cap_top([dict(r) for r in _TOP_ROWS], 4, "count")
+    assert out[-1]["who"] == "d@x"
+
+
+def test_envelope_capped_counts_raw_not_returned():
+    from proximo.projection import envelope_capped
+    capped = _TOP_ROWS[:2]
+    out = envelope_capped(_TOP_ROWS, capped, "senders")
+    assert out["total"] == 4
+    assert out["returned"] == 2
+    assert out["senders"] == capped
+
+
+def test_envelope_capped_empty_rows():
+    from proximo.projection import envelope_capped
+    out = envelope_capped([], [], "receivers")
+    assert out == {"total": 0, "returned": 0, "receivers": []}
+
+
+# ---------------------------------------------------------------------------
+# Server seam — the 0.32.0 Bucket-2 envelopes (estate-scale inventory + PMG statistics)
+# ---------------------------------------------------------------------------
+# Inventory tools envelope WITHOUT a cap (sibling parity with pve_list_guests /
+# pve_cluster_resources; capping unordered inventory is the rosters dishonesty).
+# Per-correspondent PMG statistics envelope WITH a default top-by-count cap — the
+# context-blowup class the bucket exists for. limit=None (explicit) = all rows.
+
+def _wire_pdm(monkeypatch, tmp_path, pdm_obj):
+    from types import SimpleNamespace
+
+    import proximo.server as server
+    from proximo.audit import AuditLedger
+    from proximo.config import ProximoConfig
+
+    cfg = ProximoConfig(api_base_url="https://x:8006/api2/json", node="pve",
+                        token_path="/run/x", audit_log_path=str(tmp_path / "audit.log"))
+    ledger = AuditLedger(str(tmp_path / "audit.log"))
+    monkeypatch.setattr(server, "_svc", lambda: (cfg, None, None, ledger))
+    monkeypatch.setattr(server, "_pdm", lambda: (SimpleNamespace(), pdm_obj))
+    monkeypatch.setattr(server, "_pmg", lambda: (SimpleNamespace(node="pmg"), pdm_obj))
+    return server
+
+
+class _PdmInventory:
+    def resources_list(self):
+        return [{"id": "qemu/100", "type": "qemu"}, {"id": "lxc/7", "type": "lxc"},
+                {"id": "storage/s", "type": "storage"}, {"id": "qemu/101", "type": "qemu"}]
+
+    def pve_resources(self, remote, kind=None):
+        return [{"id": "qemu/100", "type": "qemu"}, {"id": "storage/s", "type": "storage"}]
+
+    def pve_qemu_list(self, remote, node=None):
+        return [{"vmid": 100, "status": "running"}, {"vmid": 101, "status": "stopped"},
+                {"vmid": 102, "status": "running"}]
+
+    def pve_lxc_list(self, remote, node=None):
+        return [{"vmid": 7, "status": "running"}]
+
+
+def test_pdm_resources_list_is_a_counted_envelope_by_type(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PdmInventory())
+    out = server.pdm_resources_list()
+    assert out["total"] == 4
+    assert out["by_type"] == {"qemu": 2, "lxc": 1, "storage": 1}
+    assert out["resources"][0]["id"] == "qemu/100"
+
+
+def test_pdm_pve_resources_is_a_counted_envelope_by_type(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PdmInventory())
+    out = server.pdm_pve_resources(remote="r1")
+    assert out["total"] == 2
+    assert out["by_type"] == {"qemu": 1, "storage": 1}
+
+
+def test_pdm_pve_qemu_list_is_a_counted_envelope_by_status(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PdmInventory())
+    out = server.pdm_pve_qemu_list(remote="r1")
+    assert out["total"] == 3
+    assert out["by_status"] == {"running": 2, "stopped": 1}
+    assert [r["vmid"] for r in out["vms"]] == [100, 101, 102]
+
+
+def test_pdm_pve_lxc_list_is_a_counted_envelope_by_status(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PdmInventory())
+    out = server.pdm_pve_lxc_list(remote="r1")
+    assert out["total"] == 1
+    assert out["by_status"] == {"running": 1}
+    assert out["containers"][0]["vmid"] == 7
+
+
+class _HaApi:
+    def _get(self, path):
+        assert path == "/cluster/ha/resources"
+        return [{"sid": "ct:7", "type": "ct", "state": "started"},
+                {"sid": "vm:100", "type": "vm", "state": "started"},
+                {"sid": "vm:101", "type": "vm", "state": "disabled"}]
+
+
+def test_pve_ha_resources_list_is_a_counted_envelope_by_state(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _HaApi())
+    out = server.pve_ha_resources_list()
+    assert out["total"] == 3
+    assert out["by_state"] == {"started": 2, "disabled": 1}
+    assert out["resources"][0]["sid"] == "ct:7"
+
+
+class _PmgStats:
+    def __init__(self):
+        self.gets = []
+
+    def _get(self, path, params=None):
+        self.gets.append((path, params))
+        if path.endswith("/detail"):
+            return [{"time": 100, "sender": "a@x"}, {"time": 300, "sender": "b@x"},
+                    {"time": 200, "sender": "c@x"}]
+        return [{"who": "a@x", "count": 5}, {"who": "b@x", "count": 40},
+                {"who": "c@x", "count": 12}]
+
+
+def test_pmg_statistics_sender_default_is_top_100_envelope(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    out = server.pmg_statistics_sender()
+    assert out["total"] == 3 and out["returned"] == 3
+    # under the default cap the rows come back top-by-count, count DESC
+    assert [r["count"] for r in out["senders"]] == [40, 12, 5]
+
+
+def test_pmg_statistics_sender_limit_caps_top_by_count(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    out = server.pmg_statistics_sender(limit=2)
+    assert out["total"] == 3 and out["returned"] == 2
+    assert [r["who"] for r in out["senders"]] == ["b@x", "c@x"]
+
+
+def test_pmg_statistics_sender_explicit_none_returns_all_rows_api_order(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    out = server.pmg_statistics_sender(limit=None)
+    assert out["returned"] == out["total"] == 3
+    assert [r["who"] for r in out["senders"]] == ["a@x", "b@x", "c@x"]   # untouched
+
+
+def test_pmg_statistics_sender_cap_is_client_side_never_an_api_param(monkeypatch, tmp_path):
+    pmg = _PmgStats()
+    server = _wire_pdm(monkeypatch, tmp_path, pmg)
+    server.pmg_statistics_sender(limit=1)
+    _, params = pmg.gets[-1]
+    assert not params or "limit" not in params   # PMG's API has no such param; never leak it
+
+
+def test_pmg_statistics_receiver_and_contact_envelope_keys(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    assert server.pmg_statistics_receiver()["receivers"]
+    assert server.pmg_statistics_contact()["contacts"]
+
+
+def test_pmg_statistics_detail_default_caps_newest_by_time(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    out = server.pmg_statistics_detail(address="a@x", type_="sender")
+    assert out["total"] == 3
+    # detail rows are per-message and DO carry time — newest first under the cap
+    assert [r["time"] for r in out["messages"]] == [300, 200, 100]
+
+
+def test_pmg_statistics_detail_limit_2_newest(monkeypatch, tmp_path):
+    server = _wire_pdm(monkeypatch, tmp_path, _PmgStats())
+    out = server.pmg_statistics_detail(address="a@x", type_="sender", limit=2)
+    assert out["returned"] == 2
+    assert [r["time"] for r in out["messages"]] == [300, 200]

@@ -64,7 +64,8 @@ def rule_exists(name: str) -> bool:
 
 def ha_managed(sid: str) -> bool:
     try:
-        return any(r.get("sid") == sid for r in server.pve_ha_resources_list())
+        return any(r.get("sid") == sid
+                   for r in server.pve_ha_resources_list()["resources"])
     except Exception as e:  # noqa: BLE001
         print(f"  (ha-resources read failed: {type(e).__name__}: {e})")
         return True

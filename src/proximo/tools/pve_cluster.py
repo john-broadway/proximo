@@ -118,14 +118,16 @@ def pve_ha_rules_list() -> list[dict]:
 
 
 @tool()
-def pve_ha_resources_list() -> list[dict]:
+def pve_ha_resources_list() -> dict:
     """List all guests managed by HA (High Availability) with their current HA settings
-    (read-only). Returns a list of HA resource dicts with SID, type, state, group, and restart
-    settings. Use pve_ha_groups_list or pve_ha_rules_list to view HA placement rules, not for
-    resource enumeration."""
+    (read-only). Returns a counted envelope — total, by_state, and `resources`: HA resource
+    dicts with SID, type, state, group, and restart settings. Trust total/by_state for count
+    questions; they are computed server-side from the full listing. Use pve_ha_groups_list or
+    pve_ha_rules_list to view HA placement rules, not for resource enumeration."""
     _, api, _, _ = _proximo_server._svc()
-    return _audited("pve_ha_resources_list", "cluster/ha/resources",
+    rows = _audited("pve_ha_resources_list", "cluster/ha/resources",
                     lambda: ha_resources_list(api))
+    return envelope_rows(rows, rows, "resources", "state")
 
 
 # --- Cluster & HA (REST API, MUTATION — confirm-gated) ---

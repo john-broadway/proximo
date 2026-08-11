@@ -2,6 +2,61 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.32.0] — 2026-08-11
+
+**The estate-scale envelope batch (M4 Bucket 2) — BREAKING response shapes on nine
+list tools, plus a default bound on two journals.** The M4 sweep classified all 229
+list-returning tools (2026-08-11); Buckets 1/3/4 shipped or closed inside 0.31.x. This
+release carries the one bucket that changes wire shapes, batched deliberately as an
+honest pre-1.0 minor. Tool estate unchanged at 906; no tool added or removed.
+
+### Breaking — bare list → counted envelope
+
+Callers that indexed the response as a list must now read rows under the named key.
+The envelope's counts are computed server-side from the complete listing, so a model
+never has to count rows itself (the same fix that took a 12B model from 24/28 to
+28/28 on the guest listing).
+
+- **Five estate-scale inventory tools** now return `{"total", "by_<axis>", <rows-key>}`
+  (sibling parity with `pve_list_guests` / `pve_cluster_resources`; no cap — capping
+  unordered inventory would be dishonest):
+  - `pdm_resources_list` → rows under `resources`, counted `by_type`
+  - `pdm_pve_resources` → rows under `resources`, counted `by_type`
+  - `pdm_pve_qemu_list` → rows under `vms`, counted `by_status`
+  - `pdm_pve_lxc_list` → rows under `containers`, counted `by_status`
+  - `pve_ha_resources_list` → rows under `resources`, counted `by_state`
+- **Four PMG per-correspondent statistics tools** now return `{"total", "returned",
+  <rows-key>}` **with a default cap of 100** — these rows scale with the estate's mail
+  history (every distinct correspondent in the window) and were the context-blowup
+  class the M4 audit flagged:
+  - `pmg_statistics_sender` → `senders`, top-`limit` by `count` descending
+  - `pmg_statistics_receiver` → `receivers`, top-`limit` by `count` descending
+  - `pmg_statistics_contact` → `contacts`, top-`limit` by `count` descending
+  - `pmg_statistics_detail` → `messages`, newest-`limit` by `time`
+  Each takes `limit` (default 100): explicit `null` returns all rows untouched (API
+  order); zero/negative is refused outright, never coerced. `total` always counts the
+  complete set, so a capped slice can never masquerade as the population. The cap is
+  client-side only — no invented parameter ever reaches the PMG API.
+
+### Changed
+
+- **`pbs_node_journal` / `pmg_node_journal` are default-bounded**: a bare call now
+  returns the last 100 lines (sibling parity with `pve_node_journal`, which has
+  defaulted `lastentries=100` all along). The bound is injected only when no
+  `lastentries`, time range, or cursor is given — a ranged query never carries it,
+  because `lastentries` conflicts with ranges/cursors on the PBS/PMG schema.
+- **PyPI `Homepage`/`Documentation` URLs** now point at the project page
+  (`john-broadway.github.io/proximo`) instead of circularly at the repo, matching the
+  GitHub homepage field.
+
+### Internal
+
+- `projection.py` grew `cap_top` (top-N by numeric metric, descending) and
+  `envelope_capped` (the by-less counted envelope); the timestamp/metric coercion
+  chain (epoch, numeric-string, RFC 3339 with naive-pins-to-UTC) is now one shared
+  `_metric` used by both `cap_newest` and `cap_top`, so a future fix cannot land in
+  only one of them.
+
 ## [0.31.2] — 2026-08-08
 
 **A full adversarial audit of 0.31.1 — eight independent finder teams, every finding
