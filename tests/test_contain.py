@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import proximo.contain as contain
 import proximo.server as server
 from proximo.audit import AuditLedger
 from proximo.backends import ExecResult, ProximoError
@@ -78,6 +79,35 @@ def test_mutation_proceeds_when_trip_absent_env_unset(tmp_path, monkeypatch):
     resp = server._audited("pve_guest_power", "lxc/100", _fn, mutation=True)
     assert calls == [1]
     assert resp == {"status": "ok", "result": {"ok": True}}
+
+
+def test_mutation_proceeds_when_armed_but_trip_absent(tmp_path, monkeypatch):
+    """The NORMAL standing state of a CONTAIN-armed box: PROXIMO_CONTAIN_TRIP_PATH is SET but no
+    trip file exists yet -> mutations proceed. This is distinct from env-unset (tested above): a
+    regression collapsing 'armed-but-not-tripped' into the fail-closed branch would refuse EVERY
+    mutation on EVERY armed deployment, and would ship green without this test (contain.py:55)."""
+    _wire_server(tmp_path, monkeypatch)
+    monkeypatch.setenv("PROXIMO_CONTAIN_TRIP_PATH", str(tmp_path / "never-created"))
+
+    calls = []
+    resp = server._audited("pve_guest_power", "lxc/100",
+                           lambda: (calls.append(1), {"ok": True})[1], mutation=True)
+    assert calls == [1]
+    assert resp == {"status": "ok", "result": {"ok": True}}
+    # And the primitive itself reads not-contained for the armed-but-absent case.
+    assert contain.contain_state().contained is False
+
+
+def test_unreadable_trip_still_contains_reason_dropped(tmp_path, monkeypatch):
+    """A trip that EXISTS but cannot be read (here: a directory, so the reason read raises) must
+    stay CONTAINED with the reason simply dropped — a read failure must never un-contain
+    (contain.py:64-65)."""
+    trip = tmp_path / "trip-dir"
+    trip.mkdir()  # exists (os.stat ok) but open()/_read_reason raises IsADirectoryError
+    monkeypatch.setenv("PROXIMO_CONTAIN_TRIP_PATH", str(trip))
+    state = contain.contain_state()
+    assert state.contained is True
+    assert state.reason is None
 
 
 def test_reads_not_gated_while_contained(tmp_path, monkeypatch):

@@ -175,6 +175,126 @@ def test_grant_refused_when_ttl_expired(tmp_path, monkeypatch):
     assert os.path.exists(path)  # an expired grant is NOT consumed (only a valid consume removes it)
 
 
+def test_ttl_falls_back_to_default_on_malformed_or_nonpositive(monkeypatch):
+    """A misconfigured TTL must fall back to the default, never silently become 0 (= every grant
+    instantly expired) or negative (= unbounded). Pins the malformed/<=0 branch of _ttl_seconds()."""
+    for bad in ("abc", "  ", "0", "-5", "12x", "1_000_x"):
+        monkeypatch.setenv("PROXIMO_CONSENT_TTL_SECONDS", bad)
+        assert consent._ttl_seconds() == consent._DEFAULT_TTL_SECONDS, bad
+    monkeypatch.delenv("PROXIMO_CONSENT_TTL_SECONDS", raising=False)
+    assert consent._ttl_seconds() == consent._DEFAULT_TTL_SECONDS  # unset -> default
+    monkeypatch.setenv("PROXIMO_CONSENT_TTL_SECONDS", "30")
+    assert consent._ttl_seconds() == 30  # a valid positive value is honored
+
+
+def test_grant_at_exactly_ttl_age_is_valid_boundary(tmp_path, monkeypatch):
+    """A grant whose age is EXACTLY the TTL is still valid — the expiry check is strictly '>'. Pins
+    the boundary so a '>' -> '>=' mutation (which would refuse a grant at the boundary) is caught.
+    Time is pinned to the grant's own mtime + TTL so there is no filesystem-precision flake."""
+    _wire(tmp_path, monkeypatch)
+    cdir = _consent_dir(tmp_path, monkeypatch)
+    monkeypatch.setenv("PROXIMO_CONSENT_TTL_SECONDS", "1000")
+    consent.set_pending_consent(_CID)
+    path = _grant(cdir, _CID)
+    mtime = os.stat(path).st_mtime
+
+    monkeypatch.setattr(consent.time, "time", lambda: mtime + 1000.0)  # age == TTL exactly
+    calls = []
+    server._audited("pve_guest_power", "lxc/100",
+                    lambda: (calls.append(1), {"ok": True})[1], mutation=True)
+    assert calls == [1]
+    assert not os.path.exists(path)  # a valid grant IS consumed
+
+    # And one microsecond older is expired (the other side of the boundary).
+    consent.set_pending_consent(_CID)
+    path2 = _grant(cdir, _CID)
+    mtime2 = os.stat(path2).st_mtime
+    monkeypatch.setattr(consent.time, "time", lambda: mtime2 + 1000.001)
+    with pytest.raises(ProximoError):
+        server._audited("pve_guest_power", "lxc/101", lambda: calls.append(2), mutation=True)
+    assert calls == [1]
+    assert os.path.exists(path2)  # expired grant NOT consumed
+
+
+def test_consent_no_plan_refused_when_dir_set_but_no_pending_id(tmp_path, monkeypatch):
+    """Consent configured, but a mutation seam is reached with NO pending consent_id — no recorded
+    plan to bind an approval to, so fail closed (blocked:consent_no_plan). Also exercises the A10
+    end-of-operation clear: after clear_pending_consent(), a planless mutation fails closed here."""
+    _, log = _wire(tmp_path, monkeypatch)
+    _consent_dir(tmp_path, monkeypatch)
+    consent.clear_pending_consent()  # no pending id (the state an op-end clear leaves behind)
+
+    calls = []
+    with pytest.raises(ProximoError, match="(?i)consent"):
+        server._audited("pve_guest_power", "lxc/100", lambda: calls.append(1), mutation=True)
+    assert calls == []
+    assert any(e["outcome"] == "blocked:consent_no_plan" for e in _entries(log))
+
+
+def test_taint_mandatory_but_no_consent_dir_fails_closed(tmp_path, monkeypatch):
+    """Tainted session + PROXIMO_TAINT_REQUIRE_CONSENT set, but NO PROXIMO_CONSENT_DIR to verify a
+    grant against: a silent no-op would let a tainted mutation through unconsented, so refuse
+    (blocked:taint_consent_unconfigured) — the F7 fail-closed branch."""
+    import proximo.taint as taint
+    _, log = _wire(tmp_path, monkeypatch)
+    monkeypatch.delenv("PROXIMO_CONSENT_DIR", raising=False)  # no consent dir configured
+    monkeypatch.setenv("PROXIMO_TAINT_REQUIRE_CONSENT", "1")
+    taint.mark_tainted(os.path.dirname(log), "ct_exec")  # taint the session out-of-band
+    consent.set_pending_consent(_CID)  # a plan ran; the no-dir branch still fires first
+
+    calls = []
+    with pytest.raises(ProximoError, match="(?i)consent"):
+        server._audited("pve_guest_power", "lxc/100", lambda: calls.append(1), mutation=True)
+    assert calls == []
+    assert any(e["outcome"] == "blocked:taint_consent_unconfigured" for e in _entries(log))
+
+
+def _raise_for_grant(cdir, exc):
+    real_remove = os.remove
+
+    def fake_remove(p):
+        if str(cdir) in str(p):
+            raise exc
+        return real_remove(p)
+    return fake_remove
+
+
+def test_consent_race_refused_when_grant_vanishes_before_consume(tmp_path, monkeypatch):
+    """The os.remove IS the authoritative consume: if the grant vanishes between stat and remove (a
+    concurrent single-use winner took it), the loser is refused (blocked:consent_race) and fn never
+    runs. Mutating 'except FileNotFoundError: _refuse' -> 'pass' would let the loser proceed WITHOUT
+    holding the grant — a genuine fail-open this pins (consent.py os.remove race arm)."""
+    _, log = _wire(tmp_path, monkeypatch)
+    cdir = _consent_dir(tmp_path, monkeypatch)
+    consent.set_pending_consent(_CID)
+    _grant(cdir, _CID)  # present at stat time
+    monkeypatch.setattr(consent.os, "remove", _raise_for_grant(cdir, FileNotFoundError()))
+
+    calls = []
+    with pytest.raises(ProximoError, match="(?i)consent"):
+        server._audited("pve_guest_power", "lxc/100", lambda: calls.append(1), mutation=True)
+    assert calls == []
+    assert consent._consent_satisfied.get() is False  # NOT authorized
+    assert any(e["outcome"] == "blocked:consent_race" for e in _entries(log))
+
+
+def test_consent_error_refused_when_grant_cannot_be_consumed(tmp_path, monkeypatch):
+    """Grant present but the consume itself errors (perm denied on remove) => fail closed
+    (blocked:consent_error), fn never runs (consent.py os.remove error arm)."""
+    _, log = _wire(tmp_path, monkeypatch)
+    cdir = _consent_dir(tmp_path, monkeypatch)
+    consent.set_pending_consent(_CID)
+    _grant(cdir, _CID)
+    monkeypatch.setattr(consent.os, "remove", _raise_for_grant(cdir, PermissionError()))
+
+    calls = []
+    with pytest.raises(ProximoError, match="(?i)consent"):
+        server._audited("pve_guest_power", "lxc/100", lambda: calls.append(1), mutation=True)
+    assert calls == []
+    assert consent._consent_satisfied.get() is False
+    assert any(e["outcome"] == "blocked:consent_error" for e in _entries(log))
+
+
 def test_fail_closed_when_consent_dir_is_a_file(tmp_path, monkeypatch):
     """PROXIMO_CONSENT_DIR pointing at a real FILE (not a dir) => stat raises NotADirectoryError =>
     refuse (fail-closed on ambiguity), fn never called. A real OS error, not a mocked one."""
@@ -310,6 +430,45 @@ def test_satisfied_flag_reset_per_plan_no_leak(tmp_path, monkeypatch):
     assert calls == []
 
 
+# --- A10: the de-dup markers are cleared at operation END, not only reset by the NEXT _plan -------
+# The test above proves a fresh _plan resets the flag. This pair proves the complementary half: a
+# mutation reaching the gates WITHOUT its own _plan (a future/unusual seam) cannot inherit a prior
+# op's satisfied/reserved state, because the funnel clears it when the operation ends.
+def test_stale_satisfied_does_not_leak_to_a_planless_mutation(tmp_path, monkeypatch):
+    """Op A consents through the funnel and consumes its grant. Op B then reaches the funnel with
+    NO _plan of its own — without the end-of-operation clear it would inherit satisfied=True and run
+    ungated (fail-OPEN). It must fail closed instead."""
+    _wire(tmp_path, monkeypatch)
+    cdir = _consent_dir(tmp_path, monkeypatch)
+
+    consent.set_pending_consent(_CID)
+    _grant(cdir, _CID)
+    server._audited("pve_guest_power", "lxc/100", lambda: {"ok": True}, mutation=True)
+
+    # Op B: no set_pending_consent (the hole). Must NOT inherit Op A's satisfied flag.
+    calls = []
+    with pytest.raises(ProximoError):
+        server._audited("pve_guest_power", "lxc/101", lambda: calls.append(1), mutation=True)
+    assert calls == []
+
+
+def test_audited_clears_gate_dedup_at_operation_end(tmp_path, monkeypatch):
+    """The mechanism: after a mutation runs through the funnel, the CONSENT/ENVELOPE per-operation
+    de-dup markers are cleared, so no gate state survives into the next call. Gates are inert here
+    (nothing configured) — the clear must happen regardless of whether consent/rate were active."""
+    import proximo.envelope as envelope
+    _wire(tmp_path, monkeypatch)
+    consent._consent_satisfied.set(True)
+    consent._pending_consent_id.set("stale" * 12)
+    envelope._rate_reserved.set(True)
+
+    server._audited("pve_guest_power", "lxc/100", lambda: {"ok": True}, mutation=True)
+
+    assert consent._consent_satisfied.get() is False
+    assert consent._pending_consent_id.get() is None
+    assert envelope._rate_reserved.get() is False
+
+
 # === BYPASS proofs: the exec-family manual seams gate on consent too (seam-completeness) =========
 # ct_exec / ct_psql / pve_agent_exec don't route their real mutating call through _audited(), so a
 # consent gate only in _audited() would leave a hole. These drive the FULL tool path: the tool's own
@@ -417,6 +576,67 @@ def test_bypass_ct_psql_requires_consent(tmp_path, monkeypatch):
     with pytest.raises(ProximoError, match="(?i)consent"):
         server.ct_psql("105", "DROP TABLE x", confirm=True)
     assert exec_.ran == []
+
+
+# --- A10: pve_agent_exec is the ONE mutation path that never routes through _audited, so its own
+# finally must run the operation-end clear. ct_exec/ct_psql return _audited(...) and are covered by
+# test_audited_clears_gate_dedup_at_operation_end; these pin the manual path.
+def test_ct_exec_clears_gate_dedup_on_undo_unavailable_early_return(tmp_path, monkeypatch):
+    """ct_exec(snapshot=True) runs its gate seams (consuming consent / reserving rate) and then, if
+    the auto-undo snapshot can't be made, returns blocked:undo_unavailable BEFORE reaching _audited.
+    The op-end clear must STILL fire on that early return — else a consumed-but-aborted op leaks its
+    markers past itself. (Covers the branch _audited's finally never sees.)"""
+    _cfg, api, exec_, _led, _log = _wire_with_backends(
+        tmp_path, monkeypatch, enable_exec=True, ct_allowlist=frozenset({"105"}))
+    monkeypatch.setattr(api, "snapshot_create",
+                        lambda *a, **k: (_ for _ in ()).throw(ProximoError("no snapshots here")))
+    calls = []
+    monkeypatch.setattr(server, "_end_mutation_gates", lambda: calls.append(1))
+    out = server.ct_exec("105", ["echo", "hi"], snapshot=True, confirm=True)
+    assert out.get("status") == "blocked:undo_unavailable"
+    assert exec_.ran == []          # command NOT run (fail-closed)
+    assert calls == [1]             # cleared despite the early return
+
+
+def test_ct_psql_clears_gate_dedup_on_undo_unavailable_early_return(tmp_path, monkeypatch):
+    """Same early-return branch for ct_psql."""
+    _cfg, api, exec_, _led, _log = _wire_with_backends(
+        tmp_path, monkeypatch, enable_exec=True, ct_allowlist=frozenset({"105"}))
+    monkeypatch.setattr(api, "snapshot_create",
+                        lambda *a, **k: (_ for _ in ()).throw(ProximoError("no snapshots here")))
+    calls = []
+    monkeypatch.setattr(server, "_end_mutation_gates", lambda: calls.append(1))
+    out = server.ct_psql("105", "DROP TABLE x", snapshot=True, confirm=True)
+    assert out.get("status") == "blocked:undo_unavailable"
+    assert exec_.ran == []
+    assert calls == [1]
+
+
+def test_pve_agent_exec_clears_gate_dedup_on_success(tmp_path, monkeypatch):
+    """On the normal (successful) guest-exec path, the op-end clear fires exactly once."""
+    _cfg, api, _exec, _led, _log = _wire_with_backends(
+        tmp_path, monkeypatch, enable_agent=True, agent_allowlist=frozenset({"101"}))
+    calls = []
+    monkeypatch.setattr(server, "_end_mutation_gates", lambda: calls.append(1))
+    out = server.pve_agent_exec("101", ["echo", "hi"], confirm=True)
+    assert out["status"] == "ok"
+    assert api.agent_execs == [("101", None, ["echo", "hi"])]
+    assert calls == [1]
+
+
+def test_pve_agent_exec_clears_gate_dedup_even_when_a_gate_refuses(tmp_path, monkeypatch):
+    """The finally wraps the GATES, not just the exec — so a marker consumed by an earlier gate is
+    cleared even when a LATER gate refuses (the rate-refused-after-consent-consumed leak). Here
+    consent refuses (dir set, no grant); the clear must still run and the guest exec never fire."""
+    _cfg, api, _exec, _led, _log = _wire_with_backends(
+        tmp_path, monkeypatch, enable_agent=True, agent_allowlist=frozenset({"101"}))
+    _consent_dir(tmp_path, monkeypatch)  # dir set, NO grant -> consent refuses
+    calls = []
+    monkeypatch.setattr(server, "_end_mutation_gates", lambda: calls.append(1))
+    with pytest.raises(ProximoError, match="(?i)consent"):
+        server.pve_agent_exec("101", ["echo", "hi"], confirm=True)
+    assert api.agent_execs == []
+    assert calls == [1]
 
 
 # === Contextvar isolation: interleaved operations must not cross-wire consent ===================

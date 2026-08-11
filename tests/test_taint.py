@@ -235,6 +235,24 @@ def test_taint_tracking_on_via_require_consent_env(monkeypatch):
     assert taint.taint_tracking_on() is True
 
 
+def test_taint_tracking_off_when_track_explicitly_falsy(monkeypatch):
+    """TRACK gates on TRUTHINESS, not mere presence: =0/false/no/off means OFF. Otherwise an
+    operator DISABLING the mode by writing =0 would still silently get marker-writes. Pins the
+    _env_truthy (NOT _env_set_nonempty) contract — a swap to presence-only survives without this."""
+    for off in ("0", "false", "no", "off", "", "  "):
+        monkeypatch.setenv(taint.TAINT_TRACK_ENV, off)
+        assert taint.taint_tracking_on() is False, off
+
+
+def test_require_consent_off_when_explicitly_falsy(monkeypatch):
+    """Same truthiness contract for REQUIRE_CONSENT (both taint_tracking_on and the standalone
+    require_consent_when_tainted): =0 means off, not 'set therefore mandatory'."""
+    for off in ("0", "false", "no", "off", ""):
+        monkeypatch.setenv(taint.REQUIRE_CONSENT_ENV, off)
+        assert taint.taint_tracking_on() is False, off
+        assert taint.require_consent_when_tainted() is False, off
+
+
 def test_taint_tracking_not_triggered_by_fence_alone(monkeypatch):
     """Fence does NOT imply tracking (module contract, design doc Component 1 vs 2)."""
     monkeypatch.setenv(taint.FENCE_ENV, "1")

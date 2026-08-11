@@ -37,9 +37,14 @@ from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_led
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
 from .config import ProximoConfig, load_env_file
-from .consent import consent_id_for, enforce_consent, set_pending_consent
+from .consent import clear_pending_consent, consent_id_for, enforce_consent, set_pending_consent
 from .contain import enforce_containment
-from .envelope import begin_operation, enforce_envelope_forbid, enforce_envelope_rate
+from .envelope import (
+    begin_operation,
+    end_operation,
+    enforce_envelope_forbid,
+    enforce_envelope_rate,
+)
 from .lease import enforce_lease
 from .pbs import (
     PbsBackend,
@@ -312,9 +317,37 @@ def _unreachable_hint(action: str) -> str:
     return _UNREACHABLE_ENV_HINT["pve_"]  # ct_*/other non-plane-prefixed actions: PVE is the host
 
 
+def _end_mutation_gates() -> None:
+    """Clear the per-operation CONSENT/ENVELOPE de-dup markers at the END of a mutation operation.
+
+    ``set_pending_consent``/``begin_operation`` (in _plan) reset these at operation START — but only
+    if a plan runs. A future or unusual mutation seam reached WITHOUT its own _plan would otherwise
+    inherit a prior operation's satisfied/reserved marker and skip the grant consume / rate reserve
+    (fail-OPEN). Clearing at operation end makes a planless next mutation fail closed instead. This
+    runs at operation END, deliberately NOT as a mid-seam reset: the exec-family tools consume their
+    grant at an earlier seam and reach _audited LAST, so a reset here would try to re-consume an
+    already-spent grant and self-refuse. See clear_pending_consent / end_operation."""
+    clear_pending_consent()
+    end_operation()
+
+
 def _audited(action: str, target: str, fn: Callable[[], Any], *,
              mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
              detail: dict | None = None) -> Any:
+    """Public mutation/read funnel. Delegates to _audited_run, then ALWAYS clears the per-operation
+    CONSENT/ENVELOPE de-dup markers when a mutation ends (A10) — including when a gate refuses after
+    an earlier gate already consumed (e.g. rate-refused after consent-consumed), so no marker leaks
+    to a later planless mutation. Reads (mutation=False) touch no markers and clear nothing."""
+    try:
+        return _audited_run(action, target, fn, mutation=mutation, outcome=outcome, detail=detail)
+    finally:
+        if mutation:
+            _end_mutation_gates()
+
+
+def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
+                 mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
+                 detail: dict | None = None) -> Any:
     """Run fn, then audit the REAL outcome. On exception, record the error and re-raise.
 
     `outcome` defaults to "ok" (synchronous completion). Async ops that only *start* a task pass
@@ -690,32 +723,39 @@ def ct_exec(
     if not confirm:
         return {"status": "plan", "auto_snapshot": snapshot, **plan.as_dict()}
 
-    # Containment gate BEFORE the auto-undo snapshot (which fires outside _audited) — refuse the
-    # WHOLE operation while contained, not just the exec half. Same primitives + same gate order
-    # _audited uses (RATE after consent — see the order comment there / envelope.py).
-    enforce_containment("ct_exec", str(ctid), audit, detail=detail)
-    enforce_scope("ct_exec", str(ctid), audit, detail=detail)
-    enforce_lease("ct_exec", str(ctid), audit, detail=detail)
-    enforce_envelope_forbid("ct_exec", str(ctid), audit, detail=detail)
-    enforce_consent("ct_exec", str(ctid), audit, detail=detail)
-    enforce_envelope_rate("ct_exec", str(ctid), audit, detail=detail)
+    try:
+        # Containment gate BEFORE the auto-undo snapshot (which fires outside _audited) — refuse the
+        # WHOLE operation while contained, not just the exec half. Same primitives + same gate order
+        # _audited uses (RATE after consent — see the order comment there / envelope.py).
+        enforce_containment("ct_exec", str(ctid), audit, detail=detail)
+        enforce_scope("ct_exec", str(ctid), audit, detail=detail)
+        enforce_lease("ct_exec", str(ctid), audit, detail=detail)
+        enforce_envelope_forbid("ct_exec", str(ctid), audit, detail=detail)
+        enforce_consent("ct_exec", str(ctid), audit, detail=detail)
+        enforce_envelope_rate("ct_exec", str(ctid), audit, detail=detail)
 
-    undo_point = None
-    if snapshot:
-        undo = _auto_undo("ct_exec", str(ctid), api, ctid, detail)
-        if undo.get("status") == "blocked:undo_unavailable":
-            return undo  # fail-closed: command NOT run
-        undo_point = undo
+        undo_point = None
+        if snapshot:
+            undo = _auto_undo("ct_exec", str(ctid), api, ctid, detail)
+            if undo.get("status") == "blocked:undo_unavailable":
+                return undo  # fail-closed: command NOT run
+            undo_point = undo
 
-    def _do() -> dict:
-        r = exec_.run(ctid, command)
-        out = {"returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
-        if undo_point:
-            out["undo_point"] = undo_point
-        return out
+        def _do() -> dict:
+            r = exec_.run(ctid, command)
+            out = {"returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
+            if undo_point:
+                out["undo_point"] = undo_point
+            return out
 
-    return _audited("ct_exec", str(ctid), _do, mutation=True,
-                    detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+        return _audited("ct_exec", str(ctid), _do, mutation=True,
+                        detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+    finally:
+        # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
+        # manual-audit-path mutation ends — covers the blocked:undo_unavailable EARLY
+        # RETURN (which never reaches _audited) and a rate-refusal after consent already
+        # consumed. Same pattern as pve_agent_exec.
+        _end_mutation_gates()
 
 
 @tool()
@@ -748,32 +788,39 @@ def ct_psql(
     if not confirm:
         return {"status": "plan", "auto_snapshot": snapshot, **plan.as_dict()}
 
-    # Containment gate BEFORE the auto-undo snapshot (which fires outside _audited) — refuse the
-    # WHOLE operation while contained, not just the exec half. Same primitives + same gate order
-    # _audited uses (RATE after consent — see the order comment there / envelope.py).
-    enforce_containment("ct_psql", str(ctid), audit, detail=detail)
-    enforce_scope("ct_psql", str(ctid), audit, detail=detail)
-    enforce_lease("ct_psql", str(ctid), audit, detail=detail)
-    enforce_envelope_forbid("ct_psql", str(ctid), audit, detail=detail)
-    enforce_consent("ct_psql", str(ctid), audit, detail=detail)
-    enforce_envelope_rate("ct_psql", str(ctid), audit, detail=detail)
+    try:
+        # Containment gate BEFORE the auto-undo snapshot (which fires outside _audited) — refuse the
+        # WHOLE operation while contained, not just the exec half. Same primitives + same gate order
+        # _audited uses (RATE after consent — see the order comment there / envelope.py).
+        enforce_containment("ct_psql", str(ctid), audit, detail=detail)
+        enforce_scope("ct_psql", str(ctid), audit, detail=detail)
+        enforce_lease("ct_psql", str(ctid), audit, detail=detail)
+        enforce_envelope_forbid("ct_psql", str(ctid), audit, detail=detail)
+        enforce_consent("ct_psql", str(ctid), audit, detail=detail)
+        enforce_envelope_rate("ct_psql", str(ctid), audit, detail=detail)
 
-    undo_point = None
-    if snapshot:
-        undo = _auto_undo("ct_psql", str(ctid), api, ctid, detail)
-        if undo.get("status") == "blocked:undo_unavailable":
-            return undo  # fail-closed: SQL NOT run
-        undo_point = undo
+        undo_point = None
+        if snapshot:
+            undo = _auto_undo("ct_psql", str(ctid), api, ctid, detail)
+            if undo.get("status") == "blocked:undo_unavailable":
+                return undo  # fail-closed: SQL NOT run
+            undo_point = undo
 
-    def _do() -> dict:
-        r = exec_.psql(ctid, sql, db=db)
-        out = {"returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
-        if undo_point:
-            out["undo_point"] = undo_point
-        return out
+        def _do() -> dict:
+            r = exec_.psql(ctid, sql, db=db)
+            out = {"returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
+            if undo_point:
+                out["undo_point"] = undo_point
+            return out
 
-    return _audited("ct_psql", str(ctid), _do, mutation=True,
-                    detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+        return _audited("ct_psql", str(ctid), _do, mutation=True,
+                        detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+    finally:
+        # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
+        # manual-audit-path mutation ends — covers the blocked:undo_unavailable EARLY
+        # RETURN (which never reaches _audited) and a rate-refusal after consent already
+        # consumed. Same pattern as pve_agent_exec.
+        _end_mutation_gates()
 
 
 def _anchor_moved_hint(prev_entries: int | None, cur_entries: int) -> str:
@@ -1004,91 +1051,98 @@ def pve_agent_exec(
     if not confirm:
         return {"status": "plan", **plan.as_dict()}
 
-    # Containment gate: this tool has a manual audit path (below) that never runs through
-    # _audited(), so it must call the same primitives directly, in the SAME order (RATE after
-    # consent — see the order comment in _audited / envelope.py), BEFORE the real guest-OS
-    # mutation (api.agent_exec) fires — outside the try/except so a refusal here is never
-    # re-caught and re-recorded as outcome="error".
-    enforce_containment("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-    enforce_scope("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-    enforce_lease("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-    enforce_envelope_forbid("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-    enforce_consent("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-    enforce_envelope_rate("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
-
-    # TAINT: pve_agent_exec is a manual-audit-path tool (never runs through _audited(), see the
-    # comment above) but IS adversarial-classified — the guest OS controls out-data/err-data.
-    # Same construction as _audited: mark BEFORE the real guest exec fires (so a call that raises
-    # still taints) and FAIL-CLOSED if the marker can't be written — refuse rather than run the
-    # guest exec and return its output untracked (a planted symlink on the marker dir/lock, or a
-    # transient FS error, would otherwise silently un-taint the session).
-    if taint_tracking_on():
-        try:
-            mark_tainted(os.path.dirname(audit.path), "pve_agent_exec")
-        except Exception as e:  # noqa: BLE001 — any marker-write failure must fail CLOSED (below)
-            audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
-                         outcome="blocked:taint_mark_failed",
-                         detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__}),
-                         principal=ledger_principal(), remote=ledger_remote())
-            raise ProximoError(
-                "taint tracking is enabled but the taint marker could not be written for "
-                "'pve_agent_exec' — refusing to return untrusted output untracked (fail-closed)"
-            ) from e
-
-    # Execute: POST exec, then poll exec-status until exited or deadline.
-    # Manual audit path so we can record honest outcome ("ok" vs "running").
     try:
-        exec_result = api.agent_exec(vmid, node, command)
-        pid = exec_result.get("pid")
-        if pid is None:
-            raise ValueError("agent exec returned no pid")  # noqa: TRY301
+        # Containment gate: this tool has a manual audit path (below) that never runs through
+        # _audited(), so it must call the same primitives directly, in the SAME order (RATE after
+        # consent — see the order comment in _audited / envelope.py), BEFORE the real guest-OS
+        # mutation (api.agent_exec) fires — outside the try/except so a refusal here is never
+        # re-caught and re-recorded as outcome="error".
+        enforce_containment("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
+        enforce_scope("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
+        enforce_lease("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
+        enforce_envelope_forbid("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
+        enforce_consent("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
+        enforce_envelope_rate("pve_agent_exec", f"qemu/{vmid}", audit, detail=detail)
 
-        # VERIFIED live (PVE 9.2): exec-status returns exited/exitcode/out-data/err-data.
-        deadline = time.monotonic() + timeout
-        while True:
-            status = api.agent_exec_status(vmid, node, pid)
-            # 'exited' arrives as a JSON bool; accept int 1 too defensively, and NEVER treat a
-            # falsy/missing value as completion (that would fake an "ok" for a still-running cmd).
-            if status.get("exited") in (True, 1):
-                # Process completed — honest "ok" outcome. out-data/err-data are plain text (not base64).
-                out_data = status.get("out-data", "")
-                err_data = status.get("err-data", "")
-                result = {
-                    "pid": pid,
-                    "exitcode": status.get("exitcode"),
-                    "out-data": out_data,
-                    "err-data": err_data,
-                }
-                audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="ok",
-                             detail=_untrusted_detail("pve_agent_exec",
-                                                      {**detail, "confirmed": True, "pid": pid}),
-                             principal=ledger_principal(), remote=ledger_remote())
-                # Fence ONLY the `result` field (the guest-controlled out-data/err-data), keeping the
-                # top-level `status` intact — same symmetric-envelope contract _audited honors for
-                # ct_exec/ct_psql. Fencing the whole {status,result} dict would bury `status` inside
-                # the JSON string and break `resp["status"]`. fence_output is a no-op unless FENCE is on.
-                return {"status": "ok", "result": fence_output("pve_agent_exec", result)}
-            if time.monotonic() >= deadline:
-                # Timeout BEFORE exit observed — honest "running" outcome, never "ok". This branch
-                # carries NO guest output (the command hasn't produced out-data yet) — only status,
-                # pid, and a Proximo-authored message — so there is nothing adversarial to fence.
+        # TAINT: pve_agent_exec is a manual-audit-path tool (never runs through _audited(), see the
+        # comment above) but IS adversarial-classified — the guest OS controls out-data/err-data.
+        # Same construction as _audited: mark BEFORE the real guest exec fires (so a call that raises
+        # still taints) and FAIL-CLOSED if the marker can't be written — refuse rather than run the
+        # guest exec and return its output untracked (a planted symlink on the marker dir/lock, or a
+        # transient FS error, would otherwise silently un-taint the session).
+        if taint_tracking_on():
+            try:
+                mark_tainted(os.path.dirname(audit.path), "pve_agent_exec")
+            except Exception as e:  # noqa: BLE001 — any marker-write failure must fail CLOSED (below)
                 audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
-                             outcome="running",
-                             detail=_untrusted_detail(
-                                 "pve_agent_exec",
-                                 {**detail, "confirmed": True, "pid": pid, "timeout": timeout}),
+                             outcome="blocked:taint_mark_failed",
+                             detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__}),
                              principal=ledger_principal(), remote=ledger_remote())
-                return {
-                    "status": "running", "pid": pid,
-                    "message": f"command is still running (pid={pid}) — did not exit within {timeout}s; "
-                               "poll pve_agent_info with command='exec-status' and the returned pid."}
-            time.sleep(_AGENT_POLL_INTERVAL)  # pace polls — do not hammer the PVE API
-    except Exception as e:
-        audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="error",
-                     detail=_untrusted_detail("pve_agent_exec",
-                                              {"error": type(e).__name__, "confirmed": True}),
-                     principal=ledger_principal(), remote=ledger_remote())
-        raise
+                raise ProximoError(
+                    "taint tracking is enabled but the taint marker could not be written for "
+                    "'pve_agent_exec' — refusing to return untrusted output untracked (fail-closed)"
+                ) from e
+
+        # Execute: POST exec, then poll exec-status until exited or deadline.
+        # Manual audit path so we can record honest outcome ("ok" vs "running").
+        try:
+            exec_result = api.agent_exec(vmid, node, command)
+            pid = exec_result.get("pid")
+            if pid is None:
+                raise ValueError("agent exec returned no pid")  # noqa: TRY301
+
+            # VERIFIED live (PVE 9.2): exec-status returns exited/exitcode/out-data/err-data.
+            deadline = time.monotonic() + timeout
+            while True:
+                status = api.agent_exec_status(vmid, node, pid)
+                # 'exited' arrives as a JSON bool; accept int 1 too defensively, and NEVER treat a
+                # falsy/missing value as completion (that would fake an "ok" for a still-running cmd).
+                if status.get("exited") in (True, 1):
+                    # Process completed — honest "ok" outcome. out-data/err-data are plain text (not base64).
+                    out_data = status.get("out-data", "")
+                    err_data = status.get("err-data", "")
+                    result = {
+                        "pid": pid,
+                        "exitcode": status.get("exitcode"),
+                        "out-data": out_data,
+                        "err-data": err_data,
+                    }
+                    audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="ok",
+                                 detail=_untrusted_detail("pve_agent_exec",
+                                                          {**detail, "confirmed": True, "pid": pid}),
+                                 principal=ledger_principal(), remote=ledger_remote())
+                    # Fence ONLY the `result` field (the guest-controlled out-data/err-data), keeping the
+                    # top-level `status` intact — same symmetric-envelope contract _audited honors for
+                    # ct_exec/ct_psql. Fencing the whole {status,result} dict would bury `status` inside
+                    # the JSON string and break `resp["status"]`. fence_output is a no-op unless FENCE is on.
+                    return {"status": "ok", "result": fence_output("pve_agent_exec", result)}
+                if time.monotonic() >= deadline:
+                    # Timeout BEFORE exit observed — honest "running" outcome, never "ok". This branch
+                    # carries NO guest output (the command hasn't produced out-data yet) — only status,
+                    # pid, and a Proximo-authored message — so there is nothing adversarial to fence.
+                    audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
+                                 outcome="running",
+                                 detail=_untrusted_detail(
+                                     "pve_agent_exec",
+                                     {**detail, "confirmed": True, "pid": pid, "timeout": timeout}),
+                                 principal=ledger_principal(), remote=ledger_remote())
+                    return {
+                        "status": "running", "pid": pid,
+                        "message": f"command is still running (pid={pid}) — did not exit within {timeout}s; "
+                                   "poll pve_agent_info with command='exec-status' and the returned pid."}
+                time.sleep(_AGENT_POLL_INTERVAL)  # pace polls — do not hammer the PVE API
+        except Exception as e:
+            audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="error",
+                         detail=_untrusted_detail("pve_agent_exec",
+                                                  {"error": type(e).__name__, "confirmed": True}),
+                         principal=ledger_principal(), remote=ledger_remote())
+            raise
+    finally:
+        # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
+        # manual-audit-path mutation ends (pve_agent_exec never routes through
+        # _audited, so its clear is here) — including a rate-refusal after consent
+        # already consumed, so no marker leaks to a later planless mutation.
+        _end_mutation_gates()
 
 
 # --- PROXIMO_SURFACES — opt-in registration scoping (context hygiene + surface reduction). ---

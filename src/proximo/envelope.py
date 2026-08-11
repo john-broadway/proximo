@@ -15,9 +15,10 @@ bound a hijacked agent's velocity into a lever against the operator whose OWN ap
 mutations then get refused for the rest of the window. FORBID stays an early hard wall before
 consent (it is a cheap deny-list check, not a stateful spend, so putting it early costs
 nothing and closes the same evasions it always did); RATE — the only half that actually
-consumes shared budget — waits until consent has passed. ``enforce_envelope()`` (composed,
-forbid-then-rate back to back) is kept for any other caller but is NOT what server.py's 5 seams
-use.
+consumes shared budget — waits until consent has passed. The two halves are ALWAYS applied
+separately (``enforce_envelope_forbid`` then, after consent, ``enforce_envelope_rate``) so a
+consent-refused attempt spends no rate budget — there is deliberately no composed forbid-then-rate
+wrapper, which would skip that sandwich.
 
 **Forbid-list** — a set of action/sub-action strings the agent may NEVER run autonomously on the
 active surface (exact name, or a substring alias like ``delete``/``destroy`` that expands to every
@@ -173,6 +174,17 @@ def begin_operation() -> None:
     rate check entirely — this is what keeps operations isolated from each other, the same way
     consent.py's set_pending_consent isolates CONSENT's per-operation `_consent_satisfied` flag.
     """
+    _rate_reserved.set(False)
+
+
+def end_operation() -> None:
+    """Clear the per-operation rate-reservation flag at operation END (mutation funnel's finally).
+
+    ``begin_operation`` resets this at the START of an operation, but only if a _plan runs — so a
+    mutation seam reached WITHOUT a plan would inherit a prior operation's ``_rate_reserved=True``
+    and skip reserving a slot (spending none while proceeding). Clearing at operation end makes a
+    planless next mutation reserve a fresh slot instead of riding a stale reservation. Mirror of
+    consent.py's ``clear_pending_consent``."""
     _rate_reserved.set(False)
 
 
@@ -413,7 +425,7 @@ def _rate_reserve(reservation_dir: str, base_url: str, rate_max: int, window: in
     # O_NOFOLLOW: a co-located agent that plants `<hash>.rate.lock` as a symlink must not have the
     # flock silently redirected onto (and, via O_CREAT, potentially create) an arbitrary target
     # path — that's a containment escape. Opening a symlinked lock path raises OSError (ELOOP),
-    # which propagates to enforce_envelope's wrapper as an audited fail-closed refusal.
+    # which propagates to enforce_envelope_rate's try/except as an audited fail-closed refusal.
     with open(lock_path, "a+", encoding="utf-8",
               opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW, 0o600)) as lf:
         fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
@@ -594,16 +606,3 @@ def enforce_envelope_rate(action: str, target: str, audit: AuditLedger, *,
             f"envelope refused: {action!r} on {target!r} exceeds the rate budget for this surface"
         )
     _rate_reserved.set(True)
-
-
-def enforce_envelope(action: str, target: str, audit: AuditLedger, *,
-                      detail: dict | None = None) -> None:
-    """Composed convenience wrapper — FORBID then RATE, back-to-back with no consent check
-    between them. Kept for any caller that wants the pre-split, single-call behavior (e.g. a
-    non-consent-aware seam); server.py's 5 mutation seams do NOT use this — they call
-    ``enforce_envelope_forbid`` and ``enforce_envelope_rate`` separately, with
-    ``enforce_consent`` sandwiched in between, so a consent-refused attempt spends no rate
-    budget. See the module-level "Seam order" note.
-    """
-    enforce_envelope_forbid(action, target, audit, detail=detail)
-    enforce_envelope_rate(action, target, audit, detail=detail)

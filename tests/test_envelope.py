@@ -939,6 +939,28 @@ def test_symlinked_lock_refused_not_followed(tmp_path, monkeypatch):
     assert not evil_target.exists()  # never followed/created through the symlink
 
 
+def test_symlinked_reservation_dir_refused_not_followed(tmp_path, monkeypatch):
+    """Twin of the symlinked-LOCK refusal, for the reservation DIRECTORY itself (.proximo-rate). A
+    planted symlink there could redirect every box's reservation writes onto an arbitrary path, so
+    _rate_reserve refuses it (OSError) and enforce_envelope_rate turns that into a fail-closed
+    blocked:rate_error — the real mutation never fires and the link is never followed/created."""
+    _led, log = _wire_server(tmp_path, monkeypatch)
+    base_url = "https://x:8006/api2/json"
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", base_url)
+    monkeypatch.setenv("PROXIMO_RATE_MAX", "5")
+
+    evil_target = tmp_path / "evil-rate-dir"  # deliberately NOT created
+    (tmp_path / ".proximo-rate").symlink_to(evil_target, target_is_directory=True)
+
+    calls: list[int] = []
+    envelope.begin_operation()
+    with pytest.raises(ProximoError, match="rate"):
+        server._audited("pve_guest_power", "lxc/100", lambda: calls.append(1), mutation=True)
+    assert calls == []
+    assert not evil_target.exists()  # never created through the symlink
+    assert any(e["outcome"] == "blocked:rate_error" for e in _entries(log))
+
+
 def test_rate_reserve_error_audited_as_rate_error(tmp_path, monkeypatch):
     """Fix 7 (MED, the PROVE gap): ANY exception out of _rate_reserve — not just an over-budget
     refusal — must be caught, recorded to the PROVE ledger BEFORE raising (a DISTINCT outcome,

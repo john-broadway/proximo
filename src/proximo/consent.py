@@ -101,6 +101,18 @@ def set_pending_consent(consent_id: str) -> None:
     _consent_satisfied.set(False)
 
 
+def clear_pending_consent() -> None:
+    """Clear the per-operation consent state at operation END (called from the mutation funnel's
+    finally). The satisfied flag is reset by the NEXT plan (``set_pending_consent``), but that reset
+    only fires if a _plan runs — so a mutation seam reached WITHOUT its own plan would otherwise
+    inherit a prior operation's satisfied=True and skip the grant check (fail-OPEN). Clearing at
+    operation end makes that impossible: after any mutation, a planless next mutation sees no plan
+    and no satisfied flag, and fails closed. Also drops the stale ``consent_id`` so the refusal is
+    the honest ``blocked:consent_no_plan`` rather than a phantom ``blocked:consent_required``."""
+    _pending_consent_id.set(None)
+    _consent_satisfied.set(False)
+
+
 def consent_id_for(plan: Plan) -> str:
     """A stable content hash over the decision-relevant plan fields (see _STABLE_FIELDS / docstring).
 
