@@ -23,6 +23,10 @@ dependencies = [
   # hotfix, not a verdict on 2.x — porting to it is real work, tracked separately.
   "mcp>=1.2.0,<2",
   "httpx>=0.27,<1",  # Proxmox REST API client
+  # Imported directly in 43 modules (Field param docs, BeforeValidator coercion) but was
+  # only ever a transitive dep via mcp — a future mcp release dropping it would break every
+  # fresh install. Declared with the same major-bound discipline as the others.
+  "pydantic>=2,<3",
 ]
 
 [project.urls]

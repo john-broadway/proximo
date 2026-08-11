@@ -11,7 +11,7 @@ here instead of silently producing a confidently-wrong blast against a live clus
 
 Track A of the live-CI scope: shape-only, point-in-time, credential-free. Complements (does not
 replace) the live mutate-verify smokes in ``scripts/live-smoke/``. Re-capture with
-``.scratch/capture-shapes.py`` after a PVE major upgrade.
+``scripts/live-smoke/capture-shapes.py`` after a PVE major upgrade.
 """
 import json
 from pathlib import Path

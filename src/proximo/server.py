@@ -8,7 +8,8 @@ Verified 2026-06-07 against the official `mcp` Python SDK (FastMCP): import path
 Ethical spine:
 - In-container exec (ct_*) is OFF by default — API-only is the safe default; enable with PROXIMO_ENABLE_EXEC.
 - Every tool call is audited *with its real outcome* (errors recorded, not assumed "ok").
-- Every mutating tool (pve_guest_power, ct_exec, ct_psql, pve_agent_exec) is confirm-gated.
+- Every mutating tool is confirm-gated — all of them, across every plane, not a named
+  few (structurally enforced by test_server_plan.py::test_every_mutating_tool_is_confirm_gated).
 - The CTID allowlist is enforced fail-closed in the exec backend.
 - Secrets are never read or logged here.
 """

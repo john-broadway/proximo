@@ -397,7 +397,7 @@ def test_open_ledger_warns_and_archives_existing_keyed_log_on_downgrade(tmp_path
     AuditLedger(log, key=key).record("keyed-entry", target="t1")
     old_head = AuditLedger(log, key=key).head()
 
-    with pytest.warns(UserWarning, match="DOWNGRADED"):
+    with pytest.warns(UserWarning, match="DOWNGRADED") as caught:
         led = open_ledger(_cfg(tmp_path, audit_keyed=False))
 
     assert not led.keyed                                        # new ledger is unkeyed
@@ -412,7 +412,8 @@ def test_open_ledger_warns_and_archives_existing_keyed_log_on_downgrade(tmp_path
     assert genesis["action"] == "audit_rotate"
     assert genesis["detail"]["prev_head"] == old_head
     assert genesis["detail"]["prev_alg"] == _KEY_ALG
-    assert "PROXIMO_AUDIT_EXPECTED_HEAD" in pytest.warns.__doc__ or True  # warning tested above
+    # the warning must carry the re-pin guidance an operator with a pinned head needs
+    assert "PROXIMO_AUDIT_EXPECTED_HEAD" in str(caught[0].message)
 
 
 def test_open_ledger_keyed_to_unkeyed_no_silent_chain_corruption(tmp_path):

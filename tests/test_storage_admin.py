@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from proximo.backends import ProximoError
-from proximo.planning import RISK_HIGH, RISK_MEDIUM
+from proximo.planning import RISK_HIGH, RISK_MEDIUM, Plan
 from proximo.storage_admin import (
     _check_storage_type,
     plan_storage_create,
@@ -599,7 +599,8 @@ def test_plan_storage_update_blast_mentions_undo_path():
 def test_plan_storage_update_no_fields_still_builds_plan():
     """All-None args is allowed — the plan just says no fields provided."""
     p = plan_storage_update(_api(), "local")
-    assert isinstance(p, object)
+    assert isinstance(p, Plan)
+    assert any("no fields provided" in s for s in p.blast_radius)
     assert p.risk == RISK_MEDIUM
 
 

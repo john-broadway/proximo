@@ -46,3 +46,9 @@ audit.log
 # internal session scratch — never publish
 .remember/
 .claude/
+
+# Coverage artifacts — local-only, regenerable (`uv run pytest --cov=proximo --cov-report=html`).
+# A stale htmlcov/ sat here 4 weeks reading as current coverage; never let it look tracked.
+htmlcov/
+.coverage
+.coverage.*

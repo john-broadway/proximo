@@ -529,6 +529,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },
+    { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
@@ -571,6 +572,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "mcp", specifier = ">=1.2.0,<2" },
     { name = "mcp", marker = "extra == 'mcp-http'", specifier = ">=1.8.0,<2" },
+    { name = "pydantic", specifier = ">=2,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.4.0" },
