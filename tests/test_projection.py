@@ -304,3 +304,50 @@ def test_cap_newest_survives_string_timestamps_and_honors_numeric_ones():
     ]
     out = cap_newest(rows, 3, "ctime")
     assert [r["volid"] for r in out] == ["numstr", "int", "garbage"]
+
+
+def test_cap_newest_sorts_rfc3339_string_timestamps_by_value():
+    # PMG's view of PBS snapshots types backup-time as an RFC 3339 STRING (documented
+    # divergence, pmg.py) — float() fails on it, so without ISO support every row sorts
+    # equal and "newest N" silently becomes "first N in API order" (scout finding,
+    # 2026-08-11). The cap must order ISO strings by their actual instant.
+    from proximo.projection import cap_newest
+    rows = [
+        {"id": "old", "backup-time": "2026-08-01T00:00:00Z"},
+        {"id": "new", "backup-time": "2026-08-11T03:00:00Z"},
+        {"id": "mid", "backup-time": "2026-08-05T12:00:00+00:00"},
+    ]
+    out = cap_newest(rows, 2, "backup-time")
+    assert [r["id"] for r in out] == ["new", "mid"]
+
+
+def test_cap_newest_mixed_epoch_and_iso_do_not_crash_and_order_sanely():
+    from proximo.projection import cap_newest
+    rows = [
+        {"id": "epoch", "t": 1754900000},                      # 2025-08-11-ish epoch
+        {"id": "iso", "t": "2026-08-11T00:00:00Z"},
+        {"id": "none", "t": None},
+    ]
+    out = cap_newest(rows, 3, "t")
+    assert out[-1]["id"] == "none"          # missing still sorts oldest
+    assert {out[0]["id"], out[1]["id"]} == {"epoch", "iso"}
+
+
+def test_cap_newest_naive_iso_is_deterministic_regardless_of_box_timezone(monkeypatch):
+    # A timezone-NAIVE ISO string must not sort differently on differently-zoned boxes
+    # (redteam, 2026-08-11): naive datetimes are pinned to UTC before .timestamp().
+    import time
+
+    from proximo.projection import cap_newest
+    # Chosen to DISCRIMINATE: naive 03:00 read as UTC sorts BELOW aware 05:00Z, but read
+    # in America/New_York (=07:00Z) it sorts ABOVE — an un-pinned implementation flips order.
+    rows = [{"id": "naive", "t": "2026-08-11T03:00:00"}, {"id": "aware", "t": "2026-08-11T05:00:00Z"}]
+    results = []
+    for tz in ("UTC", "America/New_York"):
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+        out = cap_newest([dict(r) for r in rows], 2, "t")
+        results.append([r["id"] for r in out])
+    monkeypatch.delenv("TZ")
+    time.tzset()
+    assert results[0] == results[1] == ["aware", "naive"]   # naive pinned to UTC

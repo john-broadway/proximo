@@ -7841,7 +7841,7 @@
     },
     {
       "name": "pbs_tape_media_list",
-      "description": "READ-ONLY: list registered backup media, optionally filtered to one pool. ADVERSARIAL:\nentries carry label-text (physical media label/barcode), no return-side pattern constraint.\nNeeds PROXIMO_PBS_* config.",
+      "description": "READ-ONLY: list registered backup media, optionally filtered to one pool. ADVERSARIAL:\nentries carry label-text (physical media label/barcode), no return-side pattern constraint.\n`limit` returns only the newest N — a capped slice is never evidence media is absent.\nNeeds PROXIMO_PBS_* config.",
       "inputSchema": {
         "properties": {
           "pool": {
@@ -7864,6 +7864,14 @@
               "string",
               "null"
             ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N media by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -7871,7 +7879,7 @@
     },
     {
       "name": "pbs_tape_media_content",
-      "description": "READ-ONLY: list media content — the snapshot inventory recorded across tape. ADVERSARIAL:\ncarries `snapshot` (guest-influenced backup id/type/time) AND `label-text` — matches the\npbs_snapshots_list precedent. Needs PROXIMO_PBS_* config.",
+      "description": "READ-ONLY: list media content — the snapshot inventory recorded across tape. `limit`\nreturns only the newest N; a capped slice is never evidence a snapshot is absent. ADVERSARIAL:\ncarries `snapshot` (guest-influenced backup id/type/time) AND `label-text` — matches the\npbs_snapshots_list precedent. Needs PROXIMO_PBS_* config.",
       "inputSchema": {
         "properties": {
           "backup_id": {
@@ -7921,6 +7929,14 @@
               "string",
               "null"
             ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -7928,9 +7944,18 @@
     },
     {
       "name": "pbs_tape_media_sets",
-      "description": "READ-ONLY: list media sets. REVIEWED_TRUSTED: no label-text field in this response at all\n— media-set-name is PBS-generated from the owning pool's operator-authored template, not\nphysical-media content (a deliberate divergence from a naive \"media_list/media_sets both\ncarry labels\" reading — see module docstring's Taint section). Needs PROXIMO_PBS_* config.",
+      "description": "READ-ONLY: list media sets. `limit` returns only the newest N; a capped slice is never\nevidence a media set is absent. REVIEWED_TRUSTED: no label-text field in this response at all\n— media-set-name is PBS-generated from the owning pool's operator-authored template, not\nphysical-media content (a deliberate divergence from a naive \"media_list/media_sets both\ncarry labels\" reading — see module docstring's Taint section). Needs PROXIMO_PBS_* config.",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N media sets by media-set-ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       }
     },
@@ -9772,7 +9797,7 @@
     },
     {
       "name": "pdm_pbs_snapshots_list",
-      "description": "READ-ONLY: list backup snapshots in one datastore on a PDM-registered PBS remote, proxied\nthrough PDM.\n\nNo state change. Returns a list of snapshot dicts (empty list if the datastore has none);\nlive-verified (PDM 1.1 -> PBS 4.2). ns optionally filters by namespace. To query PBS\ndirectly without PDM, use pbs_snapshots_list. Needs PROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list backup snapshots in one datastore on a PDM-registered PBS remote, proxied\nthrough PDM. `limit` returns only the newest N — a capped slice is never evidence a\nsnapshot is absent; omit it to verify one.\n\nNo state change. Returns a list of snapshot dicts (empty list if the datastore has none);\nlive-verified (PDM 1.1 -> PBS 4.2). ns optionally filters by namespace. To query PBS\ndirectly without PDM, use pbs_snapshots_list. Needs PROXIMO_PDM_* config.",
       "inputSchema": {
         "properties": {
           "remote": {
@@ -9790,6 +9815,14 @@
               "string",
               "null"
             ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -9801,9 +9834,18 @@
     },
     {
       "name": "pdm_tasks_list",
-      "description": "READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all\nregistered remotes.\n\nNo state change. Returns a list of task dicts. For a target remote's own task list directly\n(without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_* config.",
+      "description": "READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all\nregistered remotes.\n\nNo state change. Returns a list of task dicts. `limit` returns only the newest N by\nstarttime (its sibling pve_tasks_list bounds the same way). For a target remote's own\ntask list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*\nconfig.",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       }
     },
@@ -12427,9 +12469,18 @@
     },
     {
       "name": "pmg_quarantine_spam",
-      "description": "READ-ONLY: list PMG quarantined spam messages. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined message. For virus quarantine use\npmg_quarantine_virus; for attachment quarantine use pmg_quarantine_attachment. To act on\nquarantined messages (deliver/delete/mark-seen/blocklist/welcomelist) use pmg_quarantine_action.\n",
+      "description": "READ-ONLY: list PMG quarantined spam messages. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined message. `limit` returns only the newest N\nby receive time — a capped slice is never evidence a message is absent; omit it to\nverify one. For virus quarantine use\npmg_quarantine_virus; for attachment quarantine use pmg_quarantine_attachment. To act on\nquarantined messages (deliver/delete/mark-seen/blocklist/welcomelist) use pmg_quarantine_action.\n",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N messages by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       }
     },
@@ -13195,7 +13246,7 @@
     },
     {
       "name": "pmg_quarantine_virus",
-      "description": "READ-ONLY: list virus quarantine entries. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined virus message. pmail defaults to the\nauthenticated user when omitted. For spam quarantine use pmg_quarantine_spam; to act on\nentries use pmg_quarantine_action.\n",
+      "description": "READ-ONLY: list virus quarantine entries. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined virus message. `limit` returns only the\nnewest N by receive time — a capped slice is never evidence a message is absent. pmail defaults to the\nauthenticated user when omitted. For spam quarantine use pmg_quarantine_spam; to act on\nentries use pmg_quarantine_action.\n",
       "inputSchema": {
         "properties": {
           "pmail": {
@@ -13221,6 +13272,14 @@
               "integer",
               "null"
             ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -13228,7 +13287,7 @@
     },
     {
       "name": "pmg_quarantine_attachment",
-      "description": "READ-ONLY: list attachment quarantine entries. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined attachment. pmail defaults to the authenticated\nuser when omitted. For spam quarantine use pmg_quarantine_spam; to act on entries use\npmg_quarantine_action.\n",
+      "description": "READ-ONLY: list attachment quarantine entries. Needs PROXIMO_PMG_* config.\n\nReturns a list of dicts, one per quarantined attachment. `limit` returns only the newest\nN by receive time — a capped slice is never evidence a message is absent. pmail defaults to the authenticated\nuser when omitted. For spam quarantine use pmg_quarantine_spam; to act on entries use\npmg_quarantine_action.\n",
       "inputSchema": {
         "properties": {
           "pmail": {
@@ -13250,6 +13309,14 @@
           "end": {
             "default": null,
             "description": "Unix epoch end of the window; omit for no upper bound.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
             "type": [
               "integer",
               "null"
@@ -16010,7 +16077,7 @@
     },
     {
       "name": "pmg_node_pbs_snapshots_list",
-      "description": "READ-ONLY: list snapshots stored on a PBS remote. ADVERSARIAL — `backup-id`/`backup-time`\nare stored on the REMOTE PBS instance (externally-authored content, the pbs_snapshots_list\ncross-plane precedent). Needs PROXIMO_PMG_* config.",
+      "description": "READ-ONLY: list snapshots stored on a PBS remote. `limit` returns only the newest N —\na capped slice is never evidence a snapshot is absent. ADVERSARIAL — `backup-id`/`backup-time`\nare stored on the REMOTE PBS instance (externally-authored content, the pbs_snapshots_list\ncross-plane precedent). Needs PROXIMO_PMG_* config.",
       "inputSchema": {
         "properties": {
           "remote": {
@@ -16022,6 +16089,14 @@
             "description": "PMG node name; defaults to the configured node (PROXIMO_PMG_NODE).",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -17649,7 +17724,7 @@
     },
     {
       "name": "pmg_node_backup_list",
-      "description": "READ-ONLY: list stored PMG configuration backup files ({filename, size, timestamp}).\nREVIEWED_TRUSTED — structured metadata; filenames are schema-pattern-bounded. Use\npmg_backup_create to create a new one, pmg_node_backup_restore to restore from one, or\npmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config.",
+      "description": "READ-ONLY: list stored PMG configuration backup files ({filename, size, timestamp}).\n`limit` returns only the newest N — a capped slice is never evidence a backup is absent;\nomit it to verify one. REVIEWED_TRUSTED — structured metadata; filenames are\nschema-pattern-bounded. Use pmg_backup_create to create a new one, pmg_node_backup_restore\nto restore from one, or pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -17657,6 +17732,14 @@
             "description": "PMG node name; defaults to the configured node (PROXIMO_PMG_NODE).",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Optional cap: return only the NEWEST N backups by timestamp. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
+            "type": [
+              "integer",
               "null"
             ]
           }

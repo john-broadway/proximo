@@ -8060,7 +8060,8 @@ written to the audit ledger or the dry-run PLAN. confirm=True executes (PUT
 
 #### `pbs_tape_media_content`
 
-READ-ONLY: list media content — the snapshot inventory recorded across tape. ADVERSARIAL:
+READ-ONLY: list media content — the snapshot inventory recorded across tape. `limit`
+returns only the newest N; a capped slice is never evidence a snapshot is absent. ADVERSARIAL:
 carries `snapshot` (guest-influenced backup id/type/time) AND `label-text` — matches the
 pbs_snapshots_list precedent. Needs PROXIMO_PBS_* config.
 
@@ -8072,6 +8073,7 @@ pbs_snapshots_list precedent. Needs PROXIMO_PBS_* config.
 | `media` | string (nullable) | no | Filter to one media UUID. (default: `null`) |
 | `media_set` | string (nullable) | no | Filter to one media-set UUID. (default: `null`) |
 | `pool` | string (nullable) | no | Filter to one media pool (2-32 chars). (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pbs_tape_media_destroy`
 
@@ -8096,6 +8098,7 @@ config.
 
 READ-ONLY: list registered backup media, optionally filtered to one pool. ADVERSARIAL:
 entries carry label-text (physical media label/barcode), no return-side pattern constraint.
+`limit` returns only the newest N — a capped slice is never evidence media is absent.
 Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
@@ -8103,6 +8106,7 @@ Needs PROXIMO_PBS_* config.
 | `pool` | string (nullable) | no | Filter to one media pool (2-32 chars). (default: `null`) |
 | `update_status` | boolean | no | If True, ask PBS to refresh tape library status (may contact the changer) before listing. DEFAULTS FALSE here — PBS's own upstream default is True; this tool never triggers that refresh unless explicitly asked. (default: `false`) |
 | `update_status_changer` | string (nullable) | no | Scope the status refresh to one changer (only meaningful with update_status=True). (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N media by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pbs_tape_media_move`
 
@@ -8123,12 +8127,15 @@ config.
 
 #### `pbs_tape_media_sets`
 
-READ-ONLY: list media sets. REVIEWED_TRUSTED: no label-text field in this response at all
+READ-ONLY: list media sets. `limit` returns only the newest N; a capped slice is never
+evidence a media set is absent. REVIEWED_TRUSTED: no label-text field in this response at all
 — media-set-name is PBS-generated from the owning pool's operator-authored template, not
 physical-media content (a deliberate divergence from a naive "media_list/media_sets both
 carry labels" reading — see module docstring's Taint section). Needs PROXIMO_PBS_* config.
 
-_No parameters._
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N media sets by media-set-ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pbs_tape_media_status_get`
 
@@ -10454,13 +10461,15 @@ config.
 #### `pmg_node_backup_list`
 
 READ-ONLY: list stored PMG configuration backup files ({filename, size, timestamp}).
-REVIEWED_TRUSTED — structured metadata; filenames are schema-pattern-bounded. Use
-pmg_backup_create to create a new one, pmg_node_backup_restore to restore from one, or
-pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config.
+`limit` returns only the newest N — a capped slice is never evidence a backup is absent;
+omit it to verify one. REVIEWED_TRUSTED — structured metadata; filenames are
+schema-pattern-bounded. Use pmg_backup_create to create a new one, pmg_node_backup_restore
+to restore from one, or pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N backups by timestamp. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pmg_node_backup_restore`
 
@@ -10912,7 +10921,8 @@ track via that instance's own task list. Needs PROXIMO_PMG_* config.
 
 #### `pmg_node_pbs_snapshots_list`
 
-READ-ONLY: list snapshots stored on a PBS remote. ADVERSARIAL — `backup-id`/`backup-time`
+READ-ONLY: list snapshots stored on a PBS remote. `limit` returns only the newest N —
+a capped slice is never evidence a snapshot is absent. ADVERSARIAL — `backup-id`/`backup-time`
 are stored on the REMOTE PBS instance (externally-authored content, the pbs_snapshots_list
 cross-plane precedent). Needs PROXIMO_PMG_* config.
 
@@ -10920,6 +10930,7 @@ cross-plane precedent). Needs PROXIMO_PMG_* config.
 | --- | --- | --- | --- |
 | `remote` | string | yes | PBS remote ID, from pmg_pbs_remote_list. |
 | `node` | string (nullable) | no | PMG node name; defaults to the configured node (PROXIMO_PMG_NODE). (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pmg_node_pbs_timer_create`
 
@@ -11488,7 +11499,8 @@ confirm=True executes and returns {"status": "ok", "result": ...}.
 
 READ-ONLY: list attachment quarantine entries. Needs PROXIMO_PMG_* config.
 
-Returns a list of dicts, one per quarantined attachment. pmail defaults to the authenticated
+Returns a list of dicts, one per quarantined attachment. `limit` returns only the newest
+N by receive time — a capped slice is never evidence a message is absent. pmail defaults to the authenticated
 user when omitted. For spam quarantine use pmg_quarantine_spam; to act on entries use
 pmg_quarantine_action.
 
@@ -11497,6 +11509,7 @@ pmg_quarantine_action.
 | `pmail` | string (nullable) | no | Scope the attachment quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
 | `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pmg_quarantine_attachments_list`
 
@@ -11607,11 +11620,15 @@ To get the link value directly instead (without emailing it) use pmg_quarantine_
 
 READ-ONLY: list PMG quarantined spam messages. Needs PROXIMO_PMG_* config.
 
-Returns a list of dicts, one per quarantined message. For virus quarantine use
+Returns a list of dicts, one per quarantined message. `limit` returns only the newest N
+by receive time — a capped slice is never evidence a message is absent; omit it to
+verify one. For virus quarantine use
 pmg_quarantine_virus; for attachment quarantine use pmg_quarantine_attachment. To act on
 quarantined messages (deliver/delete/mark-seen/blocklist/welcomelist) use pmg_quarantine_action.
 
-_No parameters._
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N messages by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pmg_quarantine_spamstatus`
 
@@ -11652,7 +11669,8 @@ pmg_quarantine_blocklist_list / pmg_quarantine_welcomelist_list.
 
 READ-ONLY: list virus quarantine entries. Needs PROXIMO_PMG_* config.
 
-Returns a list of dicts, one per quarantined virus message. pmail defaults to the
+Returns a list of dicts, one per quarantined virus message. `limit` returns only the
+newest N by receive time — a capped slice is never evidence a message is absent. pmail defaults to the
 authenticated user when omitted. For spam quarantine use pmg_quarantine_spam; to act on
 entries use pmg_quarantine_action.
 
@@ -11661,6 +11679,7 @@ entries use pmg_quarantine_action.
 | `pmail` | string (nullable) | no | Scope the virus quarantine read to this user's mailbox; defaults to the authenticated PMG user. (default: `null`) |
 | `start` | integer (nullable) | no | Unix epoch start of the window; omit for no lower bound. (default: `null`) |
 | `end` | integer (nullable) | no | Unix epoch end of the window; omit for no upper bound. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pmg_quarantine_virusstatus`
 
@@ -13171,7 +13190,8 @@ datastores, use pdm_pbs_datastores_list. Needs PROXIMO_PDM_* config.
 #### `pdm_pbs_snapshots_list`
 
 READ-ONLY: list backup snapshots in one datastore on a PDM-registered PBS remote, proxied
-through PDM.
+through PDM. `limit` returns only the newest N — a capped slice is never evidence a
+snapshot is absent; omit it to verify one.
 
 No state change. Returns a list of snapshot dicts (empty list if the datastore has none);
 live-verified (PDM 1.1 -> PBS 4.2). ns optionally filters by namespace. To query PBS
@@ -13182,6 +13202,7 @@ directly without PDM, use pbs_snapshots_list. Needs PROXIMO_PDM_* config.
 | `remote` | string | yes | PDM-registered PBS remote name, from pdm_remotes_list. |
 | `datastore` | string | yes | PBS datastore name on the remote to list snapshots from. |
 | `ns` | string (nullable) | no | Optional PBS namespace filter; omit to use the default namespace. (default: `null`) |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pdm_ping`
 
@@ -13562,10 +13583,14 @@ _No parameters._
 READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all
 registered remotes.
 
-No state change. Returns a list of task dicts. For a target remote's own task list directly
-(without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_* config.
+No state change. Returns a list of task dicts. `limit` returns only the newest N by
+starttime (its sibling pve_tasks_list bounds the same way). For a target remote's own
+task list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*
+config.
 
-_No parameters._
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 
 #### `pdm_users_list`
 

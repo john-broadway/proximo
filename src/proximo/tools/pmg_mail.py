@@ -656,6 +656,7 @@ from proximo.pmg import (
 from proximo.pmg import (
     who_groups_list as pmg_who_groups_list_op,
 )
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
@@ -733,16 +734,20 @@ def pmg_statistics_mail() -> dict:
 
 
 @tool()
-def pmg_quarantine_spam() -> list[dict]:
+def pmg_quarantine_spam(
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N messages by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
+) -> list[dict]:
     """READ-ONLY: list PMG quarantined spam messages. Needs PROXIMO_PMG_* config.
 
-    Returns a list of dicts, one per quarantined message. For virus quarantine use
+    Returns a list of dicts, one per quarantined message. `limit` returns only the newest N
+    by receive time — a capped slice is never evidence a message is absent; omit it to
+    verify one. For virus quarantine use
     pmg_quarantine_virus; for attachment quarantine use pmg_quarantine_attachment. To act on
     quarantined messages (deliver/delete/mark-seen/blocklist/welcomelist) use pmg_quarantine_action.
     """
     _, pmg = _proximo_server._pmg()
     return _audited("pmg_quarantine_spam", "pmg/quarantine/spam",
-                    lambda: pmg_quarantine_spam_op(pmg))
+                    lambda: cap_newest(pmg_quarantine_spam_op(pmg), limit, "time"))
 
 
 @tool()
@@ -1299,16 +1304,18 @@ def pmg_quarantine_virus(
     pmail: Annotated[str | None, Field(description="Scope the virus quarantine read to this user's mailbox; defaults to the authenticated PMG user.")] = None,
     start: Annotated[int | None, Field(description="Unix epoch start of the window; omit for no lower bound.")] = None,
     end: Annotated[int | None, Field(description="Unix epoch end of the window; omit for no upper bound.")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list virus quarantine entries. Needs PROXIMO_PMG_* config.
 
-    Returns a list of dicts, one per quarantined virus message. pmail defaults to the
+    Returns a list of dicts, one per quarantined virus message. `limit` returns only the
+    newest N by receive time — a capped slice is never evidence a message is absent. pmail defaults to the
     authenticated user when omitted. For spam quarantine use pmg_quarantine_spam; to act on
     entries use pmg_quarantine_action.
     """
     _, pmg = _proximo_server._pmg()
     return _audited("pmg_quarantine_virus", "pmg/quarantine/virus",
-                    lambda: pmg_quarantine_virus_op(pmg, pmail, start, end))
+                    lambda: cap_newest(pmg_quarantine_virus_op(pmg, pmail, start, end), limit, "time"))
 
 
 @tool()
@@ -1316,16 +1323,18 @@ def pmg_quarantine_attachment(
     pmail: Annotated[str | None, Field(description="Scope the attachment quarantine read to this user's mailbox; defaults to the authenticated PMG user.")] = None,
     start: Annotated[int | None, Field(description="Unix epoch start of the window; omit for no lower bound.")] = None,
     end: Annotated[int | None, Field(description="Unix epoch end of the window; omit for no upper bound.")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N entries by receive time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list attachment quarantine entries. Needs PROXIMO_PMG_* config.
 
-    Returns a list of dicts, one per quarantined attachment. pmail defaults to the authenticated
+    Returns a list of dicts, one per quarantined attachment. `limit` returns only the newest
+    N by receive time — a capped slice is never evidence a message is absent. pmail defaults to the authenticated
     user when omitted. For spam quarantine use pmg_quarantine_spam; to act on entries use
     pmg_quarantine_action.
     """
     _, pmg = _proximo_server._pmg()
     return _audited("pmg_quarantine_attachment", "pmg/quarantine/attachment",
-                    lambda: pmg_quarantine_attachment_op(pmg, pmail, start, end))
+                    lambda: cap_newest(pmg_quarantine_attachment_op(pmg, pmail, start, end), limit, "time"))
 
 
 @tool()
@@ -3206,14 +3215,16 @@ def pmg_node_pbs_jobs_list(
 def pmg_node_pbs_snapshots_list(
     remote: Annotated[str, Field(description="PBS remote ID, from pmg_pbs_remote_list.")],
     node: Annotated[str | None, Field(description="PMG node name; defaults to the configured node (PROXIMO_PMG_NODE).")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
-    """READ-ONLY: list snapshots stored on a PBS remote. ADVERSARIAL — `backup-id`/`backup-time`
+    """READ-ONLY: list snapshots stored on a PBS remote. `limit` returns only the newest N —
+    a capped slice is never evidence a snapshot is absent. ADVERSARIAL — `backup-id`/`backup-time`
     are stored on the REMOTE PBS instance (externally-authored content, the pbs_snapshots_list
     cross-plane precedent). Needs PROXIMO_PMG_* config."""
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     return _audited("pmg_node_pbs_snapshots_list", f"pmg/node/{n}/pbs/{remote}/snapshot",
-                    lambda: pmg_node_pbs_snapshots_list_op(pmg, n, remote))
+                    lambda: cap_newest(pmg_node_pbs_snapshots_list_op(pmg, n, remote), limit, "backup-time"))
 
 
 @tool()

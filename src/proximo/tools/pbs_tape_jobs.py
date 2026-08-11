@@ -37,6 +37,7 @@ from proximo.pbs_tape_jobs import (
     tape_media_status_set,
     tape_restore,
 )
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
@@ -50,13 +51,17 @@ def pbs_tape_media_list(
     pool: Annotated[str | None, Field(description="Filter to one media pool (2-32 chars).")] = None,
     update_status: Annotated[bool, Field(description="If True, ask PBS to refresh tape library status (may contact the changer) before listing. DEFAULTS FALSE here — PBS's own upstream default is True; this tool never triggers that refresh unless explicitly asked.")] = False,
     update_status_changer: Annotated[str | None, Field(description="Scope the status refresh to one changer (only meaningful with update_status=True).")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N media by ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list registered backup media, optionally filtered to one pool. ADVERSARIAL:
     entries carry label-text (physical media label/barcode), no return-side pattern constraint.
+    `limit` returns only the newest N — a capped slice is never evidence media is absent.
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_tape_media_list", "pbs/tape/media/list",
-                    lambda: tape_media_list(pbs, pool, update_status, update_status_changer))
+                    lambda: cap_newest(
+                        tape_media_list(pbs, pool, update_status, update_status_changer),
+                        limit, "ctime"))
 
 
 @tool()
@@ -67,23 +72,31 @@ def pbs_tape_media_content(
     media: Annotated[str | None, Field(description="Filter to one media UUID.")] = None,
     media_set: Annotated[str | None, Field(description="Filter to one media-set UUID.")] = None,
     pool: Annotated[str | None, Field(description="Filter to one media pool (2-32 chars).")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
-    """READ-ONLY: list media content — the snapshot inventory recorded across tape. ADVERSARIAL:
+    """READ-ONLY: list media content — the snapshot inventory recorded across tape. `limit`
+    returns only the newest N; a capped slice is never evidence a snapshot is absent. ADVERSARIAL:
     carries `snapshot` (guest-influenced backup id/type/time) AND `label-text` — matches the
     pbs_snapshots_list precedent. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_tape_media_content", "pbs/tape/media/content",
-                    lambda: tape_media_content(pbs, backup_id, backup_type, label_text, media, media_set, pool))
+                    lambda: cap_newest(
+                        tape_media_content(pbs, backup_id, backup_type, label_text, media, media_set, pool),
+                        limit, "backup-time"))
 
 
 @tool()
-def pbs_tape_media_sets() -> list[dict]:
-    """READ-ONLY: list media sets. REVIEWED_TRUSTED: no label-text field in this response at all
+def pbs_tape_media_sets(
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N media sets by media-set-ctime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
+) -> list[dict]:
+    """READ-ONLY: list media sets. `limit` returns only the newest N; a capped slice is never
+    evidence a media set is absent. REVIEWED_TRUSTED: no label-text field in this response at all
     — media-set-name is PBS-generated from the owning pool's operator-authored template, not
     physical-media content (a deliberate divergence from a naive "media_list/media_sets both
     carry labels" reading — see module docstring's Taint section). Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
-    return _audited("pbs_tape_media_sets", "pbs/tape/media/media-sets", lambda: tape_media_sets(pbs))
+    return _audited("pbs_tape_media_sets", "pbs/tape/media/media-sets",
+                    lambda: cap_newest(tape_media_sets(pbs), limit, "media-set-ctime"))
 
 
 @tool()

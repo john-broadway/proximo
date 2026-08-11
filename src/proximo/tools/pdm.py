@@ -10,6 +10,7 @@ from typing import Annotated
 from pydantic import Field
 
 import proximo.server as _proximo_server
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     tool,
@@ -255,9 +256,11 @@ def pdm_pbs_snapshots_list(
     remote: Annotated[str, Field(description="PDM-registered PBS remote name, from pdm_remotes_list.")],
     datastore: Annotated[str, Field(description="PBS datastore name on the remote to list snapshots from.")],
     ns: Annotated[str | None, Field(description="Optional PBS namespace filter; omit to use the default namespace.")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list backup snapshots in one datastore on a PDM-registered PBS remote, proxied
-    through PDM.
+    through PDM. `limit` returns only the newest N — a capped slice is never evidence a
+    snapshot is absent; omit it to verify one.
 
     No state change. Returns a list of snapshot dicts (empty list if the datastore has none);
     live-verified (PDM 1.1 -> PBS 4.2). ns optionally filters by namespace. To query PBS
@@ -265,18 +268,24 @@ def pdm_pbs_snapshots_list(
     _, pdm = _proximo_server._pdm()
     return _audited("pdm_pbs_snapshots_list",
                     f"pdm/pbs/{remote}/datastore/{datastore}/snapshots",
-                    lambda: pdm.pbs_snapshots_list(remote, datastore, ns))
+                    lambda: cap_newest(pdm.pbs_snapshots_list(remote, datastore, ns),
+                                       limit, "backup-time"))
 
 
 @tool()
-def pdm_tasks_list() -> list[dict]:
+def pdm_tasks_list(
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
+) -> list[dict]:
     """READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all
     registered remotes.
 
-    No state change. Returns a list of task dicts. For a target remote's own task list directly
-    (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_* config."""
+    No state change. Returns a list of task dicts. `limit` returns only the newest N by
+    starttime (its sibling pve_tasks_list bounds the same way). For a target remote's own
+    task list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*
+    config."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_tasks_list", "pdm/remotes/tasks", lambda: pdm.tasks_list())
+    return _audited("pdm_tasks_list", "pdm/remotes/tasks",
+                    lambda: cap_newest(pdm.tasks_list(), limit, "starttime"))
 
 
 @tool()

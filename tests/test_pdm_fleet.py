@@ -297,3 +297,32 @@ def test_rollback_auto_undo_snapshot_refused_when_any_gate_blocks(tmp_path, monk
         server.pdm_pve_qemu_snapshot_rollback("dc1", "100", "snap1", confirm=True)
     assert "snapc" not in [c[0] for c in pdm.calls]
     assert "rollback" not in [c[0] for c in pdm.calls]
+
+
+# ---------------------------------------------------------------------------
+# M4 option D — the opt-in newest-first cap plumbs through the wrapper seam
+# ---------------------------------------------------------------------------
+
+def test_pdm_pbs_snapshots_list_limit_is_opt_in_and_newest_first(tmp_path, monkeypatch):
+    class _SnapPdm:
+        def pbs_snapshots_list(self, remote, datastore, ns=None):
+            return [
+                {"backup-id": "old", "backup-time": 100},
+                {"backup-id": "new", "backup-time": 300},
+                {"backup-id": "mid", "backup-time": 200},
+            ]
+    _wire(tmp_path, monkeypatch, pdm=_SnapPdm())
+    full = server.pdm_pbs_snapshots_list(remote="pbs-dc1", datastore="store")
+    assert [r["backup-time"] for r in full] == [100, 300, 200]   # untouched without limit
+    capped = server.pdm_pbs_snapshots_list(remote="pbs-dc1", datastore="store", limit=2)
+    assert [r["backup-id"] for r in capped] == ["new", "mid"]
+
+
+def test_pdm_tasks_list_limit_caps_newest_by_starttime(tmp_path, monkeypatch):
+    class _TaskPdm:
+        def tasks_list(self, params=None):
+            return [{"upid": f"u{i}", "starttime": i} for i in (5, 1, 9)]
+    _wire(tmp_path, monkeypatch, pdm=_TaskPdm())
+    assert len(server.pdm_tasks_list()) == 3
+    capped = server.pdm_tasks_list(limit=1)
+    assert capped[0]["upid"] == "u9"

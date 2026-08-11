@@ -18,6 +18,7 @@ typo gets an error that teaches, never a silently empty answer.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import UTC, datetime
 
 from proximo.backends import ProximoError
 
@@ -81,5 +82,15 @@ def cap_newest(rows: list, limit: int | None, ts_key: str) -> list:
         try:
             return float(v)  # a backend handing epoch-as-string still sorts by its value
         except (TypeError, ValueError):
-            return 0.0       # non-numeric sorts oldest, never crashes the listing
+            pass
+        # PMG's view of PBS snapshots types backup-time as an RFC 3339 STRING (its own
+        # documented divergence from the epoch-int convention) — order by the instant,
+        # never let a typed string collapse "newest N" into "first N in API order".
+        try:
+            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)  # naive pins to UTC — never box-TZ order
+            return dt.timestamp()
+        except ValueError:
+            return 0.0       # non-temporal sorts oldest, never crashes the listing
     return sorted(rows, key=_ts, reverse=True)[:n]

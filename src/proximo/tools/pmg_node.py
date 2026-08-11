@@ -85,6 +85,7 @@ from proximo.pmg_node import (
     time_get,
     time_set,
 )
+from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
@@ -585,14 +586,17 @@ def pmg_node_journal(
 @tool()
 def pmg_node_backup_list(
     node: Annotated[str | None, Field(description="PMG node name; defaults to the configured node (PROXIMO_PMG_NODE).")] = None,
+    limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N backups by timestamp. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
 ) -> list[dict]:
     """READ-ONLY: list stored PMG configuration backup files ({filename, size, timestamp}).
-    REVIEWED_TRUSTED — structured metadata; filenames are schema-pattern-bounded. Use
-    pmg_backup_create to create a new one, pmg_node_backup_restore to restore from one, or
-    pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config."""
+    `limit` returns only the newest N — a capped slice is never evidence a backup is absent;
+    omit it to verify one. REVIEWED_TRUSTED — structured metadata; filenames are
+    schema-pattern-bounded. Use pmg_backup_create to create a new one, pmg_node_backup_restore
+    to restore from one, or pmg_node_backup_delete to remove one. Needs PROXIMO_PMG_* config."""
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
-    return _audited("pmg_node_backup_list", f"pmg/node/{n}/backup", lambda: backup_list(pmg, n))
+    return _audited("pmg_node_backup_list", f"pmg/node/{n}/backup",
+                    lambda: cap_newest(backup_list(pmg, n), limit, "timestamp"))
 
 
 @tool()
