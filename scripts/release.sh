@@ -39,6 +39,11 @@ uv run python scripts/version_tools.py check || RC=1
 # Diff uv.lock too: a lock rewritten so its EXPORTS coincide (same pins, different lock metadata)
 # would otherwise slip through unreviewed, since --frozen exports from whatever lock is committed.
 git diff --exit-code --stat requirements/ uv.lock || { printf 'release: requirements/ or uv.lock drifted — commit the regenerated files.\n' >&2; RC=1; }
+# lhm.plugin.json is generated (cold-start tool surface + version) — regenerate and fail on
+# drift BEFORE TOOLS.md, which derives FROM it. (Lens catch 2026-08-12: a skipped manual
+# manifest regen let both surfaces go stale together while the TOOLS.md gate passed green.)
+uv run python scripts/gen_lobehub_manifest.py >/dev/null 2>&1 || { printf 'release: gen_lobehub_manifest.py failed\n' >&2; RC=1; }
+git diff --exit-code --stat lhm.plugin.json || { printf 'release: lhm.plugin.json drifted — commit the regenerated file.\n' >&2; RC=1; }
 # TOOLS.md is generated (version banner + tool surface) — regenerate and fail on drift.
 # (Redteam catch on v0.21.1: the banner shipped one release stale; nothing gated it.)
 uv run python scripts/gen_tools_doc.py >/dev/null 2>&1 || { printf 'release: gen_tools_doc.py failed\n' >&2; RC=1; }

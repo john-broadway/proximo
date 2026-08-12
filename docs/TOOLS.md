@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.33.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.34.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -4598,12 +4598,24 @@ timeout is clamped 1..600s, interval 1..60s. Use pve_task_log for the full log.
 #### `pve_tasks_list`
 
 READ-ONLY: list recent tasks on a node. limit max 1000 (higher is truncated; 0 or negative
-is rejected). No state change; returns a list of task dicts. Use pve_task_log for a task's full log.
+is rejected). No state change. Returns a windowed envelope — returned, by_outcome, and
+`tasks`: the rows in the lean default set (upid, type, id, user, status, starttime,
+endtime). by_outcome (running/ok/warnings/failed/unknown) is classified server-side from
+each raw row's endtime + exitstatus text, so a custom projection cannot skew it.
 
-Caveat: this is a windowed, per-node slice — node defaults to the configured node, and
-only the `limit` most-recent tasks return. A task on another node or outside the window
-is absent without being dead. Never conclude a backup failed from absence here — verify
-against pve_backup_list or pbs_snapshots_list.
+The counts describe ONLY the returned window: PVE itself truncates to the newest `limit`
+tasks (default 50) before this server sees a row, so there is no full-history total here,
+and an all-ok by_outcome must NEVER be read as "no task ever failed" — a failure older
+than the window is simply not in it. For "did anything fail", use errors=True — PVE
+filters its whole task history server-side, returning failed AND warning tasks (the
+window then applies over the matches, so raise limit for counts).
+
+Pass fields='all' for raw rows (host `pid`/`pstart`) or fields='upid,type,...' to pick
+columns. Use pve_task_log for a task's full log.
+
+Caveat: this is a windowed, per-node slice — node defaults to the configured node. A task
+on another node or outside the window is absent without being dead. Never conclude a backup
+failed from absence here — verify against pve_backup_list or pbs_snapshots_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -4612,7 +4624,8 @@ against pve_backup_list or pbs_snapshots_list.
 | `errors` | boolean | no | If True, only return tasks that ended in error. (default: `false`) |
 | `vmid` | string (nullable) | no | Optional VMID/CTID to filter tasks to a single guest. (default: `null`) |
 | `typefilter` | string (nullable) | no | Optional task-type filter, e.g. 'vzdump', 'qmigrate' (PVE task type string). (default: `null`) |
-| `statusfilter` | string (nullable) | no | Optional status filter, e.g. 'running', 'stopped'. (default: `null`) |
+| `statusfilter` | string (nullable) | no | Optional server-side status filter; live-proven values: 'ok', 'error', 'warning'. by_outcome words ('warnings', 'failed') and task-status words ('running', 'stopped') are NOT valid filter values and return a 400. (default: `null`) |
+| `fields` | string (nullable) | no | Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pve_template_convert`
 

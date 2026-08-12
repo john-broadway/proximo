@@ -30,7 +30,7 @@ from proximo.cluster_ops import (
     plan_ha_rule_update,
     plan_migrate,
 )
-from proximo.projection import envelope_rows, project_rows
+from proximo.projection import classify_task_outcome, envelope_rows, envelope_windowed, project_rows
 from proximo.server import (
     _audited,
     run_governed,
@@ -286,18 +286,34 @@ def pve_tasks_list(
     errors: Annotated[bool, Field(description="If True, only return tasks that ended in error.")] = False,
     vmid: Annotated[str | None, Field(description="Optional VMID/CTID to filter tasks to a single guest.")] = None,
     typefilter: Annotated[str | None, Field(description="Optional task-type filter, e.g. 'vzdump', 'qmigrate' (PVE task type string).")] = None,
-    statusfilter: Annotated[str | None, Field(description="Optional status filter, e.g. 'running', 'stopped'.")] = None,
-) -> list[dict]:
+    statusfilter: Annotated[str | None, Field(description="Optional server-side status filter; live-proven values: 'ok', 'error', 'warning'. by_outcome words ('warnings', 'failed') and task-status words ('running', 'stopped') are NOT valid filter values and return a 400.")] = None,
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
     """READ-ONLY: list recent tasks on a node. limit max 1000 (higher is truncated; 0 or negative
-    is rejected). No state change; returns a list of task dicts. Use pve_task_log for a task's full log.
+    is rejected). No state change. Returns a windowed envelope — returned, by_outcome, and
+    `tasks`: the rows in the lean default set (upid, type, id, user, status, starttime,
+    endtime). by_outcome (running/ok/warnings/failed/unknown) is classified server-side from
+    each raw row's endtime + exitstatus text, so a custom projection cannot skew it.
 
-    Caveat: this is a windowed, per-node slice — node defaults to the configured node, and
-    only the `limit` most-recent tasks return. A task on another node or outside the window
-    is absent without being dead. Never conclude a backup failed from absence here — verify
-    against pve_backup_list or pbs_snapshots_list."""
+    The counts describe ONLY the returned window: PVE itself truncates to the newest `limit`
+    tasks (default 50) before this server sees a row, so there is no full-history total here,
+    and an all-ok by_outcome must NEVER be read as "no task ever failed" — a failure older
+    than the window is simply not in it. For "did anything fail", use errors=True — PVE
+    filters its whole task history server-side, returning failed AND warning tasks (the
+    window then applies over the matches, so raise limit for counts).
+
+    Pass fields='all' for raw rows (host `pid`/`pstart`) or fields='upid,type,...' to pick
+    columns. Use pve_task_log for a task's full log.
+
+    Caveat: this is a windowed, per-node slice — node defaults to the configured node. A task
+    on another node or outside the window is absent without being dead. Never conclude a backup
+    failed from absence here — verify against pve_backup_list or pbs_snapshots_list."""
     cfg, api, _, _ = _proximo_server._svc()
-    return _audited("pve_tasks_list", node or cfg.node,
+    rows = _audited("pve_tasks_list", node or cfg.node,
                     lambda: tasks_list(api, node, limit, errors, vmid, typefilter, statusfilter))
+    lean = project_rows(rows, fields,
+                        ("upid", "type", "id", "user", "status", "starttime", "endtime"))
+    return envelope_windowed(rows, lean, "tasks", classify_task_outcome)
 
 
 @tool()

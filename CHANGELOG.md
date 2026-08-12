@@ -2,6 +2,56 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.34.0] — 2026-08-12
+
+**`pve_tasks_list` returns a windowed outcome envelope, and the repo now has exactly one
+task-outcome classifier.** The first deliberate brick of the domain layer: classify, don't
+mirror. Named in public on the forum thread before it was built; every commit in this
+release passed an independent adversarial review before tagging, three rounds, two of
+which held the release back.
+
+### Added
+
+- **`pve_tasks_list` windowed envelope**: `{returned, by_outcome, tasks}` with the lean
+  field set (`upid`/`type`/`id`/`user`/`status`/`starttime`/`endtime`) and `fields` as the
+  escape hatch (`all` = raw rows). `by_outcome` classifies each raw row server-side —
+  `running` / `ok` / `warnings` / `failed` / `unknown` — by deterministic string matching
+  on `endtime` + exitstatus text, never inference. Measured through the SDK's own
+  `call_tool` on a live node: 6,676 → 5,589 wire tokens for 50 all-OK rows (16%; an
+  all-OK window is the envelope's most favorable case — failed rows carry their full
+  error text).
+- **There is deliberately NO `total` in this envelope.** PVE truncates to the newest
+  `limit` tasks before the server sees a row, so a full-history population count does not
+  exist here — a count that only describes the fetched window must not wear the
+  population's name. The tool description states this negatively (an all-ok `by_outcome`
+  is never "no task ever failed") and routes "did anything fail" to `errors=True`, which
+  live-provenly filters PVE's whole task history server-side and includes WARNINGS rows.
+- **Release gate regenerates `lhm.plugin.json` and fails on drift** (before TOOLS.md,
+  which derives from it): a skipped manual manifest regen could previously let both
+  surfaces go stale together while the TOOLS.md drift check passed green.
+
+### Changed
+
+- **One task classifier repo-wide**: `pve_diagnose`'s `failed_tasks` now uses the same
+  `classify_task_outcome` as the envelope. An error message that merely begins with the
+  word "WARNINGS" now counts as failed on both surfaces (the exitstatus shape is
+  `WARNINGS: n`); a statusless finished row classes `unknown` rather than failed; a
+  garbage row fails closed into `unknown`, never open into a healthy-looking class.
+- **`statusfilter` descriptions teach the live vocabulary**: `ok` / `error` / `warning`
+  (each live-proven), and state negatively that `by_outcome` words (`warnings`,
+  `failed`) and task-status words (`running`, `stopped`) are rejected by PVE with a 400.
+  The old examples taught two values every call would 400 on.
+- The health-check runbook prompt uses `pve_tasks_list(errors=True)` instead of "flag
+  any that failed" over a 50-row window.
+
+### Fixed
+
+- Three test fixtures modeled finished task rows without `endtime` — a shape live PVE
+  does not produce (live-probed: 0 of 179 errored rows lacked it) — and one modeled
+  `errors=1` as a failures-only filter when live PVE includes WARNINGS rows. All are
+  now live-faithful, and the tasks fixture honors `limit`/`errors`, so truncation can
+  interact with the counts under test instead of being structurally invisible.
+
 ## [0.33.0] — 2026-08-12
 
 **The mcp dual-major port: one build runs the SDK's 1.x (FastMCP) and 2.x (MCPServer).**

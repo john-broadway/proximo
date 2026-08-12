@@ -210,16 +210,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.33.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.33.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.34.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.34.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.33.0 (the mcp dual-major port).** One build now runs both majors of the official
-> MCP SDK, 1.x and 2.x (`mcp>=1.24,<3`), through a single compatibility seam. CI proves the
-> full suite on both majors on every push. The floor is measured, not assumed: 1.24 is the
-> oldest SDK release that imports and passes the suite. One documented SDK ceiling: a 2.x
-> client caps a single SSE event at 1 MiB, so serve the full unscoped catalog over
-> Streamable HTTP in JSON-response mode or scoped. Details in the CHANGELOG.
+> **New in 0.34.0 (the tasks envelope, honestly windowed).** `pve_tasks_list` returns
+> `{returned, by_outcome, tasks}` — outcomes classified server-side (`running`/`ok`/
+> `warnings`/`failed`/`unknown`) from each raw row, so "did anything fail" is the server's
+> answer, not fifty rows to tally. There is deliberately no `total`: PVE truncates to the
+> newest `limit` tasks before this server sees a row, and a count of the window must not
+> wear the population's name — use `errors=True` for the full-history question. One task
+> classifier repo-wide (`pve_diagnose` uses the same one). Details in the CHANGELOG.
 >
-> Recent: **0.32.0** moved nine estate-scale listings to counted envelopes (breaking; migration notes per tool in the CHANGELOG).
+> Recent: **0.33.0** made one build run both majors of the official MCP SDK (`mcp>=1.24,<3`), proven by CI on every push.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -256,11 +257,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.33.0**: **the mcp dual-major port.** One build runs the SDK's 1.x (FastMCP) and 2.x
-  (MCPServer); every spelling that differs crosses one seam, and CI proves the whole suite on
-  both majors every push. The floor moved to the measured truth (`>=1.24`; the declared 1.2.0
-  could not even import). Our own shipped artifacts stay on 1.x this release, deliberately.
-  No tool or wire shape changed: 906 tools, same envelopes.
+- 🩸 **0.34.0**: **the tasks envelope, honestly windowed.** `pve_tasks_list` classifies task
+  outcomes server-side and refuses to name a `total` it never saw (PVE truncates before the
+  server counts — the window says `returned`). One outcome classifier repo-wide; the
+  `statusfilter` docs now teach values live PVE actually accepts. Every commit passed an
+  independent adversarial review before the tag; two of three rounds held the release back.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

@@ -103,7 +103,8 @@ def test_node_flags_storage_over_90():
 
 
 def test_node_flags_failed_tasks():
-    api = _Api(status={}, tasks=[{"upid": "x", "status": "error: boom"}, {"upid": "y", "status": "OK"}])
+    api = _Api(status={}, tasks=[{"upid": "x", "status": "error: boom", "endtime": 2},
+                                 {"upid": "y", "status": "OK", "endtime": 3}])
     rep = diagnose_node(api, "pve")
     assert any("failed task" in f.lower() for f in rep["flags"])
     assert len(rep["failed_tasks"]) == 1  # the OK one is excluded
@@ -155,14 +156,19 @@ def test_failed_guest_read_flags_incompleteness():
 
 
 def test_warnings_and_transient_tasks_not_counted_failed():
+    # live-faithful shapes: finished rows carry endtime + exitstatus text; transient rows
+    # have no endtime yet (2026-08-12 — one classifier repo-wide, classify_task_outcome)
     api = _Api(status={}, tasks=[
-        {"upid": "a", "status": "WARNINGS: 1"},
+        {"upid": "a", "status": "WARNINGS: 1", "endtime": 4},
         {"upid": "b", "status": "stopping"},
         {"upid": "c", "status": "queued"},
-        {"upid": "d", "status": "error: boom"},
+        {"upid": "d", "status": "error: boom", "endtime": 5},
+        # error PROSE beginning with the bare word is NOT the WARNINGS exitstatus shape
+        {"upid": "e", "status": "WARNINGS were emitted then it died", "endtime": 6},
     ])
     rep = diagnose_node(api, "pve")
-    assert len(rep["failed_tasks"]) == 1  # only the real error
+    assert len(rep["failed_tasks"]) == 2  # the real error + the WARNINGS-prose error
+    assert {t["upid"] for t in rep["failed_tasks"]} == {"d", "e"}
 
 
 def test_storage_infinite_fraction_does_not_crash_or_drop():

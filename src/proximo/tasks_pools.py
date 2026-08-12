@@ -84,7 +84,9 @@ def tasks_list(
     errors:       if True, sends errors=1 to filter for errored tasks only.
     vmid:         optional VMID filter (PVE accepts a numeric string).
     typefilter:   optional task-type filter (e.g. 'vzstart', 'qmcreate').
-    statusfilter: optional status filter (e.g. 'error', 'ok', 'running').
+    statusfilter: optional status filter — live-proven values: 'ok' / 'error' / 'warning';
+                  by_outcome words ('warnings', 'failed') and task-status words
+                  ('running', 'stopped') are rejected with a 400.
 
     Returns a list of task dicts (or [] on null).
 

@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -24688,7 +24688,7 @@
     },
     {
       "name": "pve_tasks_list",
-      "description": "READ-ONLY: list recent tasks on a node. limit max 1000 (higher is truncated; 0 or negative\nis rejected). No state change; returns a list of task dicts. Use pve_task_log for a task's full log.\n\nCaveat: this is a windowed, per-node slice — node defaults to the configured node, and\nonly the `limit` most-recent tasks return. A task on another node or outside the window\nis absent without being dead. Never conclude a backup failed from absence here — verify\nagainst pve_backup_list or pbs_snapshots_list.",
+      "description": "READ-ONLY: list recent tasks on a node. limit max 1000 (higher is truncated; 0 or negative\nis rejected). No state change. Returns a windowed envelope — returned, by_outcome, and\n`tasks`: the rows in the lean default set (upid, type, id, user, status, starttime,\nendtime). by_outcome (running/ok/warnings/failed/unknown) is classified server-side from\neach raw row's endtime + exitstatus text, so a custom projection cannot skew it.\n\nThe counts describe ONLY the returned window: PVE itself truncates to the newest `limit`\ntasks (default 50) before this server sees a row, so there is no full-history total here,\nand an all-ok by_outcome must NEVER be read as \"no task ever failed\" — a failure older\nthan the window is simply not in it. For \"did anything fail\", use errors=True — PVE\nfilters its whole task history server-side, returning failed AND warning tasks (the\nwindow then applies over the matches, so raise limit for counts).\n\nPass fields='all' for raw rows (host `pid`/`pstart`) or fields='upid,type,...' to pick\ncolumns. Use pve_task_log for a task's full log.\n\nCaveat: this is a windowed, per-node slice — node defaults to the configured node. A task\non another node or outside the window is absent without being dead. Never conclude a backup\nfailed from absence here — verify against pve_backup_list or pbs_snapshots_list.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -24727,7 +24727,15 @@
           },
           "statusfilter": {
             "default": null,
-            "description": "Optional status filter, e.g. 'running', 'stopped'.",
+            "description": "Optional server-side status filter; live-proven values: 'ok', 'error', 'warning'. by_outcome words ('warnings', 'failed') and task-status words ('running', 'stopped') are NOT valid filter values and return a 400.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fields": {
+            "default": null,
+            "description": "Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.",
             "type": [
               "string",
               "null"

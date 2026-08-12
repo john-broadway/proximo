@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 
+from proximo.projection import classify_task_outcome
+
 _DIAG_NOTE = (
     "DIAGNOSE gathers read-only evidence; flags are advisory signals (some heuristic), NOT a "
     "root-cause diagnosis. Verify before acting."
@@ -118,10 +120,10 @@ def diagnose_node(api, node: str | None = None) -> dict:
 
     try:
         tasks = api.node_tasks(node) or []
-        # Exclude transient states and warnings-with-completion; only genuine non-OK exits are "failed".
-        failed = [t for t in tasks
-                  if t.get("status") not in (None, "OK", "running", "stopping", "queued")
-                  and not str(t.get("status") or "").startswith("WARNINGS")]
+        # One classifier repo-wide (projection.classify_task_outcome): only genuine non-OK
+        # exits are "failed" — unfinished/transient rows class "running", warnings and
+        # statusless-finished rows have their own classes, never "failed".
+        failed = [t for t in tasks if classify_task_outcome(t) == "failed"]
         report["failed_tasks"] = failed
         if failed:
             flags.append(f"{len(failed)} recent failed task(s)")

@@ -36,6 +36,40 @@ def envelope_rows(raw_rows: list, projected_rows: list, key: str, by: str) -> di
     return {"total": len(raw_rows), f"by_{by}": dict(counts), key: projected_rows}
 
 
+def classify_task_outcome(row) -> str:  # noqa: ANN001 — row shape is heterogeneous by design
+    """Deterministic outcome class for a PVE task row — string matching on what the API
+    returned, never inference. A still-running task carries no ``endtime``; a finished row's
+    ``status`` is raw exitstatus TEXT ("OK", "WARNINGS: n", or the full error message —
+    live-proven e.g. "command 'apt-get update' failed: exit code 100"), so bucketing by that
+    string would hand a model N distinct error keys exactly when tasks fail. Classes:
+    running / ok / warnings / failed / unknown (statusless-finished or garbage — disclosed,
+    not guessed; a row we cannot read must NEVER fail open into a healthy-looking class)."""
+    if not isinstance(row, dict):
+        return "unknown"
+    if "endtime" not in row:
+        return "running"
+    status = row.get("status")
+    if status is None or str(status) == "":
+        return "unknown"
+    s = str(status)
+    if s == "OK":
+        return "ok"
+    if s.startswith("WARNINGS: "):
+        return "warnings"
+    return "failed"
+
+
+def envelope_windowed(rows: list, projected_rows: list, key: str, classify) -> dict:  # noqa: ANN001
+    """Counted envelope for a listing the BACKEND truncates before this server ever sees a row:
+    {"returned", "by_outcome", <key>}. Deliberately NO "total" — the population count never
+    reached us, and a number that only describes the fetched window must not wear the
+    population's name (the 08-12 lens caught exactly that claim in prose). Outcomes are
+    classified from the RAW rows via the deterministic ``classify``, so a custom projection
+    cannot skew them."""
+    counts = Counter(classify(r) for r in rows)
+    return {"returned": len(rows), "by_outcome": dict(counts), key: projected_rows}
+
+
 def project_rows(rows: list, fields: str | None, lean: tuple[str, ...]) -> list:
     """Project a list-tool response down to the lean set, a custom field list, or not at all."""
     if fields is None:

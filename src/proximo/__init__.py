@@ -5,4 +5,4 @@ Exec off by default; bounded by the token you scope; every action audited; the P
 from its file only at call time, never logged or persisted.
 """
 
-__version__ = "0.33.0"
+__version__ = "0.34.0"

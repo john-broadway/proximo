@@ -634,7 +634,7 @@ class _DiagApi:
         return []
 
     def node_tasks(self, node=None):
-        return [{"upid": "UPID:x", "status": "some error"}]
+        return [{"upid": "UPID:x", "status": "some error", "endtime": 2}]
 
     def list_guests(self, node=None):
         return []

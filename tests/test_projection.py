@@ -12,6 +12,8 @@ fake api + real ledger via monkeypatched _svc.
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 
 from proximo.backends import ProximoError
@@ -216,6 +218,131 @@ def test_pve_cluster_resources_fields_all_keeps_raw_rows(monkeypatch, tmp_path):
     server = _wire(monkeypatch, tmp_path, _ResourcesApi())
     out = server.pve_cluster_resources(fields="all")
     assert "plugintype" in out["resources"][1] and "netin" in out["resources"][0]
+
+
+# ---------------------------------------------------------------------------
+# pve_tasks_list — a WINDOWED envelope over a listing PVE truncates before we see it
+# ---------------------------------------------------------------------------
+# Named in public 2026-08-12 at 6,676 wire tokens for 50 rows. `pid`/`pstart` are host
+# process bookkeeping no model can act on; `upid` STAYS because it is the handle every
+# follow-up tool (pve_task_log / pve_task_status / pve_task_wait) takes. Two honesty
+# constraints shape this envelope, both lens-earned (2026-08-12):
+#   * PVE applies `limit` BEFORE the server counts, so there is deliberately no "total" —
+#     `returned` names the window, and the fixture below honors limit/errors so a test CAN
+#     see truncation interact with the counts (the old fixture ignored both and was
+#     structurally blind to it).
+#   * a finished row's `status` is raw exitstatus TEXT (live-proven: a failure carries the
+#     full "command ... failed: exit code 100" message), so bucketing by that string hands
+#     a model N distinct error keys exactly when tasks fail — `by_outcome` classifies
+#     server-side instead. pmg/pbs/pdm task lists remain bare (owed, not last).
+
+TASK_ROWS = [  # newest-first, as the fixture will serve them
+    # a still-running task carries no endtime and no exitstatus — rows are shape-heterogeneous
+    {"upid": "UPID:pve:00350000:1A9E0000:6A7C2200:vzdump:102:root@pam:", "node": "pve",
+     "type": "vzdump", "id": "102", "user": "root@pam",
+     "starttime": 1786522400, "pid": 3417000, "pstart": 446510000},
+    {"upid": "UPID:pve:00340000:1A9D0000:6A7C2100:qmstart:101:root@pam:", "node": "pve",
+     "type": "qmstart", "id": "101", "user": "root@pam", "status": "OK",
+     "starttime": 1786522300, "endtime": 1786522305, "pid": 3407872, "pstart": 446500000},
+    {"upid": "UPID:pve:0033D715:1A9CE3DF:6A7C20FB:vzdump::root@pam:", "node": "pve",
+     "type": "vzdump", "id": "", "user": "root@pam", "status": "OK",
+     "starttime": 1786519803, "endtime": 1786522256, "pid": 3397397, "pstart": 446489567},
+    {"upid": "UPID:pve:00320000:1A9B0000:6A7C1F00:vzdump:103:root@pam:", "node": "pve",
+     "type": "vzdump", "id": "103", "user": "root@pam", "status": "WARNINGS: 2",
+     "starttime": 1786515000, "endtime": 1786516000, "pid": 3380000, "pstart": 446470000},
+    # oldest row is the failure — a small window must honestly EXCLUDE it, never imply it
+    {"upid": "UPID:pve:00310000:1A9A0000:6A7C1E00:aptupdate::root@pam:", "node": "pve",
+     "type": "aptupdate", "id": "", "user": "root@pam",
+     "status": "command 'apt-get update' failed: exit code 100",
+     "starttime": 1786510000, "endtime": 1786510060, "pid": 3370000, "pstart": 446460000},
+]
+
+
+class _TasksApi:
+    class config:  # tasks_list reads api.config.node when node is omitted
+        node = "pve"
+
+    def _get(self, path):
+        assert "/tasks?" in path, path
+        q = parse_qs(urlparse(path).query)
+        rows = [dict(r) for r in TASK_ROWS]
+        if q.get("errors") == ["1"]:
+            # live-proven 2026-08-12 (PVE 9.1.x): errors=1 keeps WARNINGS rows too —
+            # it excludes OK and unfinished, it is NOT a failures-only filter
+            rows = [r for r in rows if "endtime" in r and r.get("status") != "OK"]
+        # PVE truncates to the newest `limit` rows BEFORE the server sees anything,
+        # and the errors filter applies BEFORE that window (live-proven)
+        return rows[:int(q["limit"][0])]
+
+
+def test_pve_tasks_list_is_a_windowed_outcome_envelope_by_default(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _TasksApi())
+    out = server.pve_tasks_list()
+    assert out["returned"] == 5
+    assert out["by_outcome"] == {"running": 1, "ok": 2, "warnings": 1, "failed": 1}
+    # no population claim: PVE never handed one over, so the envelope must not invent one
+    assert "total" not in out and "by_status" not in out
+    row = out["tasks"][1]
+    # upid survives: it is the handle pve_task_log/status/wait all take
+    assert row["upid"].startswith("UPID:pve:")
+    assert {"type", "status", "user", "starttime"} <= set(row)
+    # host process bookkeeping is dropped
+    assert "pid" not in row and "pstart" not in row
+
+
+def test_pve_tasks_list_counts_describe_only_the_window_pve_returned(monkeypatch, tmp_path):
+    # THE defect class the 08-12 lens caught in prose: a failure just outside the window
+    # must be absent from the counts — not silently folded into an "all OK" population.
+    server = _wire(monkeypatch, tmp_path, _TasksApi())
+    out = server.pve_tasks_list(limit=3)
+    assert out["returned"] == 3
+    assert out["by_outcome"] == {"running": 1, "ok": 2}
+    assert "failed" not in out["by_outcome"]
+    # and the honest route to "did anything fail": errors=True filters PVE-side —
+    # which live-proven INCLUDES warnings, so the envelope must show both classes
+    errs = server.pve_tasks_list(errors=True)
+    assert errs["by_outcome"] == {"warnings": 1, "failed": 1}
+    assert {r["type"] for r in errs["tasks"]} == {"vzdump", "aptupdate"}
+
+
+def test_pve_tasks_list_omits_endtime_on_a_running_task_rather_than_nulling_it(
+        monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _TasksApi())
+    out = server.pve_tasks_list()
+    assert "endtime" not in out["tasks"][0]
+    assert "endtime" in out["tasks"][1]
+
+
+def test_pve_tasks_list_fields_all_keeps_raw_rows_inside_the_envelope(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _TasksApi())
+    out = server.pve_tasks_list(fields="all")
+    assert out["tasks"] == TASK_ROWS
+    assert out["returned"] == 5
+
+
+def test_pve_tasks_list_counts_survive_a_projection_that_drops_status(monkeypatch, tmp_path):
+    server = _wire(monkeypatch, tmp_path, _TasksApi())
+    out = server.pve_tasks_list(fields="upid,type")
+    assert out["tasks"][0] == {"upid": TASK_ROWS[0]["upid"], "type": "vzdump"}
+    # outcomes always come from the RAW rows, so a custom projection cannot skew them
+    assert out["by_outcome"] == {"running": 1, "ok": 2, "warnings": 1, "failed": 1}
+
+
+def test_classify_task_outcome_is_deterministic_string_matching_never_inference():
+    from proximo.projection import classify_task_outcome
+    assert classify_task_outcome({"status": "OK", "endtime": 1}) == "ok"
+    assert classify_task_outcome({"status": "WARNINGS: 3", "endtime": 1}) == "warnings"
+    assert classify_task_outcome(
+        {"status": "command 'apt-get update' failed: exit code 100", "endtime": 1}) == "failed"
+    # no endtime = still running, whatever else the row carries
+    assert classify_task_outcome({"starttime": 5}) == "running"
+    # finished but statusless (None or empty): disclosed as unknown, never guessed
+    assert classify_task_outcome({"endtime": 1}) == "unknown"
+    assert classify_task_outcome({"endtime": 1, "status": ""}) == "unknown"
+    # garbage fails CLOSED into disclosure — never open into a healthy-looking class
+    assert classify_task_outcome("not-a-dict") == "unknown"
+    # error prose that merely BEGINS with the word is not the WARNINGS exitstatus shape
+    assert classify_task_outcome({"endtime": 1, "status": "WARNINGS were ignored"}) == "failed"
 
 
 # ---------------------------------------------------------------------------
