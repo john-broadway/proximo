@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import pytest
 
-from proximo import server
-from proximo.server import TOOLSETS, toolset_keep
+from proximo import door, server
+from proximo.door import TOOLSETS, toolset_keep
 
 REGISTRY = sorted(server.mcp._tool_manager._tools)
 
@@ -33,7 +33,7 @@ REGISTRY = sorted(server.mcp._tool_manager._tools)
 # (proximo_call, the by-name escape hatch) meant six edits and six chances to miss one. The
 # property under test is "this filter keeps its plane PLUS whatever is never scopeable", and
 # that is what this now says.
-ALWAYS = set(server._ALWAYS_REGISTERED)
+ALWAYS = set(door._ALWAYS_REGISTERED)
 
 # --- the load-bearing invariant ----------------------------------------------------------
 

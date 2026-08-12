@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import proximo.door as door
 import proximo.server as server
 from proximo import targets
 from proximo.audit import AuditLedger
@@ -455,11 +456,11 @@ def _leaned_registry(monkeypatch):
     LEAN_CATALOG is module-global and apply_lean assigns it, so it is saved/restored via
     monkeypatch rather than left for the next test to inherit.
     """
-    from mcp.server.fastmcp import FastMCP
-    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
-    m = FastMCP("probe")
+    from proximo._mcpcompat import ServerClass
+    monkeypatch.setattr(door, "LEAN_CATALOG", dict(door.LEAN_CATALOG))  # door owns it (A11 3a)
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-    server.apply_lean(m)
+    door.apply_lean(m)
     monkeypatch.setattr(server, "mcp", m)
     return m
 
@@ -497,12 +498,12 @@ def test_surfaces_report_names_the_default_door_on_a_utility_only_config(monkeyp
     'auto-scoped to' as if they were data planes (the stale pre-widening {"exec"} bug this
     test originally pinned, ultra review 2026-07-30; the 0.30 flip retired the branch that
     said 'no plane configured yet — serving the full surface')."""
-    from proximo import doctor, server
+    from proximo import doctor
 
     for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_AUTOSCOPE",
                 "PROXIMO_MEMORY"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(server, "configured_surfaces", lambda: {"memory", "wiki"})
+    monkeypatch.setattr(door, "configured_surfaces", lambda: {"memory", "wiki"})
     rep = doctor._surfaces_report()
     assert rep["scoping"].startswith("dynamic facade (the default)"), rep["scoping"]
 
@@ -702,9 +703,8 @@ def test_facade_count_and_memory_first_are_read_from_the_registry(monkeypatch):
     is scoped away — but doctor derived "memory-first" from PROXIMO_MEMORY (an env var that is
     still ON) and told a model to call a tool this box does not serve.
     """
-    from mcp.server.fastmcp import FastMCP
-
     from proximo import doctor
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_TOOLS", "PROXIMO_TOOLSETS", "PROXIMO_AUTOSCOPE", "PROXIMO_TARGETS",
                 "PROXIMO_PMG_BASE_URL", "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
         monkeypatch.delenv(var, raising=False)
@@ -713,9 +713,9 @@ def test_facade_count_and_memory_first_are_read_from_the_registry(monkeypatch):
     monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
     monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example.lan:8007/api2/json")
 
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     monkeypatch.setattr(server, "mcp", m)
 
     rep = doctor._surfaces_report()
@@ -733,19 +733,18 @@ def test_enable_with_is_absent_for_a_plane_you_already_configured(monkeypatch):
     PROXIMO_API_BASE_URL (or add a pve target)" that it had already set. Absent capability and
     non-resident capability are different facts (external vet, 2026-08-02).
     """
-    from mcp.server.fastmcp import FastMCP
-
     from proximo import doctor
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_TOOLS", "PROXIMO_TOOLSETS", "PROXIMO_SURFACES", "PROXIMO_AUTOSCOPE",
                 "PROXIMO_TARGETS", "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL",
                 "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
 
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
-    server._apply_surfaces(m)                       # default door => facade => 0 resident per plane
+    monkeypatch.setattr(door, "LEAN_CATALOG", dict(door.LEAN_CATALOG))  # door owns it (A11 3a)
+    door._apply_surfaces(m)                       # default door => facade => 0 resident per plane
     monkeypatch.setattr(server, "mcp", m)
 
     planes = doctor._surfaces_report()["planes"]

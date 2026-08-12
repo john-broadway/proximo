@@ -33,7 +33,7 @@ from proximo.pbs_disks import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -85,13 +85,11 @@ def pbs_node_disk_wipe(
     {"status": "submitted", "result": <task UPID | None>}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/disks/{disk}"
-    plan = _plan("pbs_node_disk_wipe", tgt, lambda: plan_disk_wipe(disk, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_disk_wipe", tgt,
-                    lambda: disk_wipe(pbs, disk, node),
-                    mutation=True, outcome="submitted",
-                    detail={"disk": disk, "confirmed": True})
+    return run_governed(
+        "pbs_node_disk_wipe", tgt,
+        plan=lambda: plan_disk_wipe(disk, node),
+        execute=lambda: disk_wipe(pbs, disk, node),
+        confirm=confirm, outcome="submitted", detail={"disk": disk})
 
 
 @tool()
@@ -110,13 +108,11 @@ def pbs_node_disk_initgpt(
     {"status": "submitted", "result": <task UPID | None>}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/disks/{disk}"
-    plan = _plan("pbs_node_disk_initgpt", tgt, lambda: plan_disk_initgpt(disk, node, uuid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_disk_initgpt", tgt,
-                    lambda: disk_initgpt(pbs, disk, node, uuid),
-                    mutation=True, outcome="submitted",
-                    detail={"disk": disk, "uuid": uuid, "confirmed": True})
+    return run_governed(
+        "pbs_node_disk_initgpt", tgt,
+        plan=lambda: plan_disk_initgpt(disk, node, uuid),
+        execute=lambda: disk_initgpt(pbs, disk, node, uuid),
+        confirm=confirm, outcome="submitted", detail={"disk": disk, "uuid": uuid})
 
 
 # --- Directory backend ---
@@ -153,16 +149,11 @@ def pbs_node_disk_directory_create(
     {"status": "submitted", "result": <task UPID | None>}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/disks/directory/{name}"
-    plan = _plan("pbs_node_disk_directory_create", tgt,
-                 lambda: plan_disk_directory_create(disk, name, node, filesystem, add_datastore, removable_datastore))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_disk_directory_create", tgt,
-                    lambda: disk_directory_create(pbs, disk, name, node, filesystem, add_datastore, removable_datastore),
-                    mutation=True, outcome="submitted",
-                    detail={"disk": disk, "name": name, "filesystem": filesystem,
-                            "add_datastore": add_datastore, "removable_datastore": removable_datastore,
-                            "confirmed": True})
+    return run_governed(
+        "pbs_node_disk_directory_create", tgt,
+        plan=lambda: plan_disk_directory_create(disk, name, node, filesystem, add_datastore, removable_datastore),
+        execute=lambda: disk_directory_create(pbs, disk, name, node, filesystem, add_datastore, removable_datastore),
+        confirm=confirm, outcome="submitted", detail={"disk": disk, "name": name, "filesystem": filesystem, "add_datastore": add_datastore, "removable_datastore": removable_datastore})
 
 
 @tool()
@@ -180,12 +171,11 @@ def pbs_node_disk_directory_delete(
     {"status": "ok", "result": None} directly, not "submitted". Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/disks/directory/{name}"
-    plan = _plan("pbs_node_disk_directory_delete", tgt, lambda: plan_disk_directory_delete(name, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_disk_directory_delete", tgt,
-                    lambda: disk_directory_delete(pbs, name, node),
-                    mutation=True, outcome="ok", detail={"name": name, "confirmed": True})
+    return run_governed(
+        "pbs_node_disk_directory_delete", tgt,
+        plan=lambda: plan_disk_directory_delete(name, node),
+        execute=lambda: disk_directory_delete(pbs, name, node),
+        confirm=confirm, detail={"name": name})
 
 
 # --- ZFS backend ---
@@ -236,13 +226,8 @@ def pbs_node_disk_zfs_create(
     {"status": "submitted", "result": <task UPID | None>}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/disks/zfs/{name}"
-    plan = _plan("pbs_node_disk_zfs_create", tgt,
-                 lambda: plan_disk_zfs_create(devices, name, raidlevel, node, ashift, compression, add_datastore))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_disk_zfs_create", tgt,
-                    lambda: disk_zfs_create(pbs, devices, name, raidlevel, node, ashift, compression, add_datastore),
-                    mutation=True, outcome="submitted",
-                    detail={"devices": devices, "name": name, "raidlevel": raidlevel,
-                            "ashift": ashift, "compression": compression,
-                            "add_datastore": add_datastore, "confirmed": True})
+    return run_governed(
+        "pbs_node_disk_zfs_create", tgt,
+        plan=lambda: plan_disk_zfs_create(devices, name, raidlevel, node, ashift, compression, add_datastore),
+        execute=lambda: disk_zfs_create(pbs, devices, name, raidlevel, node, ashift, compression, add_datastore),
+        confirm=confirm, outcome="submitted", detail={"devices": devices, "name": name, "raidlevel": raidlevel, "ashift": ashift, "compression": compression, "add_datastore": add_datastore})

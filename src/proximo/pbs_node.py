@@ -127,9 +127,9 @@ Security posture:
 - service: same charset discipline as PVE's observability.py `_check_service` (letters/digits/
   ._- only, <=64 chars) — PBS's schema declares no pattern for the 'service' path param either;
   this validator is defensive, not schema-derived.
-- digest: PBS's own `^[a-f0-9]{64}$` optimistic-concurrency-lock pattern (identical to
-  pbs_access.py's `_DIGEST_RE`, defined independently here per this codebase's per-module
-  precedent — e.g. pbs.py's own separate `_PBS_APT_DIGEST_RE`).
+- digest: PBS's own `^[a-f0-9]{64}$` optimistic-concurrency-lock pattern, validated by the
+  shared plane-neutral `_validate.check_digest` (the A11 consolidation retired the per-module
+  copies; genuinely divergent digests like pmg.py's `_PMG_APT_DIGEST_RE` keep their own).
 - Cert private key: UNCONDITIONALLY redacted — never appears in plan, change, current, detail, or
   ledger, even with redact_ledger=False. `_key_fingerprint()` mirrors node_lifecycle.py's own
   helper of the same name verbatim (independent copy, same contract).
@@ -149,6 +149,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError, _check_timezone, _check_upid
 from .pbs import PbsBackend, _check_pbs_node
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
@@ -166,11 +167,6 @@ _IFACE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,14}\Z")
 # 'type' property enum, live api-viewer). Notably has NO OVS types (unlike PVE) and adds
 # 'unknown' + 'loopback' as explicit values.
 _VALID_IFACE_TYPES = frozenset({"loopback", "eth", "bridge", "bond", "vlan", "alias", "unknown"})
-
-# digest: PBS's optimistic-concurrency-lock param (source: repeated 'digest' property pattern
-# across dns/network/*, identical shape to pbs_access.py's own _DIGEST_RE — defined independently
-# here per this codebase's per-module precedent).
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # service: letters/digits/._- only, <=64 chars — mirrors observability.py's PVE _check_service
 # charset exactly (PBS's schema declares no pattern for this path param; defensive, not derived).
@@ -217,15 +213,6 @@ def _check_iface_type(iface_type: str) -> str:
             f"invalid PBS interface type: {iface_type!r} (expected one of {sorted(_VALID_IFACE_TYPES)})"
         )
     return t
-
-
-def _check_digest(digest: str | None) -> str | None:
-    if digest is None:
-        return None
-    s = str(digest).strip()
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {digest!r} — expected 64 lowercase hex chars (SHA-256)")
-    return s
 
 
 def _check_service(service: str) -> str:

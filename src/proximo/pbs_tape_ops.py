@@ -213,6 +213,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .pbs import PbsBackend
 from .pbs_tape_config import _check_tape_id  # reuse: identical drive/changer identifier shape
@@ -255,10 +256,9 @@ _SECRET_KEYS = frozenset({"password"})
 
 
 def _redact_secrets(d: dict) -> dict:
-    """Mask credential-shaped fields before they enter a plan string. Fresh single-key copy —
-    mirrors pbs_tape_media.py's `_redact_secrets` idiom, established convention (each PBS module
-    keeps its own)."""
-    return {k: ("[redacted]" if k in _SECRET_KEYS else v) for k, v in d.items()}
+    """Mask credential-shaped fields before they enter a plan string — the shared
+    `_validate.redact_secrets` mechanic over this plane's own `_SECRET_KEYS`."""
+    return redact_secrets(d, _SECRET_KEYS)
 
 
 # ---------------------------------------------------------------------------

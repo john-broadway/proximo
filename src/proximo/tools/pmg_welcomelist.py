@@ -29,7 +29,7 @@ from proximo.pmg_welcomelist import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -86,18 +86,15 @@ def pmg_welcomelist_object_add(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/welcomelist/{type_}"
-    plan = _plan("pmg_welcomelist_object_add", tgt,
-                 lambda: plan_welcomelist_object_add(
+    return run_governed(
+        "pmg_welcomelist_object_add", tgt,
+        plan=lambda: plan_welcomelist_object_add(
                      type_, email=email, domain=domain, regex=regex, ip=ip, cidr=cidr,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_welcomelist_object_add", tgt,
-                    lambda: welcomelist_object_add(
+                 ),
+        execute=lambda: welcomelist_object_add(
                         pmg, type_, email=email, domain=domain, regex=regex, ip=ip, cidr=cidr,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "type": type_})
+        confirm=confirm, detail={"type": type_})
 
 
 @tool()
@@ -122,21 +119,15 @@ def pmg_welcomelist_object_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/welcomelist/{type_}/{id_}"
-    plan = _plan("pmg_welcomelist_object_update", tgt,
-                 lambda: plan_welcomelist_object_update(
+    return run_governed(
+        "pmg_welcomelist_object_update", tgt,
+        plan=lambda: plan_welcomelist_object_update(
                      pmg, type_, id_, email=email, domain=domain, regex=regex, ip=ip, cidr=cidr,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_welcomelist_object_update", tgt,
-                    lambda: welcomelist_object_update(
+                 ),
+        execute=lambda: welcomelist_object_update(
                         pmg, type_, id_, email=email, domain=domain, regex=regex, ip=ip, cidr=cidr,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "type": type_, "id": id_,
-                             "email": email, "domain": domain, "regex": regex,
-                             "ip": ip, "cidr": cidr}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"type": type_, "id": id_, "email": email, "domain": domain, "regex": regex, "ip": ip, "cidr": cidr}.items() if v is not None})
 
 
 @tool()
@@ -158,10 +149,8 @@ def pmg_welcomelist_object_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/welcomelist/objects/{id_}"
-    plan = _plan("pmg_welcomelist_object_delete", tgt,
-                 lambda: plan_welcomelist_object_delete(id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_welcomelist_object_delete", tgt,
-                    lambda: welcomelist_object_delete(pmg, id_),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "id": id_})
+    return run_governed(
+        "pmg_welcomelist_object_delete", tgt,
+        plan=lambda: plan_welcomelist_object_delete(id_),
+        execute=lambda: welcomelist_object_delete(pmg, id_),
+        confirm=confirm, detail={"id": id_})

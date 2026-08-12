@@ -25,6 +25,7 @@ from proximo.apt import (
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -157,14 +158,11 @@ def pve_apt_repository_set(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/apt/repositories:{path}#{index}"
-    plan = _plan("pve_apt_repository_set", tgt,
-                 lambda: plan_apt_repository_set(api, path, index, node, enabled, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_apt_repository_set", tgt,
-                    lambda: api.apt_repository_set(path, index, node, enabled, digest),
-                    mutation=True, outcome="ok",
-                    detail={"path": path, "index": index, "confirmed": True})
+    return run_governed(
+        "pve_apt_repository_set", tgt,
+        plan=lambda: plan_apt_repository_set(api, path, index, node, enabled, digest),
+        execute=lambda: api.apt_repository_set(path, index, node, enabled, digest),
+        confirm=confirm, detail={"path": path, "index": index})
 
 
 @tool()
@@ -187,11 +185,8 @@ def pve_apt_repository_add(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/apt/repositories:{handle}"
-    plan = _plan("pve_apt_repository_add", tgt,
-                 lambda: plan_apt_repository_add(api, handle, node, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_apt_repository_add", tgt,
-                    lambda: api.apt_repository_add(handle, node, digest),
-                    mutation=True, outcome="ok",
-                    detail={"handle": handle, "confirmed": True})
+    return run_governed(
+        "pve_apt_repository_add", tgt,
+        plan=lambda: plan_apt_repository_add(api, handle, node, digest),
+        execute=lambda: api.apt_repository_add(handle, node, digest),
+        confirm=confirm, detail={"handle": handle})

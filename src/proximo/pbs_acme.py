@@ -133,6 +133,8 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list, _check_pbs_node
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
@@ -155,10 +157,6 @@ _ACME_PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,31}\Z")
 # live call, not baked in here.
 _PLUGIN_TYPE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\Z")
 
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars (module docstring fact #5).
-# Each PBS module keeps its own copy — established convention (see pbs_notifications.py).
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
-
 # validation-delay bound per the live schema's WRITE-path properties (POST/PUT), 0..172800.
 _MAX_VALIDATION_DELAY = 172800
 
@@ -178,7 +176,7 @@ def _redact_account_kw(kw: dict) -> dict:
     """Mask `eab_hmac_key` before it enters a plan string or Plan.current. Defensive on the
     CAPTURE-read side (module docstring fact #4 — GET never actually returns this field on a live
     PBS, but redact anyway rather than assume that never changes)."""
-    return {k: ("[redacted]" if k in _ACCOUNT_SECRET_KEYS else v) for k, v in kw.items()}
+    return redact_secrets(kw, _ACCOUNT_SECRET_KEYS)
 
 
 def _redact_plugin_kw(kw: dict) -> dict:
@@ -186,7 +184,7 @@ def _redact_plugin_kw(kw: dict) -> dict:
     Plan.current. Mirrors `acme_certs.py`'s function of the same name exactly — `data` DOES come
     back on a live plugin GET (module docstring fact #4), so this redaction is load-bearing, not
     just defensive."""
-    return {k: ("[redacted]" if k in _PLUGIN_SECRET_KEYS else v) for k, v in kw.items()}
+    return redact_secrets(kw, _PLUGIN_SECRET_KEYS)
 
 
 def _check_acme_account_name(name: str) -> str:
@@ -218,13 +216,6 @@ def _check_plugin_type(plugin_type: str) -> str:
             "(expected alnum/_/-, 1-64 chars — the live schema declares no enum; this is a "
             "defensive charset bound, not PBS's own validation set)"
         )
-    return s
-
-
-def _check_digest(digest: str) -> str:
-    s = str(digest)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {digest!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 

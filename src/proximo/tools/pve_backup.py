@@ -51,7 +51,7 @@ from proximo.freshness import backup_freshness
 from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -72,12 +72,11 @@ def pve_backup(
     This is a one-off run; for a recurring schedule use pve_backup_job_create instead."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_backup", target, lambda: plan_backup(vmid, storage, mode, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_backup", target,
-                    lambda: vzdump_backup(api, vmid, storage, mode, compress, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_backup", target,
+        plan=lambda: plan_backup(vmid, storage, mode, kind),
+        execute=lambda: vzdump_backup(api, vmid, storage, mode, compress, node),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -123,18 +122,16 @@ def pve_backup_delete(
     PLAN reports how many other backups of the same guest remain. Check the archive list first with
     pve_backup_list. Async — may return a task UPID or null depending on storage."""
     _, api, _, _ = _proximo_server._svc()
-    plan = _plan("pve_backup_delete", volid, lambda: plan_backup_delete(api, storage, volid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # backup_delete() may return None for a synchronous (dir-storage) delete rather than a task
     # UPID (backup.py's own documented contract) -- a fixed outcome="submitted" would then falsely
     # claim an already-finished delete is still in-flight, in BOTH the returned status and the
     # ledger's own record. _audited()'s callable-outcome form resolves the honest label from the
     # actual result, after backup_delete() runs, so the ledger is honest too (not just the envelope).
-    return _audited("pve_backup_delete", volid,
-                    lambda: backup_delete(api, storage, volid, node),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"confirmed": True})
+    return run_governed(
+        "pve_backup_delete", volid,
+        plan=lambda: plan_backup_delete(api, storage, volid),
+        execute=lambda: backup_delete(api, storage, volid, node),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted")
 
 
 @tool()
@@ -154,12 +151,11 @@ def pve_restore(
     first with pve_backup_list."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_restore", target, lambda: plan_restore(api, vmid, archive, kind, node, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_restore", target,
-                    lambda: restore_guest(api, vmid, archive, storage, kind, node, force, pool),
-                    mutation=True, outcome="submitted", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pve_restore", target,
+        plan=lambda: plan_restore(api, vmid, archive, kind, node, force),
+        execute=lambda: restore_guest(api, vmid, archive, storage, kind, node, force, pool),
+        confirm=confirm, outcome="submitted", detail={"force": force})
 
 
 # --- Backup Schedules (Plane B) — PVE backup jobs, replication, PBS scheduled jobs ---
@@ -200,17 +196,15 @@ def pve_backup_job_create(
     # all_guests -> PVE's `all` wire field (the tool name avoids shadowing the builtin).
     # Falsy all_guests collapses to None so it behaves exactly like omitting it (no all=0 leak).
     sel = {"vmid": vmid, "all": all_guests or None, "pool": pool, "exclude": exclude}
-    plan = _plan("pve_backup_job_create", tgt,
-                 lambda: plan_backup_job_create(job_id, schedule, storage,
+    return run_governed(
+        "pve_backup_job_create", tgt,
+        plan=lambda: plan_backup_job_create(job_id, schedule, storage,
                                                 mode=mode, compress=compress,
-                                                enabled=enabled, comment=comment, **sel))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_backup_job_create", tgt,
-                    lambda: backup_job_create(api, job_id, schedule, storage,
+                                                enabled=enabled, comment=comment, **sel),
+        execute=lambda: backup_job_create(api, job_id, schedule, storage,
                                              mode=mode, compress=compress,
                                              enabled=enabled, comment=comment, **sel),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -231,18 +225,16 @@ def pve_backup_job_update(
     pve_backup_job_create; to remove one use pve_backup_job_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/backup/{job_id}"
-    plan = _plan("pve_backup_job_update", tgt,
-                 lambda: plan_backup_job_update(api, job_id, schedule=schedule,
+    return run_governed(
+        "pve_backup_job_update", tgt,
+        plan=lambda: plan_backup_job_update(api, job_id, schedule=schedule,
                                                 storage=storage, mode=mode,
                                                 compress=compress, vmid=vmid,
-                                                enabled=enabled, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_backup_job_update", tgt,
-                    lambda: backup_job_update(api, job_id, schedule=schedule,
+                                                enabled=enabled, comment=comment),
+        execute=lambda: backup_job_update(api, job_id, schedule=schedule,
                                              storage=storage, mode=mode, compress=compress,
                                              vmid=vmid, enabled=enabled, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -256,13 +248,11 @@ def pve_backup_job_delete(
     Schedule removed; existing backups are NOT deleted."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/backup/{job_id}"
-    plan = _plan("pve_backup_job_delete", tgt,
-                 lambda: plan_backup_job_delete(api, job_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_backup_job_delete", tgt,
-                    lambda: backup_job_delete(api, job_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_backup_job_delete", tgt,
+        plan=lambda: plan_backup_job_delete(api, job_id),
+        execute=lambda: backup_job_delete(api, job_id),
+        confirm=confirm)
 
 
 @tool()
@@ -282,17 +272,15 @@ def pve_replication_create(
     pve_replication_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/replication/{rep_id}"
-    plan = _plan("pve_replication_create", tgt,
-                 lambda: plan_replication_create(rep_id, rep_type, target,
+    return run_governed(
+        "pve_replication_create", tgt,
+        plan=lambda: plan_replication_create(rep_id, rep_type, target,
                                                  schedule=schedule, rate=rate,
-                                                 disable=disable, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_replication_create", tgt,
-                    lambda: replication_create(api, rep_id, rep_type, target,
+                                                 disable=disable, comment=comment),
+        execute=lambda: replication_create(api, rep_id, rep_type, target,
                                               schedule=schedule, rate=rate,
                                               disable=disable, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -310,16 +298,14 @@ def pve_replication_update(
     pve_replication_create; to remove one use pve_replication_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/replication/{rep_id}"
-    plan = _plan("pve_replication_update", tgt,
-                 lambda: plan_replication_update(api, rep_id, schedule=schedule,
+    return run_governed(
+        "pve_replication_update", tgt,
+        plan=lambda: plan_replication_update(api, rep_id, schedule=schedule,
                                                  rate=rate, disable=disable,
-                                                 comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_replication_update", tgt,
-                    lambda: replication_update(api, rep_id, schedule=schedule,
+                                                 comment=comment),
+        execute=lambda: replication_update(api, rep_id, schedule=schedule,
                                               rate=rate, disable=disable, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -333,13 +319,11 @@ def pve_replication_delete(
     replicated data on the target is NOT removed."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/replication/{rep_id}"
-    plan = _plan("pve_replication_delete", tgt,
-                 lambda: plan_replication_delete(api, rep_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_replication_delete", tgt,
-                    lambda: replication_delete(api, rep_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_replication_delete", tgt,
+        plan=lambda: plan_replication_delete(api, rep_id),
+        execute=lambda: replication_delete(api, rep_id),
+        confirm=confirm)
 
 
 @tool()
@@ -358,16 +342,14 @@ def pbs_job_create(
     pbs_job_delete, or to run it once immediately (bypassing the schedule) use pbs_job_run."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/{job_type}/{job_id}"
-    plan = _plan("pbs_job_create", tgt,
-                 lambda: plan_pbs_job_create(job_type, job_id, store=store,
-                                             schedule=schedule, ns=ns, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_job_create", tgt,
-                    lambda: pbs_scheduled_job_create(pbs, job_type, job_id, store=store,
+    return run_governed(
+        "pbs_job_create", tgt,
+        plan=lambda: plan_pbs_job_create(job_type, job_id, store=store,
+                                             schedule=schedule, ns=ns, comment=comment),
+        execute=lambda: pbs_scheduled_job_create(pbs, job_type, job_id, store=store,
                                                      schedule=schedule, ns=ns,
                                                      comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -385,16 +367,14 @@ def pbs_job_update(
     PROXIMO_PBS_* config. To create use pbs_job_create; to remove use pbs_job_delete."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/{job_type}/{job_id}"
-    plan = _plan("pbs_job_update", tgt,
-                 lambda: plan_pbs_job_update(pbs, job_type, job_id, schedule=schedule,
-                                             ns=ns, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_job_update", tgt,
-                    lambda: pbs_scheduled_job_update(pbs, job_type, job_id,
+    return run_governed(
+        "pbs_job_update", tgt,
+        plan=lambda: plan_pbs_job_update(pbs, job_type, job_id, schedule=schedule,
+                                             ns=ns, comment=comment),
+        execute=lambda: pbs_scheduled_job_update(pbs, job_type, job_id,
                                                      schedule=schedule, ns=ns,
                                                      comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -409,13 +389,11 @@ def pbs_job_delete(
     removed, backup data NOT deleted. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/{job_type}/{job_id}"
-    plan = _plan("pbs_job_delete", tgt,
-                 lambda: plan_pbs_job_delete(pbs, job_type, job_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_job_delete", tgt,
-                    lambda: pbs_scheduled_job_delete(pbs, job_type, job_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_job_delete", tgt,
+        plan=lambda: plan_pbs_job_delete(pbs, job_type, job_id),
+        execute=lambda: pbs_scheduled_job_delete(pbs, job_type, job_id),
+        confirm=confirm)
 
 
 @tool()
@@ -435,20 +413,16 @@ def pbs_job_run(
     config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/admin/{job_type}/{job_id}"
-    plan = _plan("pbs_job_run", tgt,
-                 lambda: plan_pbs_job_run(job_type, job_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # Wave 5c review Finding 4: the live schema declares /admin/{prune,sync,verify}/{id}/run
     # ALL return null — a hardcoded outcome="submitted" recorded a synchronously-completed
     # trigger as still in-flight, in both the envelope and the raw ledger. Same callable-outcome
     # fix as pve_backup_delete above; pbs_scheduled_job_run coerces null to "" (`... or ""`), so
     # the resolver keys on falsy, not `is None`.
-    return _audited("pbs_job_run", tgt,
-                    lambda: pbs_scheduled_job_run(pbs, job_type, job_id),
-                    mutation=True,
-                    outcome=lambda result: "submitted" if result else "ok",
-                    detail={"confirmed": True})
+    return run_governed(
+        "pbs_job_run", tgt,
+        plan=lambda: plan_pbs_job_run(job_type, job_id),
+        execute=lambda: pbs_scheduled_job_run(pbs, job_type, job_id),
+        confirm=confirm, outcome=lambda result: "submitted" if result else "ok")
 
 
 @tool()
@@ -465,14 +439,12 @@ def pbs_realm_sync(
     param was dropped — PBS /sync has no such field.)"""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/domains/{realm}"
-    plan = _plan("pbs_realm_sync", tgt,
-                 lambda: plan_pbs_realm_sync(realm,
+    return run_governed(
+        "pbs_realm_sync", tgt,
+        plan=lambda: plan_pbs_realm_sync(realm,
                                              remove_vanished=remove_vanished,
-                                             dry_run=dry_run))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_sync", tgt,
-                    lambda: pbs_realm_sync_op(pbs, realm,
+                                             dry_run=dry_run),
+        execute=lambda: pbs_realm_sync_op(pbs, realm,
                                               remove_vanished=remove_vanished,
                                               dry_run=dry_run),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+        confirm=confirm, outcome="submitted")

@@ -54,7 +54,7 @@ from proximo.ceph import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -343,17 +343,15 @@ def pve_ceph_flags_set(
     )
     _, api, _, _ = _proximo_server._svc()
     tgt = "cluster/ceph/flags"
-    plan = _plan("pve_ceph_flags_set", tgt, lambda: plan_ceph_flags_set(api, changes))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # ceph_flags_set() is documented "Runs as a worker task; returns a UPID" but backends.py
     # types it `str | None` defensively (same honesty posture as pve_apt_update_refresh) — a
     # fixed outcome="submitted" would falsely claim an in-flight task if PVE ever answers
     # synchronously. The callable-outcome form resolves the honest label from the real result.
-    return _audited("pve_ceph_flags_set", tgt,
-                    lambda: api.ceph_flags_set(changes),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"confirmed": True, "changes": changes})
+    return run_governed(
+        "pve_ceph_flags_set", tgt,
+        plan=lambda: plan_ceph_flags_set(api, changes),
+        execute=lambda: api.ceph_flags_set(changes),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"changes": changes})
 
 
 @tool()
@@ -374,13 +372,11 @@ def pve_ceph_flag_set(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/ceph/flags/{flag}"
-    plan = _plan("pve_ceph_flag_set", tgt, lambda: plan_ceph_flag_set(api, flag, value))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_flag_set", tgt,
-                    lambda: api.ceph_flag_set(flag, value),
-                    mutation=True, outcome="ok",
-                    detail={"flag": flag, "value": value, "confirmed": True})
+    return run_governed(
+        "pve_ceph_flag_set", tgt,
+        plan=lambda: plan_ceph_flag_set(api, flag, value),
+        execute=lambda: api.ceph_flag_set(flag, value),
+        confirm=confirm, detail={"flag": flag, "value": value})
 
 
 # --- Wave 6b: services lifecycle mutations ---
@@ -412,14 +408,11 @@ def pve_ceph_mon_create(
     mid = monid if monid is not None else n
     tgt = f"{n}/ceph/mon/{mid}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mon_create", tgt,
-                 lambda: plan_ceph_mon_create(api, node, monid, mon_address, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mon_create", tgt,
-                    lambda: api.ceph_mon_create(node, monid, mon_address),
-                    mutation=True, outcome="submitted",
-                    detail={"monid": mid, "mon_address": mon_address, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mon_create", tgt,
+        plan=lambda: plan_ceph_mon_create(api, node, monid, mon_address, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mon_create(node, monid, mon_address),
+        confirm=confirm, outcome="submitted", detail={"monid": mid, "mon_address": mon_address})
 
 
 @tool()
@@ -444,14 +437,11 @@ def pve_ceph_mon_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/mon/{monid}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mon_destroy", tgt,
-                 lambda: plan_ceph_mon_destroy(api, monid, node, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mon_destroy", tgt,
-                    lambda: api.ceph_mon_destroy(monid, node),
-                    mutation=True, outcome="submitted",
-                    detail={"monid": monid, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mon_destroy", tgt,
+        plan=lambda: plan_ceph_mon_destroy(api, monid, node, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mon_destroy(monid, node),
+        confirm=confirm, outcome="submitted", detail={"monid": monid})
 
 
 @tool()
@@ -476,14 +466,11 @@ def pve_ceph_mgr_create(
     mid = mgr_id if mgr_id is not None else n
     tgt = f"{n}/ceph/mgr/{mid}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mgr_create", tgt,
-                 lambda: plan_ceph_mgr_create(api, node, mgr_id, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mgr_create", tgt,
-                    lambda: api.ceph_mgr_create(node, mgr_id),
-                    mutation=True, outcome="submitted",
-                    detail={"mgr_id": mid, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mgr_create", tgt,
+        plan=lambda: plan_ceph_mgr_create(api, node, mgr_id, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mgr_create(node, mgr_id),
+        confirm=confirm, outcome="submitted", detail={"mgr_id": mid})
 
 
 @tool()
@@ -507,14 +494,11 @@ def pve_ceph_mgr_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/mgr/{mgr_id}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mgr_destroy", tgt,
-                 lambda: plan_ceph_mgr_destroy(api, mgr_id, node, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mgr_destroy", tgt,
-                    lambda: api.ceph_mgr_destroy(mgr_id, node),
-                    mutation=True, outcome="submitted",
-                    detail={"mgr_id": mgr_id, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mgr_destroy", tgt,
+        plan=lambda: plan_ceph_mgr_destroy(api, mgr_id, node, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mgr_destroy(mgr_id, node),
+        confirm=confirm, outcome="submitted", detail={"mgr_id": mgr_id})
 
 
 @tool()
@@ -538,14 +522,11 @@ def pve_ceph_mds_create(
     nm = name if name is not None else n
     tgt = f"{n}/ceph/mds/{nm}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mds_create", tgt,
-                 lambda: plan_ceph_mds_create(api, node, name, hotstandby, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mds_create", tgt,
-                    lambda: api.ceph_mds_create(node, name, hotstandby),
-                    mutation=True, outcome="submitted",
-                    detail={"name": nm, "hotstandby": hotstandby, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mds_create", tgt,
+        plan=lambda: plan_ceph_mds_create(api, node, name, hotstandby, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mds_create(node, name, hotstandby),
+        confirm=confirm, outcome="submitted", detail={"name": nm, "hotstandby": hotstandby})
 
 
 @tool()
@@ -569,14 +550,11 @@ def pve_ceph_mds_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/mds/{name}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_mds_destroy", tgt,
-                 lambda: plan_ceph_mds_destroy(api, name, node, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_mds_destroy", tgt,
-                    lambda: api.ceph_mds_destroy(name, node),
-                    mutation=True, outcome="submitted",
-                    detail={"name": name, "confirmed": True})
+    return run_governed(
+        "pve_ceph_mds_destroy", tgt,
+        plan=lambda: plan_ceph_mds_destroy(api, name, node, audit_dir=audit_dir),
+        execute=lambda: api.ceph_mds_destroy(name, node),
+        confirm=confirm, outcome="submitted", detail={"name": name})
 
 
 @tool()
@@ -603,23 +581,16 @@ def pve_ceph_init(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"{n}/ceph/init"
-    plan = _plan("pve_ceph_init", tgt,
-                 lambda: plan_ceph_init(api, node, cluster_network, disable_cephx, min_size,
-                                        network, pg_bits, size))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # Schema declares returns: null (genuine, not a defensive guess) — callable-outcome idiom
     # anyway (the 5d pbs_job_run lesson, per the campaign brief): never hardcode "submitted" for
     # a call the schema itself documents as synchronous.
-    return _audited("pve_ceph_init", tgt,
-                    lambda: api.ceph_init(node, cluster_network, disable_cephx, min_size,
+    return run_governed(
+        "pve_ceph_init", tgt,
+        plan=lambda: plan_ceph_init(api, node, cluster_network, disable_cephx, min_size,
+                                        network, pg_bits, size),
+        execute=lambda: api.ceph_init(node, cluster_network, disable_cephx, min_size,
                                          network, pg_bits, size),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={
-                        "cluster_network": cluster_network, "disable_cephx": disable_cephx,
-                        "min_size": min_size, "network": network, "pg_bits": pg_bits,
-                        "size": size, "confirmed": True,
-                    })
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"cluster_network": cluster_network, "disable_cephx": disable_cephx, "min_size": min_size, "network": network, "pg_bits": pg_bits, "size": size})
 
 
 @tool()
@@ -639,14 +610,11 @@ def pve_ceph_service_start(
     n = node or cfg.node
     svc = service or "ceph.target"
     tgt = f"{n}/ceph/start:{svc}"
-    plan = _plan("pve_ceph_service_start", tgt,
-                 lambda: plan_ceph_service_start(api, node, service))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_service_start", tgt,
-                    lambda: api.ceph_service_start(node, service),
-                    mutation=True, outcome="submitted",
-                    detail={"service": svc, "confirmed": True})
+    return run_governed(
+        "pve_ceph_service_start", tgt,
+        plan=lambda: plan_ceph_service_start(api, node, service),
+        execute=lambda: api.ceph_service_start(node, service),
+        confirm=confirm, outcome="submitted", detail={"service": svc})
 
 
 @tool()
@@ -670,14 +638,11 @@ def pve_ceph_service_stop(
     n = node or cfg.node
     svc = service or "ceph.target"
     tgt = f"{n}/ceph/stop:{svc}"
-    plan = _plan("pve_ceph_service_stop", tgt,
-                 lambda: plan_ceph_service_stop(api, node, service))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_service_stop", tgt,
-                    lambda: api.ceph_service_stop(node, service),
-                    mutation=True, outcome="submitted",
-                    detail={"service": svc, "confirmed": True})
+    return run_governed(
+        "pve_ceph_service_stop", tgt,
+        plan=lambda: plan_ceph_service_stop(api, node, service),
+        execute=lambda: api.ceph_service_stop(node, service),
+        confirm=confirm, outcome="submitted", detail={"service": svc})
 
 
 @tool()
@@ -697,14 +662,11 @@ def pve_ceph_service_restart(
     n = node or cfg.node
     svc = service or "ceph.target"
     tgt = f"{n}/ceph/restart:{svc}"
-    plan = _plan("pve_ceph_service_restart", tgt,
-                 lambda: plan_ceph_service_restart(api, node, service))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_service_restart", tgt,
-                    lambda: api.ceph_service_restart(node, service),
-                    mutation=True, outcome="submitted",
-                    detail={"service": svc, "confirmed": True})
+    return run_governed(
+        "pve_ceph_service_restart", tgt,
+        plan=lambda: plan_ceph_service_restart(api, node, service),
+        execute=lambda: api.ceph_service_restart(node, service),
+        confirm=confirm, outcome="submitted", detail={"service": svc})
 
 
 # --- Wave 6c: OSD reads ---
@@ -796,23 +758,15 @@ def pve_ceph_osd_create(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"{n}/ceph/osd:{dev}"
-    plan = _plan("pve_ceph_osd_create", tgt,
-                 lambda: plan_ceph_osd_create(api, dev, node, crush_device_class, db_dev,
+    return run_governed(
+        "pve_ceph_osd_create", tgt,
+        plan=lambda: plan_ceph_osd_create(api, dev, node, crush_device_class, db_dev,
                                               db_dev_size, wal_dev, wal_dev_size, encrypted,
-                                              osds_per_device))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_osd_create", tgt,
-                    lambda: api.ceph_osd_create(dev, node, crush_device_class, db_dev,
+                                              osds_per_device),
+        execute=lambda: api.ceph_osd_create(dev, node, crush_device_class, db_dev,
                                                 db_dev_size, wal_dev, wal_dev_size, encrypted,
                                                 osds_per_device),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "dev": dev, "crush_device_class": crush_device_class, "db_dev": db_dev,
-                        "db_dev_size": db_dev_size, "wal_dev": wal_dev,
-                        "wal_dev_size": wal_dev_size, "encrypted": encrypted,
-                        "osds_per_device": osds_per_device, "confirmed": True,
-                    })
+        confirm=confirm, outcome="submitted", detail={"dev": dev, "crush_device_class": crush_device_class, "db_dev": db_dev, "db_dev_size": db_dev_size, "wal_dev": wal_dev, "wal_dev_size": wal_dev_size, "encrypted": encrypted, "osds_per_device": osds_per_device})
 
 
 @tool()
@@ -837,14 +791,11 @@ def pve_ceph_osd_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/osd/{osdid}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_osd_destroy", tgt,
-                 lambda: plan_ceph_osd_destroy(api, osdid, node, cleanup, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_osd_destroy", tgt,
-                    lambda: api.ceph_osd_destroy(osdid, node, cleanup),
-                    mutation=True, outcome="submitted",
-                    detail={"osdid": osdid, "cleanup": cleanup, "confirmed": True})
+    return run_governed(
+        "pve_ceph_osd_destroy", tgt,
+        plan=lambda: plan_ceph_osd_destroy(api, osdid, node, cleanup, audit_dir=audit_dir),
+        execute=lambda: api.ceph_osd_destroy(osdid, node, cleanup),
+        confirm=confirm, outcome="submitted", detail={"osdid": osdid, "cleanup": cleanup})
 
 
 @tool()
@@ -867,14 +818,11 @@ def pve_ceph_osd_in(
     n = node or cfg.node
     tgt = f"{n}/ceph/osd/{osdid}/in"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_osd_in", tgt,
-                 lambda: plan_ceph_osd_in(api, osdid, node, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_osd_in", tgt,
-                    lambda: api.ceph_osd_in(osdid, node),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"osdid": osdid, "confirmed": True})
+    return run_governed(
+        "pve_ceph_osd_in", tgt,
+        plan=lambda: plan_ceph_osd_in(api, osdid, node, audit_dir=audit_dir),
+        execute=lambda: api.ceph_osd_in(osdid, node),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"osdid": osdid})
 
 
 @tool()
@@ -898,14 +846,11 @@ def pve_ceph_osd_out(
     n = node or cfg.node
     tgt = f"{n}/ceph/osd/{osdid}/out"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_osd_out", tgt,
-                 lambda: plan_ceph_osd_out(api, osdid, node, audit_dir=audit_dir))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_osd_out", tgt,
-                    lambda: api.ceph_osd_out(osdid, node),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"osdid": osdid, "confirmed": True})
+    return run_governed(
+        "pve_ceph_osd_out", tgt,
+        plan=lambda: plan_ceph_osd_out(api, osdid, node, audit_dir=audit_dir),
+        execute=lambda: api.ceph_osd_out(osdid, node),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"osdid": osdid})
 
 
 @tool()
@@ -926,14 +871,11 @@ def pve_ceph_osd_scrub(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"{n}/ceph/osd/{osdid}/scrub"
-    plan = _plan("pve_ceph_osd_scrub", tgt,
-                 lambda: plan_ceph_osd_scrub(api, osdid, node, deep))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_osd_scrub", tgt,
-                    lambda: api.ceph_osd_scrub(osdid, node, deep),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"osdid": osdid, "deep": deep, "confirmed": True})
+    return run_governed(
+        "pve_ceph_osd_scrub", tgt,
+        plan=lambda: plan_ceph_osd_scrub(api, osdid, node, deep),
+        execute=lambda: api.ceph_osd_scrub(osdid, node, deep),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"osdid": osdid, "deep": deep})
 
 
 # --- Wave 6d: pools + CephFS reads (CLOSES Wave 6) ---
@@ -1053,29 +995,19 @@ def pve_ceph_pool_create(
     n = node or cfg.node
     tgt = f"{n}/ceph/pool:{name}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_pool_create", tgt,
-                 lambda: plan_ceph_pool_create(
+    return run_governed(
+        "pve_ceph_pool_create", tgt,
+        plan=lambda: plan_ceph_pool_create(
                      api, name, node, add_storages, application, crush_rule, erasure_coding,
                      min_size, pg_autoscale_mode, pg_num, pg_num_min, size, target_size,
                      target_size_ratio, audit_dir=audit_dir,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_pool_create", tgt,
-                    lambda: api.ceph_pool_create(
+                 ),
+        execute=lambda: api.ceph_pool_create(
                         name, node, add_storages, application, crush_rule, erasure_coding,
                         min_size, pg_autoscale_mode, pg_num, pg_num_min, size, target_size,
                         target_size_ratio,
                     ),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "name": name, "add_storages": add_storages, "application": application,
-                        "crush_rule": crush_rule, "erasure_coding": erasure_coding,
-                        "min_size": min_size, "pg_autoscale_mode": pg_autoscale_mode,
-                        "pg_num": pg_num, "pg_num_min": pg_num_min, "size": size,
-                        "target_size": target_size, "target_size_ratio": target_size_ratio,
-                        "confirmed": True,
-                    })
+        confirm=confirm, outcome="submitted", detail={"name": name, "add_storages": add_storages, "application": application, "crush_rule": crush_rule, "erasure_coding": erasure_coding, "min_size": min_size, "pg_autoscale_mode": pg_autoscale_mode, "pg_num": pg_num, "pg_num_min": pg_num_min, "size": size, "target_size": target_size, "target_size_ratio": target_size_ratio})
 
 
 @tool()
@@ -1109,27 +1041,18 @@ def pve_ceph_pool_set(
     n = node or cfg.node
     tgt = f"{n}/ceph/pool/{name}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_pool_set", tgt,
-                 lambda: plan_ceph_pool_set(
+    return run_governed(
+        "pve_ceph_pool_set", tgt,
+        plan=lambda: plan_ceph_pool_set(
                      api, name, node, application, crush_rule, min_size, pg_autoscale_mode,
                      pg_num, pg_num_min, size, target_size, target_size_ratio,
                      audit_dir=audit_dir,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_pool_set", tgt,
-                    lambda: api.ceph_pool_set(
+                 ),
+        execute=lambda: api.ceph_pool_set(
                         name, node, application, crush_rule, min_size, pg_autoscale_mode,
                         pg_num, pg_num_min, size, target_size, target_size_ratio,
                     ),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "name": name, "application": application, "crush_rule": crush_rule,
-                        "min_size": min_size, "pg_autoscale_mode": pg_autoscale_mode,
-                        "pg_num": pg_num, "pg_num_min": pg_num_min, "size": size,
-                        "target_size": target_size, "target_size_ratio": target_size_ratio,
-                        "confirmed": True,
-                    })
+        confirm=confirm, outcome="submitted", detail={"name": name, "application": application, "crush_rule": crush_rule, "min_size": min_size, "pg_autoscale_mode": pg_autoscale_mode, "pg_num": pg_num, "pg_num_min": pg_num_min, "size": size, "target_size": target_size, "target_size_ratio": target_size_ratio})
 
 
 @tool()
@@ -1155,22 +1078,16 @@ def pve_ceph_pool_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/pool/{name}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_pool_destroy", tgt,
-                 lambda: plan_ceph_pool_destroy(
+    return run_governed(
+        "pve_ceph_pool_destroy", tgt,
+        plan=lambda: plan_ceph_pool_destroy(
                      api, name, node, force, remove_ecprofile, remove_storages,
                      audit_dir=audit_dir,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_pool_destroy", tgt,
-                    lambda: api.ceph_pool_destroy(
+                 ),
+        execute=lambda: api.ceph_pool_destroy(
                         name, node, force, remove_ecprofile, remove_storages,
                     ),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "name": name, "force": force, "remove_ecprofile": remove_ecprofile,
-                        "remove_storages": remove_storages, "confirmed": True,
-                    })
+        confirm=confirm, outcome="submitted", detail={"name": name, "force": force, "remove_ecprofile": remove_ecprofile, "remove_storages": remove_storages})
 
 
 @tool()
@@ -1197,19 +1114,13 @@ def pve_ceph_fs_create(
     nm = name if name is not None else "cephfs"
     tgt = f"{n}/ceph/fs:{nm}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_fs_create", tgt,
-                 lambda: plan_ceph_fs_create(
+    return run_governed(
+        "pve_ceph_fs_create", tgt,
+        plan=lambda: plan_ceph_fs_create(
                      api, node, name, add_storage, pg_num, audit_dir=audit_dir,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_fs_create", tgt,
-                    lambda: api.ceph_fs_create(node, name, add_storage, pg_num),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "name": nm, "add_storage": add_storage, "pg_num": pg_num,
-                        "confirmed": True,
-                    })
+                 ),
+        execute=lambda: api.ceph_fs_create(node, name, add_storage, pg_num),
+        confirm=confirm, outcome="submitted", detail={"name": nm, "add_storage": add_storage, "pg_num": pg_num})
 
 
 @tool()
@@ -1235,16 +1146,10 @@ def pve_ceph_fs_destroy(
     n = node or cfg.node
     tgt = f"{n}/ceph/fs/{name}"
     audit_dir = os.path.dirname(audit.path)
-    plan = _plan("pve_ceph_fs_destroy", tgt,
-                 lambda: plan_ceph_fs_destroy(
+    return run_governed(
+        "pve_ceph_fs_destroy", tgt,
+        plan=lambda: plan_ceph_fs_destroy(
                      api, name, node, remove_pools, remove_storages, audit_dir=audit_dir,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ceph_fs_destroy", tgt,
-                    lambda: api.ceph_fs_destroy(name, node, remove_pools, remove_storages),
-                    mutation=True, outcome="submitted",
-                    detail={
-                        "name": name, "remove_pools": remove_pools,
-                        "remove_storages": remove_storages, "confirmed": True,
-                    })
+                 ),
+        execute=lambda: api.ceph_fs_destroy(name, node, remove_pools, remove_storages),
+        confirm=confirm, outcome="submitted", detail={"name": name, "remove_pools": remove_pools, "remove_storages": remove_storages})

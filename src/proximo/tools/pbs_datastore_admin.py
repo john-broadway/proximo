@@ -40,7 +40,7 @@ from proximo.pbs_datastore_admin import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -216,18 +216,13 @@ def pbs_group_delete(
     PARTIAL delete). Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/groups/{backup_type}/{backup_id}" + (f"/{ns}" if ns else "")
-    plan = _plan("pbs_group_delete", tgt, lambda: plan_group_delete(
-        store, backup_type, backup_id, ns, error_on_protected,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_group_delete", tgt,
-        lambda: group_delete(pbs, store, backup_type, backup_id, ns, error_on_protected),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "store": store, "backup_type": backup_type,
-                "backup_id": backup_id},
-    )
+        plan=lambda: plan_group_delete(
+        store, backup_type, backup_id, ns, error_on_protected,
+    ),
+        execute=lambda: group_delete(pbs, store, backup_type, backup_id, ns, error_on_protected),
+        confirm=confirm, detail={"store": store, "backup_type": backup_type, "backup_id": backup_id})
 
 
 @tool()
@@ -249,16 +244,13 @@ def pbs_group_notes_set(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/group-notes/{backup_type}/{backup_id}" + (f"/{ns}" if ns else "")
-    plan = _plan("pbs_group_notes_set", tgt, lambda: plan_group_notes_set(
-        pbs, store, backup_type, backup_id, notes, ns,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_group_notes_set", tgt,
-        lambda: group_notes_set(pbs, store, backup_type, backup_id, notes, ns),
-        mutation=True, outcome="ok", detail={"confirmed": True},
-    )
+        plan=lambda: plan_group_notes_set(
+        pbs, store, backup_type, backup_id, notes, ns,
+    ),
+        execute=lambda: group_notes_set(pbs, store, backup_type, backup_id, notes, ns),
+        confirm=confirm)
 
 
 @tool()
@@ -281,17 +273,13 @@ def pbs_group_move(
     with pbs_tasks_list. Reverse with a second pbs_group_move. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/move-group/{backup_type}/{backup_id}"
-    plan = _plan("pbs_group_move", tgt, lambda: plan_group_move(
-        store, backup_type, backup_id, ns, target_ns, merge_group,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_group_move", tgt,
-        lambda: group_move(pbs, store, backup_type, backup_id, ns, target_ns, merge_group),
-        mutation=True, outcome=_submitted_or_ok,
-        detail={"confirmed": True, "ns": ns, "target_ns": target_ns},
-    )
+        plan=lambda: plan_group_move(
+        store, backup_type, backup_id, ns, target_ns, merge_group,
+    ),
+        execute=lambda: group_move(pbs, store, backup_type, backup_id, ns, target_ns, merge_group),
+        confirm=confirm, outcome=_submitted_or_ok, detail={"ns": ns, "target_ns": target_ns})
 
 
 @tool()
@@ -317,19 +305,14 @@ def pbs_namespace_move(
     single-call undo. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/move-namespace/{ns}"
-    plan = _plan("pbs_namespace_move", tgt, lambda: plan_namespace_move(
-        store, ns, target_ns, delete_source, max_depth, merge_groups,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_namespace_move", tgt,
-        lambda: namespace_move(pbs, store, ns, target_ns, delete_source, max_depth,
+        plan=lambda: plan_namespace_move(
+        store, ns, target_ns, delete_source, max_depth, merge_groups,
+    ),
+        execute=lambda: namespace_move(pbs, store, ns, target_ns, delete_source, max_depth,
                                merge_groups),
-        mutation=True, outcome=_submitted_or_ok,
-        detail={"confirmed": True, "ns": ns, "target_ns": target_ns,
-                "delete_source": delete_source},
-    )
+        confirm=confirm, outcome=_submitted_or_ok, detail={"ns": ns, "target_ns": target_ns, "delete_source": delete_source})
 
 
 # --- Mutations: datastore lifecycle + whole-datastore prune ---
@@ -347,11 +330,11 @@ def pbs_datastore_mount(
     pbs_datastore_unmount. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/mount"
-    plan = _plan("pbs_datastore_mount", tgt, lambda: plan_datastore_mount(store))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_mount", tgt, lambda: datastore_mount(pbs, store),
-                    mutation=True, outcome=_submitted_or_ok, detail={"confirmed": True})
+    return run_governed(
+        "pbs_datastore_mount", tgt,
+        plan=lambda: plan_datastore_mount(store),
+        execute=lambda: datastore_mount(pbs, store),
+        confirm=confirm, outcome=_submitted_or_ok)
 
 
 @tool()
@@ -368,11 +351,11 @@ def pbs_datastore_unmount(
     config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/unmount"
-    plan = _plan("pbs_datastore_unmount", tgt, lambda: plan_datastore_unmount(store))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_unmount", tgt, lambda: datastore_unmount(pbs, store),
-                    mutation=True, outcome=_submitted_or_ok, detail={"confirmed": True})
+    return run_governed(
+        "pbs_datastore_unmount", tgt,
+        plan=lambda: plan_datastore_unmount(store),
+        execute=lambda: datastore_unmount(pbs, store),
+        confirm=confirm, outcome=_submitted_or_ok)
 
 
 @tool()
@@ -388,11 +371,11 @@ def pbs_datastore_s3_refresh(
     null return records "ok"). No undo — the cache is rebuilt. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/s3-refresh"
-    plan = _plan("pbs_datastore_s3_refresh", tgt, lambda: plan_datastore_s3_refresh(store))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_s3_refresh", tgt, lambda: datastore_s3_refresh(pbs, store),
-                    mutation=True, outcome=_submitted_or_ok, detail={"confirmed": True})
+    return run_governed(
+        "pbs_datastore_s3_refresh", tgt,
+        plan=lambda: plan_datastore_s3_refresh(store),
+        execute=lambda: datastore_s3_refresh(pbs, store),
+        confirm=confirm, outcome=_submitted_or_ok)
 
 
 @tool()
@@ -422,16 +405,12 @@ def pbs_datastore_prune(
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/prune-datastore"
-    plan = _plan("pbs_datastore_prune", tgt, lambda: plan_datastore_prune(
+    return run_governed(
+        "pbs_datastore_prune", tgt,
+        plan=lambda: plan_datastore_prune(
         store, keep_last, keep_hourly, keep_daily, keep_weekly, keep_monthly, keep_yearly,
         ns, max_depth, dry_run,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_datastore_prune", tgt,
-        lambda: datastore_prune(pbs, store, keep_last, keep_hourly, keep_daily, keep_weekly,
+    ),
+        execute=lambda: datastore_prune(pbs, store, keep_last, keep_hourly, keep_daily, keep_weekly,
                                 keep_monthly, keep_yearly, ns, max_depth, dry_run),
-        mutation=True, outcome=_submitted_or_ok,
-        detail={"confirmed": True, "dry_run": dry_run},
-    )
+        confirm=confirm, outcome=_submitted_or_ok, detail={"dry_run": dry_run})

@@ -32,7 +32,7 @@ from proximo.pbs_tape_config import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -116,13 +116,11 @@ def pbs_tape_drive_create(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/drive/{name}"
-    plan = _plan("pbs_tape_drive_create", tgt,
-                 lambda: plan_tape_drive_create(name, path, changer, changer_drivenum))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_create", tgt,
-                    lambda: tape_drive_create(pbs, name, path, changer, changer_drivenum),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_create", tgt,
+        plan=lambda: plan_tape_drive_create(name, path, changer, changer_drivenum),
+        execute=lambda: tape_drive_create(pbs, name, path, changer, changer_drivenum),
+        confirm=confirm)
 
 
 @tool()
@@ -144,13 +142,11 @@ def pbs_tape_drive_update(
     primitive; re-apply the captured config to revert. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/drive/{name}"
-    plan = _plan("pbs_tape_drive_update", tgt,
-                 lambda: plan_tape_drive_update(pbs, name, path, changer, changer_drivenum, digest, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_update", tgt,
-                    lambda: tape_drive_update(pbs, name, path, changer, changer_drivenum, digest, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_update", tgt,
+        plan=lambda: plan_tape_drive_update(pbs, name, path, changer, changer_drivenum, digest, delete),
+        execute=lambda: tape_drive_update(pbs, name, path, changer, changer_drivenum, digest, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -167,12 +163,11 @@ def pbs_tape_drive_delete(
     pbs_tape_drive_create. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/drive/{name}"
-    plan = _plan("pbs_tape_drive_delete", tgt, lambda: plan_tape_drive_delete(pbs, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_delete", tgt,
-                    lambda: tape_drive_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_delete", tgt,
+        plan=lambda: plan_tape_drive_delete(pbs, name),
+        execute=lambda: tape_drive_delete(pbs, name),
+        confirm=confirm)
 
 
 # --- Mutations: Changers ---
@@ -193,13 +188,11 @@ def pbs_tape_changer_create(
     returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/changer/{name}"
-    plan = _plan("pbs_tape_changer_create", tgt,
-                 lambda: plan_tape_changer_create(name, path, eject_before_unload, export_slots))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_changer_create", tgt,
-                    lambda: tape_changer_create(pbs, name, path, eject_before_unload, export_slots),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_changer_create", tgt,
+        plan=lambda: plan_tape_changer_create(name, path, eject_before_unload, export_slots),
+        execute=lambda: tape_changer_create(pbs, name, path, eject_before_unload, export_slots),
+        confirm=confirm)
 
 
 @tool()
@@ -222,13 +215,11 @@ def pbs_tape_changer_update(
     revert. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/changer/{name}"
-    plan = _plan("pbs_tape_changer_update", tgt,
-                 lambda: plan_tape_changer_update(pbs, name, path, eject_before_unload, export_slots, digest, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_changer_update", tgt,
-                    lambda: tape_changer_update(pbs, name, path, eject_before_unload, export_slots, digest, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_changer_update", tgt,
+        plan=lambda: plan_tape_changer_update(pbs, name, path, eject_before_unload, export_slots, digest, delete),
+        execute=lambda: tape_changer_update(pbs, name, path, eject_before_unload, export_slots, digest, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -246,9 +237,8 @@ def pbs_tape_changer_delete(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/changer/{name}"
-    plan = _plan("pbs_tape_changer_delete", tgt, lambda: plan_tape_changer_delete(pbs, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_changer_delete", tgt,
-                    lambda: tape_changer_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_changer_delete", tgt,
+        plan=lambda: plan_tape_changer_delete(pbs, name),
+        execute=lambda: tape_changer_delete(pbs, name),
+        confirm=confirm)

@@ -33,8 +33,7 @@ from proximo.acme_certs import (
     plan_node_acme_domains_set,
 )
 from proximo.server import (
-    _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -59,15 +58,13 @@ def pve_acme_account_create(
     shape (name in body) against a live PVE instance."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/acme/account/{name}"
-    plan = _plan("pve_acme_account_create", tgt,
-                 lambda: plan_acme_account_create(name, contact,
-                                                   tos_url=tos_url, directory=directory))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_account_create", tgt,
-                    lambda: acme_account_create(api, name, contact,
+    return run_governed(
+        "pve_acme_account_create", tgt,
+        plan=lambda: plan_acme_account_create(name, contact,
+                                                   tos_url=tos_url, directory=directory),
+        execute=lambda: acme_account_create(api, name, contact,
                                                 tos_url=tos_url, directory=directory),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -83,13 +80,11 @@ def pve_acme_account_update(
     directory, tos); confirm=True executes and returns {"status": "ok"}."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/acme/account/{name}"
-    plan = _plan("pve_acme_account_update", tgt,
-                 lambda: plan_acme_account_update(api, name, contact=contact))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_account_update", tgt,
-                    lambda: acme_account_update(api, name, contact=contact),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_account_update", tgt,
+        plan=lambda: plan_acme_account_update(api, name, contact=contact),
+        execute=lambda: acme_account_update(api, name, contact=contact),
+        confirm=confirm)
 
 
 @tool()
@@ -105,13 +100,11 @@ def pve_acme_account_delete(
     confirm=True executes and returns {"status": "ok"}."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/acme/account/{name}"
-    plan = _plan("pve_acme_account_delete", tgt,
-                 lambda: plan_acme_account_delete(api, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_account_delete", tgt,
-                    lambda: acme_account_delete(api, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_account_delete", tgt,
+        plan=lambda: plan_acme_account_delete(api, name),
+        execute=lambda: acme_account_delete(api, name),
+        confirm=confirm)
 
 
 @tool()
@@ -140,13 +133,11 @@ def pve_acme_plugin_create(
         kw["data"] = data
     if disable is not None:
         kw["disable"] = disable
-    plan = _plan("pve_acme_plugin_create", tgt,
-                 lambda: plan_acme_plugin_create(plugin_id, plugin_type, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_plugin_create", tgt,
-                    lambda: acme_plugin_create(api, plugin_id, plugin_type, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_plugin_create", tgt,
+        plan=lambda: plan_acme_plugin_create(plugin_id, plugin_type, **kw),
+        execute=lambda: acme_plugin_create(api, plugin_id, plugin_type, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -176,13 +167,11 @@ def pve_acme_plugin_update(
         kw["disable"] = disable
     if digest is not None:
         kw["digest"] = digest
-    plan = _plan("pve_acme_plugin_update", tgt,
-                 lambda: plan_acme_plugin_update(api, plugin_id, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_plugin_update", tgt,
-                    lambda: acme_plugin_update(api, plugin_id, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_plugin_update", tgt,
+        plan=lambda: plan_acme_plugin_update(api, plugin_id, **kw),
+        execute=lambda: acme_plugin_update(api, plugin_id, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -199,13 +188,11 @@ def pve_acme_plugin_delete(
     returns {"status": "ok"}."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/acme/plugins/{plugin_id}"
-    plan = _plan("pve_acme_plugin_delete", tgt,
-                 lambda: plan_acme_plugin_delete(api, plugin_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_plugin_delete", tgt,
-                    lambda: acme_plugin_delete(api, plugin_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_plugin_delete", tgt,
+        plan=lambda: plan_acme_plugin_delete(api, plugin_id),
+        execute=lambda: acme_plugin_delete(api, plugin_id),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -233,13 +220,11 @@ def pve_node_acme_domains_set(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"node/{n}/config:acme"
-    plan = _plan("pve_node_acme_domains_set", tgt,
-                 lambda: plan_node_acme_domains_set(api, n, account, domains, plugin))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_acme_domains_set", tgt,
-                    lambda: node_acme_config_set(api, n, account, domains, plugin),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_node_acme_domains_set", tgt,
+        plan=lambda: plan_node_acme_domains_set(api, n, account, domains, plugin),
+        execute=lambda: node_acme_config_set(api, n, account, domains, plugin),
+        confirm=confirm)
 
 
 @tool()
@@ -259,12 +244,11 @@ def pve_acme_cert_order(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"node/{n}/certificates/acme/certificate"
-    plan = _plan("pve_acme_cert_order", tgt, lambda: plan_acme_cert_order(n, force=force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_cert_order", tgt,
-                    lambda: acme_cert_order(api, n, force=force),
-                    mutation=True, outcome="submitted", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pve_acme_cert_order", tgt,
+        plan=lambda: plan_acme_cert_order(n, force=force),
+        execute=lambda: acme_cert_order(api, n, force=force),
+        confirm=confirm, outcome="submitted", detail={"force": force})
 
 
 @tool()
@@ -282,12 +266,11 @@ def pve_acme_cert_renew(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"node/{n}/certificates/acme/certificate"
-    plan = _plan("pve_acme_cert_renew", tgt, lambda: plan_acme_cert_renew(n, force=force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_cert_renew", tgt,
-                    lambda: acme_cert_renew(api, n, force=force),
-                    mutation=True, outcome="submitted", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pve_acme_cert_renew", tgt,
+        plan=lambda: plan_acme_cert_renew(n, force=force),
+        execute=lambda: acme_cert_renew(api, n, force=force),
+        confirm=confirm, outcome="submitted", detail={"force": force})
 
 
 @tool()
@@ -303,9 +286,8 @@ def pve_acme_cert_revoke(
     cfg, api, _, _ = _proximo_server._svc()
     n = node or cfg.node
     tgt = f"node/{n}/certificates/acme/certificate"
-    plan = _plan("pve_acme_cert_revoke", tgt, lambda: plan_acme_cert_revoke(api, n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acme_cert_revoke", tgt,
-                    lambda: acme_cert_revoke(api, n),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_acme_cert_revoke", tgt,
+        plan=lambda: plan_acme_cert_revoke(api, n),
+        execute=lambda: acme_cert_revoke(api, n),
+        confirm=confirm, outcome="submitted")

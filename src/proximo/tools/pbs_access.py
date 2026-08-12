@@ -86,7 +86,7 @@ from proximo.pbs_access import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -146,14 +146,12 @@ def pbs_user_create(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}"
     pw_detail = _password_redacted_detail(password)
-    plan = _plan("pbs_user_create", tgt,
-                 lambda: plan_user_create(userid, comment, email, enable, expire, firstname, lastname))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_user_create", tgt,
-                    lambda: user_create(pbs, userid, comment, email, enable, expire,
+    return run_governed(
+        "pbs_user_create", tgt,
+        plan=lambda: plan_user_create(userid, comment, email, enable, expire, firstname, lastname),
+        execute=lambda: user_create(pbs, userid, comment, email, enable, expire,
                                        firstname, lastname, password),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -185,15 +183,13 @@ def pbs_user_update(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}"
-    plan = _plan("pbs_user_update", tgt,
-                 lambda: plan_user_update(pbs, userid, comment, email, enable, expire,
-                                          firstname, lastname, delete_props))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_user_update", tgt,
-                    lambda: user_update(pbs, userid, comment, email, enable, expire,
+    return run_governed(
+        "pbs_user_update", tgt,
+        plan=lambda: plan_user_update(pbs, userid, comment, email, enable, expire,
+                                          firstname, lastname, delete_props),
+        execute=lambda: user_update(pbs, userid, comment, email, enable, expire,
                                        firstname, lastname, delete_props, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -211,12 +207,11 @@ def pbs_user_delete(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}"
-    plan = _plan("pbs_user_delete", tgt, lambda: plan_user_delete(pbs, userid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_user_delete", tgt,
-                    lambda: user_delete(pbs, userid, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_user_delete", tgt,
+        plan=lambda: plan_user_delete(pbs, userid),
+        execute=lambda: user_delete(pbs, userid, digest),
+        confirm=confirm)
 
 
 # --- API tokens (read) ---
@@ -271,16 +266,13 @@ def pbs_token_create(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}/token/{token_name}"
-    plan = _plan("pbs_token_create", tgt,
-                 lambda: plan_token_create(userid, token_name, comment, enable, expire))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING: return op result directly (carries the token value to caller);
     # detail dict must NEVER contain the secret — only {"confirmed": True} + non-secret params.
-    return _audited("pbs_token_create", tgt,
-                    lambda: token_create(pbs, userid, token_name, comment, enable, expire, digest),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "enable": enable, "expire": expire})
+    return run_governed(
+        "pbs_token_create", tgt,
+        plan=lambda: plan_token_create(userid, token_name, comment, enable, expire),
+        execute=lambda: token_create(pbs, userid, token_name, comment, enable, expire, digest),
+        confirm=confirm, detail={"enable": enable, "expire": expire})
 
 
 @tool()
@@ -311,18 +303,15 @@ def pbs_token_update(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}/token/{token_name}"
-    plan = _plan("pbs_token_update", tgt,
-                 lambda: plan_token_update(userid, token_name, comment, enable, expire,
-                                           regenerate, delete_props))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING: regenerate=True's result may carry a NEW secret ('secret' key) — never
     # put it in detail=. Non-secret params only.
-    return _audited("pbs_token_update", tgt,
-                    lambda: token_update(pbs, userid, token_name, comment, enable, expire,
+    return run_governed(
+        "pbs_token_update", tgt,
+        plan=lambda: plan_token_update(userid, token_name, comment, enable, expire,
+                                           regenerate, delete_props),
+        execute=lambda: token_update(pbs, userid, token_name, comment, enable, expire,
                                         regenerate, delete_props, digest),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "regenerate": regenerate, "enable": enable})
+        confirm=confirm, detail={"regenerate": regenerate, "enable": enable})
 
 
 @tool()
@@ -340,12 +329,11 @@ def pbs_token_delete(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}/token/{token_name}"
-    plan = _plan("pbs_token_delete", tgt, lambda: plan_token_delete(userid, token_name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_token_delete", tgt,
-                    lambda: token_delete(pbs, userid, token_name, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_token_delete", tgt,
+        plan=lambda: plan_token_delete(userid, token_name),
+        execute=lambda: token_delete(pbs, userid, token_name, digest),
+        confirm=confirm)
 
 
 # --- ACL (read + mutation) ---
@@ -392,13 +380,11 @@ def pbs_acl_update(
     _, pbs = _proximo_server._pbs()
     principal = auth_id if auth_id is not None else f"group:{group}"
     tgt = f"pbs/access/acl:{path}:{principal}"
-    plan = _plan("pbs_acl_update", tgt,
-                 lambda: plan_acl_update(pbs, path, role, auth_id, group, propagate, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acl_update", tgt,
-                    lambda: acl_update(pbs, path, role, auth_id, group, propagate, delete, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_acl_update", tgt,
+        plan=lambda: plan_acl_update(pbs, path, role, auth_id, group, propagate, delete),
+        execute=lambda: acl_update(pbs, path, role, auth_id, group, propagate, delete, digest),
+        confirm=confirm)
 
 
 # --- Roles (read-only — PBS roles are a fixed built-in enum, no CRUD) ---
@@ -488,15 +474,14 @@ def pbs_realm_ad_create(
                   sync_attributes=sync_attributes, sync_defaults_options=sync_defaults_options,
                   user_classes=user_classes, verify=verify)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_ad_create", tgt, lambda: plan_realm_ad_create(realm, server1, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_realm_ad_create", tgt,
-                    lambda: realm_ad_create(pbs, realm, server1, base_dn, bind_dn, capath,
+    return run_governed(
+        "pbs_realm_ad_create", tgt,
+        plan=lambda: plan_realm_ad_create(realm, server1, **fields),
+        execute=lambda: realm_ad_create(pbs, realm, server1, base_dn, bind_dn, capath,
                                             comment, default, filter, mode, password, port,
                                             server2, sync_attributes, sync_defaults_options,
                                             user_classes, verify),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -534,15 +519,14 @@ def pbs_realm_ad_update(
                   sync_defaults_options=sync_defaults_options, user_classes=user_classes,
                   verify=verify)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_ad_update", tgt, lambda: plan_realm_ad_update(pbs, realm, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_realm_ad_update", tgt,
-                    lambda: realm_ad_update(pbs, realm, base_dn, bind_dn, capath, comment,
+    return run_governed(
+        "pbs_realm_ad_update", tgt,
+        plan=lambda: plan_realm_ad_update(pbs, realm, **fields),
+        execute=lambda: realm_ad_update(pbs, realm, base_dn, bind_dn, capath, comment,
                                             default, filter, mode, password, port, server1,
                                             server2, sync_attributes, sync_defaults_options,
                                             user_classes, verify, delete_props, digest),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -556,12 +540,11 @@ def pbs_realm_ad_delete(
     confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/access/ad/{realm}"
-    plan = _plan("pbs_realm_ad_delete", tgt, lambda: plan_realm_ad_delete(pbs, realm))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_ad_delete", tgt,
-                    lambda: realm_ad_delete(pbs, realm, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_realm_ad_delete", tgt,
+        plan=lambda: plan_realm_ad_delete(pbs, realm),
+        execute=lambda: realm_ad_delete(pbs, realm, digest),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -621,16 +604,14 @@ def pbs_realm_ldap_create(
                   sync_attributes=sync_attributes, sync_defaults_options=sync_defaults_options,
                   user_classes=user_classes, verify=verify)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_ldap_create", tgt,
-                 lambda: plan_realm_ldap_create(realm, server1, base_dn, user_attr, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_realm_ldap_create", tgt,
-                    lambda: realm_ldap_create(pbs, realm, server1, base_dn, user_attr, bind_dn,
+    return run_governed(
+        "pbs_realm_ldap_create", tgt,
+        plan=lambda: plan_realm_ldap_create(realm, server1, base_dn, user_attr, **fields),
+        execute=lambda: realm_ldap_create(pbs, realm, server1, base_dn, user_attr, bind_dn,
                                               capath, comment, default, filter, mode, password,
                                               port, server2, sync_attributes,
                                               sync_defaults_options, user_classes, verify),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -669,16 +650,15 @@ def pbs_realm_ldap_update(
                   sync_defaults_options=sync_defaults_options, user_attr=user_attr,
                   user_classes=user_classes, verify=verify)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_ldap_update", tgt, lambda: plan_realm_ldap_update(pbs, realm, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_realm_ldap_update", tgt,
-                    lambda: realm_ldap_update(pbs, realm, base_dn, bind_dn, capath, comment,
+    return run_governed(
+        "pbs_realm_ldap_update", tgt,
+        plan=lambda: plan_realm_ldap_update(pbs, realm, **fields),
+        execute=lambda: realm_ldap_update(pbs, realm, base_dn, bind_dn, capath, comment,
                                               default, filter, mode, password, port, server1,
                                               server2, sync_attributes, sync_defaults_options,
                                               user_attr, user_classes, verify, delete_props,
                                               digest),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -692,12 +672,11 @@ def pbs_realm_ldap_delete(
     confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/access/ldap/{realm}"
-    plan = _plan("pbs_realm_ldap_delete", tgt, lambda: plan_realm_ldap_delete(pbs, realm))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_ldap_delete", tgt,
-                    lambda: realm_ldap_delete(pbs, realm, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_realm_ldap_delete", tgt,
+        plan=lambda: plan_realm_ldap_delete(pbs, realm),
+        execute=lambda: realm_ldap_delete(pbs, realm, digest),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -754,15 +733,13 @@ def pbs_realm_openid_create(
                   autocreate=autocreate, prompt=prompt, scopes=scopes,
                   username_claim=username_claim)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_openid_create", tgt,
-                 lambda: plan_realm_openid_create(realm, issuer_url, client_id, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **ck_detail}
-    return _audited("pbs_realm_openid_create", tgt,
-                    lambda: realm_openid_create(pbs, realm, issuer_url, client_id, client_key,
+    return run_governed(
+        "pbs_realm_openid_create", tgt,
+        plan=lambda: plan_realm_openid_create(realm, issuer_url, client_id, **fields),
+        execute=lambda: realm_openid_create(pbs, realm, issuer_url, client_id, client_key,
                                                 comment, default, acr_values, audiences,
                                                 autocreate, prompt, scopes, username_claim),
-                    mutation=True, outcome="ok", detail={**ck_detail, "confirmed": True})
+        confirm=confirm, surface=ck_detail)
 
 
 @tool()
@@ -795,16 +772,14 @@ def pbs_realm_openid_update(
     fields = dict(comment=comment, default=default, acr_values=acr_values, audiences=audiences,
                   autocreate=autocreate, prompt=prompt, scopes=scopes)
     fields = {k: v for k, v in fields.items() if v is not None}
-    plan = _plan("pbs_realm_openid_update", tgt,
-                 lambda: plan_realm_openid_update(pbs, realm, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **ck_detail}
-    return _audited("pbs_realm_openid_update", tgt,
-                    lambda: realm_openid_update(pbs, realm, issuer_url, client_id, client_key,
+    return run_governed(
+        "pbs_realm_openid_update", tgt,
+        plan=lambda: plan_realm_openid_update(pbs, realm, **fields),
+        execute=lambda: realm_openid_update(pbs, realm, issuer_url, client_id, client_key,
                                                 comment, default, acr_values, audiences,
                                                 autocreate, prompt, scopes,
                                                 delete_props, digest),
-                    mutation=True, outcome="ok", detail={**ck_detail, "confirmed": True})
+        confirm=confirm, surface=ck_detail)
 
 
 @tool()
@@ -818,12 +793,11 @@ def pbs_realm_openid_delete(
     confirm=True executes and returns a dict; synchronous, no UPID. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/access/openid/{realm}"
-    plan = _plan("pbs_realm_openid_delete", tgt, lambda: plan_realm_openid_delete(pbs, realm))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_openid_delete", tgt,
-                    lambda: realm_openid_delete(pbs, realm, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_realm_openid_delete", tgt,
+        plan=lambda: plan_realm_openid_delete(pbs, realm),
+        execute=lambda: realm_openid_delete(pbs, realm, digest),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -852,12 +826,11 @@ def pbs_realm_pam_set(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = "pbs/config/access/pam"
-    plan = _plan("pbs_realm_pam_set", tgt, lambda: plan_realm_pam_set(pbs, comment, default))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_pam_set", tgt,
-                    lambda: realm_pam_set(pbs, comment, default, delete_props, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_realm_pam_set", tgt,
+        plan=lambda: plan_realm_pam_set(pbs, comment, default),
+        execute=lambda: realm_pam_set(pbs, comment, default, delete_props, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -882,12 +855,11 @@ def pbs_realm_pbs_set(
     synchronous, no UPID. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = "pbs/config/access/pbs"
-    plan = _plan("pbs_realm_pbs_set", tgt, lambda: plan_realm_pbs_set(pbs, comment, default))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_realm_pbs_set", tgt,
-                    lambda: realm_pbs_set(pbs, comment, default, delete_props, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_realm_pbs_set", tgt,
+        plan=lambda: plan_realm_pbs_set(pbs, comment, default),
+        execute=lambda: realm_pbs_set(pbs, comment, default, delete_props, digest),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -946,15 +918,13 @@ def pbs_tfa_add(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/tfa/{userid}"
     pw_detail = _password_redacted_detail(password)
-    plan = _plan("pbs_tfa_add", tgt, lambda: plan_tfa_add(userid, tfa_type, description))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
     # SECRET HANDLING: type='recovery' results carry one-time codes in 'recovery' — detail must
     # NEVER contain the op result. Non-secret params only.
-    return _audited("pbs_tfa_add", tgt,
-                    lambda: tfa_add(pbs, userid, tfa_type, description, password, totp, value, challenge),
-                    mutation=True, outcome="ok",
-                    detail={**pw_detail, "confirmed": True, "type": tfa_type})
+    return run_governed(
+        "pbs_tfa_add", tgt,
+        plan=lambda: plan_tfa_add(userid, tfa_type, description),
+        execute=lambda: tfa_add(pbs, userid, tfa_type, description, password, totp, value, challenge),
+        confirm=confirm, detail={"type": tfa_type}, surface=pw_detail)
 
 
 @tool()
@@ -973,13 +943,11 @@ def pbs_tfa_update(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/tfa/{userid}/{tfa_id}"
     pw_detail = _password_redacted_detail(password)
-    plan = _plan("pbs_tfa_update", tgt,
-                 lambda: plan_tfa_update(pbs, userid, tfa_id, description, enable))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_tfa_update", tgt,
-                    lambda: tfa_update(pbs, userid, tfa_id, description, enable, password),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+    return run_governed(
+        "pbs_tfa_update", tgt,
+        plan=lambda: plan_tfa_update(pbs, userid, tfa_id, description, enable),
+        execute=lambda: tfa_update(pbs, userid, tfa_id, description, enable, password),
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -997,12 +965,11 @@ def pbs_tfa_delete(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/tfa/{userid}/{tfa_id}"
     pw_detail = _password_redacted_detail(password)
-    plan = _plan("pbs_tfa_delete", tgt, lambda: plan_tfa_delete(pbs, userid, tfa_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_tfa_delete", tgt,
-                    lambda: tfa_delete(pbs, userid, tfa_id, password),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+    return run_governed(
+        "pbs_tfa_delete", tgt,
+        plan=lambda: plan_tfa_delete(pbs, userid, tfa_id),
+        execute=lambda: tfa_delete(pbs, userid, tfa_id, password),
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -1018,12 +985,11 @@ def pbs_tfa_unlock(
     Synchronous. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/access/users/{userid}/unlock-tfa"
-    plan = _plan("pbs_tfa_unlock", tgt, lambda: plan_tfa_unlock(userid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tfa_unlock", tgt,
-                    lambda: tfa_unlock(pbs, userid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tfa_unlock", tgt,
+        plan=lambda: plan_tfa_unlock(userid),
+        execute=lambda: tfa_unlock(pbs, userid),
+        confirm=confirm)
 
 
 @tool()
@@ -1050,11 +1016,9 @@ def pbs_tfa_webauthn_set(
     dict; synchronous, no UPID. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = "pbs/config/access/tfa/webauthn"
-    plan = _plan("pbs_tfa_webauthn_set", tgt,
-                 lambda: plan_tfa_webauthn_set(pbs, rp_id, origin, rp_name, allow_subdomains))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tfa_webauthn_set", tgt,
-                    lambda: tfa_webauthn_set(pbs, rp_id, origin, rp_name, allow_subdomains,
+    return run_governed(
+        "pbs_tfa_webauthn_set", tgt,
+        plan=lambda: plan_tfa_webauthn_set(pbs, rp_id, origin, rp_name, allow_subdomains),
+        execute=lambda: tfa_webauthn_set(pbs, rp_id, origin, rp_name, allow_subdomains,
                                              delete_props, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)

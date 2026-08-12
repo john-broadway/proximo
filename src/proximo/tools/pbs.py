@@ -181,6 +181,7 @@ from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -346,11 +347,11 @@ def pbs_gc_start(
     UPID (async task) — check progress with pbs_gc_status or pbs_tasks_list."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/gc"
-    plan = _plan("pbs_gc_start", tgt, lambda: pbs_plan_gc_start(store))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_gc_start", tgt, lambda: pbs_gc_start_op(pbs, store),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_gc_start", tgt,
+        plan=lambda: pbs_plan_gc_start(store),
+        execute=lambda: pbs_gc_start_op(pbs, store),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -372,13 +373,11 @@ def pbs_verify_start(
     UPID (async task) — check progress with pbs_tasks_list."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/verify"
-    plan = _plan("pbs_verify_start", tgt,
-                 lambda: pbs_plan_verify_start(store, ns, backup_type, backup_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_verify_start", tgt,
-                    lambda: pbs_verify_start_op(pbs, store, ns, backup_type, backup_id),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_verify_start", tgt,
+        plan=lambda: pbs_plan_verify_start(store, ns, backup_type, backup_id),
+        execute=lambda: pbs_verify_start_op(pbs, store, ns, backup_type, backup_id),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -410,18 +409,15 @@ def pbs_prune(
     pbs_snapshot_delete instead."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/prune"
-    plan = _plan("pbs_prune", tgt,
-                 lambda: pbs_plan_prune(store, keep_last, keep_daily, keep_weekly,
+    return run_governed(
+        "pbs_prune", tgt,
+        plan=lambda: pbs_plan_prune(store, keep_last, keep_daily, keep_weekly,
                                         keep_monthly, keep_yearly, ns, backup_type,
-                                        backup_id, dry_run))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_prune", tgt,
-                    lambda: pbs_prune_op(pbs, store, keep_last, keep_daily,
+                                        backup_id, dry_run),
+        execute=lambda: pbs_prune_op(pbs, store, keep_last, keep_daily,
                                         keep_weekly, keep_monthly, keep_yearly,
                                         ns, backup_type, backup_id, dry_run),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "dry_run": dry_run})
+        confirm=confirm, detail={"dry_run": dry_run})
 
 
 @tool()
@@ -445,13 +441,11 @@ def pbs_snapshot_delete(
     for bulk retention-based deletion use pbs_prune."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/{backup_type}/{backup_id}"
-    plan = _plan("pbs_snapshot_delete", tgt,
-                 lambda: pbs_plan_snapshot_delete(store, backup_type, backup_id, backup_time, ns))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_snapshot_delete", tgt,
-                    lambda: pbs_snapshot_delete_op(pbs, store, backup_type, backup_id, backup_time, ns),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_snapshot_delete", tgt,
+        plan=lambda: pbs_plan_snapshot_delete(store, backup_type, backup_id, backup_time, ns),
+        execute=lambda: pbs_snapshot_delete_op(pbs, store, backup_type, backup_id, backup_time, ns),
+        confirm=confirm)
 
 
 @tool()
@@ -470,13 +464,11 @@ def pbs_namespace_create(
     name collisions first, or pbs_namespace_delete to remove one."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/namespace/{name}"
-    plan = _plan("pbs_namespace_create", tgt,
-                 lambda: pbs_plan_namespace_create(store, name, parent))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_namespace_create", tgt,
-                    lambda: pbs_namespace_create_op(pbs, store, name, parent),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_namespace_create", tgt,
+        plan=lambda: pbs_plan_namespace_create(store, name, parent),
+        execute=lambda: pbs_namespace_create_op(pbs, store, name, parent),
+        confirm=confirm)
 
 
 @tool()
@@ -496,13 +488,11 @@ def pbs_namespace_delete(
     or pbs_namespace_create to recreate an empty namespace afterward."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/namespace/{ns}"
-    plan = _plan("pbs_namespace_delete", tgt,
-                 lambda: pbs_plan_namespace_delete(store, ns, delete_groups))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_namespace_delete", tgt,
-                    lambda: pbs_namespace_delete_op(pbs, store, ns, delete_groups),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_namespace_delete", tgt,
+        plan=lambda: pbs_plan_namespace_delete(store, ns, delete_groups),
+        execute=lambda: pbs_namespace_delete_op(pbs, store, ns, delete_groups),
+        confirm=confirm)
 
 
 # --- PBS config + safety plane (Wave 5) ---
@@ -537,19 +527,17 @@ def pbs_datastore_create(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{name}"
-    plan = _plan("pbs_datastore_create", tgt,
-                 lambda: pbs_plan_datastore_create(
+    return run_governed(
+        "pbs_datastore_create", tgt,
+        plan=lambda: pbs_plan_datastore_create(
                      name, path, gc_schedule=gc_schedule,
                      prune_schedule=prune_schedule,
-                     notification_mode=notification_mode, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_create", tgt,
-                    lambda: pbs_cfg_datastore_create(
+                     notification_mode=notification_mode, comment=comment),
+        execute=lambda: pbs_cfg_datastore_create(
                         pbs, name, path, gc_schedule=gc_schedule,
                         prune_schedule=prune_schedule,
                         notification_mode=notification_mode, comment=comment),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -582,19 +570,17 @@ def pbs_datastore_update(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{name}"
-    plan = _plan("pbs_datastore_update", tgt,
-                 lambda: pbs_plan_datastore_update(
+    return run_governed(
+        "pbs_datastore_update", tgt,
+        plan=lambda: pbs_plan_datastore_update(
                      pbs, name, gc_schedule=gc_schedule,
                      prune_schedule=prune_schedule,
-                     notification_mode=notification_mode, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_update", tgt,
-                    lambda: pbs_cfg_datastore_update(
+                     notification_mode=notification_mode, comment=comment),
+        execute=lambda: pbs_cfg_datastore_update(
                         pbs, name, gc_schedule=gc_schedule,
                         prune_schedule=prune_schedule,
                         notification_mode=notification_mode, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -626,16 +612,14 @@ def pbs_datastore_delete(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{name}"
-    plan = _plan("pbs_datastore_delete", tgt,
-                 lambda: pbs_plan_datastore_delete(
-                     name, destroy_data=destroy_data, keep_job_configs=keep_job_configs))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_datastore_delete", tgt,
-                    lambda: pbs_cfg_datastore_delete(
+    return run_governed(
+        "pbs_datastore_delete", tgt,
+        plan=lambda: pbs_plan_datastore_delete(
+                     name, destroy_data=destroy_data, keep_job_configs=keep_job_configs),
+        execute=lambda: pbs_cfg_datastore_delete(
                         pbs, name, destroy_data=destroy_data,
                         keep_job_configs=keep_job_configs),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -671,15 +655,13 @@ def pbs_snapshot_protected_set(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/{backup_type}/{backup_id}@{backup_time}/protected"
-    plan = _plan("pbs_snapshot_protected_set", tgt,
-                 lambda: pbs_plan_snapshot_protected_set(
-                     store, backup_type, backup_id, backup_time, protected, ns))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_snapshot_protected_set", tgt,
-                    lambda: pbs_cfg_snapshot_protected_set(
+    return run_governed(
+        "pbs_snapshot_protected_set", tgt,
+        plan=lambda: pbs_plan_snapshot_protected_set(
+                     store, backup_type, backup_id, backup_time, protected, ns),
+        execute=lambda: pbs_cfg_snapshot_protected_set(
                         pbs, store, backup_type, backup_id, backup_time, protected, ns),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -712,15 +694,13 @@ def pbs_snapshot_notes_set(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/{backup_type}/{backup_id}@{backup_time}/notes"
-    plan = _plan("pbs_snapshot_notes_set", tgt,
-                 lambda: pbs_plan_snapshot_notes_set(
-                     pbs, store, backup_type, backup_id, backup_time, notes, ns))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_snapshot_notes_set", tgt,
-                    lambda: pbs_cfg_snapshot_notes_set(
+    return run_governed(
+        "pbs_snapshot_notes_set", tgt,
+        plan=lambda: pbs_plan_snapshot_notes_set(
+                     pbs, store, backup_type, backup_id, backup_time, notes, ns),
+        execute=lambda: pbs_cfg_snapshot_notes_set(
                         pbs, store, backup_type, backup_id, backup_time, notes, ns),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -750,15 +730,13 @@ def pbs_group_change_owner(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/{store}/{backup_type}/{backup_id}/owner"
-    plan = _plan("pbs_group_change_owner", tgt,
-                 lambda: pbs_plan_group_change_owner(
-                     store, backup_type, backup_id, new_owner, ns))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_group_change_owner", tgt,
-                    lambda: pbs_cfg_group_change_owner(
+    return run_governed(
+        "pbs_group_change_owner", tgt,
+        plan=lambda: pbs_plan_group_change_owner(
+                     store, backup_type, backup_id, new_owner, ns),
+        execute=lambda: pbs_cfg_group_change_owner(
                         pbs, store, backup_type, backup_id, new_owner, ns),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -801,18 +779,15 @@ def pbs_remote_create(
     tgt = f"pbs/remote/{name}"
     # UNCONDITIONAL: password never passes through the plan factory or into the ledger.
     pw_detail = _remote_password_fingerprint()
-    plan = _plan("pbs_remote_create", tgt,
-                 lambda: pbs_plan_remote_create(
+    return run_governed(
+        "pbs_remote_create", tgt,
+        plan=lambda: pbs_plan_remote_create(
                      name, host, auth_id, fingerprint=fingerprint,
-                     port=port, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pbs_remote_create", tgt,
-                    lambda: pbs_cfg_remote_create(
+                     port=port, comment=comment),
+        execute=lambda: pbs_cfg_remote_create(
                         pbs, name, host, auth_id, password,
                         fingerprint=fingerprint, port=port, comment=comment),
-                    mutation=True, outcome="ok",
-                    detail={**pw_detail, "confirmed": True})
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -889,13 +864,11 @@ def pbs_remote_delete(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/remote/{name}"
-    plan = _plan("pbs_remote_delete", tgt,
-                 lambda: pbs_plan_remote_delete(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_remote_delete", tgt,
-                    lambda: pbs_cfg_remote_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_remote_delete", tgt,
+        plan=lambda: pbs_plan_remote_delete(name),
+        execute=lambda: pbs_cfg_remote_delete(pbs, name),
+        confirm=confirm)
 
 
 @tool()
@@ -931,19 +904,17 @@ def pbs_traffic_control_upsert(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/traffic-control/{name}"
-    plan = _plan("pbs_traffic_control_upsert", tgt,
-                 lambda: pbs_plan_traffic_control_upsert(
+    return run_governed(
+        "pbs_traffic_control_upsert", tgt,
+        plan=lambda: pbs_plan_traffic_control_upsert(
                      pbs, name, rate_in=rate_in, rate_out=rate_out, network=network,
                      burst_in=burst_in, burst_out=burst_out, timeframe=timeframe,
-                     comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_traffic_control_upsert", tgt,
-                    lambda: pbs_cfg_traffic_control_upsert(
+                     comment=comment),
+        execute=lambda: pbs_cfg_traffic_control_upsert(
                         pbs, name, rate_in=rate_in, rate_out=rate_out, network=network,
                         burst_in=burst_in, burst_out=burst_out, timeframe=timeframe,
                         comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -963,13 +934,11 @@ def pbs_traffic_control_delete(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/traffic-control/{name}"
-    plan = _plan("pbs_traffic_control_delete", tgt,
-                 lambda: pbs_plan_traffic_control_delete(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_traffic_control_delete", tgt,
-                    lambda: pbs_cfg_traffic_control_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_traffic_control_delete", tgt,
+        plan=lambda: pbs_plan_traffic_control_delete(name),
+        execute=lambda: pbs_cfg_traffic_control_delete(pbs, name),
+        confirm=confirm)
 
 
 # --- PBS APT plane (patch-visibility + repository governance, Wave 1b) ---
@@ -1108,14 +1077,11 @@ def pbs_apt_repository_set(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/nodes/{node}/apt/repositories:{path}#{index}"
-    plan = _plan("pbs_apt_repository_set", tgt,
-                 lambda: pbs_plan_apt_repository_set(pbs, path, index, node, enabled, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_apt_repository_set", tgt,
-                    lambda: pbs_apt_repository_set_op(pbs, path, index, node, enabled, digest),
-                    mutation=True, outcome="ok",
-                    detail={"path": path, "index": index, "confirmed": True})
+    return run_governed(
+        "pbs_apt_repository_set", tgt,
+        plan=lambda: pbs_plan_apt_repository_set(pbs, path, index, node, enabled, digest),
+        execute=lambda: pbs_apt_repository_set_op(pbs, path, index, node, enabled, digest),
+        confirm=confirm, detail={"path": path, "index": index})
 
 
 @tool()
@@ -1138,11 +1104,8 @@ def pbs_apt_repository_add(
     """
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/nodes/{node}/apt/repositories:{handle}"
-    plan = _plan("pbs_apt_repository_add", tgt,
-                 lambda: pbs_plan_apt_repository_add(pbs, handle, node, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_apt_repository_add", tgt,
-                    lambda: pbs_apt_repository_add_op(pbs, handle, node, digest),
-                    mutation=True, outcome="ok",
-                    detail={"handle": handle, "confirmed": True})
+    return run_governed(
+        "pbs_apt_repository_add", tgt,
+        plan=lambda: pbs_plan_apt_repository_add(pbs, handle, node, digest),
+        execute=lambda: pbs_apt_repository_add_op(pbs, handle, node, digest),
+        confirm=confirm, detail={"handle": handle})

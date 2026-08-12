@@ -10,6 +10,7 @@ from __future__ import annotations
 import anyio
 import pytest
 
+from proximo._mcpcompat import tool_input_schema
 from proximo.governed import GovernedError, _normalize, call_governed, list_governed
 
 
@@ -33,7 +34,7 @@ def test_unknown_tool_is_404():
 
 def test_missing_required_param_is_400():
     tools = anyio.run(list_governed)
-    tool = next(t for t in tools if t.inputSchema.get("required"))
+    tool = next(t for t in tools if tool_input_schema(t).get("required"))
     with pytest.raises(GovernedError) as ei:
         anyio.run(call_governed, tool.name, {})
     assert ei.value.status == 400
@@ -67,9 +68,8 @@ def test_tool_error_message_never_leaks_the_underlying_text(monkeypatch):
     # text — a bearer-token caller must not read secrets/infra out of an error response.
     import subprocess
 
-    from mcp.server.fastmcp.exceptions import ToolError
-
     from proximo import server
+    from proximo._mcpcompat import ToolError
 
     secret_cmd = ["ssh", "root@host-sentinel", "pct exec 9 -- mysqldump --password=pw-sentinel db"]
 
@@ -87,10 +87,10 @@ def test_tool_error_message_never_leaks_the_underlying_text(monkeypatch):
 
 
 def test_validation_error_maps_to_400(monkeypatch):
-    from mcp.server.fastmcp.exceptions import ToolError
     from pydantic import BaseModel, ValidationError
 
     from proximo import server
+    from proximo._mcpcompat import ToolError
 
     class _M(BaseModel):
         n: int

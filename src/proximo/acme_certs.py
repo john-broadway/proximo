@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
@@ -290,6 +291,10 @@ def plan_acme_account_delete(api, name: str) -> Plan:
 # Plan factories — ACME plugins
 # ---------------------------------------------------------------------------
 
+# Secret-shaped kwarg on this plane: the DNS-provider credential blob.
+_PLUGIN_SECRET_KEYS = frozenset({"data"})
+
+
 def _redact_plugin_kw(kw: dict) -> dict:
     """Mask the DNS-provider credential blob before it enters a plan string.
 
@@ -297,7 +302,7 @@ def _redact_plugin_kw(kw: dict) -> dict:
     plan.change is BOTH returned to the caller AND written to the tamper-evident PROVE ledger, so the
     raw value must never appear there — this is the one credential field that lacked a redaction path.
     """
-    return {k: ("[redacted]" if k == "data" else v) for k, v in kw.items()}
+    return redact_secrets(kw, _PLUGIN_SECRET_KEYS)
 
 
 def plan_acme_plugin_create(plugin_id: str, plugin_type: str, **kw) -> Plan:

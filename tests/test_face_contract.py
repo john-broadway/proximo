@@ -2,9 +2,11 @@
 
 Transport-agnosticism is only real if it's enforced. Every network face must (1) route tool
 calls through ``governed.call_governed``/``list_governed`` — never import a Proxmox backend or
-call the service builders directly, (2) touch ``server`` only for the three sanctioned seams
-(``_apply_surfaces`` registry scoping, ``_ledger`` rejection audits, ``_record_session``
-arrival/departure entries) plus any per-face seam granted explicitly in EXTRA_SERVER_ATTRS
+call the service builders directly, (2) touch ``server`` only for the two sanctioned seams
+(``_ledger`` rejection audits, ``_record_session`` arrival/departure entries — registry
+scoping goes through ``webguard.apply_surfaces_or_exit`` -> ``door._apply_surfaces`` since the
+A11 3b retarget, so a face reaching it via ``server`` again is refused as drift) plus any
+per-face seam granted explicitly in EXTRA_SERVER_ATTRS
 (today: ``server.mcp`` for the MCP-native face, which serves the spine's own protocol and so has
 nothing to adapt), and (3) mount the ONE shared perimeter stack from ``webguard.guard_middleware``,
 in its contract order. A new face inherits the spine by following these imports; this test refuses
@@ -49,8 +51,10 @@ FORBIDDEN = (
     r"\b_audited\s*\(",               # calling the funnel directly = skipping name-based dispatch
 )
 
-# The ONLY server attributes a face may touch (the three sanctioned seams).
-ALLOWED_SERVER_ATTRS = {"_apply_surfaces", "_ledger", "_record_session"}
+# The ONLY server attributes a face may touch (the two sanctioned seams). `_apply_surfaces`
+# left this set with the A11 3b retarget: scoping is door's, reached via webguard's helper —
+# a face touching server._apply_surfaces again would re-open the coupling 3b closed.
+ALLOWED_SERVER_ATTRS = {"_ledger", "_record_session"}
 
 # Per-face EXTRA seams, granted individually so the global set stays tight. The MCP-HTTP face's
 # whole purpose is serving the FastMCP instance over the SDK's native transport — `server.mcp`

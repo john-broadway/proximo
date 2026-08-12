@@ -33,7 +33,7 @@ from proximo.cluster_ops import (
 from proximo.projection import envelope_rows, project_rows
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 from proximo.storage_admin import (
@@ -149,13 +149,11 @@ def pve_guest_migrate(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"{kind}/{vmid}->{target}"
-    plan = _plan("pve_guest_migrate", tgt,
-                 lambda: plan_migrate(api, vmid, target, kind, node, online))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_guest_migrate", tgt,
-                    lambda: guest_migrate(api, vmid, target, kind, node, online),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_guest_migrate", tgt,
+        plan=lambda: plan_migrate(api, vmid, target, kind, node, online),
+        execute=lambda: guest_migrate(api, vmid, target, kind, node, online),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -175,13 +173,11 @@ def pve_ha_resource_add(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"ha:{kind}/{vmid}"
-    plan = _plan("pve_ha_resource_add", tgt,
-                 lambda: plan_ha_resource_add(vmid, kind, group, state, max_restart, max_relocate))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ha_resource_add", tgt,
-                    lambda: ha_resource_add(api, vmid, kind, group, state, max_restart, max_relocate),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_ha_resource_add", tgt,
+        plan=lambda: plan_ha_resource_add(vmid, kind, group, state, max_restart, max_relocate),
+        execute=lambda: ha_resource_add(api, vmid, kind, group, state, max_restart, max_relocate),
+        confirm=confirm)
 
 
 @tool()
@@ -197,13 +193,11 @@ def pve_ha_resource_remove(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"ha:{kind}/{vmid}"
-    plan = _plan("pve_ha_resource_remove", tgt,
-                 lambda: plan_ha_resource_remove(vmid, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ha_resource_remove", tgt,
-                    lambda: ha_resource_remove(api, vmid, kind),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_ha_resource_remove", tgt,
+        plan=lambda: plan_ha_resource_remove(vmid, kind),
+        execute=lambda: ha_resource_remove(api, vmid, kind),
+        confirm=confirm)
 
 
 @tool()
@@ -226,14 +220,12 @@ def pve_ha_rule_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"ha/rules/{rule}"
-    plan = _plan("pve_ha_rule_create", tgt,
-                 lambda: plan_ha_rule_create(rule, rule_type, resources, nodes, strict, affinity, disable))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ha_rule_create", tgt,
-                    lambda: ha_rule_create(api, rule, rule_type, resources, comment, disable,
+    return run_governed(
+        "pve_ha_rule_create", tgt,
+        plan=lambda: plan_ha_rule_create(rule, rule_type, resources, nodes, strict, affinity, disable),
+        execute=lambda: ha_rule_create(api, rule, rule_type, resources, comment, disable,
                                            nodes, strict, affinity),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -257,15 +249,13 @@ def pve_ha_rule_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"ha/rules/{rule}"
-    plan = _plan("pve_ha_rule_update", tgt,
-                 lambda: plan_ha_rule_update(api, rule, comment, disable, resources, rule_type,
-                                             nodes, strict, affinity, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ha_rule_update", tgt,
-                    lambda: ha_rule_update(api, rule, comment, disable, resources, rule_type,
+    return run_governed(
+        "pve_ha_rule_update", tgt,
+        plan=lambda: plan_ha_rule_update(api, rule, comment, disable, resources, rule_type,
+                                             nodes, strict, affinity, delete),
+        execute=lambda: ha_rule_update(api, rule, comment, disable, resources, rule_type,
                                            nodes, strict, affinity, delete, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -280,12 +270,11 @@ def pve_ha_rule_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"ha/rules/{rule}"
-    plan = _plan("pve_ha_rule_delete", tgt, lambda: plan_ha_rule_delete(api, rule))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_ha_rule_delete", tgt,
-                    lambda: ha_rule_delete(api, rule),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_ha_rule_delete", tgt,
+        plan=lambda: plan_ha_rule_delete(api, rule),
+        execute=lambda: ha_rule_delete(api, rule),
+        confirm=confirm)
 
 
 # --- Task control + resource pools (read) ---
@@ -385,12 +374,11 @@ def pve_task_stop(
     NO undo. confirm=True to execute. Synchronous cancellation signal (returns null, not a UPID) —
     the task may run briefly before it sees the signal. Find UPIDs to stop via pve_tasks_list."""
     _, api, _, _ = _proximo_server._svc()
-    plan = _plan("pve_task_stop", upid, lambda: plan_task_stop(upid, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_task_stop", upid,
-                    lambda: task_stop(api, upid, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_task_stop", upid,
+        plan=lambda: plan_task_stop(upid, node),
+        execute=lambda: task_stop(api, upid, node),
+        confirm=confirm)
 
 
 @tool()
@@ -404,12 +392,11 @@ def pve_pool_create(
     guests/storage with pve_pool_update."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"pool/{poolid}"
-    plan = _plan("pve_pool_create", tgt, lambda: plan_pool_create(poolid, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_pool_create", tgt,
-                    lambda: pool_create(api, poolid, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_pool_create", tgt,
+        plan=lambda: plan_pool_create(poolid, comment),
+        execute=lambda: pool_create(api, poolid, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -426,13 +413,11 @@ def pve_pool_update(
     pve_pool_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"pool/{poolid}"
-    plan = _plan("pve_pool_update", tgt,
-                 lambda: plan_pool_update(poolid, vms, storage, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_pool_update", tgt,
-                    lambda: pool_update(api, poolid, vms, storage, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_pool_update", tgt,
+        plan=lambda: plan_pool_update(poolid, vms, storage, delete),
+        execute=lambda: pool_update(api, poolid, vms, storage, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -445,12 +430,11 @@ def pve_pool_delete(
     pve_pool_update). confirm=True to execute. Synchronous — returns null."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"pool/{poolid}"
-    plan = _plan("pve_pool_delete", tgt, lambda: plan_pool_delete(api, poolid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_pool_delete", tgt,
-                    lambda: pool_delete(api, poolid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_pool_delete", tgt,
+        plan=lambda: plan_pool_delete(api, poolid),
+        execute=lambda: pool_delete(api, poolid),
+        confirm=confirm)
 
 
 # --- Storage administration (storage.cfg CRUD) ---
@@ -498,15 +482,13 @@ def pve_storage_create(
     confirm=True writes storage.cfg (the confirm result payload is typically null)."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"storage/{storage}"
-    plan = _plan("pve_storage_create", tgt,
-                 lambda: plan_storage_create(storage, storage_type, content, path, server,
-                                             export, nodes, disable, shared))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_storage_create", tgt,
-                    lambda: storage_create(api, storage, storage_type, content, path,
+    return run_governed(
+        "pve_storage_create", tgt,
+        plan=lambda: plan_storage_create(storage, storage_type, content, path, server,
+                                             export, nodes, disable, shared),
+        execute=lambda: storage_create(api, storage, storage_type, content, path,
                                           server, export, nodes, disable, shared),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -525,13 +507,11 @@ def pve_storage_update(
     pve_storage_delete then pve_storage_create instead."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"storage/{storage}"
-    plan = _plan("pve_storage_update", tgt,
-                 lambda: plan_storage_update(api, storage, content, nodes, disable, shared, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_storage_update", tgt,
-                    lambda: storage_update(api, storage, content, nodes, disable, shared, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_storage_update", tgt,
+        plan=lambda: plan_storage_update(api, storage, content, nodes, disable, shared, delete),
+        execute=lambda: storage_update(api, storage, content, nodes, disable, shared, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -545,9 +525,8 @@ def pve_storage_delete(
     same config."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"storage/{storage}"
-    plan = _plan("pve_storage_delete", tgt, lambda: plan_storage_delete(api, storage))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_storage_delete", tgt,
-                    lambda: storage_delete(api, storage),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_storage_delete", tgt,
+        plan=lambda: plan_storage_delete(api, storage),
+        execute=lambda: storage_delete(api, storage),
+        confirm=confirm)

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from proximo import server
-from proximo.server import SURFACES, surface_keep
+from proximo import door, server
+from proximo.door import SURFACES, surface_keep
 
 REGISTRY = set(server.mcp._tool_manager._tools)  # read-only snapshot of the live registry
 
@@ -22,7 +22,7 @@ REGISTRY = set(server.mcp._tool_manager._tools)  # read-only snapshot of the liv
 # (proximo_call, the by-name escape hatch) meant six edits and six chances to miss one. The
 # property under test is "this filter keeps its plane PLUS whatever is never scopeable", and
 # that is what this now says.
-ALWAYS = set(server._ALWAYS_REGISTERED)
+ALWAYS = set(door._ALWAYS_REGISTERED)
 
 def test_unset_and_blank_are_inert():
     assert surface_keep(REGISTRY, None) == REGISTRY
@@ -104,20 +104,21 @@ def test_apply_surfaces_prunes_a_registry(monkeypatch):
                 return fn
             return deco
 
-    monkeypatch.setattr(server, "LEAN_CATALOG", dict(server.LEAN_CATALOG))
+    # LEAN_CATALOG is door's module global (A11 3a) — save/patch it where it lives.
+    monkeypatch.setattr(door, "LEAN_CATALOG", dict(door.LEAN_CATALOG))
     monkeypatch.setenv("PROXIMO_SURFACES", "pve")
     monkeypatch.delenv("PROXIMO_TOOLS", raising=False)
     monkeypatch.delenv("PROXIMO_TOOLSETS", raising=False)
     fake = _FakeMCP()
-    server._apply_surfaces(fake)
+    door._apply_surfaces(fake)
 
     # 1. THE PRUNE RAN, AND RAN FIRST. Asserted on the snapshot, not on `removed`: apply_lean
     #    also removes every non-facade tool, so `removed` contains ct_exec/pbs_prune whether or
     #    not the surface prune happened — deleting the prune entirely left this test green
     #    (mutation M01). What only the prune can produce is a CATALOG that never saw them.
-    assert "pve_doctor" in server.LEAN_CATALOG          # the named plane survived into the catalog
-    assert "ct_exec" not in server.LEAN_CATALOG         # off-plane: pruned BEFORE the snapshot
-    assert "pbs_prune" not in server.LEAN_CATALOG
+    assert "pve_doctor" in door.LEAN_CATALOG          # the named plane survived into the catalog
+    assert "ct_exec" not in door.LEAN_CATALOG         # off-plane: pruned BEFORE the snapshot
+    assert "pbs_prune" not in door.LEAN_CATALOG
     # 2. the removals really were driven by name...
     assert {"ct_exec", "pbs_prune"} <= set(removed)
     # 3. ...and the door stayed the default facade, which is what makes SURFACES scope-only.
@@ -148,7 +149,7 @@ def test_autoscope_off_still_serves_the_facade_unnarrowed(monkeypatch):
     kept = _probe_registry(monkeypatch, PROXIMO_AUTOSCOPE="off")
     assert "proximo_find_tools" in kept
     assert "pve_doctor" not in kept
-    assert any(n.startswith("pmg_") for n in server.LEAN_CATALOG)  # off → searchable set unpruned
+    assert any(n.startswith("pmg_") for n in door.LEAN_CATALOG)  # off → searchable set unpruned
 
 
 def test_apply_surfaces_twice_does_not_narrow_the_searchable_world(monkeypatch):
@@ -156,20 +157,20 @@ def test_apply_surfaces_twice_does_not_narrow_the_searchable_world(monkeypatch):
     Post-flip, a second pass would re-run apply_lean over the FACADE and snapshot those 6 tools
     as LEAN_CATALOG — collapsing the searchable catalog from ~906 to 6 with no error. No
     production path calls it twice today; this pins that an embedder who does is safe."""
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE",
                 "PROXIMO_TARGETS", "PROXIMO_API_BASE_URL", "PROXIMO_PBS_BASE_URL",
                 "PROXIMO_PMG_BASE_URL", "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC",
                 "PROXIMO_MEMORY", "PROXIMO_WIKI"):
         monkeypatch.delenv(var, raising=False)
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
     full = len(m._tool_manager._tools)
-    server._apply_surfaces(m)
-    once = dict(server.LEAN_CATALOG)
-    server._apply_surfaces(m)
-    assert len(server.LEAN_CATALOG) == len(once) == full, (
-        f"double apply narrowed the searchable catalog {full} -> {len(server.LEAN_CATALOG)}")
+    door._apply_surfaces(m)
+    once = dict(door.LEAN_CATALOG)
+    door._apply_surfaces(m)
+    assert len(door.LEAN_CATALOG) == len(once) == full, (
+        f"double apply narrowed the searchable catalog {full} -> {len(door.LEAN_CATALOG)}")
     assert "proximo_find_tools" in m._tool_manager._tools
 
 
@@ -204,9 +205,9 @@ def test_surfaces_scopes_the_plane_without_picking_the_door(monkeypatch):
     assert {"proximo_find_tools", "proximo_tool_schema", "proximo_call"} <= kept
     assert "pve_doctor" not in kept          # the catalog is searchable, not resident
     # ...and the operator's plane choice still scopes the SEARCHABLE world behind the facade.
-    assert any(n.startswith("pve_") for n in server.LEAN_CATALOG)
-    assert any(n.startswith("pbs_") for n in server.LEAN_CATALOG)
-    assert not any(n.startswith(("pmg_", "pdm_")) for n in server.LEAN_CATALOG)
+    assert any(n.startswith("pve_") for n in door.LEAN_CATALOG)
+    assert any(n.startswith("pbs_") for n in door.LEAN_CATALOG)
+    assert not any(n.startswith(("pmg_", "pdm_")) for n in door.LEAN_CATALOG)
 
 
 def test_surfaces_all_is_a_scope_not_a_door(monkeypatch):
@@ -220,8 +221,8 @@ def test_surfaces_all_is_a_scope_not_a_door(monkeypatch):
     kept = _probe_registry(monkeypatch, PROXIMO_SURFACES="all")
     assert "proximo_find_tools" in kept
     assert "pve_doctor" not in kept
-    assert any(n.startswith("pmg_") for n in server.LEAN_CATALOG)   # nothing narrowed away
-    assert any(n.startswith("pdm_") for n in server.LEAN_CATALOG)
+    assert any(n.startswith("pmg_") for n in door.LEAN_CATALOG)   # nothing narrowed away
+    assert any(n.startswith("pdm_") for n in door.LEAN_CATALOG)
 
 
 def test_toolsets_catalog_restores_the_preflip_door(monkeypatch):
@@ -234,7 +235,7 @@ def test_toolsets_catalog_restores_the_preflip_door(monkeypatch):
 
 def test_autoscope_prunes_to_configured_planes(monkeypatch):
     """In catalog mode, a PVE+PBS-only box auto-serves just those planes' tools."""
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_SURFACES", "PROXIMO_AUTOSCOPE", "PROXIMO_PMG_BASE_URL",
                 "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC", "PROXIMO_TARGETS"):
         monkeypatch.delenv(var, raising=False)
@@ -242,10 +243,10 @@ def test_autoscope_prunes_to_configured_planes(monkeypatch):
     monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
     monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example.lan:8007/api2/json")
 
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)  # mirror the full surface
     full = len(m._tool_manager._tools)
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     kept = set(m._tool_manager._tools)
 
     assert len(kept) < full                                   # it narrowed
@@ -268,7 +269,7 @@ def test_autoscope_prunes_to_configured_planes(monkeypatch):
 # The test doubles never saw it because they mirror the full registry or disable autoscope.
 
 def _probe_registry(monkeypatch, pve=True, **env):
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE",
                 "PROXIMO_TARGETS", "PROXIMO_API_BASE_URL",
                 "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL", "PROXIMO_PDM_BASE_URL",
@@ -278,9 +279,9 @@ def _probe_registry(monkeypatch, pve=True, **env):
         monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
     for k, v in env.items():
         monkeypatch.setenv(k, v)
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     return set(m._tool_manager._tools)
 
 
@@ -317,7 +318,7 @@ def test_a_utility_surface_alone_is_not_a_data_plane(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     monkeypatch.setenv("PROXIMO_WIKI", "1")
-    assert server._autoscope_keep(set(server.mcp._tool_manager._tools)) is None
+    assert door._autoscope_keep(set(server.mcp._tool_manager._tools)) is None
 
 
 def test_a_utility_surface_alone_does_not_narrow_the_SEARCHABLE_world(monkeypatch):
@@ -331,7 +332,7 @@ def test_a_utility_surface_alone_does_not_narrow_the_SEARCHABLE_world(monkeypatc
     must never narrow the SEARCHABLE world behind it — an ambiguous config gets the same full
     catalog through proximo_find_tools as any other box.
     """
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_API_BASE_URL", "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL",
                 "PROXIMO_PDM_BASE_URL", "PROXIMO_TARGETS", "PROXIMO_AUTOSCOPE",
                 "PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_TOOLS",
@@ -341,13 +342,13 @@ def test_a_utility_surface_alone_does_not_narrow_the_SEARCHABLE_world(monkeypatc
     monkeypatch.setenv("PROXIMO_WIKI", "1")
 
     full = dict(server.mcp._tool_manager._tools)
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(full)
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
 
-    assert set(server.LEAN_CATALOG) == set(full), (
+    assert set(door.LEAN_CATALOG) == set(full), (
         f"ambiguous config narrowed the searchable catalog {len(full)} -> "
-        f"{len(server.LEAN_CATALOG)}; a utility surface is not a data plane")
+        f"{len(door.LEAN_CATALOG)}; a utility surface is not a data plane")
     assert "proximo_find_tools" in m._tool_manager._tools
 
 
@@ -363,25 +364,25 @@ def test_double_apply_on_a_CONFIGURED_box_does_not_collapse_the_catalog(monkeypa
     the searchable world. Measured before the fix: 314 -> 4 on the default door, 312 -> 3 under
     PROXIMO_SURFACES. Embedder-facing only; every shipped entry point applies surfaces once.
     """
-    from mcp.server.fastmcp import FastMCP
-    for door in ({}, {"PROXIMO_SURFACES": "pve"}):
+    from proximo._mcpcompat import ServerClass
+    for door_spec in ({}, {"PROXIMO_SURFACES": "pve"}):
         for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLSETS", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE",
                     "PROXIMO_TARGETS", "PROXIMO_PBS_BASE_URL", "PROXIMO_PMG_BASE_URL",
                     "PROXIMO_PDM_BASE_URL", "PROXIMO_ENABLE_EXEC"):
             monkeypatch.delenv(var, raising=False)
         monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example.lan:8006/api2/json")
-        for k, v in door.items():
+        for k, v in door_spec.items():
             monkeypatch.setenv(k, v)
 
-        m = FastMCP("probe")
+        m = ServerClass("probe")
         m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-        server._apply_surfaces(m)
-        once = len(server.LEAN_CATALOG)
+        door._apply_surfaces(m)
+        once = len(door.LEAN_CATALOG)
         assert once > 100, f"precondition: a real catalog was snapshotted, got {once}"
-        server._apply_surfaces(m)
-        assert len(server.LEAN_CATALOG) == once, (
-            f"door={door or 'default'}: double apply collapsed the searchable catalog "
-            f"{once} -> {len(server.LEAN_CATALOG)}")
+        door._apply_surfaces(m)
+        assert len(door.LEAN_CATALOG) == once, (
+            f"door={door_spec or 'default'}: double apply collapsed the searchable catalog "
+            f"{once} -> {len(door.LEAN_CATALOG)}")
         assert "proximo_find_tools" in m._tool_manager._tools
 
 
@@ -413,7 +414,7 @@ def test_the_all_escape_is_case_insensitive(monkeypatch):
     for spec in ("ALL", " All "):
         kept = _probe_registry(monkeypatch, PROXIMO_SURFACES=spec)
         assert "proximo_find_tools" in kept, spec
-        assert any(n.startswith(("pmg_", "pdm_")) for n in server.LEAN_CATALOG), spec
+        assert any(n.startswith(("pmg_", "pdm_")) for n in door.LEAN_CATALOG), spec
 
 
 def test_catalog_door_stays_silent_when_it_narrows_nothing(monkeypatch, capsys):
@@ -424,7 +425,7 @@ def test_catalog_door_stays_silent_when_it_narrows_nothing(monkeypatch, capsys):
     every plane is configured, `<=` prints "auto-scoped to configured planes (...)" having
     removed nothing, which is a doctor-grade lie about what the server just did to itself.
     """
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
     for var in ("PROXIMO_SURFACES", "PROXIMO_TOOLS", "PROXIMO_AUTOSCOPE", "PROXIMO_TARGETS"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("PROXIMO_TOOLSETS", "catalog")
@@ -437,11 +438,11 @@ def test_catalog_door_stays_silent_when_it_narrows_nothing(monkeypatch, capsys):
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     monkeypatch.setenv("PROXIMO_WIKI", "1")
 
-    m = FastMCP("probe")
+    m = ServerClass("probe")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
     before = len(m._tool_manager._tools)
     capsys.readouterr()                      # drop anything buffered before the call
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     err = capsys.readouterr().err
 
     assert len(m._tool_manager._tools) == before, "precondition: nothing should have been pruned"
@@ -454,13 +455,12 @@ def test_find_tools_no_match_returns_a_recoverable_note():
     """A bare [] on a no-match query reads as a dead end and invites a fabricated/near-miss call.
     On no match, proximo_find_tools returns an explicit note pointing at broader terms / proximo_call;
     a real match still returns the plain list of {name, summary}."""
-    from mcp.server.fastmcp import FastMCP
-
     from proximo import server
+    from proximo._mcpcompat import ServerClass
 
-    m = FastMCP("l5-test")
+    m = ServerClass("l5-test")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
-    server.apply_lean(m)
+    door.apply_lean(m)
     find = m._tool_manager._tools["proximo_find_tools"].fn
 
     miss = find(query="zzzznotarealcapability")

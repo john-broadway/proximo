@@ -9,6 +9,9 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 
+[manifest]
+constraints = [{ name = "mcp", specifier = ">=1.24,<2" }]
+
 [[package]]
 name = "a2a-sdk"
 version = "1.1.0"
@@ -524,7 +527,7 @@ wheels = [
 
 [[package]]
 name = "proximo-proxmox"
-version = "0.32.0"
+version = "0.33.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -542,6 +545,7 @@ a2a = [
 dev = [
     { name = "a2a-sdk", extra = ["signing"] },
     { name = "cryptography" },
+    { name = "packaging" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -556,7 +560,6 @@ http = [
 ]
 mcp-http = [
     { name = "cryptography" },
-    { name = "mcp" },
     { name = "starlette" },
     { name = "uvicorn" },
 ]
@@ -570,8 +573,8 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'http'", specifier = ">=50.0.0,<51" },
     { name = "cryptography", marker = "extra == 'mcp-http'", specifier = ">=50.0.0,<51" },
     { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "mcp", specifier = ">=1.2.0,<2" },
-    { name = "mcp", marker = "extra == 'mcp-http'", specifier = ">=1.8.0,<2" },
+    { name = "mcp", specifier = ">=1.24,<3" },
+    { name = "packaging", marker = "extra == 'dev'", specifier = ">=24" },
     { name = "pydantic", specifier = ">=2,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },

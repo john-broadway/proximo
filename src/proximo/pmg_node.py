@@ -128,8 +128,9 @@ SCHEMA-VERIFIED FACTS (binding on this build — read directly off the live JSON
     matching PVE's OWN node-config convention) — NOT the same shape as this module's other two
     digest-adjacent fields already established in `pmg.py` (the APT-plane `_PMG_APT_DIGEST_RE`,
     `maxLength: 80`, no pattern). A SEPARATE, narrower validator is defined here for this
-    specific field (per this codebase's own per-module/per-field digest-validator precedent,
-    e.g. `pbs_node.py`'s independent `_DIGEST_RE` copy).
+    specific field (per this codebase's per-field digest-validator rule: only the identical
+    64-char SHA-256 config digest is shared, via `_validate.check_digest`; divergent shapes
+    like this one keep their own validator).
 11. **`GET /nodes/{node}/certificates/info` has an OPEN permission** (`permissions: {user: "all"}`
     — any authenticated user, not `admin`/`audit` like every other read in this chunk) — a real
     schema fact, not an oversight; carried through unchanged (Proximo enforces no additional

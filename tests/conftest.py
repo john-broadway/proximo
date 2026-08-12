@@ -48,13 +48,14 @@ def _restore_the_shared_registry():
     real condition with: `env -u VIRTUAL_ENV uv run --isolated --no-project --with pytest
     pytest tests/test_requirements_lock.py -q`."""
     try:
+        import proximo.door as _door
         import proximo.server as _server
     except ImportError:   # the dependency-light job — nothing to snapshot, nothing to restore
         yield
         return
     tools = dict(_server.mcp._tool_manager._tools)
-    lean_catalog = _server.LEAN_CATALOG
-    full_catalog = _server.FULL_CATALOG
+    lean_catalog = _door.LEAN_CATALOG
+    full_catalog = _door.FULL_CATALOG
     try:
         yield
     finally:
@@ -62,8 +63,9 @@ def _restore_the_shared_registry():
         _server.mcp._tool_manager._tools.update(tools)
         # apply_lean/_snapshot_full_catalog REBIND these module globals (not in-place mutation),
         # so restore is assignment of the saved reference, not .update() on a stale object.
-        _server.LEAN_CATALOG = lean_catalog
-        _server.FULL_CATALOG = full_catalog
+        # door OWNS the catalogs (A11 3a/3b): server.py no longer exposes them at all.
+        _door.LEAN_CATALOG = lean_catalog
+        _door.FULL_CATALOG = full_catalog
 
 
 @pytest.fixture(autouse=True)

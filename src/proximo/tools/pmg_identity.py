@@ -78,6 +78,7 @@ from proximo.pmg_identity import (
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -144,16 +145,14 @@ def pmg_access_realm_create(
         autocreate_role_assignment=autocreate_role_assignment, acr_values=acr_values,
         audiences=audiences, prompt=prompt, scopes=scopes, username_claim=username_claim,
     )
-    plan = _plan("pmg_access_realm_create", tgt,
-                 lambda: plan_realm_create(realm, realm_type, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **ck_detail}
-    return _audited("pmg_access_realm_create", tgt,
-                    lambda: realm_create(pmg, realm, realm_type, comment, default, issuer_url,
+    return run_governed(
+        "pmg_access_realm_create", tgt,
+        plan=lambda: plan_realm_create(realm, realm_type, **fields),
+        execute=lambda: realm_create(pmg, realm, realm_type, comment, default, issuer_url,
                                         client_id, client_key, autocreate, autocreate_role,
                                         autocreate_role_assignment, acr_values, audiences,
                                         prompt, scopes, username_claim),
-                    mutation=True, outcome="ok", detail={**ck_detail, "confirmed": True})
+        confirm=confirm, surface=ck_detail)
 
 
 @tool()
@@ -191,15 +190,14 @@ def pmg_access_realm_update(
         autocreate_role_assignment=autocreate_role_assignment, acr_values=acr_values,
         audiences=audiences, prompt=prompt, scopes=scopes,
     )
-    plan = _plan("pmg_access_realm_update", tgt, lambda: plan_realm_update(pmg, realm, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **ck_detail}
-    return _audited("pmg_access_realm_update", tgt,
-                    lambda: realm_update(pmg, realm, comment, default, issuer_url, client_id,
+    return run_governed(
+        "pmg_access_realm_update", tgt,
+        plan=lambda: plan_realm_update(pmg, realm, **fields),
+        execute=lambda: realm_update(pmg, realm, comment, default, issuer_url, client_id,
                                         client_key, autocreate, autocreate_role,
                                         autocreate_role_assignment, acr_values, audiences,
                                         prompt, scopes, delete_props, digest),
-                    mutation=True, outcome="ok", detail={**ck_detail, "confirmed": True})
+        confirm=confirm, surface=ck_detail)
 
 
 @tool()
@@ -214,12 +212,11 @@ def pmg_access_realm_delete(
     config."""
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/auth-realm/{realm}"
-    plan = _plan("pmg_access_realm_delete", tgt, lambda: plan_realm_delete(pmg, realm))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_access_realm_delete", tgt,
-                    lambda: realm_delete(pmg, realm),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_access_realm_delete", tgt,
+        plan=lambda: plan_realm_delete(pmg, realm),
+        execute=lambda: realm_delete(pmg, realm),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -271,13 +268,12 @@ def pmg_access_user_create(
     secret_detail = _user_secret_redacted_detail(password, crypt_pass, keys)
     fields = dict(realm=realm, comment=comment, email=email, enable=enable, expire=expire,
                   firstname=firstname, lastname=lastname)
-    plan = _plan("pmg_access_user_create", tgt, lambda: plan_user_create(userid, role, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **secret_detail}
-    return _audited("pmg_access_user_create", tgt,
-                    lambda: user_create(pmg, userid, role, realm, comment, email, enable,
+    return run_governed(
+        "pmg_access_user_create", tgt,
+        plan=lambda: plan_user_create(userid, role, **fields),
+        execute=lambda: user_create(pmg, userid, role, realm, comment, email, enable,
                                        expire, firstname, lastname, password, crypt_pass, keys),
-                    mutation=True, outcome="ok", detail={**secret_detail, "confirmed": True, "role": role})
+        confirm=confirm, detail={"role": role}, surface=secret_detail)
 
 
 @tool()
@@ -317,15 +313,13 @@ def pmg_access_user_update(
     secret_detail = _user_secret_redacted_detail(password, crypt_pass, keys)
     fields = dict(comment=comment, email=email, enable=enable, expire=expire,
                   firstname=firstname, lastname=lastname, realm=realm)
-    plan = _plan("pmg_access_user_update", tgt,
-                 lambda: plan_user_update(pmg, userid, role, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **secret_detail}
-    return _audited("pmg_access_user_update", tgt,
-                    lambda: user_update(pmg, userid, comment, email, enable, expire, firstname,
+    return run_governed(
+        "pmg_access_user_update", tgt,
+        plan=lambda: plan_user_update(pmg, userid, role, **fields),
+        execute=lambda: user_update(pmg, userid, comment, email, enable, expire, firstname,
                                        lastname, realm, role, password, crypt_pass, keys,
                                        delete_props),
-                    mutation=True, outcome="ok", detail={**secret_detail, "confirmed": True})
+        confirm=confirm, surface=secret_detail)
 
 
 @tool()
@@ -343,12 +337,11 @@ def pmg_access_user_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/users/{userid}"
-    plan = _plan("pmg_access_user_delete", tgt, lambda: plan_user_delete(pmg, userid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_access_user_delete", tgt,
-                    lambda: user_delete(pmg, userid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_access_user_delete", tgt,
+        plan=lambda: plan_user_delete(pmg, userid),
+        execute=lambda: user_delete(pmg, userid),
+        confirm=confirm)
 
 
 @tool()
@@ -369,12 +362,11 @@ def pmg_access_user_unlock_tfa(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/users/{userid}/unlock-tfa"
-    plan = _plan("pmg_access_user_unlock_tfa", tgt, lambda: plan_user_unlock_tfa(userid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_access_user_unlock_tfa", tgt,
-                    lambda: user_unlock_tfa(pmg, userid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_access_user_unlock_tfa", tgt,
+        plan=lambda: plan_user_unlock_tfa(userid),
+        execute=lambda: user_unlock_tfa(pmg, userid),
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -435,15 +427,13 @@ def pmg_access_tfa_add(
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/tfa/{userid}"
     pw_detail = _tfa_password_redacted_detail(password)
-    plan = _plan("pmg_access_tfa_add", tgt, lambda: plan_tfa_add(userid, tfa_type, description))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
     # SECRET HANDLING: type='recovery' results carry one-time codes in 'recovery' — detail must
     # NEVER contain the op result. Non-secret params only.
-    return _audited("pmg_access_tfa_add", tgt,
-                    lambda: tfa_add(pmg, userid, tfa_type, description, password, totp, value, challenge),
-                    mutation=True, outcome="ok",
-                    detail={**pw_detail, "confirmed": True, "type": tfa_type})
+    return run_governed(
+        "pmg_access_tfa_add", tgt,
+        plan=lambda: plan_tfa_add(userid, tfa_type, description),
+        execute=lambda: tfa_add(pmg, userid, tfa_type, description, password, totp, value, challenge),
+        confirm=confirm, detail={"type": tfa_type}, surface=pw_detail)
 
 
 @tool()
@@ -462,13 +452,11 @@ def pmg_access_tfa_update(
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/tfa/{userid}/{tfa_id}"
     pw_detail = _tfa_password_redacted_detail(password)
-    plan = _plan("pmg_access_tfa_update", tgt,
-                 lambda: plan_tfa_update(pmg, userid, tfa_id, description, enable))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pmg_access_tfa_update", tgt,
-                    lambda: tfa_update(pmg, userid, tfa_id, description, enable, password),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+    return run_governed(
+        "pmg_access_tfa_update", tgt,
+        plan=lambda: plan_tfa_update(pmg, userid, tfa_id, description, enable),
+        execute=lambda: tfa_update(pmg, userid, tfa_id, description, enable, password),
+        confirm=confirm, surface=pw_detail)
 
 
 @tool()
@@ -488,12 +476,11 @@ def pmg_access_tfa_delete(
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/access/tfa/{userid}/{tfa_id}"
     pw_detail = _tfa_password_redacted_detail(password)
-    plan = _plan("pmg_access_tfa_delete", tgt, lambda: plan_tfa_delete(pmg, userid, tfa_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **pw_detail}
-    return _audited("pmg_access_tfa_delete", tgt,
-                    lambda: tfa_delete(pmg, userid, tfa_id, password),
-                    mutation=True, outcome="ok", detail={**pw_detail, "confirmed": True})
+    return run_governed(
+        "pmg_access_tfa_delete", tgt,
+        plan=lambda: plan_tfa_delete(pmg, userid, tfa_id),
+        execute=lambda: tfa_delete(pmg, userid, tfa_id, password),
+        confirm=confirm, surface=pw_detail)
 
 
 # ===========================================================================
@@ -553,12 +540,10 @@ def pmg_config_admin_update(
         dkim_selector=dkim_selector, dkim_sign=dkim_sign, dkim_sign_all_mail=dkim_sign_all_mail,
         email=email, http_proxy=http_proxy, statlifetime=statlifetime,
     )
-    plan = _plan("pmg_config_admin_update", tgt,
-                 lambda: plan_admin_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_admin_update", tgt,
-                    lambda: admin_config_update(
+    return run_governed(
+        "pmg_config_admin_update", tgt,
+        plan=lambda: plan_admin_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: admin_config_update(
                         pmg, admin_mail_from=admin_mail_from, advfilter=advfilter, avast=avast,
                         clamav=clamav, consent_text=consent_text, custom_check=custom_check,
                         custom_check_path=custom_check_path, dailyreport=dailyreport, demo=demo,
@@ -567,7 +552,7 @@ def pmg_config_admin_update(
                         http_proxy=http_proxy, statlifetime=statlifetime,
                         delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -608,19 +593,17 @@ def pmg_config_clamav_update(
         archivemaxrec=archivemaxrec, archivemaxsize=archivemaxsize, dbmirror=dbmirror,
         maxcccount=maxcccount, maxscansize=maxscansize, scriptedupdates=scriptedupdates,
     )
-    plan = _plan("pmg_config_clamav_update", tgt,
-                 lambda: plan_clamav_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_clamav_update", tgt,
-                    lambda: clamav_config_update(
+    return run_governed(
+        "pmg_config_clamav_update", tgt,
+        plan=lambda: plan_clamav_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: clamav_config_update(
                         pmg, archiveblockencrypted=archiveblockencrypted,
                         archivemaxfiles=archivemaxfiles, archivemaxrec=archivemaxrec,
                         archivemaxsize=archivemaxsize, dbmirror=dbmirror, maxcccount=maxcccount,
                         maxscansize=maxscansize, scriptedupdates=scriptedupdates,
                         delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -698,12 +681,10 @@ def pmg_config_mail_update(
         smarthostport=smarthostport, smtputf8=smtputf8, spf=spf, tls=tls, tlsheader=tlsheader,
         tlslog=tlslog, verifyreceivers=verifyreceivers,
     )
-    plan = _plan("pmg_config_mail_update", tgt,
-                 lambda: plan_mail_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_mail_update", tgt,
-                    lambda: mail_config_update(
+    return run_governed(
+        "pmg_config_mail_update", tgt,
+        plan=lambda: plan_mail_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: mail_config_update(
                         pmg, accept_broken_mime=accept_broken_mime, banner=banner,
                         before_queue_filtering=before_queue_filtering,
                         conn_count_limit=conn_count_limit, conn_rate_limit=conn_rate_limit,
@@ -722,7 +703,7 @@ def pmg_config_mail_update(
                         spf=spf, tls=tls, tlsheader=tlsheader, tlslog=tlslog,
                         verifyreceivers=verifyreceivers, delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -766,18 +747,16 @@ def pmg_config_spamquar_update(
         mailfrom=mailfrom, port=port, protocol=protocol, quarantinelink=quarantinelink,
         reportstyle=reportstyle, viewimages=viewimages,
     )
-    plan = _plan("pmg_config_spamquar_update", tgt,
-                 lambda: plan_spamquar_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_spamquar_update", tgt,
-                    lambda: spamquar_config_update(
+    return run_governed(
+        "pmg_config_spamquar_update", tgt,
+        plan=lambda: plan_spamquar_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: spamquar_config_update(
                         pmg, allowhrefs=allowhrefs, authmode=authmode, hostname=hostname,
                         lifetime=lifetime, mailfrom=mailfrom, port=port, protocol=protocol,
                         quarantinelink=quarantinelink, reportstyle=reportstyle,
                         viewimages=viewimages, delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -809,16 +788,14 @@ def pmg_config_virusquar_update(
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/virusquar"
     fields = dict(allowhrefs=allowhrefs, lifetime=lifetime, viewimages=viewimages)
-    plan = _plan("pmg_config_virusquar_update", tgt,
-                 lambda: plan_virusquar_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_virusquar_update", tgt,
-                    lambda: virusquar_config_update(
+    return run_governed(
+        "pmg_config_virusquar_update", tgt,
+        plan=lambda: plan_virusquar_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: virusquar_config_update(
                         pmg, allowhrefs=allowhrefs, lifetime=lifetime, viewimages=viewimages,
                         delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -856,16 +833,14 @@ def pmg_config_tfa_webauthn_update(
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/tfa/webauthn"
     fields = dict(allow_subdomains=allow_subdomains, id_=id_, origin=origin, rp=rp)
-    plan = _plan("pmg_config_tfa_webauthn_update", tgt,
-                 lambda: plan_tfa_webauthn_config_update(pmg, delete_props=delete_props, **fields))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_config_tfa_webauthn_update", tgt,
-                    lambda: tfa_webauthn_config_update(
+    return run_governed(
+        "pmg_config_tfa_webauthn_update", tgt,
+        plan=lambda: plan_tfa_webauthn_config_update(pmg, delete_props=delete_props, **fields),
+        execute=lambda: tfa_webauthn_config_update(
                         pmg, allow_subdomains=allow_subdomains, id_=id_, origin=origin, rp=rp,
                         delete_props=delete_props, digest=digest,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # ---------------------------------------------------------------------------
@@ -1020,13 +995,11 @@ def pmg_cluster_node_add(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/cluster/nodes"
-    plan = _plan("pmg_cluster_node_add", tgt,
-                 lambda: plan_cluster_node_add(fingerprint, hostrsapubkey, ip, name, rootrsapubkey, max_cid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_cluster_node_add", tgt,
-                    lambda: cluster_node_add(pmg, fingerprint, hostrsapubkey, ip, name, rootrsapubkey, max_cid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_cluster_node_add", tgt,
+        plan=lambda: plan_cluster_node_add(fingerprint, hostrsapubkey, ip, name, rootrsapubkey, max_cid),
+        execute=lambda: cluster_node_add(pmg, fingerprint, hostrsapubkey, ip, name, rootrsapubkey, max_cid),
+        confirm=confirm)
 
 
 @tool()
@@ -1040,9 +1013,8 @@ def pmg_cluster_update_fingerprints(
     PROXIMO_PMG_* config."""
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/cluster/update-fingerprints"
-    plan = _plan("pmg_cluster_update_fingerprints", tgt, lambda: plan_cluster_update_fingerprints())
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_cluster_update_fingerprints", tgt,
-                    lambda: cluster_update_fingerprints(pmg),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_cluster_update_fingerprints", tgt,
+        plan=lambda: plan_cluster_update_fingerprints(),
+        execute=lambda: cluster_update_fingerprints(pmg),
+        confirm=confirm)

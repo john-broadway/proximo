@@ -1,3 +1,14 @@
+proximo (0.33.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.33.0 (minor: the mcp dual-major port. One build runs
+    the official MCP SDK's 1.x and 2.x (mcp>=1.24,<3) through the
+    proximo._mcpcompat seam; the floor is measured (1.24 is the oldest
+    release that imports and passes the suite; the declared 1.2.0 could
+    not import). The packaged artifacts stay on mcp 1.x this release.
+    No tool or wire shape changes; 906 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Tue, 12 Aug 2026 04:20:00 +0000
+
 proximo (0.32.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.32.0 (minor, BREAKING response shapes - M4 Bucket 2:

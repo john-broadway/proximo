@@ -224,6 +224,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .network import _check_sdn_id, _sdn_csv, _sdn_get_query
 from .planning import RISK_LOW, RISK_MEDIUM, Plan
@@ -357,23 +358,18 @@ def _redact_url_userinfo(value: str | None) -> str | None:
 def _redact_secrets(d: dict) -> dict:
     """Mask credential-shaped fields before they enter a plan string or Plan.current. `key`/
     `token` are the confirmed-secret fields (THE SECRET RULING above) — whole-value swap to
-    `"[redacted]"`, the established Wave 3a/5b `_SECRET_KEYS`/`_redact_secrets` idiom
-    (`pbs_notifications.py`/`pbs_metrics.py`), a fresh per-module copy (not cross-imported
-    from a PBS module). `url` is additionally masked for an embedded HTTP Basic-auth userinfo
+    `"[redacted]"` via the shared `_validate.redact_secrets` mechanic over this plane's own
+    `_SECRET_KEYS`. This module keeps a thin wrapper (the A11 consolidation's one divergent
+    redactor) because `url` is additionally masked for an embedded HTTP Basic-auth userinfo
     credential ONLY (module docstring fact #11, THE URL-USERINFO RULING) — mirrors
     `pbs_admin.py`'s `_redact_http_proxy` idiom for the identical secret-SHAPED-not-
     secret-typed risk: host[:port] stays visible, only user[:pass]@ is masked. This is the
     ONLY place `url` masking happens for a create/update plan's own fresh caller-supplied
     value (which never goes through a read) — `dns_get`/`ipam_get`'s own read-layer strip
     (`_strip_secrets_at_read`) handles the CAPTURED-current side independently."""
-    out: dict = {}
-    for k, v in d.items():
-        if k in _SECRET_KEYS:
-            out[k] = "[redacted]"
-        elif k == "url":
-            out[k] = _redact_url_userinfo(v)
-        else:
-            out[k] = v
+    out = redact_secrets(d, _SECRET_KEYS)
+    if "url" in out:
+        out["url"] = _redact_url_userinfo(out["url"])
     return out
 
 

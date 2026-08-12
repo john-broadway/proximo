@@ -463,7 +463,7 @@ def test_wiki_tools_are_registered():
 
 
 def test_wiki_is_a_scopeable_surface():
-    from proximo.server import SURFACES
+    from proximo.door import SURFACES
 
     assert "wiki" in SURFACES
     assert all(n.startswith(SURFACES["wiki"])
@@ -471,7 +471,7 @@ def test_wiki_is_a_scopeable_surface():
 
 
 def test_wiki_is_a_scopeable_toolset():
-    from proximo.server import TOOLSETS
+    from proximo.door import TOOLSETS
 
     assert "wiki" in TOOLSETS
     assert all(n.startswith(TOOLSETS["wiki"])

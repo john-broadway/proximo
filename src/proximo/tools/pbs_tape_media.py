@@ -30,7 +30,7 @@ from proximo.pbs_tape_media import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -96,13 +96,11 @@ def pbs_tape_pool_create(
     returns null) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/media-pool/{name}"
-    plan = _plan("pbs_tape_pool_create", tgt,
-                 lambda: plan_tape_pool_create(name, allocation, comment, encrypt, retention, template))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_pool_create", tgt,
-                    lambda: tape_pool_create(pbs, name, allocation, comment, encrypt, retention, template),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_pool_create", tgt,
+        plan=lambda: plan_tape_pool_create(name, allocation, comment, encrypt, retention, template),
+        execute=lambda: tape_pool_create(pbs, name, allocation, comment, encrypt, retention, template),
+        confirm=confirm)
 
 
 @tool()
@@ -127,13 +125,11 @@ def pbs_tape_pool_update(
     config to revert. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/media-pool/{name}"
-    plan = _plan("pbs_tape_pool_update", tgt,
-                 lambda: plan_tape_pool_update(pbs, name, allocation, comment, encrypt, retention, template, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_pool_update", tgt,
-                    lambda: tape_pool_update(pbs, name, allocation, comment, encrypt, retention, template, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_pool_update", tgt,
+        plan=lambda: plan_tape_pool_update(pbs, name, allocation, comment, encrypt, retention, template, delete),
+        execute=lambda: tape_pool_update(pbs, name, allocation, comment, encrypt, retention, template, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -151,12 +147,11 @@ def pbs_tape_pool_delete(
     primitive — re-create with pbs_tape_pool_create. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/media-pool/{name}"
-    plan = _plan("pbs_tape_pool_delete", tgt, lambda: plan_tape_pool_delete(pbs, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_pool_delete", tgt,
-                    lambda: tape_pool_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_pool_delete", tgt,
+        plan=lambda: plan_tape_pool_delete(pbs, name),
+        execute=lambda: tape_pool_delete(pbs, name),
+        confirm=confirm)
 
 
 # --- Mutations: Encryption keys ---
@@ -180,19 +175,14 @@ def pbs_tape_key_create(
     to actually encrypt future tape writes. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = "pbs/config/tape-encryption-keys"
-    plan = _plan("pbs_tape_key_create", tgt,
-                 lambda: plan_tape_key_create(password, hint, kdf, key))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING: the raw op result (the fingerprint — not secret) passes straight through;
     # detail must NEVER contain key/password — only non-secret params, mirroring
     # pve_token_create's contract.
-    return _audited(
+    return run_governed(
         "pbs_tape_key_create", tgt,
-        lambda: tape_key_create(pbs, password, hint, kdf, key),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "hint": hint, "kdf": kdf, "key_supplied": key is not None},
-    )
+        plan=lambda: plan_tape_key_create(password, hint, kdf, key),
+        execute=lambda: tape_key_create(pbs, password, hint, kdf, key),
+        confirm=confirm, detail={"hint": hint, "kdf": kdf, "key_supplied": key is not None})
 
 
 @tool()
@@ -217,18 +207,11 @@ def pbs_tape_key_update_password(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/tape-encryption-keys/{fingerprint}"
-    plan = _plan(
+    return run_governed(
         "pbs_tape_key_update_password", tgt,
-        lambda: plan_tape_key_update_password(pbs, fingerprint, hint, new_password, password, kdf, force, digest),
-    )
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_tape_key_update_password", tgt,
-        lambda: tape_key_update_password(pbs, fingerprint, hint, new_password, password, kdf, force, digest),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "hint": hint, "kdf": kdf, "force": force},
-    )
+        plan=lambda: plan_tape_key_update_password(pbs, fingerprint, hint, new_password, password, kdf, force, digest),
+        execute=lambda: tape_key_update_password(pbs, fingerprint, hint, new_password, password, kdf, force, digest),
+        confirm=confirm, detail={"hint": hint, "kdf": kdf, "force": force})
 
 
 @tool()
@@ -247,9 +230,8 @@ def pbs_tape_key_delete(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/tape-encryption-keys/{fingerprint}"
-    plan = _plan("pbs_tape_key_delete", tgt, lambda: plan_tape_key_delete(pbs, fingerprint, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_key_delete", tgt,
-                    lambda: tape_key_delete(pbs, fingerprint, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_key_delete", tgt,
+        plan=lambda: plan_tape_key_delete(pbs, fingerprint, digest),
+        execute=lambda: tape_key_delete(pbs, fingerprint, digest),
+        confirm=confirm)

@@ -286,7 +286,7 @@ def _searchable_narrowing(spec: str, autoscope_off: bool) -> str:
     run — the same class of misreport that let the 0.30.0 door bug stay silent.
 
     *spec* MUST be the EFFECTIVE surfaces spec, not the raw env var. An earlier version of this
-    docstring claimed the three cases were "mutually exclusive in ``server._apply_surfaces``",
+    docstring claimed the three cases were "mutually exclusive in ``door._apply_surfaces``",
     and that premise was false: ``PROXIMO_TOOLSETS`` outranks ``PROXIMO_SURFACES``, so with
     ``TOOLSETS=dynamic`` set the surfaces var is read by nobody and autoscope does the narrowing.
     Passing the raw var made this report ``narrowed to PROXIMO_SURFACES=pmg`` on a box serving
@@ -311,12 +311,12 @@ def _surfaces_report() -> dict:
     configured vs served and how to light up a hidden one. Degrades to a note on any error.
     """
     try:
-        from . import server  # deferred: server imports doctor, so import here, not at module top
+        from . import door, server  # deferred: server imports doctor, so import here, not at module top
         registry = list(server.mcp._tool_manager._tools.keys())
-        configured = server.configured_surfaces()
+        configured = door.configured_surfaces()
 
         def _served(plane: str) -> int:
-            prefixes = server.SURFACES[plane]
+            prefixes = door.SURFACES[plane]
             return sum(1 for n in registry if n.startswith(prefixes))
 
         enable = {
@@ -327,7 +327,7 @@ def _surfaces_report() -> dict:
             "exec": "set PROXIMO_ENABLE_EXEC=1 (grants near-root in-container exec)",
         }
         planes: dict[str, dict] = {}
-        for plane in server.SURFACES:
+        for plane in door.SURFACES:
             served = _served(plane)
             row = {"configured": plane in configured, "served_tools": served}
             # `enable_with` answers "how do I light up a plane I do not have". Keying it on
@@ -339,7 +339,7 @@ def _surfaces_report() -> dict:
                 row["enable_with"] = enable.get(plane, "")
             planes[plane] = row
 
-        # Reported in precedence order, matching server._apply_surfaces. doctor's whole job is to
+        # Reported in precedence order, matching door._apply_surfaces. doctor's whole job is to
         # tell an operator what THIS box is actually serving, so a layer it cannot name is a layer
         # it will silently misreport — caught by dogfooding, where doctor said "auto-scoped" on a
         # box whose surface was in fact being set by PROXIMO_TOOLSETS.

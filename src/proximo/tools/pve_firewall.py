@@ -47,7 +47,7 @@ from proximo.firewall import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -152,16 +152,14 @@ def pve_firewall_rule_add(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/rules"
-    plan = _plan("pve_firewall_rule_add", tgt,
-                 lambda: plan_firewall_rule_add(action, direction, scope, node, vmid, kind,
-                                                source, dest, dport, proto))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_rule_add", tgt,
-                    lambda: firewall_rule_add(api, action, direction, scope, node,
+    return run_governed(
+        "pve_firewall_rule_add", tgt,
+        plan=lambda: plan_firewall_rule_add(action, direction, scope, node, vmid, kind,
+                                                source, dest, dport, proto),
+        execute=lambda: firewall_rule_add(api, action, direction, scope, node,
                                              vmid, kind, source, dest, proto, dport,
                                              sport, comment, enable),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -185,13 +183,11 @@ def pve_firewall_rule_remove(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/rules/{pos}"
-    plan = _plan("pve_firewall_rule_remove", tgt,
-                 lambda: plan_firewall_rule_remove(api, pos, scope, node, vmid, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_rule_remove", tgt,
-                    lambda: firewall_rule_remove(api, pos, scope, node, vmid, kind, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_rule_remove", tgt,
+        plan=lambda: plan_firewall_rule_remove(api, pos, scope, node, vmid, kind),
+        execute=lambda: firewall_rule_remove(api, pos, scope, node, vmid, kind, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -244,13 +240,11 @@ def pve_firewall_rule_update(
         changes["comment"] = comment
     if enable is not None:
         changes["enable"] = enable
-    plan = _plan("pve_firewall_rule_update", tgt,
-                 lambda: plan_firewall_rule_update(api, pos, scope, node, vmid, kind, **changes))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_rule_update", tgt,
-                    lambda: firewall_rule_update(api, pos, scope, node, vmid, kind, digest=digest, **changes),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_rule_update", tgt,
+        plan=lambda: plan_firewall_rule_update(api, pos, scope, node, vmid, kind, **changes),
+        execute=lambda: firewall_rule_update(api, pos, scope, node, vmid, kind, digest=digest, **changes),
+        confirm=confirm)
 
 
 @tool()
@@ -272,13 +266,11 @@ def pve_firewall_set_enabled(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/options"
-    plan = _plan("pve_firewall_set_enabled", tgt,
-                 lambda: plan_firewall_set_enabled(api, enabled, scope, node, vmid, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_set_enabled", tgt,
-                    lambda: firewall_set_enabled(api, enabled, scope, node, vmid, kind),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_set_enabled", tgt,
+        plan=lambda: plan_firewall_set_enabled(api, enabled, scope, node, vmid, kind),
+        execute=lambda: firewall_set_enabled(api, enabled, scope, node, vmid, kind),
+        confirm=confirm)
 
 
 @tool()
@@ -319,13 +311,11 @@ def pve_firewall_alias_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/aliases/{name}"
-    plan = _plan("pve_firewall_alias_create", tgt,
-                 lambda: plan_alias_create(name, cidr, scope, node, vmid, kind, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_alias_create", tgt,
-                    lambda: alias_create(api, name, cidr, scope, node, vmid, kind, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_alias_create", tgt,
+        plan=lambda: plan_alias_create(name, cidr, scope, node, vmid, kind, comment),
+        execute=lambda: alias_create(api, name, cidr, scope, node, vmid, kind, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -350,13 +340,11 @@ def pve_firewall_alias_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/aliases/{name}"
-    plan = _plan("pve_firewall_alias_update", tgt,
-                 lambda: plan_alias_update(api, name, scope, node, vmid, kind, cidr, comment, rename))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_alias_update", tgt,
-                    lambda: alias_update(api, name, scope, node, vmid, kind, cidr, comment, rename, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_alias_update", tgt,
+        plan=lambda: plan_alias_update(api, name, scope, node, vmid, kind, cidr, comment, rename),
+        execute=lambda: alias_update(api, name, scope, node, vmid, kind, cidr, comment, rename, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -376,13 +364,11 @@ def pve_firewall_alias_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/aliases/{name}"
-    plan = _plan("pve_firewall_alias_delete", tgt,
-                 lambda: plan_alias_delete(api, name, scope, node, vmid, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_alias_delete", tgt,
-                    lambda: alias_delete(api, name, scope, node, vmid, kind, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_alias_delete", tgt,
+        plan=lambda: plan_alias_delete(api, name, scope, node, vmid, kind),
+        execute=lambda: alias_delete(api, name, scope, node, vmid, kind, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -404,13 +390,11 @@ def pve_firewall_ipset_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/ipset/{name}"
-    plan = _plan("pve_firewall_ipset_create", tgt,
-                 lambda: plan_ipset_create(name, scope, node, vmid, kind, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_ipset_create", tgt,
-                    lambda: ipset_create(api, name, scope, node, vmid, kind, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_ipset_create", tgt,
+        plan=lambda: plan_ipset_create(name, scope, node, vmid, kind, comment),
+        execute=lambda: ipset_create(api, name, scope, node, vmid, kind, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -431,13 +415,11 @@ def pve_firewall_ipset_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/ipset/{name}"
-    plan = _plan("pve_firewall_ipset_delete", tgt,
-                 lambda: plan_ipset_delete(api, name, scope, node, vmid, kind, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_ipset_delete", tgt,
-                    lambda: ipset_delete(api, name, scope, node, vmid, kind, force),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_ipset_delete", tgt,
+        plan=lambda: plan_ipset_delete(api, name, scope, node, vmid, kind, force),
+        execute=lambda: ipset_delete(api, name, scope, node, vmid, kind, force),
+        confirm=confirm)
 
 
 @tool()
@@ -460,13 +442,11 @@ def pve_firewall_ipset_entry_add(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/ipset/{name}"
-    plan = _plan("pve_firewall_ipset_entry_add", tgt,
-                 lambda: plan_ipset_entry_add(name, cidr, scope, node, vmid, kind, comment, nomatch))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_ipset_entry_add", tgt,
-                    lambda: ipset_entry_add(api, name, cidr, scope, node, vmid, kind, comment, nomatch),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_ipset_entry_add", tgt,
+        plan=lambda: plan_ipset_entry_add(name, cidr, scope, node, vmid, kind, comment, nomatch),
+        execute=lambda: ipset_entry_add(api, name, cidr, scope, node, vmid, kind, comment, nomatch),
+        confirm=confirm)
 
 
 @tool()
@@ -488,13 +468,11 @@ def pve_firewall_ipset_entry_remove(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/ipset/{name}"
-    plan = _plan("pve_firewall_ipset_entry_remove", tgt,
-                 lambda: plan_ipset_entry_remove(name, cidr, scope, node, vmid, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_ipset_entry_remove", tgt,
-                    lambda: ipset_entry_remove(api, name, cidr, scope, node, vmid, kind, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_ipset_entry_remove", tgt,
+        plan=lambda: plan_ipset_entry_remove(name, cidr, scope, node, vmid, kind),
+        execute=lambda: ipset_entry_remove(api, name, cidr, scope, node, vmid, kind, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -511,13 +489,11 @@ def pve_firewall_security_group_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/cluster/groups/{group}"
-    plan = _plan("pve_firewall_security_group_create", tgt,
-                 lambda: plan_security_group_create(group, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_security_group_create", tgt,
-                    lambda: security_group_create(api, group, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_security_group_create", tgt,
+        plan=lambda: plan_security_group_create(group, comment),
+        execute=lambda: security_group_create(api, group, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -533,13 +509,11 @@ def pve_firewall_security_group_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/cluster/groups/{group}"
-    plan = _plan("pve_firewall_security_group_delete", tgt,
-                 lambda: plan_security_group_delete(api, group))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_security_group_delete", tgt,
-                    lambda: security_group_delete(api, group),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_security_group_delete", tgt,
+        plan=lambda: plan_security_group_delete(api, group),
+        execute=lambda: security_group_delete(api, group),
+        confirm=confirm)
 
 
 @tool()
@@ -563,10 +537,8 @@ def pve_firewall_options_set(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"firewall/{scope}/options"
-    plan = _plan("pve_firewall_options_set", tgt,
-                 lambda: plan_firewall_options_set(api, scope, node, vmid, kind, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_firewall_options_set", tgt,
-                    lambda: firewall_options_set(api, scope, node, vmid, kind, options, delete, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_firewall_options_set", tgt,
+        plan=lambda: plan_firewall_options_set(api, scope, node, vmid, kind, options, delete),
+        execute=lambda: firewall_options_set(api, scope, node, vmid, kind, options, delete, digest),
+        confirm=confirm)

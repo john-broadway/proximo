@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.32.0"
+version = "0.33.0"
 description = "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,11 +17,17 @@ classifiers = [
   "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-  # Official Model Context Protocol SDK. Capped below 2: mcp 2.0.0 (2026-07-28) REMOVED
-  # mcp.server.fastmcp, which server.py imports, so an uncapped range made every fresh
-  # install off PyPI resolve a version that cannot import proximo at all. The cap is a
-  # hotfix, not a verdict on 2.x — porting to it is real work, tracked separately.
-  "mcp>=1.2.0,<2",
+  # Official Model Context Protocol SDK — DUAL-MAJOR: one build runs 1.x (FastMCP) and
+  # 2.x (MCPServer) through the src/proximo/_mcpcompat.py seam. The floor is MEASURED, not
+  # inherited (2026-08-12, per-release import probes): the previously declared 1.2.0 could
+  # not import proximo at all — ToolAnnotations is absent from mcp.types through 1.6, and a
+  # fastmcp registration crash on union-annotated params blocks import through 1.21.0
+  # (fixed in 1.21.1). 1.21.1-1.23 import and serve but cannot run the suite
+  # (streamable_http_client arrives at 1.24); 1.24 is the first suite-green release
+  # (full suite verified on 1.24.0). The <3 ceiling excludes the unproven next major; the
+  # admitted set is pinned as a SUPPORTED_MAJORS table in tests/test_dependency_bounds.py
+  # via `packaging` — never a substring check.
+  "mcp>=1.24,<3",
   "httpx>=0.27,<1",  # Proxmox REST API client
   # Imported directly in 43 modules (Field param docs, BeforeValidator coercion) but was
   # only ever a transitive dep via mcp — a future mcp release dropping it would break every
@@ -52,14 +58,14 @@ a2a = ["a2a-sdk[signing]>=1.1,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "c
 # Install with: pip install 'proximo-proxmox[http]'
 # cryptography is for caller-badge verification (proximo.principal) — ES256 JWS pins on this face.
 http = ["uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=50.0.0,<51"]
-# The MCP-over-streamable-HTTP face is OPTIONAL — the SAME FastMCP instance the stdio server runs,
+# The MCP-over-streamable-HTTP face is OPTIONAL — the SAME server instance the stdio door runs,
 # served over the SDK's native Streamable HTTP transport behind the shared webguard perimeter (no
-# third-party stdio→HTTP bridge needed). mcp>=1.8.0 is the streamable_http_app() floor — the base
-# dep stays at its own floor; this extra only raises it for the face that needs the newer API.
-# Install with: pip install 'proximo-proxmox[mcp-http]'
-mcp-http = ["mcp>=1.8.0,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=50.0.0,<51"]
+# third-party stdio→HTTP bridge needed). This extra used to raise the mcp floor to 1.8 for
+# streamable_http_app(); the base floor (>=1.24, measured) now exceeds that on its own, so the
+# extra carries only the ASGI stack. Install with: pip install 'proximo-proxmox[mcp-http]'
+mcp-http = ["uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=50.0.0,<51"]
 dev = [
-  "pytest>=8", "pytest-asyncio>=1.4.0", "ruff>=0.6", "pyright>=1.1",
+  "pytest>=8", "pytest-asyncio>=1.4.0", "ruff>=0.6", "pyright>=1.1", "packaging>=24",
   "a2a-sdk[signing]>=1.1", "uvicorn>=0.30", "starlette>=1.3.1", "cryptography>=50.0.0",  # A2A slice + SIGNET tests
 ]
 
@@ -69,6 +75,15 @@ proximo-proxmox = "proximo.server:main"    # alias matching the PyPI dist name (
 proximo-a2a = "proximo._a2a_entry:main"     # A2A server shim (friendly error without [a2a] extra)
 proximo-http = "proximo._http_entry:main"   # HTTP/OpenAPI face shim (friendly error without [http] extra)
 proximo-mcp-http = "proximo._mcp_http_entry:main"  # MCP-over-streamable-HTTP face shim (friendly error without [mcp-http] extra)
+
+[tool.uv]
+# STAGED ROLLOUT of the mcp major, deliberately: the published metadata above admits 1.x AND
+# 2.x (both suite-proven — CI runs both legs every push), but OUR OWN artifacts (uv.lock →
+# requirements/*.txt → CI default leg, container, SBOM) stay on 1.x for this release. Flipping
+# the shipped container's mcp major is its own later deliberate act, not a side effect of the
+# dual-support port. Remove this constraint to move the lock (and everything downstream of it)
+# to 2.x.
+constraint-dependencies = ["mcp>=1.24,<2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/proximo"]

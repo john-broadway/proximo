@@ -13,6 +13,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 import proximo
+from proximo._mcpcompat import init_server_info, result_is_error
 
 
 def _params(tmp_path) -> StdioServerParameters:
@@ -35,8 +36,9 @@ async def test_mcp_stdio_transport_end_to_end(tmp_path):
         async with ClientSession(read, write) as session:
             init = await asyncio.wait_for(session.initialize(), timeout=30)
             # The handshake must advertise Proximo's OWN version, not the MCP SDK's.
-            assert init.serverInfo.name == "proximo"
-            assert init.serverInfo.version == proximo.__version__
+            info = init_server_info(init)
+            assert info.name == "proximo"
+            assert info.version == proximo.__version__
 
             tools = await asyncio.wait_for(session.list_tools(), timeout=30)
             names = {t.name for t in tools.tools}
@@ -47,12 +49,12 @@ async def test_mcp_stdio_transport_end_to_end(tmp_path):
             assert len(names) < 10
             found = await asyncio.wait_for(
                 session.call_tool("proximo_find_tools", {"query": "guest power"}), timeout=30)
-            assert found.isError is False
+            assert result_is_error(found) is False
             found_text = " ".join(getattr(c, "text", "") or "" for c in (found.content or []))
             assert "pve_guest_power" in found_text  # the catalog is reachable through the facade
 
             # A clean round-trip through the protocol (no PVE needed).
             res = await asyncio.wait_for(session.call_tool("audit_verify", {}), timeout=30)
-            assert res.isError is False
+            assert result_is_error(res) is False
             text = " ".join(getattr(c, "text", "") or "" for c in (res.content or []))
             assert "ok" in text and "true" in text.lower()

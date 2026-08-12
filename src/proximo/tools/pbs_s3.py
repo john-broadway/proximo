@@ -34,7 +34,7 @@ from proximo.pbs_s3 import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -119,22 +119,18 @@ def pbs_s3_client_create(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/s3/{s3_id}"
-    plan = _plan("pbs_s3_client_create", tgt, lambda: plan_s3_client_create(
+    # SECRET HANDLING: detail must NEVER contain secret-key — only non-secret params.
+    return run_governed(
+        "pbs_s3_client_create", tgt,
+        plan=lambda: plan_s3_client_create(
         s3_id, endpoint, access_key, secret_key, region, fingerprint, port, path_style,
         provider_quirks, rate_in, rate_out, burst_in, burst_out,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    # SECRET HANDLING: detail must NEVER contain secret-key — only non-secret params.
-    return _audited(
-        "pbs_s3_client_create", tgt,
-        lambda: s3_client_create(
+    ),
+        execute=lambda: s3_client_create(
             pbs, s3_id, endpoint, access_key, secret_key, region, fingerprint, port, path_style,
             provider_quirks, rate_in, rate_out, burst_in, burst_out,
         ),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "access_key": access_key, "endpoint": endpoint},
-    )
+        confirm=confirm, detail={"access_key": access_key, "endpoint": endpoint})
 
 
 @tool()
@@ -166,20 +162,17 @@ def pbs_s3_client_update(
     with pbs_s3_check after rotating credentials. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/s3/{s3_id}"
-    plan = _plan("pbs_s3_client_update", tgt, lambda: plan_s3_client_update(
+    return run_governed(
+        "pbs_s3_client_update", tgt,
+        plan=lambda: plan_s3_client_update(
         pbs, s3_id, access_key, secret_key, endpoint, region, fingerprint, port, path_style,
         provider_quirks, rate_in, rate_out, burst_in, burst_out, digest, delete,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_s3_client_update", tgt,
-        lambda: s3_client_update(
+    ),
+        execute=lambda: s3_client_update(
             pbs, s3_id, access_key, secret_key, endpoint, region, fingerprint, port, path_style,
             provider_quirks, rate_in, rate_out, burst_in, burst_out, digest, delete,
         ),
-        mutation=True, outcome="ok", detail={"confirmed": True},
-    )
+        confirm=confirm)
 
 
 @tool()
@@ -198,12 +191,11 @@ def pbs_s3_client_delete(
     with pbs_s3_client_create (a fresh secret-key is required). Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/s3/{s3_id}"
-    plan = _plan("pbs_s3_client_delete", tgt, lambda: plan_s3_client_delete(pbs, s3_id, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_s3_client_delete", tgt,
-                    lambda: s3_client_delete(pbs, s3_id, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_s3_client_delete", tgt,
+        plan=lambda: plan_s3_client_delete(pbs, s3_id, digest),
+        execute=lambda: s3_client_delete(pbs, s3_id, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -227,12 +219,11 @@ def pbs_s3_check(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/admin/s3/{s3_id}/check/{bucket}"
-    plan = _plan("pbs_s3_check", tgt, lambda: plan_s3_check(s3_id, bucket, store_prefix))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_s3_check", tgt,
-                    lambda: s3_check(pbs, s3_id, bucket, store_prefix),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_s3_check", tgt,
+        plan=lambda: plan_s3_check(s3_id, bucket, store_prefix),
+        execute=lambda: s3_check(pbs, s3_id, bucket, store_prefix),
+        confirm=confirm)
 
 
 @tool()
@@ -250,13 +241,11 @@ def pbs_s3_reset_counters(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/admin/s3/{s3_id}/reset-counters/{bucket}"
-    plan = _plan("pbs_s3_reset_counters", tgt,
-                 lambda: plan_s3_reset_counters(s3_id, bucket, store_prefix))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_s3_reset_counters", tgt,
-                    lambda: s3_reset_counters(pbs, s3_id, bucket, store_prefix),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_s3_reset_counters", tgt,
+        plan=lambda: plan_s3_reset_counters(s3_id, bucket, store_prefix),
+        execute=lambda: s3_reset_counters(pbs, s3_id, bucket, store_prefix),
+        confirm=confirm)
 
 
 # --- Mutations: Client encryption keys ---
@@ -278,16 +267,11 @@ def pbs_encryption_key_create(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/encryption-keys/{key_id}"
-    plan = _plan("pbs_encryption_key_create", tgt,
-                 lambda: plan_encryption_key_create(key_id, key))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_encryption_key_create", tgt,
-        lambda: encryption_key_create(pbs, key_id, key),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "key_supplied": key is not None},
-    )
+        plan=lambda: plan_encryption_key_create(key_id, key),
+        execute=lambda: encryption_key_create(pbs, key_id, key),
+        confirm=confirm, detail={"key_supplied": key is not None})
 
 
 @tool()
@@ -308,13 +292,11 @@ def pbs_encryption_key_delete(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/encryption-keys/{key_id}"
-    plan = _plan("pbs_encryption_key_delete", tgt,
-                 lambda: plan_encryption_key_delete(key_id, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_encryption_key_delete", tgt,
-                    lambda: encryption_key_delete(pbs, key_id, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_encryption_key_delete", tgt,
+        plan=lambda: plan_encryption_key_delete(key_id, digest),
+        execute=lambda: encryption_key_delete(pbs, key_id, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -334,10 +316,8 @@ def pbs_encryption_key_toggle_archive(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/encryption-keys/{key_id}"
-    plan = _plan("pbs_encryption_key_toggle_archive", tgt,
-                 lambda: plan_encryption_key_toggle_archive(key_id, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_encryption_key_toggle_archive", tgt,
-                    lambda: encryption_key_toggle_archive(pbs, key_id, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_encryption_key_toggle_archive", tgt,
+        plan=lambda: plan_encryption_key_toggle_archive(key_id, digest),
+        execute=lambda: encryption_key_toggle_archive(pbs, key_id, digest),
+        confirm=confirm)

@@ -64,7 +64,7 @@ from proximo.observability import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -210,13 +210,11 @@ def pve_node_service_control(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/services/{service}:{action}"
-    plan = _plan("pve_node_service_control", tgt,
-                 lambda: plan_node_service_control(service, action, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_service_control", tgt,
-                    lambda: node_service_control(api, service, action, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_node_service_control", tgt,
+        plan=lambda: plan_node_service_control(service, action, node),
+        execute=lambda: node_service_control(api, service, action, node),
+        confirm=confirm, outcome="submitted")
 
 
 # --- Notifications & Metrics (Plane E) — PVE notification endpoints, matchers, metrics ---
@@ -248,15 +246,13 @@ def pve_notification_endpoint_create(
     payload). To modify an existing endpoint instead use pve_notification_endpoint_update."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/endpoints/{ep_type}/{name}"
-    plan = _plan("pve_notification_endpoint_create", tgt,
-                 lambda: plan_notification_endpoint_create(
-                     ep_type, name, **{"comment": comment, **(options or {})}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_endpoint_create", tgt,
-                    lambda: notification_endpoint_create(api, ep_type, name,
+    return run_governed(
+        "pve_notification_endpoint_create", tgt,
+        plan=lambda: plan_notification_endpoint_create(
+                     ep_type, name, **{"comment": comment, **(options or {})}),
+        execute=lambda: notification_endpoint_create(api, ep_type, name,
                                                          **{"comment": comment, **(options or {})}),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -274,15 +270,13 @@ def pve_notification_endpoint_update(
     config to revert, or use pve_notification_endpoint_create to make a new one instead."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/endpoints/{ep_type}/{name}"
-    plan = _plan("pve_notification_endpoint_update", tgt,
-                 lambda: plan_notification_endpoint_update(
-                     api, ep_type, name, **{"comment": comment, **(options or {})}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_endpoint_update", tgt,
-                    lambda: notification_endpoint_update(api, ep_type, name,
+    return run_governed(
+        "pve_notification_endpoint_update", tgt,
+        plan=lambda: plan_notification_endpoint_update(
+                     api, ep_type, name, **{"comment": comment, **(options or {})}),
+        execute=lambda: notification_endpoint_update(api, ep_type, name,
                                                          **{"comment": comment, **(options or {})}),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -297,13 +291,11 @@ def pve_notification_endpoint_delete(
     endpoint silently fail until it is re-created with pve_notification_endpoint_create."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/endpoints/{ep_type}/{name}"
-    plan = _plan("pve_notification_endpoint_delete", tgt,
-                 lambda: plan_notification_endpoint_delete(api, ep_type, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_endpoint_delete", tgt,
-                    lambda: notification_endpoint_delete(api, ep_type, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_notification_endpoint_delete", tgt,
+        plan=lambda: plan_notification_endpoint_delete(api, ep_type, name),
+        execute=lambda: notification_endpoint_delete(api, ep_type, name),
+        confirm=confirm)
 
 
 @tool()
@@ -318,13 +310,11 @@ def pve_notification_matcher_set(
     deletion. To remove a matcher use pve_notification_matcher_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/matchers/{name}"
-    plan = _plan("pve_notification_matcher_set", tgt,
-                 lambda: plan_notification_matcher_set(name, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_matcher_set", tgt,
-                    lambda: notification_matcher_set(api, name, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_notification_matcher_set", tgt,
+        plan=lambda: plan_notification_matcher_set(name, comment=comment),
+        execute=lambda: notification_matcher_set(api, name, comment=comment),
+        confirm=confirm)
 
 
 @tool()
@@ -337,13 +327,11 @@ def pve_notification_matcher_delete(
     matching this filter go un-routed until re-created with pve_notification_matcher_set."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/matchers/{name}"
-    plan = _plan("pve_notification_matcher_delete", tgt,
-                 lambda: plan_notification_matcher_delete(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_matcher_delete", tgt,
-                    lambda: notification_matcher_delete(api, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_notification_matcher_delete", tgt,
+        plan=lambda: plan_notification_matcher_delete(name),
+        execute=lambda: notification_matcher_delete(api, name),
+        confirm=confirm)
 
 
 @tool()
@@ -357,13 +345,11 @@ def pve_notification_test(
     endpoint or matcher name — see pve_notification_endpoint_list for endpoint names."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/notifications/targets/{name}"
-    plan = _plan("pve_notification_test", tgt,
-                 lambda: plan_notification_test(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_notification_test", tgt,
-                    lambda: notification_test_op(api, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_notification_test", tgt,
+        plan=lambda: plan_notification_test(name),
+        execute=lambda: notification_test_op(api, name),
+        confirm=confirm)
 
 
 @tool()
@@ -395,17 +381,15 @@ def pve_metrics_server_set(
     pve_metrics_server_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/metrics/server/{metrics_id}"
-    plan = _plan("pve_metrics_server_set", tgt,
-                 lambda: plan_metrics_server_set(metrics_id, type=metrics_type,
+    return run_governed(
+        "pve_metrics_server_set", tgt,
+        plan=lambda: plan_metrics_server_set(metrics_id, type=metrics_type,
                                                  server=server, port=port,
-                                                 disable=disable, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_metrics_server_set", tgt,
-                    lambda: metrics_server_set(api, metrics_id, type=metrics_type,
+                                                 disable=disable, comment=comment),
+        execute=lambda: metrics_server_set(api, metrics_id, type=metrics_type,
                                               server=server, port=port,
                                               disable=disable, comment=comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -418,13 +402,11 @@ def pve_metrics_server_delete(
     server ceases; no data loss, and config is re-creatable with pve_metrics_server_set."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/metrics/server/{metrics_id}"
-    plan = _plan("pve_metrics_server_delete", tgt,
-                 lambda: plan_metrics_server_delete(metrics_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_metrics_server_delete", tgt,
-                    lambda: metrics_server_delete(api, metrics_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_metrics_server_delete", tgt,
+        plan=lambda: plan_metrics_server_delete(metrics_id),
+        execute=lambda: metrics_server_delete(api, metrics_id),
+        confirm=confirm)
 
 
 # ============================================================================
@@ -488,13 +470,11 @@ def pve_mapping_pci_create(
     pve_mapping_pci_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/pci/{mapping_id}"
-    plan = _plan("pve_mapping_pci_create", tgt,
-                 lambda: plan_mapping_pci_create(mapping_id, description=description, map=map))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_pci_create", tgt,
-                    lambda: mapping_pci_create(api, mapping_id, description=description, map=map),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_mapping_pci_create", tgt,
+        plan=lambda: plan_mapping_pci_create(mapping_id, description=description, map=map),
+        execute=lambda: mapping_pci_create(api, mapping_id, description=description, map=map),
+        confirm=confirm)
 
 
 @tool()
@@ -512,15 +492,13 @@ def pve_mapping_pci_update(
     pve_mapping_pci_delete to remove the mapping outright."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/pci/{mapping_id}"
-    plan = _plan("pve_mapping_pci_update", tgt,
-                 lambda: plan_mapping_pci_update(api, mapping_id,
-                                                  description=description, map=map, digest=digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_pci_update", tgt,
-                    lambda: mapping_pci_update(api, mapping_id,
+    return run_governed(
+        "pve_mapping_pci_update", tgt,
+        plan=lambda: plan_mapping_pci_update(api, mapping_id,
+                                                  description=description, map=map, digest=digest),
+        execute=lambda: mapping_pci_update(api, mapping_id,
                                                description=description, map=map, digest=digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -534,13 +512,11 @@ def pve_mapping_pci_delete(
     primitive — re-create with pve_mapping_pci_create to restore."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/pci/{mapping_id}"
-    plan = _plan("pve_mapping_pci_delete", tgt,
-                 lambda: plan_mapping_pci_delete(api, mapping_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_pci_delete", tgt,
-                    lambda: mapping_pci_delete(api, mapping_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_mapping_pci_delete", tgt,
+        plan=lambda: plan_mapping_pci_delete(api, mapping_id),
+        execute=lambda: mapping_pci_delete(api, mapping_id),
+        confirm=confirm)
 
 
 @tool()
@@ -557,13 +533,11 @@ def pve_mapping_usb_create(
     pve_mapping_usb_delete."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/usb/{mapping_id}"
-    plan = _plan("pve_mapping_usb_create", tgt,
-                 lambda: plan_mapping_usb_create(mapping_id, description=description, map=map))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_usb_create", tgt,
-                    lambda: mapping_usb_create(api, mapping_id, description=description, map=map),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_mapping_usb_create", tgt,
+        plan=lambda: plan_mapping_usb_create(mapping_id, description=description, map=map),
+        execute=lambda: mapping_usb_create(api, mapping_id, description=description, map=map),
+        confirm=confirm)
 
 
 @tool()
@@ -581,15 +555,13 @@ def pve_mapping_usb_update(
     pve_mapping_usb_delete to remove the mapping outright."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/usb/{mapping_id}"
-    plan = _plan("pve_mapping_usb_update", tgt,
-                 lambda: plan_mapping_usb_update(api, mapping_id,
-                                                  description=description, map=map, digest=digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_usb_update", tgt,
-                    lambda: mapping_usb_update(api, mapping_id,
+    return run_governed(
+        "pve_mapping_usb_update", tgt,
+        plan=lambda: plan_mapping_usb_update(api, mapping_id,
+                                                  description=description, map=map, digest=digest),
+        execute=lambda: mapping_usb_update(api, mapping_id,
                                                description=description, map=map, digest=digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -603,10 +575,8 @@ def pve_mapping_usb_delete(
     primitive — re-create with pve_mapping_usb_create to restore."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"cluster/mapping/usb/{mapping_id}"
-    plan = _plan("pve_mapping_usb_delete", tgt,
-                 lambda: plan_mapping_usb_delete(api, mapping_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_mapping_usb_delete", tgt,
-                    lambda: mapping_usb_delete(api, mapping_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_mapping_usb_delete", tgt,
+        plan=lambda: plan_mapping_usb_delete(api, mapping_id),
+        execute=lambda: mapping_usb_delete(api, mapping_id),
+        confirm=confirm)

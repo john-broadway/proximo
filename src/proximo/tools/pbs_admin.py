@@ -32,7 +32,7 @@ from proximo.pbs_admin import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -204,22 +204,19 @@ def pbs_node_config_set(
     current config. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/nodes/{node}/config"
-    plan = _plan("pbs_node_config_set", tgt, lambda: plan_node_config_set(
+    return run_governed(
+        "pbs_node_config_set", tgt,
+        plan=lambda: plan_node_config_set(
         pbs, node, acme, acmedomain0, acmedomain1, acmedomain2, acmedomain3, acmedomain4,
         ciphers_tls_1_2, ciphers_tls_1_3, consent_text, default_lang, description, email_from,
         http_proxy, location, task_log_max_days, digest, delete,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_node_config_set", tgt,
-        lambda: node_config_set(
+    ),
+        execute=lambda: node_config_set(
             pbs, node, acme, acmedomain0, acmedomain1, acmedomain2, acmedomain3, acmedomain4,
             ciphers_tls_1_2, ciphers_tls_1_3, consent_text, default_lang, description, email_from,
             http_proxy, location, task_log_max_days, digest, delete,
         ),
-        mutation=True, outcome="ok", detail={"confirmed": True},
-    )
+        confirm=confirm)
 
 
 # --- Mutations: Pull / Push ---
@@ -258,24 +255,19 @@ def pbs_pull(
     relying on it for a large sync. No rollback primitive. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/pull/{store}"
-    plan = _plan("pbs_pull", tgt, lambda: plan_pull(
+    return run_governed(
+        "pbs_pull", tgt,
+        plan=lambda: plan_pull(
         store, remote_store, remote, remote_ns, ns, burst_in, burst_out, decryption_keys,
         encrypted_only, group_filter, max_depth, rate_in, rate_out, remove_vanished,
         resync_corrupt, transfer_last, verified_only, worker_threads,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_pull", tgt,
-        lambda: pull(
+    ),
+        execute=lambda: pull(
             pbs, store, remote_store, remote, remote_ns, ns, burst_in, burst_out,
             decryption_keys, encrypted_only, group_filter, max_depth, rate_in, rate_out,
             remove_vanished, resync_corrupt, transfer_last, verified_only, worker_threads,
         ),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "store": store, "remote_store": remote_store,
-                "remove_vanished": bool(remove_vanished)},
-    )
+        confirm=confirm, detail={"store": store, "remote_store": remote_store, "remove_vanished": bool(remove_vanished)})
 
 
 @tool()
@@ -311,21 +303,16 @@ def pbs_push(
     — a remote push cannot be undone from this side. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/push/{store}"
-    plan = _plan("pbs_push", tgt, lambda: plan_push(
+    return run_governed(
+        "pbs_push", tgt,
+        plan=lambda: plan_push(
         store, remote, remote_store, remote_ns, ns, burst_in, burst_out, encrypted_only,
         encryption_key, group_filter, max_depth, rate_in, rate_out, remove_vanished,
         transfer_last, verified_only, worker_threads,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_push", tgt,
-        lambda: push(
+    ),
+        execute=lambda: push(
             pbs, store, remote, remote_store, remote_ns, ns, burst_in, burst_out,
             encrypted_only, encryption_key, group_filter, max_depth, rate_in, rate_out,
             remove_vanished, transfer_last, verified_only, worker_threads,
         ),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "store": store, "remote": remote,
-                "remote_store": remote_store, "remove_vanished": bool(remove_vanished)},
-    )
+        confirm=confirm, detail={"store": store, "remote": remote, "remote_store": remote_store, "remove_vanished": bool(remove_vanished)})

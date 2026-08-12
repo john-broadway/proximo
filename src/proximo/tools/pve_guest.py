@@ -60,6 +60,7 @@ from proximo.server import (
     _blocked_allowlist,
     _exec_disabled,
     _plan,
+    run_governed,
     tool,
 )
 from proximo.storage import (
@@ -136,14 +137,14 @@ def pve_guest_power(
     """
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{action}"
-    plan = _plan("pve_guest_power", target, lambda: plan_power(api, vmid, action, kind, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # PVE guest power is task-backed (POST .../status/{action} returns a UPID) — async, like the
     # identical-shape node_service_control. Record "submitted", never "ok": the ledger must not claim
     # the guest stopped/started when only the task was accepted.
-    return _audited("pve_guest_power", target, lambda: api.guest_power(vmid, action, kind, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_guest_power", target,
+        plan=lambda: plan_power(api, vmid, action, kind, node),
+        execute=lambda: api.guest_power(vmid, action, kind, node),
+        confirm=confirm, outcome="submitted")
 
 
 # --- Snapshots / UNDO (REST API). Create/rollback/delete are ASYNC -> return a task UPID. ---
@@ -176,12 +177,11 @@ def pve_snapshot_create(
     use pve_snapshot_list."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{snapname}"
-    plan = _plan("pve_snapshot_create", target, lambda: plan_snapshot_create(vmid, snapname, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_snapshot_create", target,
-                    lambda: api.snapshot_create(vmid, snapname, kind, node, description),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_snapshot_create", target,
+        plan=lambda: plan_snapshot_create(vmid, snapname, kind),
+        execute=lambda: api.snapshot_create(vmid, snapname, kind, node, description),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -198,12 +198,11 @@ def pve_rollback(
     pve_snapshot_create."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{snapname}"
-    plan = _plan("pve_rollback", target, lambda: plan_rollback(api, vmid, snapname, kind, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_rollback", target,
-                    lambda: api.snapshot_rollback(vmid, snapname, kind, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_rollback", target,
+        plan=lambda: plan_rollback(api, vmid, snapname, kind, node),
+        execute=lambda: api.snapshot_rollback(vmid, snapname, kind, node),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -220,12 +219,11 @@ def pve_snapshot_delete(
     pve_task_status. To create a snapshot instead of removing one use pve_snapshot_create."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{snapname}"
-    plan = _plan("pve_snapshot_delete", target, lambda: plan_snapshot_delete(vmid, snapname, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_snapshot_delete", target,
-                    lambda: api.snapshot_delete(vmid, snapname, kind, node, force),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_snapshot_delete", target,
+        plan=lambda: plan_snapshot_delete(vmid, snapname, kind),
+        execute=lambda: api.snapshot_delete(vmid, snapname, kind, node, force),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -341,15 +339,12 @@ def pve_create_container(
     use pve_clone."""
     _, api, _, _ = _proximo_server._svc()
     target = f"lxc/{vmid}"
-    plan = _plan("pve_create_container", target,
-                 lambda: plan_create(api, vmid, "lxc", node,
-                                     {"ostemplate": ostemplate, "storage": storage, **(options or {})}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pve_create_container", target,
-        lambda: create_container(api, vmid, ostemplate, storage, node, **(options or {})),
-        mutation=True, outcome="submitted", detail={"confirmed": True})
+        plan=lambda: plan_create(api, vmid, "lxc", node,
+                                     {"ostemplate": ostemplate, "storage": storage, **(options or {})}),
+        execute=lambda: create_container(api, vmid, ostemplate, storage, node, **(options or {})),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -365,12 +360,11 @@ def pve_create_vm(
     instead use pve_clone."""
     _, api, _, _ = _proximo_server._svc()
     target = f"qemu/{vmid}"
-    plan = _plan("pve_create_vm", target, lambda: plan_create(api, vmid, "qemu", node, options or {}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_create_vm", target,
-                    lambda: create_vm(api, vmid, node, **(options or {})),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_create_vm", target,
+        plan=lambda: plan_create(api, vmid, "qemu", node, options or {}),
+        execute=lambda: create_vm(api, vmid, node, **(options or {})),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -392,13 +386,11 @@ def pve_clone(
     on a full clone). To create a guest from scratch instead use pve_create_vm / pve_create_container."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}->{newid}"
-    plan = _plan("pve_clone", target,
-                 lambda: plan_clone(api, vmid, newid, kind, node, storage, full, name, pool))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_clone", target,
-                    lambda: clone_guest(api, vmid, newid, kind, node, name, full, pool, storage),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_clone", target,
+        plan=lambda: plan_clone(api, vmid, newid, kind, node, storage, full, name, pool),
+        execute=lambda: clone_guest(api, vmid, newid, kind, node, name, full, pool, storage),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -416,12 +408,11 @@ def pve_delete_guest(
     pve_task_status. No undo once confirmed."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_delete_guest", target, lambda: plan_delete(api, vmid, kind, node, purge, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_delete_guest", target,
-                    lambda: delete_guest(api, vmid, kind, node, purge, force),
-                    mutation=True, outcome="submitted", detail={"confirmed": True, "purge": purge})
+    return run_governed(
+        "pve_delete_guest", target,
+        plan=lambda: plan_delete(api, vmid, kind, node, purge, force),
+        execute=lambda: delete_guest(api, vmid, kind, node, purge, force),
+        confirm=confirm, outcome="submitted", detail={"purge": purge})
 
 
 # --- Storage / ISO / templates (REST API) ---
@@ -473,15 +464,12 @@ def pve_storage_download(
     fetches. Use pve_storage_content to see what's already on a storage."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{storage}:{filename}"
-    plan = _plan("pve_storage_download", target,
-                 lambda: plan_storage_download(storage, content, url, filename))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pve_storage_download", target,
-        lambda: storage_download_url(api, storage, content, url, filename, node,
+        plan=lambda: plan_storage_download(storage, content, url, filename),
+        execute=lambda: storage_download_url(api, storage, content, url, filename, node,
                                      checksum, checksum_algorithm),
-        mutation=True, outcome="submitted", detail={"confirmed": True})
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -496,12 +484,11 @@ def pve_storage_content_delete(
     guest; confirm=True to execute. Async — returns a UPID or null. Use pve_storage_content to
     find a volid first."""
     _, api, _, _ = _proximo_server._svc()
-    plan = _plan("pve_storage_content_delete", volid, lambda: plan_content_delete(api, storage, volid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_storage_content_delete", volid,
-                    lambda: content_delete(api, storage, volid, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_storage_content_delete", volid,
+        plan=lambda: plan_content_delete(api, storage, volid),
+        execute=lambda: content_delete(api, storage, volid, node),
+        confirm=confirm, outcome="submitted")
 
 
 # --- Guest config edit (REST API). Config PUT is SYNCHRONOUS -> outcome="ok". ---
@@ -535,13 +522,11 @@ def pve_guest_config_set(
     pve_guest_config_revert."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_guest_config_set", target,
-                 lambda: plan_config_set(api, vmid, changes, kind, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_guest_config_set", target,
-                    lambda: guest_config_set(api, vmid, changes, kind, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_guest_config_set", target,
+        plan=lambda: plan_config_set(api, vmid, changes, kind, node),
+        execute=lambda: guest_config_set(api, vmid, changes, kind, node),
+        confirm=confirm)
 
 
 @tool()
@@ -558,13 +543,11 @@ def pve_guest_config_revert(
     silently skipped rather than rejected."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_guest_config_revert", target,
-                 lambda: plan_config_revert(api, vmid, prior_config, kind, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_guest_config_revert", target,
-                    lambda: guest_config_revert(api, vmid, prior_config, kind, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_guest_config_revert", target,
+        plan=lambda: plan_config_revert(api, vmid, prior_config, kind, node),
+        execute=lambda: guest_config_revert(api, vmid, prior_config, kind, node),
+        confirm=confirm)
 
 
 # --- Disk ops (REST API). Resize/move are async -> task UPID -> outcome="submitted". ---
@@ -584,13 +567,11 @@ def pve_disk_resize(
     (poll with pve_task_status). To move a disk to different storage instead use pve_disk_move."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{disk}"
-    plan = _plan("pve_disk_resize", target,
-                 lambda: plan_disk_resize(api, vmid, disk, size, kind, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_disk_resize", target,
-                    lambda: disk_resize(api, vmid, disk, size, kind, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_disk_resize", target,
+        plan=lambda: plan_disk_resize(api, vmid, disk, size, kind, node),
+        execute=lambda: disk_resize(api, vmid, disk, size, kind, node),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -609,13 +590,11 @@ def pve_disk_move(
     grow a disk in place instead of relocating it use pve_disk_resize."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}:{disk}"
-    plan = _plan("pve_disk_move", target,
-                 lambda: plan_disk_move(api, vmid, disk, target_storage, kind, node, delete_source))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_disk_move", target,
-                    lambda: disk_move(api, vmid, disk, target_storage, kind, node, delete_source),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_disk_move", target,
+        plan=lambda: plan_disk_move(api, vmid, disk, target_storage, kind, node, delete_source),
+        execute=lambda: disk_move(api, vmid, disk, target_storage, kind, node, delete_source),
+        confirm=confirm, outcome="submitted")
 
 
 # --- Cloud-init + template (REST API, QEMU). Config POST is synchronous -> outcome="ok". ---
@@ -684,10 +663,8 @@ def pve_template_convert(
     already a template); confirm=True executes, recorded as submitted (async)."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
-    plan = _plan("pve_template_convert", target,
-                 lambda: plan_template_convert(api, vmid, node, kind))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_template_convert", target,
-                    lambda: template_convert(api, vmid, node, kind),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_template_convert", target,
+        plan=lambda: plan_template_convert(api, vmid, node, kind),
+        execute=lambda: template_convert(api, vmid, node, kind),
+        confirm=confirm, outcome="submitted")

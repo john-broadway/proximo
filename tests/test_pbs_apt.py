@@ -216,6 +216,12 @@ class TestCheckPbsAptDigest:
         with pytest.raises(ProximoError, match="invalid digest"):
             _check_pbs_apt_digest("g" * 64)
 
+    def test_rejects_trailing_newline(self):
+        # Inherited for free from the shared `_validate.check_digest` (strict no-strip);
+        # this class had no newline case while the validator was a per-module copy.
+        with pytest.raises(ProximoError, match="invalid digest"):
+            _check_pbs_apt_digest("a" * 64 + "\n")
+
 
 # ─── Op functions — URL/param shape ────────────────────────────────────────────
 

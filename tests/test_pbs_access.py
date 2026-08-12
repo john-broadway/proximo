@@ -266,6 +266,12 @@ class TestCheckDigest:
         with pytest.raises(ProximoError):
             _check_digest("A" * 64)
 
+    def test_rejects_trailing_newline(self):
+        # A11 tightening: the retired per-module copy .strip()ped before matching, which
+        # re-admitted the trailing newline the \Z anchor exists to refuse.
+        with pytest.raises(ProximoError):
+            _check_digest("a" * 64 + "\n")
+
 
 def test_password_redacted_detail_only_when_supplied():
     assert _password_redacted_detail(None) == {}

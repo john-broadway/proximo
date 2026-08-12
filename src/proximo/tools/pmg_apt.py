@@ -49,6 +49,7 @@ from proximo.pmg import (
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -187,14 +188,11 @@ def pmg_apt_repository_set(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/{n}/apt/repositories:{path}#{index}"
-    plan = _plan("pmg_apt_repository_set", tgt,
-                 lambda: pmg_plan_apt_repository_set(pmg, path, index, n, enabled, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_apt_repository_set", tgt,
-                    lambda: pmg_apt_repository_set_op(pmg, path, index, n, enabled, digest),
-                    mutation=True, outcome="ok",
-                    detail={"path": path, "index": index, "confirmed": True})
+    return run_governed(
+        "pmg_apt_repository_set", tgt,
+        plan=lambda: pmg_plan_apt_repository_set(pmg, path, index, n, enabled, digest),
+        execute=lambda: pmg_apt_repository_set_op(pmg, path, index, n, enabled, digest),
+        confirm=confirm, detail={"path": path, "index": index})
 
 
 @tool()
@@ -218,11 +216,8 @@ def pmg_apt_repository_add(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/{n}/apt/repositories:{handle}"
-    plan = _plan("pmg_apt_repository_add", tgt,
-                 lambda: pmg_plan_apt_repository_add(pmg, handle, n, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_apt_repository_add", tgt,
-                    lambda: pmg_apt_repository_add_op(pmg, handle, n, digest),
-                    mutation=True, outcome="ok",
-                    detail={"handle": handle, "confirmed": True})
+    return run_governed(
+        "pmg_apt_repository_add", tgt,
+        plan=lambda: pmg_plan_apt_repository_add(pmg, handle, n, digest),
+        execute=lambda: pmg_apt_repository_add_op(pmg, handle, n, digest),
+        confirm=confirm, detail={"handle": handle})

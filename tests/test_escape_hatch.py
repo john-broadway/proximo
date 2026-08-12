@@ -33,7 +33,8 @@ from unittest import mock
 import anyio
 import pytest
 
-from proximo import server
+from proximo import door, server
+from proximo._mcpcompat import MCP_MAJOR, result_is_error
 from proximo.audit import AuditLedger
 
 
@@ -43,9 +44,9 @@ def _fresh_mcp():
     Same helper as test_lean_wiring; duplicated deliberately so this file states its own
     assumptions rather than inheriting them from the file whose blind spot it exists to cover.
     """
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
 
-    m = FastMCP("proximo-test")
+    m = ServerClass("proximo-test")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
     return m
 
@@ -68,7 +69,7 @@ def test_a_by_name_dispatcher_is_resident_in_the_default_mode(monkeypatch):
     """
     _pve_only(monkeypatch)
     m = _fresh_mcp()
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     registry = m._tool_manager._tools
 
     assert len(registry) < len(server.mcp._tool_manager._tools), (
@@ -96,7 +97,7 @@ def test_a_context_pruned_tool_of_a_configured_plane_stays_reachable(monkeypatch
     monkeypatch.setenv("PROXIMO_TOOLSETS", "pve.guests")
 
     m = _fresh_mcp()
-    server._apply_surfaces(m)
+    door._apply_surfaces(m)
     registry = m._tool_manager._tools
 
     assert "pve_ceph_status" not in registry, (
@@ -150,7 +151,7 @@ def test_the_dispatcher_routes_through_the_decorated_function(monkeypatch):
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(m, catalog, "_probe", {"proximo_target": "box-b"})
+        return await door.dispatch_tool(m, catalog, "_probe", {"proximo_target": "box-b"})
 
     anyio.run(go)
 
@@ -192,7 +193,7 @@ def test_the_network_faces_reach_a_context_pruned_tool(monkeypatch):
     # global-registry leak test_lean_wiring.py:105-109 records paying for once already.
     saved = dict(server.mcp._tool_manager._tools)
     try:
-        server._apply_surfaces()
+        door._apply_surfaces()
         assert "pve_ceph_status" not in server.mcp._tool_manager._tools, (
             "precondition failed: the victim was not pruned")
 
@@ -393,7 +394,7 @@ def test_the_snapshot_is_the_COMPLETE_registry_not_a_subset():
     Mutant it kills: any filter applied to FULL_CATALOG at snapshot time, including one that
     drops a whole plane.
     """
-    catalog = server.escape_catalog()
+    catalog = door.escape_catalog()
     registry = server.mcp._tool_manager._tools
 
     missing = set(registry) - set(catalog)
@@ -424,12 +425,12 @@ def test_dynamic_mode_reaches_a_tool_outside_the_LEAN_CATALOG(monkeypatch):
 
     saved = dict(server.mcp._tool_manager._tools)
     try:
-        server._apply_surfaces()
+        door._apply_surfaces()
         victim = "pmg_cluster_status"   # a plane this box has NOT configured
-        assert victim not in server.LEAN_CATALOG, (
+        assert victim not in door.LEAN_CATALOG, (
             "precondition failed: the victim is inside the lean catalog, so reaching it proves "
             "nothing about the hatch seeing past it")
-        assert victim in server.escape_catalog(), (
+        assert victim in door.escape_catalog(), (
             "dynamic mode's hatch cannot see past the lean catalog — a by-name call to a tool "
             "outside it is unreachable, which is the bug this feature exists to fix")
     finally:
@@ -452,7 +453,7 @@ def test_dispatch_leaves_the_registry_unchanged(monkeypatch):
 
     saved = dict(server.mcp._tool_manager._tools)
     try:
-        server._apply_surfaces()
+        door._apply_surfaces()
         before = set(server.mcp._tool_manager._tools)
         assert "pve_ceph_status" not in before, "precondition failed: victim not pruned"
 
@@ -481,8 +482,8 @@ def test_resolve_alias_maps_guesses_and_passes_others_through():
 
 
 def _empty_mcp():
-    from mcp.server.fastmcp import FastMCP
-    return FastMCP("proximo-alias-test")
+    from proximo._mcpcompat import ServerClass
+    return ServerClass("proximo-alias-test")
 
 
 def test_dispatch_routes_an_alias_guess_to_the_real_tool():
@@ -499,7 +500,7 @@ def test_dispatch_routes_an_alias_guess_to_the_real_tool():
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(m, catalog, "pve_vm_create", {})
+        return await door.dispatch_tool(m, catalog, "pve_vm_create", {})
 
     anyio.run(go)
     assert ran.get("hit") is True
@@ -521,35 +522,47 @@ def test_tool_schema_resolves_an_alias_guess():
 # === H1: a direct call for a non-resident/unknown name gets a proximo_call pointer, not a dead end =
 def test_unknown_tool_error_points_a_nonresident_real_name_at_proximo_call():
     # A real catalog tool named directly on the dynamic door (where it isn't resident) -> pointer.
-    real = next(iter(server.FULL_CATALOG))  # any real tool name
-    msg = server._unknown_tool_error(real)
+    real = next(iter(door.FULL_CATALOG))  # any real tool name
+    msg = door._unknown_tool_error(real)
     assert "proximo_call" in msg
     assert real in msg
 
 
 def test_unknown_tool_error_resolves_an_alias_guess_in_the_pointer():
-    msg = server._unknown_tool_error("pve_vm_create")
+    msg = door._unknown_tool_error("pve_vm_create")
     assert "pve_create_vm" in msg  # the pointer names the REAL tool, not the guess
     assert "proximo_call" in msg
 
 
 def test_unknown_tool_error_gives_did_you_mean_and_keeps_the_substring():
-    msg = server._unknown_tool_error("totally_made_up_xyz")
+    msg = door._unknown_tool_error("totally_made_up_xyz")
     assert "unknown tool" in msg  # lowercase substring the governed/lean faces already return
     assert "proximo_call" in msg
 
 
 def test_interceptor_returns_a_helpful_error_over_the_protocol():
-    """The re-registered CallToolRequest handler turns a non-resident name into an isError result
-    carrying the proximo_call pointer — not FastMCP's bare 'Unknown tool: X' dead end."""
+    """A non-resident name over the WIRE becomes an error result carrying the proximo_call
+    pointer — not the SDK's bare 'Unknown tool: X' dead end. Per major, the wire seam differs:
+    1.x is the re-registered CallToolRequest handler at the bottom of server.py; 2.x is the
+    make_server subclass's public call_tool override, which _handle_call_tool (the wire) awaits
+    and converts to an is_error result. Both are exercised against the REAL running server, so
+    the alias pointer resolves through the real catalog."""
     import mcp.types as mt
-    handler = server.mcp._mcp_server.request_handlers[mt.CallToolRequest]
 
-    async def call(name):
-        req = mt.CallToolRequest(method="tools/call",
-                                 params=mt.CallToolRequestParams(name=name, arguments={}))
-        return (await handler(req)).root
+    if MCP_MAJOR == 1:
+        handler = server.mcp._mcp_server.request_handlers[mt.CallToolRequest]
+
+        async def call(name):
+            req = mt.CallToolRequest(method="tools/call",
+                                     params=mt.CallToolRequestParams(name=name, arguments={}))
+            return (await handler(req)).root
+    else:
+        from mcp.server.mcpserver.server import CallToolRequestParams
+
+        async def call(name):
+            params = CallToolRequestParams(name=name, arguments={})
+            return await server.mcp._handle_call_tool.__func__(server.mcp, None, params)
 
     res = anyio.run(call, "pve_vm_create")
-    assert res.isError
+    assert result_is_error(res)
     assert "proximo_call" in res.content[0].text

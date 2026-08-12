@@ -31,7 +31,7 @@ from proximo.planning import (
 )
 from proximo.principal import ledger_principal
 from proximo.provenance import enforce_scope
-from proximo.server import _audited, _ledger, _plan, tool
+from proximo.server import _audited, _ledger, _plan, run_governed, tool
 from proximo.targets import ledger_remote
 
 _UNDO_TIMEOUT = 120
@@ -108,22 +108,22 @@ def _power(kind: str, remote: str, vmid: str, action: str, confirm: bool) -> dic
     name = f"pdm_pve_{kind}_power"
     _, pdm = _proximo_server._pdm()
     target = f"{remote}:{kind}/{vmid}:{action}"
-    plan = _plan(name, target, lambda: plan_pdm_power(pdm, remote, kind, vmid, action))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(name, target, lambda: pdm.guest_power(remote, kind, vmid, action),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        name, target,
+        plan=lambda: plan_pdm_power(pdm, remote, kind, vmid, action),
+        execute=lambda: pdm.guest_power(remote, kind, vmid, action),
+        confirm=confirm, outcome="submitted")
 
 
 def _migrate(kind: str, remote: str, vmid: str, target: str, online: bool, confirm: bool) -> dict:
     name = f"pdm_pve_{kind}_migrate"
     _, pdm = _proximo_server._pdm()
     tgt = f"{remote}:{kind}/{vmid}"
-    plan = _plan(name, tgt, lambda: plan_pdm_migrate(pdm, remote, kind, vmid, target, online=online))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(name, tgt, lambda: pdm.guest_migrate(remote, kind, vmid, target, online=online),
-                    mutation=True, outcome="submitted", detail={"confirmed": True, "target": target})
+    return run_governed(
+        name, tgt,
+        plan=lambda: plan_pdm_migrate(pdm, remote, kind, vmid, target, online=online),
+        execute=lambda: pdm.guest_migrate(remote, kind, vmid, target, online=online),
+        confirm=confirm, outcome="submitted", detail={"target": target})
 
 
 def _remote_migrate(kind: str, remote: str, vmid: str, target_remote: str, target_bridge: str,
@@ -132,19 +132,16 @@ def _remote_migrate(kind: str, remote: str, vmid: str, target_remote: str, targe
     name = f"pdm_pve_{kind}_remote_migrate"
     _, pdm = _proximo_server._pdm()
     tgt = f"{remote}:{kind}/{vmid}"
-    plan = _plan(name, tgt, lambda: plan_pdm_migrate(pdm, remote, kind, vmid, target_remote,
+    return run_governed(
+        name, tgt,
+        plan=lambda: plan_pdm_migrate(pdm, remote, kind, vmid, target_remote,
                                                      cross_remote=True, delete=delete, online=online,
                                                      target_storage=target_storage,
-                                                     target_bridge=target_bridge))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        name, tgt,
-        lambda: pdm.guest_remote_migrate(remote, kind, vmid, target_remote, target_bridge,
+                                                     target_bridge=target_bridge),
+        execute=lambda: pdm.guest_remote_migrate(remote, kind, vmid, target_remote, target_bridge,
                                          target_storage, target_vmid=target_vmid,
                                          online=online, delete=delete),
-        mutation=True, outcome="submitted",
-        detail={"confirmed": True, "target_remote": target_remote, "delete": delete})
+        confirm=confirm, outcome="submitted", detail={"target_remote": target_remote, "delete": delete})
 
 
 def _snapshot_create(kind: str, remote: str, vmid: str, snapname: str, description,
@@ -152,26 +149,23 @@ def _snapshot_create(kind: str, remote: str, vmid: str, snapname: str, descripti
     name = f"pdm_pve_{kind}_snapshot_create"
     _, pdm = _proximo_server._pdm()
     target = f"{remote}:{kind}/{vmid}:{snapname}"
-    plan = _plan(name, target,
-                 lambda: plan_pdm_snapshot_create(pdm, remote, kind, vmid, snapname, vmstate=vmstate))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         name, target,
-        lambda: pdm.snapshot_create(remote, kind, vmid, snapname,
+        plan=lambda: plan_pdm_snapshot_create(pdm, remote, kind, vmid, snapname, vmstate=vmstate),
+        execute=lambda: pdm.snapshot_create(remote, kind, vmid, snapname,
                                     description=description, vmstate=vmstate),
-        mutation=True, outcome="submitted", detail={"confirmed": True})
+        confirm=confirm, outcome="submitted")
 
 
 def _snapshot_delete(kind: str, remote: str, vmid: str, snapname: str, confirm: bool) -> dict:
     name = f"pdm_pve_{kind}_snapshot_delete"
     _, pdm = _proximo_server._pdm()
     target = f"{remote}:{kind}/{vmid}:{snapname}"
-    plan = _plan(name, target, lambda: plan_pdm_snapshot_delete(pdm, remote, kind, vmid, snapname))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(name, target, lambda: pdm.snapshot_delete(remote, kind, vmid, snapname),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        name, target,
+        plan=lambda: plan_pdm_snapshot_delete(pdm, remote, kind, vmid, snapname),
+        execute=lambda: pdm.snapshot_delete(remote, kind, vmid, snapname),
+        confirm=confirm, outcome="submitted")
 
 
 def _snapshot_rollback(kind: str, remote: str, vmid: str, snapname: str, confirm: bool) -> dict:

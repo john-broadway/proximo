@@ -166,6 +166,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError
 from .backup_schedules import _check_realm
 from .pbs import PbsBackend
@@ -209,10 +210,6 @@ _ACL_PATH_RE = re.compile(r"^(?:/|(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)+)\Z")
 # rather than hard-coding the exact enum, so a future PBS release adding a role doesn't need a
 # Proximo code change; PBS itself is the final authority and 400s on an unknown role.
 _ROLEID_RE = re.compile(r"^[A-Za-z0-9]+\Z")
-
-# digest: PBS's optimistic-concurrency-lock param, shared verbatim across users/tokens/acl.
-# Source pattern (repeated on every 'digest' property): /^[a-f0-9]{64}$/
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # TFA entry id: PBS's own schema documents 'id' only as "the tfa entry id" — no pattern, no
 # length limit. Guarded defensively (it flows into the URL path) by mirroring PVE's own TFA-id
@@ -293,17 +290,6 @@ def _check_roleid(roleid: str) -> str:
     s = str(roleid).strip()
     if not _ROLEID_RE.match(s):
         raise ProximoError(f"invalid PBS role id: {roleid!r} — expected letters/digits only")
-    return s
-
-
-def _check_digest(digest: str | None) -> str | None:
-    if digest is None:
-        return None
-    s = str(digest).strip()
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(
-            f"invalid digest: {digest!r} — expected 64 lowercase hex chars (SHA-256)"
-        )
     return s
 
 

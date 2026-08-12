@@ -106,6 +106,8 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list
 from .planning import RISK_LOW, Plan
@@ -126,11 +128,6 @@ _VALID_ENDPOINT_TYPES = frozenset({"gotify", "sendmail", "smtp", "webhook"})
 # LOOSER on charset (allows leading `_`, allows `.` anywhere) — deliberately not mirrored as-is.
 _NOTIFICATION_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,31}\Z")
 
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars (confirmed on every PUT that
-# accepts it). Mirrors pbs_access.py's own `_check_digest` (each PBS module keeps its own copy —
-# established convention, not an oversight).
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
-
 _VALID_MATCHER_MODES = frozenset({"all", "any"})
 
 # Credential-shaped fields on this plane (module docstring fact #3): gotify `token`, smtp
@@ -141,10 +138,9 @@ _SECRET_KEYS = frozenset({"token", "password", "secret", "header"})
 
 
 def _redact_secrets(d: dict) -> dict:
-    """Mask credential-shaped fields before they enter a plan string or Plan.current. Works
-    uniformly regardless of the field's shape (plain string for token/password, list-of-dicts
-    for secret/header) — the whole value is swapped, never partially redacted."""
-    return {k: ("[redacted]" if k in _SECRET_KEYS else v) for k, v in d.items()}
+    """Mask credential-shaped fields before they enter a plan string or Plan.current — the
+    shared `_validate.redact_secrets` mechanic over this plane's own `_SECRET_KEYS`."""
+    return redact_secrets(d, _SECRET_KEYS)
 
 
 def _check_endpoint_type(ep_type: str) -> str:
@@ -173,13 +169,6 @@ def _check_matcher_mode(mode: str) -> str:
         raise ProximoError(
             f"invalid PBS matcher mode: {mode!r} (expected one of {sorted(_VALID_MATCHER_MODES)})"
         )
-    return s
-
-
-def _check_digest(digest: str) -> str:
-    s = str(digest)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {digest!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 

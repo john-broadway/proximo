@@ -5,12 +5,13 @@ was the only signal before. Derivation is by STARTSWITH (the unambiguous case); 
 neither marker at the start gets no annotation rather than a guessed one.
 """
 import proximo.server as server
+from proximo._mcpcompat import annotations_read_only
 
 
 def _hint(name):
     t = server.mcp._tool_manager._tools.get(name)
     a = getattr(t, "annotations", None)
-    return None if a is None else a.readOnlyHint
+    return annotations_read_only(a)
 
 
 def test_read_only_tool_marks_read_only_hint():
@@ -39,5 +40,5 @@ def test_most_of_the_surface_carries_a_hint():
     tm = server.mcp._tool_manager._tools
     with_hint = sum(1 for t in tm.values()
                     if getattr(t, "annotations", None) is not None
-                    and t.annotations.readOnlyHint is not None)
+                    and annotations_read_only(t.annotations) is not None)
     assert with_hint > 800, f"only {with_hint} tools carry a readOnly hint — derivation regressed"

@@ -89,6 +89,7 @@ import httpx
 
 from ._secretfile import refuse_exposed_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
+from ._validate import check_digest
 from .backends import ProximoError, fingerprint_refused
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
@@ -239,7 +240,6 @@ def _check_namespace_component(name: str) -> str:
 _PBS_APT_PACKAGE_RE = re.compile(r"^[a-z0-9][-+.a-z0-9:]+\Z")
 _PBS_APT_REPO_PATH_RE = re.compile(r"^/[^\x00-\x1f\x7f]*\Z")
 _PBS_APT_HANDLE_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*\Z")
-_PBS_APT_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 
 def _check_pbs_apt_package_name(name: str) -> str:
@@ -283,18 +283,11 @@ def _check_pbs_apt_handle(handle: str) -> str:
     return s
 
 
-def _check_pbs_apt_digest(digest: str | None) -> str | None:
-    """Validate an optional optimistic-concurrency digest — PBS's own strict upstream pattern
-    (ConfigDigest: exactly 64 lowercase hex chars, i.e. a SHA-256 hex digest), unlike PVE/PMG's
-    permissive hex-up-to-80-chars validator."""
-    if digest is None:
-        return None
-    s = str(digest)
-    if not _PBS_APT_DIGEST_RE.match(s):
-        raise ProximoError(
-            f"invalid digest: {digest!r} (expected exactly 64 lowercase hex chars — a SHA-256 digest)"
-        )
-    return s
+# PBS's APT digest is its standard strict ConfigDigest (exactly 64 lowercase hex — a SHA-256
+# digest), i.e. the SAME shape as every PBS/PMG config-plane digest, so it shares the
+# plane-neutral `_validate.check_digest`. PVE/PMG's APT validators stay their own: genuinely
+# divergent (hex up to 80 chars, mixed case).
+_check_pbs_apt_digest = check_digest
 
 
 # ---------------------------------------------------------------------------

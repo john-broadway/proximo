@@ -11,6 +11,7 @@ import json
 import anyio
 
 import proximo
+from proximo._mcpcompat import tool_input_schema
 from proximo.governed import list_governed
 from proximo.httpface import build_openapi
 
@@ -42,7 +43,7 @@ def test_operation_id_and_schema_come_from_the_tool():
         name = path.removeprefix("/tools/")
         op = spec["post"]
         assert op["operationId"] == name
-        assert op["requestBody"]["content"]["application/json"]["schema"] == by_name[name].inputSchema
+        assert op["requestBody"]["content"]["application/json"]["schema"] == tool_input_schema(by_name[name])
 
 
 def test_version_matches_package():

@@ -40,7 +40,7 @@ from proximo.sdn_fabrics import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -104,13 +104,11 @@ def pve_sdn_fabric_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/fabric/{fabric}"
-    plan = _plan("pve_sdn_fabric_create", tgt,
-                lambda: plan_fabric_create(fabric, protocol, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_create", tgt,
-                    lambda: fabric_create(api, fabric, protocol, options, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_fabric_create", tgt,
+        plan=lambda: plan_fabric_create(fabric, protocol, options),
+        execute=lambda: fabric_create(api, fabric, protocol, options, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -130,13 +128,11 @@ def pve_sdn_fabric_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/fabric/{fabric}"
-    plan = _plan("pve_sdn_fabric_update", tgt,
-                lambda: plan_fabric_update(fabric, protocol, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_update", tgt,
-                    lambda: fabric_update(api, fabric, protocol, options, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_fabric_update", tgt,
+        plan=lambda: plan_fabric_update(fabric, protocol, options, delete),
+        execute=lambda: fabric_update(api, fabric, protocol, options, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -157,12 +153,11 @@ def pve_sdn_fabric_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/fabric/{fabric}"
-    plan = _plan("pve_sdn_fabric_delete", tgt, lambda: plan_fabric_delete(api, fabric))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_delete", tgt,
-                    lambda: fabric_delete(api, fabric),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_fabric_delete", tgt,
+        plan=lambda: plan_fabric_delete(api, fabric),
+        execute=lambda: fabric_delete(api, fabric),
+        confirm=confirm)
 
 
 # --- fabric nodes (REST API, read) ---
@@ -223,14 +218,12 @@ def pve_sdn_fabric_node_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/node/{fabric_id}/{node_id}"
-    plan = _plan("pve_sdn_fabric_node_create", tgt,
-                lambda: plan_fabric_node_create(fabric_id, node_id, protocol, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_node_create", tgt,
-                    lambda: fabric_node_create(api, fabric_id, node_id, protocol, options,
+    return run_governed(
+        "pve_sdn_fabric_node_create", tgt,
+        plan=lambda: plan_fabric_node_create(fabric_id, node_id, protocol, options),
+        execute=lambda: fabric_node_create(api, fabric_id, node_id, protocol, options,
                                                digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -251,14 +244,12 @@ def pve_sdn_fabric_node_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/node/{fabric_id}/{node_id}"
-    plan = _plan("pve_sdn_fabric_node_update", tgt,
-                lambda: plan_fabric_node_update(fabric_id, node_id, protocol, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_node_update", tgt,
-                    lambda: fabric_node_update(api, fabric_id, node_id, protocol, options,
+    return run_governed(
+        "pve_sdn_fabric_node_update", tgt,
+        plan=lambda: plan_fabric_node_update(fabric_id, node_id, protocol, options, delete),
+        execute=lambda: fabric_node_update(api, fabric_id, node_id, protocol, options,
                                                delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -277,13 +268,11 @@ def pve_sdn_fabric_node_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/fabrics/node/{fabric_id}/{node_id}"
-    plan = _plan("pve_sdn_fabric_node_delete", tgt,
-                lambda: plan_fabric_node_delete(api, fabric_id, node_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_fabric_node_delete", tgt,
-                    lambda: fabric_node_delete(api, fabric_id, node_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_fabric_node_delete", tgt,
+        plan=lambda: plan_fabric_node_delete(api, fabric_id, node_id),
+        execute=lambda: fabric_node_delete(api, fabric_id, node_id),
+        confirm=confirm)
 
 
 # --- node-scoped fabric status (REST API, read) ---

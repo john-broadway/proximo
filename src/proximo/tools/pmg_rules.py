@@ -297,7 +297,7 @@ from proximo.pmg import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -318,13 +318,11 @@ def pmg_who_group_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/who"
-    plan = _plan("pmg_who_group_create", tgt,
-                 lambda: pmg_plan_who_group_create(name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_group_create", tgt,
-                    lambda: pmg_who_group_create_op(pmg, name, info, and_, invert),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+    return run_governed(
+        "pmg_who_group_create", tgt,
+        plan=lambda: pmg_plan_who_group_create(name, info, and_, invert),
+        execute=lambda: pmg_who_group_create_op(pmg, name, info, and_, invert),
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -345,16 +343,11 @@ def pmg_who_group_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/who/{ogroup}/config"
-    plan = _plan("pmg_who_group_update", tgt,
-                 lambda: pmg_plan_who_group_update(ogroup, name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_group_update", tgt,
-                    lambda: pmg_who_group_update_op(pmg, ogroup, name, info, and_, invert),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "ogroup": ogroup, "name": name, "info": info,
-                             "and": and_, "invert": invert}.items() if v is not None})
+    return run_governed(
+        "pmg_who_group_update", tgt,
+        plan=lambda: pmg_plan_who_group_update(ogroup, name, info, and_, invert),
+        execute=lambda: pmg_who_group_update_op(pmg, ogroup, name, info, and_, invert),
+        confirm=confirm, detail={k: v for k, v in {"ogroup": ogroup, "name": name, "info": info, "and": and_, "invert": invert}.items() if v is not None})
 
 
 @tool()
@@ -370,13 +363,11 @@ def pmg_who_group_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/who/{ogroup}"
-    plan = _plan("pmg_who_group_delete", tgt,
-                 lambda: pmg_plan_who_group_delete(ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_group_delete", tgt,
-                    lambda: pmg_who_group_delete_op(pmg, ogroup),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "ogroup": ogroup})
+    return run_governed(
+        "pmg_who_group_delete", tgt,
+        plan=lambda: pmg_plan_who_group_delete(ogroup),
+        execute=lambda: pmg_who_group_delete_op(pmg, ogroup),
+        confirm=confirm, detail={"ogroup": ogroup})
 
 
 @tool()
@@ -395,13 +386,11 @@ def pmg_what_group_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/what"
-    plan = _plan("pmg_what_group_create", tgt,
-                 lambda: pmg_plan_what_group_create(name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_group_create", tgt,
-                    lambda: pmg_what_group_create_op(pmg, name, info, and_, invert),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+    return run_governed(
+        "pmg_what_group_create", tgt,
+        plan=lambda: pmg_plan_what_group_create(name, info, and_, invert),
+        execute=lambda: pmg_what_group_create_op(pmg, name, info, and_, invert),
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -422,16 +411,11 @@ def pmg_what_group_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/what/{ogroup}/config"
-    plan = _plan("pmg_what_group_update", tgt,
-                 lambda: pmg_plan_what_group_update(ogroup, name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_group_update", tgt,
-                    lambda: pmg_what_group_update_op(pmg, ogroup, name, info, and_, invert),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "ogroup": ogroup, "name": name, "info": info,
-                             "and": and_, "invert": invert}.items() if v is not None})
+    return run_governed(
+        "pmg_what_group_update", tgt,
+        plan=lambda: pmg_plan_what_group_update(ogroup, name, info, and_, invert),
+        execute=lambda: pmg_what_group_update_op(pmg, ogroup, name, info, and_, invert),
+        confirm=confirm, detail={k: v for k, v in {"ogroup": ogroup, "name": name, "info": info, "and": and_, "invert": invert}.items() if v is not None})
 
 
 @tool()
@@ -447,13 +431,11 @@ def pmg_what_group_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/what/{ogroup}"
-    plan = _plan("pmg_what_group_delete", tgt,
-                 lambda: pmg_plan_what_group_delete(ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_group_delete", tgt,
-                    lambda: pmg_what_group_delete_op(pmg, ogroup),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "ogroup": ogroup})
+    return run_governed(
+        "pmg_what_group_delete", tgt,
+        plan=lambda: pmg_plan_what_group_delete(ogroup),
+        execute=lambda: pmg_what_group_delete_op(pmg, ogroup),
+        confirm=confirm, detail={"ogroup": ogroup})
 
 
 @tool()
@@ -472,13 +454,11 @@ def pmg_when_group_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/when"
-    plan = _plan("pmg_when_group_create", tgt,
-                 lambda: pmg_plan_when_group_create(name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_group_create", tgt,
-                    lambda: pmg_when_group_create_op(pmg, name, info, and_, invert),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+    return run_governed(
+        "pmg_when_group_create", tgt,
+        plan=lambda: pmg_plan_when_group_create(name, info, and_, invert),
+        execute=lambda: pmg_when_group_create_op(pmg, name, info, and_, invert),
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -499,16 +479,11 @@ def pmg_when_group_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/when/{ogroup}/config"
-    plan = _plan("pmg_when_group_update", tgt,
-                 lambda: pmg_plan_when_group_update(ogroup, name, info, and_, invert))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_group_update", tgt,
-                    lambda: pmg_when_group_update_op(pmg, ogroup, name, info, and_, invert),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "ogroup": ogroup, "name": name, "info": info,
-                             "and": and_, "invert": invert}.items() if v is not None})
+    return run_governed(
+        "pmg_when_group_update", tgt,
+        plan=lambda: pmg_plan_when_group_update(ogroup, name, info, and_, invert),
+        execute=lambda: pmg_when_group_update_op(pmg, ogroup, name, info, and_, invert),
+        confirm=confirm, detail={k: v for k, v in {"ogroup": ogroup, "name": name, "info": info, "and": and_, "invert": invert}.items() if v is not None})
 
 
 @tool()
@@ -524,13 +499,11 @@ def pmg_when_group_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/when/{ogroup}"
-    plan = _plan("pmg_when_group_delete", tgt,
-                 lambda: pmg_plan_when_group_delete(ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_group_delete", tgt,
-                    lambda: pmg_when_group_delete_op(pmg, ogroup),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "ogroup": ogroup})
+    return run_governed(
+        "pmg_when_group_delete", tgt,
+        plan=lambda: pmg_plan_when_group_delete(ogroup),
+        execute=lambda: pmg_when_group_delete_op(pmg, ogroup),
+        confirm=confirm, detail={"ogroup": ogroup})
 
 
 @tool()
@@ -557,22 +530,19 @@ def pmg_who_object_add(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/who/{ogroup}/{type_}"
-    plan = _plan("pmg_who_object_add", tgt,
-                 lambda: pmg_plan_who_object_add(
+    return run_governed(
+        "pmg_who_object_add", tgt,
+        plan=lambda: pmg_plan_who_object_add(
                      ogroup, type_,
                      email=email, domain=domain, regex=regex, ip=ip,
                      cidr=cidr, mode=mode, profile=profile, group=group, account=account,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_object_add", tgt,
-                    lambda: pmg_who_object_add_op(
+                 ),
+        execute=lambda: pmg_who_object_add_op(
                         pmg, ogroup, type_,
                         email=email, domain=domain, regex=regex, ip=ip,
                         cidr=cidr, mode=mode, profile=profile, group=group, account=account,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "type": type_})
+        confirm=confirm, detail={"ogroup": ogroup, "type": type_})
 
 
 @tool()
@@ -599,26 +569,19 @@ def pmg_who_object_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/who/{ogroup}/{type_}/{id_}"
-    plan = _plan("pmg_who_object_update", tgt,
-                 lambda: pmg_plan_who_object_update(
+    return run_governed(
+        "pmg_who_object_update", tgt,
+        plan=lambda: pmg_plan_who_object_update(
                      ogroup, type_, id_,
                      email=email, domain=domain, regex=regex, ip=ip,
                      cidr=cidr, mode=mode, profile=profile, group=group, account=account,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_object_update", tgt,
-                    lambda: pmg_who_object_update_op(
+                 ),
+        execute=lambda: pmg_who_object_update_op(
                         pmg, ogroup, type_, id_,
                         email=email, domain=domain, regex=regex, ip=ip,
                         cidr=cidr, mode=mode, profile=profile, group=group, account=account,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "ogroup": ogroup, "type": type_, "id": id_,
-                             "email": email, "domain": domain, "regex": regex, "ip": ip,
-                             "cidr": cidr, "mode": mode, "profile": profile,
-                             "group": group, "account": account}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"ogroup": ogroup, "type": type_, "id": id_, "email": email, "domain": domain, "regex": regex, "ip": ip, "cidr": cidr, "mode": mode, "profile": profile, "group": group, "account": account}.items() if v is not None})
 
 
 @tool()
@@ -635,14 +598,11 @@ def pmg_who_object_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/who/{ogroup}/objects/{id_}"
-    plan = _plan("pmg_who_object_delete", tgt,
-                 lambda: pmg_plan_who_object_delete(ogroup, id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_who_object_delete", tgt,
-                    lambda: pmg_who_object_delete_op(pmg, ogroup, id_),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "id": id_})
+    return run_governed(
+        "pmg_who_object_delete", tgt,
+        plan=lambda: pmg_plan_who_object_delete(ogroup, id_),
+        execute=lambda: pmg_who_object_delete_op(pmg, ogroup, id_),
+        confirm=confirm, detail={"ogroup": ogroup, "id": id_})
 
 
 @tool()
@@ -689,24 +649,21 @@ def pmg_what_object_add(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/what/{ogroup}/{type_}"
-    plan = _plan("pmg_what_object_add", tgt,
-                 lambda: pmg_plan_what_object_add(
+    return run_governed(
+        "pmg_what_object_add", tgt,
+        plan=lambda: pmg_plan_what_object_add(
                      ogroup, type_,
                      contenttype=contenttype, only_content=only_content,
                      field=field, value=value, top_part_only=top_part_only,
                      spamlevel=spamlevel, filename=filename,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_object_add", tgt,
-                    lambda: pmg_what_object_add_op(
+                 ),
+        execute=lambda: pmg_what_object_add_op(
                         pmg, ogroup, type_,
                         contenttype=contenttype, only_content=only_content,
                         field=field, value=value, top_part_only=top_part_only,
                         spamlevel=spamlevel, filename=filename,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "type": type_})
+        confirm=confirm, detail={"ogroup": ogroup, "type": type_})
 
 
 @tool()
@@ -731,29 +688,21 @@ def pmg_what_object_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/what/{ogroup}/{type_}/{id_}"
-    plan = _plan("pmg_what_object_update", tgt,
-                 lambda: pmg_plan_what_object_update(
+    return run_governed(
+        "pmg_what_object_update", tgt,
+        plan=lambda: pmg_plan_what_object_update(
                      ogroup, type_, id_,
                      contenttype=contenttype, only_content=only_content,
                      field=field, value=value, top_part_only=top_part_only,
                      spamlevel=spamlevel, filename=filename,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_object_update", tgt,
-                    lambda: pmg_what_object_update_op(
+                 ),
+        execute=lambda: pmg_what_object_update_op(
                         pmg, ogroup, type_, id_,
                         contenttype=contenttype, only_content=only_content,
                         field=field, value=value, top_part_only=top_part_only,
                         spamlevel=spamlevel, filename=filename,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "ogroup": ogroup, "type": type_, "id": id_,
-                             "contenttype": contenttype, "only_content": only_content,
-                             "field": field, "value": value, "top_part_only": top_part_only,
-                             "spamlevel": spamlevel, "filename": filename}.items()
-                            if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"ogroup": ogroup, "type": type_, "id": id_, "contenttype": contenttype, "only_content": only_content, "field": field, "value": value, "top_part_only": top_part_only, "spamlevel": spamlevel, "filename": filename}.items() if v is not None})
 
 
 @tool()
@@ -770,14 +719,11 @@ def pmg_what_object_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/what/{ogroup}/objects/{id_}"
-    plan = _plan("pmg_what_object_delete", tgt,
-                 lambda: pmg_plan_what_object_delete(ogroup, id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_what_object_delete", tgt,
-                    lambda: pmg_what_object_delete_op(pmg, ogroup, id_),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "id": id_})
+    return run_governed(
+        "pmg_what_object_delete", tgt,
+        plan=lambda: pmg_plan_what_object_delete(ogroup, id_),
+        execute=lambda: pmg_what_object_delete_op(pmg, ogroup, id_),
+        confirm=confirm, detail={"ogroup": ogroup, "id": id_})
 
 
 @tool()
@@ -817,14 +763,11 @@ def pmg_when_object_add(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/when/{ogroup}/timeframe"
-    plan = _plan("pmg_when_object_add", tgt,
-                 lambda: pmg_plan_when_object_add(ogroup, start=start, end=end))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_object_add", tgt,
-                    lambda: pmg_when_object_add_op(pmg, ogroup, start=start, end=end),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup})
+    return run_governed(
+        "pmg_when_object_add", tgt,
+        plan=lambda: pmg_plan_when_object_add(ogroup, start=start, end=end),
+        execute=lambda: pmg_when_object_add_op(pmg, ogroup, start=start, end=end),
+        confirm=confirm, detail={"ogroup": ogroup})
 
 
 @tool()
@@ -843,15 +786,11 @@ def pmg_when_object_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/when/{ogroup}/timeframe/{id_}"
-    plan = _plan("pmg_when_object_update", tgt,
-                 lambda: pmg_plan_when_object_update(ogroup, id_, start=start, end=end))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_object_update", tgt,
-                    lambda: pmg_when_object_update_op(pmg, ogroup, id_, start=start, end=end),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "id": id_,
-                            "start": start, "end": end})
+    return run_governed(
+        "pmg_when_object_update", tgt,
+        plan=lambda: pmg_plan_when_object_update(ogroup, id_, start=start, end=end),
+        execute=lambda: pmg_when_object_update_op(pmg, ogroup, id_, start=start, end=end),
+        confirm=confirm, detail={"ogroup": ogroup, "id": id_, "start": start, "end": end})
 
 
 @tool()
@@ -868,14 +807,11 @@ def pmg_when_object_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/when/{ogroup}/objects/{id_}"
-    plan = _plan("pmg_when_object_delete", tgt,
-                 lambda: pmg_plan_when_object_delete(ogroup, id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_when_object_delete", tgt,
-                    lambda: pmg_when_object_delete_op(pmg, ogroup, id_),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "ogroup": ogroup, "id": id_})
+    return run_governed(
+        "pmg_when_object_delete", tgt,
+        plan=lambda: pmg_plan_when_object_delete(ogroup, id_),
+        execute=lambda: pmg_when_object_delete_op(pmg, ogroup, id_),
+        confirm=confirm, detail={"ogroup": ogroup, "id": id_})
 
 
 @tool()
@@ -916,14 +852,12 @@ def pmg_action_bcc_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/action/bcc"
-    plan = _plan("pmg_action_bcc_create", tgt,
-                 lambda: pmg_plan_action_bcc_create(name, target))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_bcc_create", tgt,
-                    lambda: pmg_action_bcc_create_op(pmg, name=name, target=target,
+    return run_governed(
+        "pmg_action_bcc_create", tgt,
+        plan=lambda: pmg_plan_action_bcc_create(name, target),
+        execute=lambda: pmg_action_bcc_create_op(pmg, name=name, target=target,
                                                      info=info, original=original),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -943,18 +877,13 @@ def pmg_action_bcc_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/bcc/{id_}"
-    plan = _plan("pmg_action_bcc_update", tgt,
-                 lambda: pmg_plan_action_bcc_update(id_, name=name, target=target,
-                                                    info=info, original=original))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_bcc_update", tgt,
-                    lambda: pmg_action_bcc_update_op(pmg, id_, name=name, target=target,
+    return run_governed(
+        "pmg_action_bcc_update", tgt,
+        plan=lambda: pmg_plan_action_bcc_update(id_, name=name, target=target,
+                                                    info=info, original=original),
+        execute=lambda: pmg_action_bcc_update_op(pmg, id_, name=name, target=target,
                                                      info=info, original=original),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name, "target": target,
-                             "info": info, "original": original}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "target": target, "info": info, "original": original}.items() if v is not None})
 
 
 @tool()
@@ -988,14 +917,12 @@ def pmg_action_field_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/action/field"
-    plan = _plan("pmg_action_field_create", tgt,
-                 lambda: pmg_plan_action_field_create(name, field, value))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_field_create", tgt,
-                    lambda: pmg_action_field_create_op(pmg, name=name, field=field,
+    return run_governed(
+        "pmg_action_field_create", tgt,
+        plan=lambda: pmg_plan_action_field_create(name, field, value),
+        execute=lambda: pmg_action_field_create_op(pmg, name=name, field=field,
                                                        value=value, info=info),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -1015,18 +942,13 @@ def pmg_action_field_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/field/{id_}"
-    plan = _plan("pmg_action_field_update", tgt,
-                 lambda: pmg_plan_action_field_update(id_, name=name, field=field,
-                                                      value=value, info=info))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_field_update", tgt,
-                    lambda: pmg_action_field_update_op(pmg, id_, name=name, field=field,
+    return run_governed(
+        "pmg_action_field_update", tgt,
+        plan=lambda: pmg_plan_action_field_update(id_, name=name, field=field,
+                                                      value=value, info=info),
+        execute=lambda: pmg_action_field_update_op(pmg, id_, name=name, field=field,
                                                        value=value, info=info),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name, "field": field,
-                             "value": value, "info": info}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "field": field, "value": value, "info": info}.items() if v is not None})
 
 
 @tool()
@@ -1062,16 +984,14 @@ def pmg_action_notification_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/action/notification"
-    plan = _plan("pmg_action_notification_create", tgt,
-                 lambda: pmg_plan_action_notification_create(name, to))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_notification_create", tgt,
-                    lambda: pmg_action_notification_create_op(
+    return run_governed(
+        "pmg_action_notification_create", tgt,
+        plan=lambda: pmg_plan_action_notification_create(name, to),
+        execute=lambda: pmg_action_notification_create_op(
                         pmg, name=name, to=to, subject=subject,
                         body_text=body_text, info=info, attach=attach,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -1093,23 +1013,17 @@ def pmg_action_notification_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/notification/{id_}"
-    plan = _plan("pmg_action_notification_update", tgt,
-                 lambda: pmg_plan_action_notification_update(
+    return run_governed(
+        "pmg_action_notification_update", tgt,
+        plan=lambda: pmg_plan_action_notification_update(
                      id_, name=name, to=to, subject=subject,
                      body_text=body_text, info=info, attach=attach,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_notification_update", tgt,
-                    lambda: pmg_action_notification_update_op(
+                 ),
+        execute=lambda: pmg_action_notification_update_op(
                         pmg, id_, name=name, to=to, subject=subject,
                         body_text=body_text, info=info, attach=attach,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name, "to": to,
-                             "subject": subject, "body": body_text, "info": info,
-                             "attach": attach}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "to": to, "subject": subject, "body": body_text, "info": info, "attach": attach}.items() if v is not None})
 
 
 @tool()
@@ -1145,16 +1059,14 @@ def pmg_action_disclaimer_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/action/disclaimer"
-    plan = _plan("pmg_action_disclaimer_create", tgt,
-                 lambda: pmg_plan_action_disclaimer_create(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_disclaimer_create", tgt,
-                    lambda: pmg_action_disclaimer_create_op(
+    return run_governed(
+        "pmg_action_disclaimer_create", tgt,
+        plan=lambda: pmg_plan_action_disclaimer_create(name),
+        execute=lambda: pmg_action_disclaimer_create_op(
                         pmg, name=name, disclaimer=disclaimer,
                         info=info, position=position, add_separator=add_separator,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -1175,23 +1087,17 @@ def pmg_action_disclaimer_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/disclaimer/{id_}"
-    plan = _plan("pmg_action_disclaimer_update", tgt,
-                 lambda: pmg_plan_action_disclaimer_update(
+    return run_governed(
+        "pmg_action_disclaimer_update", tgt,
+        plan=lambda: pmg_plan_action_disclaimer_update(
                      id_, name=name, disclaimer=disclaimer,
                      info=info, position=position, add_separator=add_separator,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_disclaimer_update", tgt,
-                    lambda: pmg_action_disclaimer_update_op(
+                 ),
+        execute=lambda: pmg_action_disclaimer_update_op(
                         pmg, id_, name=name, disclaimer=disclaimer,
                         info=info, position=position, add_separator=add_separator,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name,
-                             "disclaimer": disclaimer, "info": info, "position": position,
-                             "add_separator": add_separator}.items() if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "disclaimer": disclaimer, "info": info, "position": position, "add_separator": add_separator}.items() if v is not None})
 
 
 @tool()
@@ -1227,16 +1133,14 @@ def pmg_action_removeattachments_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/action/removeattachments"
-    plan = _plan("pmg_action_removeattachments_create", tgt,
-                 lambda: pmg_plan_action_removeattachments_create(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_removeattachments_create", tgt,
-                    lambda: pmg_action_removeattachments_create_op(
+    return run_governed(
+        "pmg_action_removeattachments_create", tgt,
+        plan=lambda: pmg_plan_action_removeattachments_create(name),
+        execute=lambda: pmg_action_removeattachments_create_op(
                         pmg, name=name, text=text, info=info,
                         all_=all_, quarantine=quarantine,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -1257,23 +1161,17 @@ def pmg_action_removeattachments_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/removeattachments/{id_}"
-    plan = _plan("pmg_action_removeattachments_update", tgt,
-                 lambda: pmg_plan_action_removeattachments_update(
+    return run_governed(
+        "pmg_action_removeattachments_update", tgt,
+        plan=lambda: pmg_plan_action_removeattachments_update(
                      id_, name=name, text=text, info=info,
                      all_=all_, quarantine=quarantine,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_removeattachments_update", tgt,
-                    lambda: pmg_action_removeattachments_update_op(
+                 ),
+        execute=lambda: pmg_action_removeattachments_update_op(
                         pmg, id_, name=name, text=text, info=info,
                         all_=all_, quarantine=quarantine,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name, "text": text,
-                             "info": info, "all": all_, "quarantine": quarantine}.items()
-                            if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "text": text, "info": info, "all": all_, "quarantine": quarantine}.items() if v is not None})
 
 
 @tool()
@@ -1305,14 +1203,11 @@ def pmg_action_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/action/objects/{id_}"
-    plan = _plan("pmg_action_delete", tgt,
-                 lambda: pmg_plan_action_delete(id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_action_delete", tgt,
-                    lambda: pmg_action_delete_op(pmg, id_),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_})
+    return run_governed(
+        "pmg_action_delete", tgt,
+        plan=lambda: pmg_plan_action_delete(id_),
+        execute=lambda: pmg_action_delete_op(pmg, id_),
+        confirm=confirm, detail={"id": id_})
 
 
 @tool()
@@ -1340,21 +1235,19 @@ def pmg_ruledb_rule_create(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb/rules"
-    plan = _plan("pmg_ruledb_rule_create", tgt,
-                 lambda: pmg_plan_ruledb_rule_create(
+    return run_governed(
+        "pmg_ruledb_rule_create", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_create(
                      name, priority, active, direction,
                      from_and, from_invert, to_and, to_invert,
                      what_and, what_invert, when_and, when_invert,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_create", tgt,
-                    lambda: pmg_ruledb_rule_create_op(
+                 ),
+        execute=lambda: pmg_ruledb_rule_create_op(
                         pmg, name, priority, active, direction,
                         from_and, from_invert, to_and, to_invert,
                         what_and, what_invert, when_and, when_invert,
                     ),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "name": name})
+        confirm=confirm, detail={"name": name})
 
 
 @tool()
@@ -1383,29 +1276,19 @@ def pmg_ruledb_rule_update(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/config"
-    plan = _plan("pmg_ruledb_rule_update", tgt,
-                 lambda: pmg_plan_ruledb_rule_update(
+    return run_governed(
+        "pmg_ruledb_rule_update", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_update(
                      id_, name, priority, active, direction,
                      from_and, from_invert, to_and, to_invert,
                      what_and, what_invert, when_and, when_invert,
-                 ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_update", tgt,
-                    lambda: pmg_ruledb_rule_update_op(
+                 ),
+        execute=lambda: pmg_ruledb_rule_update_op(
                         pmg, id_, name, priority, active, direction,
                         from_and, from_invert, to_and, to_invert,
                         what_and, what_invert, when_and, when_invert,
                     ),
-                    mutation=True, outcome="ok",
-                    detail={k: v for k, v in
-                            {"confirmed": True, "id": id_, "name": name, "priority": priority,
-                             "active": active, "direction": direction,
-                             "from_and": from_and, "from_invert": from_invert,
-                             "to_and": to_and, "to_invert": to_invert,
-                             "what_and": what_and, "what_invert": what_invert,
-                             "when_and": when_and, "when_invert": when_invert}.items()
-                            if v is not None})
+        confirm=confirm, detail={k: v for k, v in {"id": id_, "name": name, "priority": priority, "active": active, "direction": direction, "from_and": from_and, "from_invert": from_invert, "to_and": to_and, "to_invert": to_invert, "what_and": what_and, "what_invert": what_invert, "when_and": when_and, "when_invert": when_invert}.items() if v is not None})
 
 
 @tool()
@@ -1421,13 +1304,11 @@ def pmg_ruledb_rule_delete(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}"
-    plan = _plan("pmg_ruledb_rule_delete", tgt,
-                 lambda: pmg_plan_ruledb_rule_delete(id_))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_delete", tgt,
-                    lambda: pmg_ruledb_rule_delete_op(pmg, id_),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "id": id_})
+    return run_governed(
+        "pmg_ruledb_rule_delete", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_delete(id_),
+        execute=lambda: pmg_ruledb_rule_delete_op(pmg, id_),
+        confirm=confirm, detail={"id": id_})
 
 
 @tool()
@@ -1444,14 +1325,11 @@ def pmg_ruledb_rule_from_attach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/from"
-    plan = _plan("pmg_ruledb_rule_from_attach", tgt,
-                 lambda: pmg_plan_ruledb_rule_from_attach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_from_attach", tgt,
-                    lambda: pmg_ruledb_rule_from_attach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_from_attach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_from_attach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_from_attach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1468,14 +1346,11 @@ def pmg_ruledb_rule_from_detach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/from/{ogroup}"
-    plan = _plan("pmg_ruledb_rule_from_detach", tgt,
-                 lambda: pmg_plan_ruledb_rule_from_detach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_from_detach", tgt,
-                    lambda: pmg_ruledb_rule_from_detach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_from_detach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_from_detach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_from_detach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1492,14 +1367,11 @@ def pmg_ruledb_rule_to_attach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/to"
-    plan = _plan("pmg_ruledb_rule_to_attach", tgt,
-                 lambda: pmg_plan_ruledb_rule_to_attach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_to_attach", tgt,
-                    lambda: pmg_ruledb_rule_to_attach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_to_attach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_to_attach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_to_attach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1516,14 +1388,11 @@ def pmg_ruledb_rule_to_detach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/to/{ogroup}"
-    plan = _plan("pmg_ruledb_rule_to_detach", tgt,
-                 lambda: pmg_plan_ruledb_rule_to_detach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_to_detach", tgt,
-                    lambda: pmg_ruledb_rule_to_detach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_to_detach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_to_detach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_to_detach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1540,14 +1409,11 @@ def pmg_ruledb_rule_what_attach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/what"
-    plan = _plan("pmg_ruledb_rule_what_attach", tgt,
-                 lambda: pmg_plan_ruledb_rule_what_attach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_what_attach", tgt,
-                    lambda: pmg_ruledb_rule_what_attach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_what_attach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_what_attach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_what_attach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1564,14 +1430,11 @@ def pmg_ruledb_rule_what_detach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/what/{ogroup}"
-    plan = _plan("pmg_ruledb_rule_what_detach", tgt,
-                 lambda: pmg_plan_ruledb_rule_what_detach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_what_detach", tgt,
-                    lambda: pmg_ruledb_rule_what_detach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_what_detach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_what_detach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_what_detach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1588,14 +1451,11 @@ def pmg_ruledb_rule_when_attach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/when"
-    plan = _plan("pmg_ruledb_rule_when_attach", tgt,
-                 lambda: pmg_plan_ruledb_rule_when_attach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_when_attach", tgt,
-                    lambda: pmg_ruledb_rule_when_attach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_when_attach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_when_attach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_when_attach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1612,14 +1472,11 @@ def pmg_ruledb_rule_when_detach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/when/{ogroup}"
-    plan = _plan("pmg_ruledb_rule_when_detach", tgt,
-                 lambda: pmg_plan_ruledb_rule_when_detach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_when_detach", tgt,
-                    lambda: pmg_ruledb_rule_when_detach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_when_detach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_when_detach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_when_detach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1637,14 +1494,11 @@ def pmg_ruledb_rule_action_attach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/action"
-    plan = _plan("pmg_ruledb_rule_action_attach", tgt,
-                 lambda: pmg_plan_ruledb_rule_action_attach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_action_attach", tgt,
-                    lambda: pmg_ruledb_rule_action_attach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_action_attach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_action_attach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_action_attach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 @tool()
@@ -1661,14 +1515,11 @@ def pmg_ruledb_rule_action_detach(
     """
     _, pmg = _proximo_server._pmg()
     tgt = f"pmg/config/ruledb/rules/{id_}/action/{ogroup}"
-    plan = _plan("pmg_ruledb_rule_action_detach", tgt,
-                 lambda: pmg_plan_ruledb_rule_action_detach(id_, ogroup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_rule_action_detach", tgt,
-                    lambda: pmg_ruledb_rule_action_detach_op(pmg, id_, ogroup),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "id": id_, "ogroup": ogroup})
+    return run_governed(
+        "pmg_ruledb_rule_action_detach", tgt,
+        plan=lambda: pmg_plan_ruledb_rule_action_detach(id_, ogroup),
+        execute=lambda: pmg_ruledb_rule_action_detach_op(pmg, id_, ogroup),
+        confirm=confirm, detail={"id": id_, "ogroup": ogroup})
 
 
 # ---------------------------------------------------------------------------
@@ -1723,9 +1574,8 @@ def pmg_ruledb_reset(
     """
     _, pmg = _proximo_server._pmg()
     tgt = "pmg/config/ruledb"
-    plan = _plan("pmg_ruledb_reset", tgt, lambda: pmg_plan_ruledb_reset(pmg))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_ruledb_reset", tgt,
-                    lambda: pmg_ruledb_reset_op(pmg),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_ruledb_reset", tgt,
+        plan=lambda: pmg_plan_ruledb_reset(pmg),
+        execute=lambda: pmg_ruledb_reset_op(pmg),
+        confirm=confirm)

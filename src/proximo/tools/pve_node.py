@@ -29,6 +29,7 @@ from proximo.node_lifecycle import (
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -84,16 +85,13 @@ def pve_node_disk_wipe(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/disks/{disk}"
-    plan = _plan("pve_node_disk_wipe", tgt,
-                 lambda: plan_node_disk_wipe(disk, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # Async (worker UPID) like the sibling disk/storage ops — record "submitted", not "ok": the
     # ledger must not claim the wipe finished when only the task was accepted.
-    return _audited("pve_node_disk_wipe", tgt,
-                    lambda: api.node_disk_wipe(disk, node),
-                    mutation=True, outcome="submitted",
-                    detail={"disk": disk, "confirmed": True})
+    return run_governed(
+        "pve_node_disk_wipe", tgt,
+        plan=lambda: plan_node_disk_wipe(disk, node),
+        execute=lambda: api.node_disk_wipe(disk, node),
+        confirm=confirm, outcome="submitted", detail={"disk": disk})
 
 
 @tool()
@@ -111,14 +109,11 @@ def pve_node_disk_initgpt(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/disks/{disk}"
-    plan = _plan("pve_node_disk_initgpt", tgt,
-                 lambda: plan_node_disk_initgpt(disk, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_disk_initgpt", tgt,
-                    lambda: api.node_disk_initgpt(disk, node),
-                    mutation=True, outcome="submitted",
-                    detail={"disk": disk, "confirmed": True})
+    return run_governed(
+        "pve_node_disk_initgpt", tgt,
+        plan=lambda: plan_node_disk_initgpt(disk, node),
+        execute=lambda: api.node_disk_initgpt(disk, node),
+        confirm=confirm, outcome="submitted", detail={"disk": disk})
 
 
 # --- Storage backends (reads + mutations) ---
@@ -200,15 +195,12 @@ def pve_node_storage_backend_delete(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/disks/{backend}/{name}"
-    plan = _plan("pve_node_storage_backend_delete", tgt,
-                 lambda: plan_node_storage_backend_delete(backend, name, node, cleanup))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # Async (worker UPID) like backend_create — record "submitted", not "ok".
-    return _audited("pve_node_storage_backend_delete", tgt,
-                    lambda: api.node_storage_backend_delete(backend, name, node, cleanup),
-                    mutation=True, outcome="submitted",
-                    detail={"backend": backend, "name": name, "cleanup": cleanup, "confirmed": True})
+    return run_governed(
+        "pve_node_storage_backend_delete", tgt,
+        plan=lambda: plan_node_storage_backend_delete(backend, name, node, cleanup),
+        execute=lambda: api.node_storage_backend_delete(backend, name, node, cleanup),
+        confirm=confirm, outcome="submitted", detail={"backend": backend, "name": name, "cleanup": cleanup})
 
 
 # --- Node config (reads) ---
@@ -258,14 +250,11 @@ def pve_node_time_set(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/time"
-    plan = _plan("pve_node_time_set", tgt,
-                 lambda: plan_node_time_set(api, timezone, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_time_set", tgt,
-                    lambda: api.node_time_set(timezone, node),
-                    mutation=True, outcome="ok",
-                    detail={"timezone": timezone, "confirmed": True})
+    return run_governed(
+        "pve_node_time_set", tgt,
+        plan=lambda: plan_node_time_set(api, timezone, node),
+        execute=lambda: api.node_time_set(timezone, node),
+        confirm=confirm, detail={"timezone": timezone})
 
 
 @tool()
@@ -284,14 +273,11 @@ def pve_node_hosts_set(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/hosts"
-    plan = _plan("pve_node_hosts_set", tgt,
-                 lambda: plan_node_hosts_set(api, data, node, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_hosts_set", tgt,
-                    lambda: api.node_hosts_set(data, node, digest),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True})
+    return run_governed(
+        "pve_node_hosts_set", tgt,
+        plan=lambda: plan_node_hosts_set(api, data, node, digest),
+        execute=lambda: api.node_hosts_set(data, node, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -312,14 +298,11 @@ def pve_node_dns_set(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/dns"
-    plan = _plan("pve_node_dns_set", tgt,
-                 lambda: plan_node_dns_set(api, search, dns1, dns2, dns3, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_dns_set", tgt,
-                    lambda: api.node_dns_set(node, search, dns1, dns2, dns3),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True})
+    return run_governed(
+        "pve_node_dns_set", tgt,
+        plan=lambda: plan_node_dns_set(api, search, dns1, dns2, dns3, node),
+        execute=lambda: api.node_dns_set(node, search, dns1, dns2, dns3),
+        confirm=confirm)
 
 
 @tool()
@@ -352,15 +335,11 @@ def pve_node_cert_upload(
     # UNCONDITIONAL: key redacted always; never passes through plan factory or ledger.
     key_detail = _key_fingerprint()
 
-    plan = _plan("pve_node_cert_upload", tgt,
-                 lambda: plan_node_cert_upload(certificates, node, force, restart))
-    if not confirm:
-        # key_detail injected into return (but not into the Plan itself — plan factory has no key).
-        return {"status": "plan", **plan.as_dict(), **key_detail}
-    return _audited("pve_node_cert_upload", tgt,
-                    lambda: api.node_cert_upload(certificates, node, key, force, restart),
-                    mutation=True, outcome="ok",
-                    detail={**key_detail, "confirmed": True})
+    return run_governed(
+        "pve_node_cert_upload", tgt,
+        plan=lambda: plan_node_cert_upload(certificates, node, force, restart),
+        execute=lambda: api.node_cert_upload(certificates, node, key, force, restart),
+        confirm=confirm, surface=key_detail)
 
 
 @tool()
@@ -378,14 +357,11 @@ def pve_node_cert_delete(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/certificates/custom"
-    plan = _plan("pve_node_cert_delete", tgt,
-                 lambda: plan_node_cert_delete(node, restart))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_node_cert_delete", tgt,
-                    lambda: api.node_cert_delete(node, restart),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True})
+    return run_governed(
+        "pve_node_cert_delete", tgt,
+        plan=lambda: plan_node_cert_delete(node, restart),
+        execute=lambda: api.node_cert_delete(node, restart),
+        confirm=confirm)
 
 
 # --- Bulk power (mutations) ---
@@ -469,17 +445,14 @@ def pve_node_migrateall(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"{node or cfg.node}/migrateall->{target}"
-    plan = _plan("pve_node_migrateall", tgt,
-                 lambda: plan_node_migrateall(target, node, vms, maxworkers))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # node_migrateall() may return None for a synchronous, already-finished migration rather
     # than a task UPID (backends.py's own documented contract: "Returns a task UPID or None")
     # -- a fixed outcome="submitted" would then falsely claim an in-flight task, in BOTH the
     # returned status and the ledger's own record. _audited()'s callable-outcome form resolves
     # the honest label from the actual result, after node_migrateall() runs, so the ledger is
     # honest too.
-    return _audited("pve_node_migrateall", tgt,
-                    lambda: api.node_migrateall(target, node, vms, maxworkers),
-                    mutation=True, outcome=lambda result: "ok" if result is None else "submitted",
-                    detail={"target": target, "confirmed": True})
+    return run_governed(
+        "pve_node_migrateall", tgt,
+        plan=lambda: plan_node_migrateall(target, node, vms, maxworkers),
+        execute=lambda: api.node_migrateall(target, node, vms, maxworkers),
+        confirm=confirm, outcome=lambda result: "ok" if result is None else "submitted", detail={"target": target})

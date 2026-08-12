@@ -132,6 +132,8 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
@@ -149,11 +151,6 @@ _POOL_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*\Z")
 # Shared by media-pool's `encrypt` field and tape-encryption-keys' own `fingerprint` path param /
 # response field (module docstring fact #4) — the SAME pattern in both places, one validator.
 _FINGERPRINT_RE = re.compile(r"^[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){31}\Z")
-
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars. Used ONLY by the
-# tape-encryption-keys DELETE/PUT (which do carry it) — media-pool has no digest field at all
-# (module docstring fact #2). Each PBS module keeps its own copy — established convention.
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # comment / template / hint — POSIX [[:^cntrl:]]* ("no control characters"), mirrored as a plain
 # not-control-char check (module docstring fact #6).
@@ -179,13 +176,6 @@ def _check_fingerprint(value: str) -> str:
             f"invalid tape encryption key fingerprint: {value!r} (expected 32 colon-separated "
             "hex byte-pairs, e.g. 'AA:BB:...:FF' — a formatted SHA-256)"
         )
-    return s
-
-
-def _check_digest(value: str) -> str:
-    s = str(value)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {value!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 
@@ -221,10 +211,9 @@ _SECRET_KEYS = frozenset({"key", "password", "new-password", "new_password"})
 
 
 def _redact_secrets(d: dict) -> dict:
-    """Mask credential-shaped fields before they enter a plan string or Plan.current. Mirrors
-    pbs_notifications.py's `_redact_secrets` idiom — the whole value is swapped, never partially
-    redacted."""
-    return {k: ("[redacted]" if k in _SECRET_KEYS else v) for k, v in d.items()}
+    """Mask credential-shaped fields before they enter a plan string or Plan.current — the
+    shared `_validate.redact_secrets` mechanic over this plane's own `_SECRET_KEYS`."""
+    return redact_secrets(d, _SECRET_KEYS)
 
 
 # ---------------------------------------------------------------------------

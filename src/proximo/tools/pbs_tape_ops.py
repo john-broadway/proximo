@@ -46,7 +46,7 @@ from proximo.pbs_tape_ops import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -148,13 +148,11 @@ def pbs_tape_drive_load_media(
     pbs_tape_drive_unload. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/load-media"
-    plan = _plan("pbs_tape_drive_load_media", tgt,
-                 lambda: plan_tape_drive_load_media(drive, label_text))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_load_media", tgt,
-                    lambda: tape_drive_load_media(pbs, drive, label_text),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_load_media", tgt,
+        plan=lambda: plan_tape_drive_load_media(drive, label_text),
+        execute=lambda: tape_drive_load_media(pbs, drive, label_text),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -172,13 +170,11 @@ def pbs_tape_drive_load_slot(
     pbs_tape_drive_unload. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/load-slot"
-    plan = _plan("pbs_tape_drive_load_slot", tgt,
-                 lambda: plan_tape_drive_load_slot(drive, source_slot))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_load_slot", tgt,
-                    lambda: tape_drive_load_slot(pbs, drive, source_slot),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_load_slot", tgt,
+        plan=lambda: plan_tape_drive_load_slot(drive, source_slot),
+        execute=lambda: tape_drive_load_slot(pbs, drive, source_slot),
+        confirm=confirm)
 
 
 @tool()
@@ -195,13 +191,11 @@ def pbs_tape_drive_unload(
     pbs_tape_drive_load_slot. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/unload"
-    plan = _plan("pbs_tape_drive_unload", tgt,
-                 lambda: plan_tape_drive_unload(drive, target_slot))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_unload", tgt,
-                    lambda: tape_drive_unload(pbs, drive, target_slot),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_unload", tgt,
+        plan=lambda: plan_tape_drive_unload(drive, target_slot),
+        execute=lambda: tape_drive_unload(pbs, drive, target_slot),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -217,12 +211,11 @@ def pbs_tape_drive_eject(
     {"status": "submitted", "result": "<UPID>"}. No undo primitive. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/eject-media"
-    plan = _plan("pbs_tape_drive_eject", tgt, lambda: plan_tape_drive_eject(drive))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_eject", tgt,
-                    lambda: tape_drive_eject(pbs, drive),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_eject", tgt,
+        plan=lambda: plan_tape_drive_eject(drive),
+        execute=lambda: tape_drive_eject(pbs, drive),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -238,12 +231,11 @@ def pbs_tape_drive_rewind(
     {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/rewind"
-    plan = _plan("pbs_tape_drive_rewind", tgt, lambda: plan_tape_drive_rewind(drive))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_rewind", tgt,
-                    lambda: tape_drive_rewind(pbs, drive),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_rewind", tgt,
+        plan=lambda: plan_tape_drive_rewind(drive),
+        execute=lambda: tape_drive_rewind(pbs, drive),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -259,12 +251,11 @@ def pbs_tape_drive_clean(
     {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/clean"
-    plan = _plan("pbs_tape_drive_clean", tgt, lambda: plan_tape_drive_clean(drive))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_clean", tgt,
-                    lambda: tape_drive_clean(pbs, drive),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_clean", tgt,
+        plan=lambda: plan_tape_drive_clean(drive),
+        execute=lambda: tape_drive_clean(pbs, drive),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -283,13 +274,11 @@ def pbs_tape_drive_inventory_update(
     {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/inventory"
-    plan = _plan("pbs_tape_drive_inventory_update", tgt,
-                 lambda: plan_tape_drive_inventory_update(drive, catalog, read_all_labels))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_inventory_update", tgt,
-                    lambda: tape_drive_inventory_update(pbs, drive, catalog, read_all_labels),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_inventory_update", tgt,
+        plan=lambda: plan_tape_drive_inventory_update(drive, catalog, read_all_labels),
+        execute=lambda: tape_drive_inventory_update(pbs, drive, catalog, read_all_labels),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -310,13 +299,11 @@ def pbs_tape_drive_label_media(
     {"status": "submitted", "result": "<UPID>"}. No undo. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/label-media"
-    plan = _plan("pbs_tape_drive_label_media", tgt,
-                 lambda: plan_tape_drive_label_media(drive, label_text, pool))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_label_media", tgt,
-                    lambda: tape_drive_label_media(pbs, drive, label_text, pool),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_label_media", tgt,
+        plan=lambda: plan_tape_drive_label_media(drive, label_text, pool),
+        execute=lambda: tape_drive_label_media(pbs, drive, label_text, pool),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -334,13 +321,11 @@ def pbs_tape_drive_barcode_label_media(
     {"status": "submitted", "result": "<UPID>"}. No undo. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/barcode-label-media"
-    plan = _plan("pbs_tape_drive_barcode_label_media", tgt,
-                 lambda: plan_tape_drive_barcode_label_media(drive, pool))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_barcode_label_media", tgt,
-                    lambda: tape_drive_barcode_label_media(pbs, drive, pool),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_barcode_label_media", tgt,
+        plan=lambda: plan_tape_drive_barcode_label_media(drive, pool),
+        execute=lambda: tape_drive_barcode_label_media(pbs, drive, pool),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -360,13 +345,11 @@ def pbs_tape_drive_format(
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/format-media"
-    plan = _plan("pbs_tape_drive_format", tgt,
-                 lambda: plan_tape_drive_format(drive, fast, label_text, load_barcode))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_format", tgt,
-                    lambda: tape_drive_format(pbs, drive, fast, label_text, load_barcode),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_format", tgt,
+        plan=lambda: plan_tape_drive_format(drive, fast, label_text, load_barcode),
+        execute=lambda: tape_drive_format(pbs, drive, fast, label_text, load_barcode),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -386,13 +369,11 @@ def pbs_tape_drive_catalog(
     and returns {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/catalog"
-    plan = _plan("pbs_tape_drive_catalog", tgt,
-                 lambda: plan_tape_drive_catalog(drive, force, scan, verbose))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_drive_catalog", tgt,
-                    lambda: tape_drive_catalog(pbs, drive, force, scan, verbose),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_drive_catalog", tgt,
+        plan=lambda: plan_tape_drive_catalog(drive, force, scan, verbose),
+        execute=lambda: tape_drive_catalog(pbs, drive, force, scan, verbose),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -410,16 +391,11 @@ def pbs_tape_drive_restore_key(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/drive/{drive}/restore-key"
-    plan = _plan("pbs_tape_drive_restore_key", tgt,
-                 lambda: plan_tape_drive_restore_key(drive, password))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_tape_drive_restore_key", tgt,
-        lambda: tape_drive_restore_key(pbs, drive, password),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True},
-    )
+        plan=lambda: plan_tape_drive_restore_key(drive, password),
+        execute=lambda: tape_drive_restore_key(pbs, drive, password),
+        confirm=confirm)
 
 
 # --- Mutations: Changer ---
@@ -440,10 +416,8 @@ def pbs_tape_changer_transfer(
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/changer/{name}/transfer"
-    plan = _plan("pbs_tape_changer_transfer", tgt,
-                 lambda: plan_tape_changer_transfer(name, from_slot, to_slot))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_changer_transfer", tgt,
-                    lambda: tape_changer_transfer(pbs, name, from_slot, to_slot),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_changer_transfer", tgt,
+        plan=lambda: plan_tape_changer_transfer(name, from_slot, to_slot),
+        execute=lambda: tape_changer_transfer(pbs, name, from_slot, to_slot),
+        confirm=confirm)

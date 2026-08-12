@@ -24,7 +24,7 @@ from proximo.qemu_agent import (
 from proximo.server import (
     _agent_gate,
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -107,14 +107,11 @@ def pve_agent_file_write(
 
     # UNCONDITIONAL: content fingerprint only, never the body.
     detail = {"file": file, **_content_fingerprint(content)}
-    plan = _plan("pve_agent_file_write", f"qemu/{vmid}:{file}",
-                 lambda: plan_agent_file_write(vmid, file, content, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-
-    return _audited("pve_agent_file_write", f"qemu/{vmid}:{file}",
-                    lambda: api.agent_file_write(vmid, node, file, content),
-                    mutation=True, outcome="ok", detail={**detail, "confirmed": True})
+    return run_governed(
+        "pve_agent_file_write", f"qemu/{vmid}:{file}",
+        plan=lambda: plan_agent_file_write(vmid, file, content, node),
+        execute=lambda: api.agent_file_write(vmid, node, file, content),
+        confirm=confirm, detail=detail)
 
 
 @tool()
@@ -138,15 +135,11 @@ def pve_agent_fs(
         return blocked
 
     _check_agent_fs_command(command)
-    plan = _plan("pve_agent_fs", f"qemu/{vmid}:{command}",
-                 lambda: plan_agent_fs(vmid, command, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-
-    return _audited("pve_agent_fs", f"qemu/{vmid}:{command}",
-                    lambda: api.agent_simple(vmid, node, command),
-                    mutation=True, outcome="ok",
-                    detail={"command": command, "confirmed": True})
+    return run_governed(
+        "pve_agent_fs", f"qemu/{vmid}:{command}",
+        plan=lambda: plan_agent_fs(vmid, command, node),
+        execute=lambda: api.agent_simple(vmid, node, command),
+        confirm=confirm, detail={"command": command})
 
 
 @tool()
@@ -172,11 +165,8 @@ def pve_agent_set_password(
 
     # UNCONDITIONAL: password redacted always, regardless of cfg.redact_ledger.
     detail = {"username": username, **_password_fingerprint()}
-    plan = _plan("pve_agent_set_password", f"qemu/{vmid}:{username}",
-                 lambda: plan_agent_set_password(vmid, username, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-
-    return _audited("pve_agent_set_password", f"qemu/{vmid}:{username}",
-                    lambda: api.agent_set_password(vmid, node, username, password),
-                    mutation=True, outcome="ok", detail={**detail, "confirmed": True})
+    return run_governed(
+        "pve_agent_set_password", f"qemu/{vmid}:{username}",
+        plan=lambda: plan_agent_set_password(vmid, username, node),
+        execute=lambda: api.agent_set_password(vmid, node, username, password),
+        confirm=confirm, detail=detail)

@@ -378,6 +378,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError
 from .planning import RISK_HIGH, RISK_MEDIUM, Plan
 from .pmg import PmgBackend, access_permissions, relay_config
@@ -421,8 +422,6 @@ _TFA_TYPES = frozenset({"totp", "u2f", "webauthn", "recovery"})
 # proxmox-tfa-crate-shaped guess (pbs_access.py's _TFA_ID_RE) — not live-verified on PMG
 # specifically.
 _TFA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]*\Z")
-
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 
 def _reject_dot_traversal(s: str, label: str) -> None:
@@ -494,17 +493,6 @@ def _check_tfa_id(tfa_id: str) -> str:
             "starting with a letter/digit"
         )
     _reject_dot_traversal(s, "TFA entry id")
-    return s
-
-
-def _check_digest(digest: str | None) -> str | None:
-    if digest is None:
-        return None
-    s = str(digest).strip()
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(
-            f"invalid digest: {digest!r} — expected 64 lowercase hex chars (SHA-256)"
-        )
     return s
 
 
@@ -1426,10 +1414,13 @@ _DIGEST_SHA1_RE = re.compile(r"^[a-f0-9]{40}\Z")
 def _check_digest_sha1(digest: str | None) -> str | None:
     """`PUT /config/tfa/webauthn`'s digest is a DOCUMENTED SHA1 divergence (Fact 15: maxLength
     40, description explicitly says "different SHA1 digest") — a genuinely different shape from
-    this module's other five 64-char SHA256 digests, which reuse the existing `_check_digest`."""
+    this module's other five 64-char SHA256 digests, which reuse the existing `_check_digest`.
+    Strict no-strip since the A11 adjudication (2026-08-11): it was the last digest validator
+    still stripping before matching, which re-admits the trailing newline the \\Z anchor exists
+    to refuse — divergent SHAPE, same law."""
     if digest is None:
         return None
-    s = str(digest).strip()
+    s = str(digest)
     if not _DIGEST_SHA1_RE.match(s):
         raise ProximoError(
             f"invalid digest: {digest!r} — expected 40 lowercase hex chars (SHA-1); "

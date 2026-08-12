@@ -89,6 +89,7 @@ from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
     _plan,
+    run_governed,
     tool,
 )
 
@@ -142,14 +143,11 @@ def pmg_node_network_create(
     n = node or cfg.node
     tgt = f"pmg/node/{n}/network/{iface}"
     opts = options or {}
-    plan = _plan("pmg_node_network_create", tgt,
-                 lambda: plan_network_create(pmg, n, iface, iface_type, opts))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_network_create", tgt,
-                    lambda: network_create(pmg, n, iface, iface_type, **opts),
-                    mutation=True, outcome="ok",
-                    detail={"iface_type": iface_type, **opts, "confirmed": True})
+    return run_governed(
+        "pmg_node_network_create", tgt,
+        plan=lambda: plan_network_create(pmg, n, iface, iface_type, opts),
+        execute=lambda: network_create(pmg, n, iface, iface_type, **opts),
+        confirm=confirm, detail={"iface_type": iface_type, **opts})
 
 
 @tool()
@@ -207,12 +205,11 @@ def pmg_node_network_delete(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/network/{iface}"
-    plan = _plan("pmg_node_network_delete", tgt, lambda: plan_network_delete(pmg, iface, n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_network_delete", tgt,
-                    lambda: network_delete(pmg, iface, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_network_delete", tgt,
+        plan=lambda: plan_network_delete(pmg, iface, n),
+        execute=lambda: network_delete(pmg, iface, n),
+        confirm=confirm)
 
 
 @tool()
@@ -227,12 +224,11 @@ def pmg_node_network_revert(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/network"
-    plan = _plan("pmg_node_network_revert", tgt, lambda: plan_network_revert(n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_network_revert", tgt,
-                    lambda: network_revert(pmg, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_network_revert", tgt,
+        plan=lambda: plan_network_revert(n),
+        execute=lambda: network_revert(pmg, n),
+        confirm=confirm)
 
 
 @tool()
@@ -297,12 +293,11 @@ def pmg_node_dns_set(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/dns"
-    plan = _plan("pmg_node_dns_set", tgt, lambda: plan_dns_set(pmg, n, search, dns1, dns2, dns3))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_dns_set", tgt,
-                    lambda: dns_set(pmg, n, search, dns1, dns2, dns3),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_dns_set", tgt,
+        plan=lambda: plan_dns_set(pmg, n, search, dns1, dns2, dns3),
+        execute=lambda: dns_set(pmg, n, search, dns1, dns2, dns3),
+        confirm=confirm)
 
 
 # --- Time ---
@@ -330,12 +325,11 @@ def pmg_node_time_set(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/time"
-    plan = _plan("pmg_node_time_set", tgt, lambda: plan_time_set(pmg, n, timezone))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_time_set", tgt,
-                    lambda: time_set(pmg, n, timezone),
-                    mutation=True, outcome="ok", detail={"timezone": timezone, "confirmed": True})
+    return run_governed(
+        "pmg_node_time_set", tgt,
+        plan=lambda: plan_time_set(pmg, n, timezone),
+        execute=lambda: time_set(pmg, n, timezone),
+        confirm=confirm, detail={"timezone": timezone})
 
 
 # --- Node config (ACME account/domain-mapping only) ---
@@ -375,14 +369,12 @@ def pmg_node_config_set(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/config"
-    plan = _plan("pmg_node_config_set", tgt,
-                 lambda: plan_config_set(pmg, n, acme, acmedomain0, acmedomain1, acmedomain2, acmedomain3, acmedomain4, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_config_set", tgt,
-                    lambda: config_set(pmg, n, acme, acmedomain0, acmedomain1, acmedomain2,
+    return run_governed(
+        "pmg_node_config_set", tgt,
+        plan=lambda: plan_config_set(pmg, n, acme, acmedomain0, acmedomain1, acmedomain2, acmedomain3, acmedomain4, delete),
+        execute=lambda: config_set(pmg, n, acme, acmedomain0, acmedomain1, acmedomain2,
                                        acmedomain3, acmedomain4, delete, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 # --- Certificates info ---
@@ -442,12 +434,11 @@ def pmg_node_subscription_set(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/subscription"
-    plan = _plan("pmg_node_subscription_set", tgt, lambda: plan_subscription_set(n, key))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_subscription_set", tgt,
-                    lambda: subscription_set(pmg, n, key),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_subscription_set", tgt,
+        plan=lambda: plan_subscription_set(n, key),
+        execute=lambda: subscription_set(pmg, n, key),
+        confirm=confirm)
 
 
 @tool()
@@ -463,12 +454,11 @@ def pmg_node_subscription_check(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/subscription"
-    plan = _plan("pmg_node_subscription_check", tgt, lambda: plan_subscription_check(n, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_subscription_check", tgt,
-                    lambda: subscription_check(pmg, n, force),
-                    mutation=True, outcome="ok", detail={"force": force, "confirmed": True})
+    return run_governed(
+        "pmg_node_subscription_check", tgt,
+        plan=lambda: plan_subscription_check(n, force),
+        execute=lambda: subscription_check(pmg, n, force),
+        confirm=confirm, detail={"force": force})
 
 
 @tool()
@@ -483,12 +473,11 @@ def pmg_node_subscription_delete(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/subscription"
-    plan = _plan("pmg_node_subscription_delete", tgt, lambda: plan_subscription_delete(n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_subscription_delete", tgt,
-                    lambda: subscription_delete(pmg, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_subscription_delete", tgt,
+        plan=lambda: plan_subscription_delete(n),
+        execute=lambda: subscription_delete(pmg, n),
+        confirm=confirm)
 
 
 # --- Tasks (Wave 9b) ---
@@ -508,12 +497,11 @@ def pmg_node_task_stop(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/tasks/{upid}"
-    plan = _plan("pmg_node_task_stop", tgt, lambda: plan_task_stop(upid, n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_task_stop", tgt,
-                    lambda: task_stop(pmg, upid, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_task_stop", tgt,
+        plan=lambda: plan_task_stop(upid, n),
+        execute=lambda: task_stop(pmg, upid, n),
+        confirm=confirm)
 
 
 @tool()
@@ -618,12 +606,11 @@ def pmg_node_backup_delete(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/backup/{filename}"
-    plan = _plan("pmg_node_backup_delete", tgt, lambda: plan_backup_delete(n, filename))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_backup_delete", tgt,
-                    lambda: backup_delete(pmg, n, filename),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_backup_delete", tgt,
+        plan=lambda: plan_backup_delete(n, filename),
+        execute=lambda: backup_delete(pmg, n, filename),
+        confirm=confirm)
 
 
 @tool()
@@ -721,14 +708,11 @@ def pmg_node_postfix_queue_action(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/queue/{queue}"
-    plan = _plan("pmg_node_postfix_queue_action", tgt,
-                 lambda: plan_postfix_queue_action(n, queue, action, ids))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_queue_action", tgt,
-                    lambda: postfix_queue_action(pmg, n, queue, action, ids),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "action": action, "ids": ids})
+    return run_governed(
+        "pmg_node_postfix_queue_action", tgt,
+        plan=lambda: plan_postfix_queue_action(n, queue, action, ids),
+        execute=lambda: postfix_queue_action(pmg, n, queue, action, ids),
+        confirm=confirm, detail={"action": action, "ids": ids})
 
 
 @tool()
@@ -743,12 +727,11 @@ def pmg_node_postfix_queue_delete_all(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/queue"
-    plan = _plan("pmg_node_postfix_queue_delete_all", tgt, lambda: plan_postfix_queue_delete_all(n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_queue_delete_all", tgt,
-                    lambda: postfix_queue_delete_all(pmg, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_postfix_queue_delete_all", tgt,
+        plan=lambda: plan_postfix_queue_delete_all(n),
+        execute=lambda: postfix_queue_delete_all(pmg, n),
+        confirm=confirm)
 
 
 @tool()
@@ -764,13 +747,11 @@ def pmg_node_postfix_queue_delete_queue(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/queue/{queue}"
-    plan = _plan("pmg_node_postfix_queue_delete_queue", tgt,
-                 lambda: plan_postfix_queue_delete_queue(n, queue))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_queue_delete_queue", tgt,
-                    lambda: postfix_queue_delete_queue(pmg, n, queue),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_postfix_queue_delete_queue", tgt,
+        plan=lambda: plan_postfix_queue_delete_queue(n, queue),
+        execute=lambda: postfix_queue_delete_queue(pmg, n, queue),
+        confirm=confirm)
 
 
 @tool()
@@ -787,13 +768,11 @@ def pmg_node_postfix_queue_message_delete(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/queue/{queue}/{queue_id}"
-    plan = _plan("pmg_node_postfix_queue_message_delete", tgt,
-                 lambda: plan_postfix_queue_message_delete(n, queue, queue_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_queue_message_delete", tgt,
-                    lambda: postfix_queue_message_delete(pmg, n, queue, queue_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_postfix_queue_message_delete", tgt,
+        plan=lambda: plan_postfix_queue_message_delete(n, queue, queue_id),
+        execute=lambda: postfix_queue_message_delete(pmg, n, queue, queue_id),
+        confirm=confirm)
 
 
 @tool()
@@ -811,13 +790,11 @@ def pmg_node_postfix_queue_message_deliver(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/queue/{queue}/{queue_id}"
-    plan = _plan("pmg_node_postfix_queue_message_deliver", tgt,
-                 lambda: plan_postfix_queue_message_deliver(n, queue, queue_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_queue_message_deliver", tgt,
-                    lambda: postfix_queue_message_deliver(pmg, n, queue, queue_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_postfix_queue_message_deliver", tgt,
+        plan=lambda: plan_postfix_queue_message_deliver(n, queue, queue_id),
+        execute=lambda: postfix_queue_message_deliver(pmg, n, queue, queue_id),
+        confirm=confirm)
 
 
 @tool()
@@ -832,13 +809,11 @@ def pmg_node_postfix_discard_verify_cache(
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
     tgt = f"pmg/node/{n}/postfix/discard_verify_cache"
-    plan = _plan("pmg_node_postfix_discard_verify_cache", tgt,
-                 lambda: plan_postfix_discard_verify_cache(n))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pmg_node_postfix_discard_verify_cache", tgt,
-                    lambda: postfix_discard_verify_cache(pmg, n),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pmg_node_postfix_discard_verify_cache", tgt,
+        plan=lambda: plan_postfix_discard_verify_cache(n),
+        execute=lambda: postfix_discard_verify_cache(pmg, n),
+        confirm=confirm)
 
 
 # --- ClamAV / SpamAssassin signature DBs (Wave 9b) ---

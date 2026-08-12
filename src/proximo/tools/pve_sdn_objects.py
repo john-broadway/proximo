@@ -41,7 +41,7 @@ from proximo.sdn_objects import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -91,13 +91,11 @@ def pve_sdn_controller_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/controllers/{controller}"
-    plan = _plan("pve_sdn_controller_create", tgt,
-                lambda: plan_controller_create(controller, controller_type, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_controller_create", tgt,
-                    lambda: controller_create(api, controller, controller_type, options, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_controller_create", tgt,
+        plan=lambda: plan_controller_create(controller, controller_type, options),
+        execute=lambda: controller_create(api, controller, controller_type, options, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -118,13 +116,11 @@ def pve_sdn_controller_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/controllers/{controller}"
-    plan = _plan("pve_sdn_controller_update", tgt,
-                lambda: plan_controller_update(controller, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_controller_update", tgt,
-                    lambda: controller_update(api, controller, options, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_controller_update", tgt,
+        plan=lambda: plan_controller_update(controller, options, delete),
+        execute=lambda: controller_update(api, controller, options, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -144,12 +140,11 @@ def pve_sdn_controller_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/controllers/{controller}"
-    plan = _plan("pve_sdn_controller_delete", tgt, lambda: plan_controller_delete(api, controller))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_controller_delete", tgt,
-                    lambda: controller_delete(api, controller, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_controller_delete", tgt,
+        plan=lambda: plan_controller_delete(api, controller),
+        execute=lambda: controller_delete(api, controller, lock_token),
+        confirm=confirm)
 
 
 # --- dns (REST API, read) ---
@@ -205,15 +200,13 @@ def pve_sdn_dns_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/dns/{dns}"
-    plan = _plan("pve_sdn_dns_create", tgt,
-                lambda: plan_dns_create(dns, dns_type, url, key, fingerprint, reversemaskv6,
-                                        reversev6mask, dns_ttl))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_dns_create", tgt,
-                    lambda: dns_create(api, dns, dns_type, url, key, fingerprint, reversemaskv6,
+    return run_governed(
+        "pve_sdn_dns_create", tgt,
+        plan=lambda: plan_dns_create(dns, dns_type, url, key, fingerprint, reversemaskv6,
+                                        reversev6mask, dns_ttl),
+        execute=lambda: dns_create(api, dns, dns_type, url, key, fingerprint, reversemaskv6,
                                       reversev6mask, dns_ttl, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -241,14 +234,12 @@ def pve_sdn_dns_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/dns/{dns}"
-    plan = _plan("pve_sdn_dns_update", tgt,
-                lambda: plan_dns_update(api, dns, url, key, fingerprint, reversemaskv6, dns_ttl, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_dns_update", tgt,
-                    lambda: dns_update(api, dns, url, key, fingerprint, reversemaskv6, dns_ttl, delete,
+    return run_governed(
+        "pve_sdn_dns_update", tgt,
+        plan=lambda: plan_dns_update(api, dns, url, key, fingerprint, reversemaskv6, dns_ttl, delete),
+        execute=lambda: dns_update(api, dns, url, key, fingerprint, reversemaskv6, dns_ttl, delete,
                                       digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -266,12 +257,11 @@ def pve_sdn_dns_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/dns/{dns}"
-    plan = _plan("pve_sdn_dns_delete", tgt, lambda: plan_dns_delete(api, dns))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_dns_delete", tgt,
-                    lambda: dns_delete(api, dns, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_dns_delete", tgt,
+        plan=lambda: plan_dns_delete(api, dns),
+        execute=lambda: dns_delete(api, dns, lock_token),
+        confirm=confirm)
 
 
 # --- ipams (REST API, read) ---
@@ -341,13 +331,11 @@ def pve_sdn_ipam_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/ipams/{ipam}"
-    plan = _plan("pve_sdn_ipam_create", tgt,
-                lambda: plan_ipam_create(ipam, ipam_type, url, token, section, fingerprint))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_ipam_create", tgt,
-                    lambda: ipam_create(api, ipam, ipam_type, url, token, section, fingerprint, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_ipam_create", tgt,
+        plan=lambda: plan_ipam_create(ipam, ipam_type, url, token, section, fingerprint),
+        execute=lambda: ipam_create(api, ipam, ipam_type, url, token, section, fingerprint, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -372,14 +360,12 @@ def pve_sdn_ipam_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/ipams/{ipam}"
-    plan = _plan("pve_sdn_ipam_update", tgt,
-                lambda: plan_ipam_update(api, ipam, url, token, section, fingerprint, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_ipam_update", tgt,
-                    lambda: ipam_update(api, ipam, url, token, section, fingerprint, delete,
+    return run_governed(
+        "pve_sdn_ipam_update", tgt,
+        plan=lambda: plan_ipam_update(api, ipam, url, token, section, fingerprint, delete),
+        execute=lambda: ipam_update(api, ipam, url, token, section, fingerprint, delete,
                                        digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -397,9 +383,8 @@ def pve_sdn_ipam_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/ipams/{ipam}"
-    plan = _plan("pve_sdn_ipam_delete", tgt, lambda: plan_ipam_delete(api, ipam))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_ipam_delete", tgt,
-                    lambda: ipam_delete(api, ipam, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_ipam_delete", tgt,
+        plan=lambda: plan_ipam_delete(api, ipam),
+        execute=lambda: ipam_delete(api, ipam, lock_token),
+        confirm=confirm)

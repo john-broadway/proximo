@@ -210,17 +210,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.32.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.32.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.33.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.33.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.32.0 (counted envelopes on the estate-scale listings — breaking).** Nine list
-> tools whose rows grow with the estate — fleet inventory, HA resources, mail statistics —
-> now return a counted envelope instead of a bare list: the server does the counting. The
-> three per-correspondent statistics tools default to the top 100 by count, the per-message
-> detail tool to the newest 100 (`limit=null` for all; the envelope's `total` always counts
-> the complete set). PBS/PMG journals now default to the last 100 lines, matching their PVE
-> sibling. Migration notes per tool in the CHANGELOG.
+> **New in 0.33.0 (the mcp dual-major port).** One build now runs both majors of the official
+> MCP SDK, 1.x and 2.x (`mcp>=1.24,<3`), through a single compatibility seam. CI proves the
+> full suite on both majors on every push. The floor is measured, not assumed: 1.24 is the
+> oldest SDK release that imports and passes the suite. One documented SDK ceiling: a 2.x
+> client caps a single SSE event at 1 MiB, so serve the full unscoped catalog over
+> Streamable HTTP in JSON-response mode or scoped. Details in the CHANGELOG.
 >
-> Recent: **0.31.2** fixed every surviving finding from a full adversarial audit of 0.31.1. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.32.0** moved nine estate-scale listings to counted envelopes (breaking; migration notes per tool in the CHANGELOG).
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -257,12 +256,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.32.0**: **the estate-scale envelope batch.** The M4 sweep looked at all 229
-  list-returning tools and classified every one; the nine whose rows grow with the estate now
-  return counted envelopes — the server counts, the model reads the count — with a default
-  cap of 100 on the mail statistics (top-by-count per correspondent, newest-by-time per
-  message) and a 100-line default bound on the PBS/PMG journals. Breaking shapes batched
-  deliberately into one honest pre-1.0 minor.
+- 🩸 **0.33.0**: **the mcp dual-major port.** One build runs the SDK's 1.x (FastMCP) and 2.x
+  (MCPServer); every spelling that differs crosses one seam, and CI proves the whole suite on
+  both majors every push. The floor moved to the measured truth (`>=1.24`; the declared 1.2.0
+  could not even import). Our own shipped artifacts stay on 1.x this release, deliberately.
+  No tool or wire shape changed: 906 tools, same envelopes.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

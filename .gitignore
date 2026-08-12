@@ -52,3 +52,4 @@ audit.log
 htmlcov/
 .coverage
 .coverage.*
+.venv-mcp2/

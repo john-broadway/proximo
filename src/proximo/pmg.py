@@ -37,6 +37,7 @@ import httpx
 
 from ._secretfile import refuse_exposed_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
+from ._validate import redact_secrets
 from .backends import ProximoError, fingerprint_refused
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 
@@ -5635,10 +5636,9 @@ _FETCHMAIL_SECRET_KEYS = frozenset({"pass"})
 
 
 def _redact_ldap_secrets(d: dict) -> dict:
-    """Mask `bindpw` before it enters a Plan/ledger surface — whole-value swap to '[redacted]',
-    the established Wave 3a/5b/7c `_SECRET_KEYS`/`_redact_secrets` idiom (a fresh per-family copy,
-    not cross-imported)."""
-    return {k: ("[redacted]" if k in _LDAP_SECRET_KEYS else v) for k, v in d.items()}
+    """Mask `bindpw` before it enters a Plan/ledger surface — the shared
+    `_validate.redact_secrets` mechanic over this family's own key set."""
+    return redact_secrets(d, _LDAP_SECRET_KEYS)
 
 
 def _strip_ldap_secrets_at_read(data: dict) -> dict:
@@ -5652,7 +5652,7 @@ def _strip_ldap_secrets_at_read(data: dict) -> dict:
 
 def _redact_fetchmail_secrets(d: dict) -> dict:
     """Mask `pass` before it enters a Plan/ledger surface — same idiom as `_redact_ldap_secrets`."""
-    return {k: ("[redacted]" if k in _FETCHMAIL_SECRET_KEYS else v) for k, v in d.items()}
+    return redact_secrets(d, _FETCHMAIL_SECRET_KEYS)
 
 
 def _strip_fetchmail_secrets_at_read(data: dict) -> dict:
@@ -7989,11 +7989,10 @@ _PBS_REMOTE_SECRET_KEYS = frozenset({"password", "encryption-key"})
 
 
 def _redact_pbs_remote_secrets(d: dict) -> dict:
-    """Mask `password`/`encryption-key` before entering a Plan/ledger surface — whole-value swap
-    to '[redacted]', the established Wave 3a/5b/7c/9c `_SECRET_KEYS`/`_redact_secrets` idiom (a
-    fresh per-family copy, not cross-imported). `fingerprint`/`master-pubkey` are PUBLIC and are
-    NOT in this set — deliberately left visible."""
-    return {k: ("[redacted]" if k in _PBS_REMOTE_SECRET_KEYS else v) for k, v in d.items()}
+    """Mask `password`/`encryption-key` before entering a Plan/ledger surface — the shared
+    `_validate.redact_secrets` mechanic over this family's own key set. `fingerprint`/
+    `master-pubkey` are PUBLIC and are NOT in this set — deliberately left visible."""
+    return redact_secrets(d, _PBS_REMOTE_SECRET_KEYS)
 
 
 def _strip_pbs_remote_secrets_at_read(data: dict) -> dict:
@@ -9241,13 +9240,13 @@ def _redact_acme_account_kw(kw: dict) -> dict:
     """Mask `eab-hmac-key`/`eab-kid` before they enter a plan string or the ledger — defensive on
     the CAPTURE-read side (module section docstring above: no account read schema declares
     either field, but redacted anyway rather than assume that never changes)."""
-    return {k: ("[redacted]" if k in _ACME_ACCOUNT_SECRET_KEYS else v) for k, v in kw.items()}
+    return redact_secrets(kw, _ACME_ACCOUNT_SECRET_KEYS)
 
 
 def _redact_acme_plugin_kw(kw: dict) -> dict:
     """Mask the DNS-provider credential blob (`data`) before it enters a plan string or the
     ledger. Mirrors `_redact_plugin_kw` from BOTH `pbs_acme.py` and `acme_certs.py` exactly."""
-    return {k: ("[redacted]" if k in _ACME_PLUGIN_SECRET_KEYS else v) for k, v in kw.items()}
+    return redact_secrets(kw, _ACME_PLUGIN_SECRET_KEYS)
 
 
 def _strip_acme_account_secrets_at_read(data: dict) -> dict:

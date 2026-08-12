@@ -61,7 +61,7 @@ from proximo.pbs_node import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -94,12 +94,11 @@ def pbs_node_dns_set(
     config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/dns"
-    plan = _plan("pbs_node_dns_set", tgt, lambda: plan_dns_set(pbs, node, search, dns1, dns2, dns3))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_dns_set", tgt,
-                    lambda: dns_set(pbs, node, search, dns1, dns2, dns3, delete_props, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_dns_set", tgt,
+        plan=lambda: plan_dns_set(pbs, node, search, dns1, dns2, dns3),
+        execute=lambda: dns_set(pbs, node, search, dns1, dns2, dns3, delete_props, digest),
+        confirm=confirm)
 
 
 # --- Time ---
@@ -125,12 +124,11 @@ def pbs_node_time_set(
     /nodes/{node}/time) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/time"
-    plan = _plan("pbs_node_time_set", tgt, lambda: plan_time_set(pbs, timezone, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_time_set", tgt,
-                    lambda: time_set(pbs, timezone, node),
-                    mutation=True, outcome="ok", detail={"timezone": timezone, "confirmed": True})
+    return run_governed(
+        "pbs_node_time_set", tgt,
+        plan=lambda: plan_time_set(pbs, timezone, node),
+        execute=lambda: time_set(pbs, timezone, node),
+        confirm=confirm, detail={"timezone": timezone})
 
 
 # --- Network (reads) ---
@@ -175,14 +173,11 @@ def pbs_node_network_iface_create(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/network/{iface}"
     opts = options or {}
-    plan = _plan("pbs_node_network_iface_create", tgt,
-                 lambda: plan_network_iface_create(pbs, iface, node, iface_type, opts))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_network_iface_create", tgt,
-                    lambda: network_iface_create(pbs, iface, node, iface_type, **opts),
-                    mutation=True, outcome="submitted",
-                    detail={"iface_type": iface_type, **opts, "confirmed": True})
+    return run_governed(
+        "pbs_node_network_iface_create", tgt,
+        plan=lambda: plan_network_iface_create(pbs, iface, node, iface_type, opts),
+        execute=lambda: network_iface_create(pbs, iface, node, iface_type, **opts),
+        confirm=confirm, outcome="submitted", detail={"iface_type": iface_type, **opts})
 
 
 @tool()
@@ -204,14 +199,11 @@ def pbs_node_network_iface_update(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/network/{iface}"
     opts = options or {}
-    plan = _plan("pbs_node_network_iface_update", tgt,
-                 lambda: plan_network_iface_update(pbs, iface, node, iface_type, opts))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_network_iface_update", tgt,
-                    lambda: network_iface_update(pbs, iface, node, iface_type, delete_props, digest, **opts),
-                    mutation=True, outcome="ok",
-                    detail={"iface_type": iface_type, **opts, "confirmed": True})
+    return run_governed(
+        "pbs_node_network_iface_update", tgt,
+        plan=lambda: plan_network_iface_update(pbs, iface, node, iface_type, opts),
+        execute=lambda: network_iface_update(pbs, iface, node, iface_type, delete_props, digest, **opts),
+        confirm=confirm, detail={"iface_type": iface_type, **opts})
 
 
 @tool()
@@ -227,13 +219,11 @@ def pbs_node_network_iface_delete(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/network/{iface}"
-    plan = _plan("pbs_node_network_iface_delete", tgt,
-                 lambda: plan_network_iface_delete(pbs, iface, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_network_iface_delete", tgt,
-                    lambda: network_iface_delete(pbs, iface, node, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_network_iface_delete", tgt,
+        plan=lambda: plan_network_iface_delete(pbs, iface, node),
+        execute=lambda: network_iface_delete(pbs, iface, node, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -249,12 +239,11 @@ def pbs_node_network_reload(
     pbs_node_network_revert. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/network"
-    plan = _plan("pbs_node_network_reload", tgt, lambda: plan_network_reload(node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_network_reload", tgt,
-                    lambda: network_reload(pbs, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_network_reload", tgt,
+        plan=lambda: plan_network_reload(node),
+        execute=lambda: network_reload(pbs, node),
+        confirm=confirm)
 
 
 @tool()
@@ -268,12 +257,11 @@ def pbs_node_network_revert(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/network"
-    plan = _plan("pbs_node_network_revert", tgt, lambda: plan_network_revert(node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_network_revert", tgt,
-                    lambda: network_revert(pbs, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_network_revert", tgt,
+        plan=lambda: plan_network_revert(node),
+        execute=lambda: network_revert(pbs, node),
+        confirm=confirm)
 
 
 # --- Certificates ---
@@ -312,12 +300,11 @@ def pbs_node_cert_upload(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/certificates/custom"
     key_detail = _key_fingerprint()
-    plan = _plan("pbs_node_cert_upload", tgt, lambda: plan_cert_upload(certificates, node, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict(), **key_detail}
-    return _audited("pbs_node_cert_upload", tgt,
-                    lambda: cert_upload(pbs, certificates, key, node, force),
-                    mutation=True, outcome="ok", detail={**key_detail, "confirmed": True})
+    return run_governed(
+        "pbs_node_cert_upload", tgt,
+        plan=lambda: plan_cert_upload(certificates, node, force),
+        execute=lambda: cert_upload(pbs, certificates, key, node, force),
+        confirm=confirm, surface=key_detail)
 
 
 @tool()
@@ -332,12 +319,11 @@ def pbs_node_cert_delete(
     by re-uploading (pbs_node_cert_upload). Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/certificates/custom"
-    plan = _plan("pbs_node_cert_delete", tgt, lambda: plan_cert_delete(node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_cert_delete", tgt,
-                    lambda: cert_delete(pbs, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_cert_delete", tgt,
+        plan=lambda: plan_cert_delete(node),
+        execute=lambda: cert_delete(pbs, node),
+        confirm=confirm)
 
 
 # --- Services ---
@@ -381,12 +367,11 @@ def pbs_node_service_control(
     pbs_node_service_status. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/services/{service}:{action}"
-    plan = _plan("pbs_node_service_control", tgt, lambda: plan_service_control(service, action, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_service_control", tgt,
-                    lambda: service_control(pbs, service, action, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_service_control", tgt,
+        plan=lambda: plan_service_control(service, action, node),
+        execute=lambda: service_control(pbs, service, action, node),
+        confirm=confirm)
 
 
 # --- Subscription ---
@@ -415,12 +400,11 @@ def pbs_node_subscription_set(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/subscription"
-    plan = _plan("pbs_node_subscription_set", tgt, lambda: plan_subscription_set(key, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_subscription_set", tgt,
-                    lambda: subscription_set(pbs, key, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_subscription_set", tgt,
+        plan=lambda: plan_subscription_set(key, node),
+        execute=lambda: subscription_set(pbs, key, node),
+        confirm=confirm)
 
 
 @tool()
@@ -435,12 +419,11 @@ def pbs_node_subscription_check(
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/subscription"
-    plan = _plan("pbs_node_subscription_check", tgt, lambda: plan_subscription_check(node, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_subscription_check", tgt,
-                    lambda: subscription_check(pbs, node, force),
-                    mutation=True, outcome="ok", detail={"force": force, "confirmed": True})
+    return run_governed(
+        "pbs_node_subscription_check", tgt,
+        plan=lambda: plan_subscription_check(node, force),
+        execute=lambda: subscription_check(pbs, node, force),
+        confirm=confirm, detail={"force": force})
 
 
 @tool()
@@ -454,12 +437,11 @@ def pbs_node_subscription_delete(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/subscription"
-    plan = _plan("pbs_node_subscription_delete", tgt, lambda: plan_subscription_delete(node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_subscription_delete", tgt,
-                    lambda: subscription_delete(pbs, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_subscription_delete", tgt,
+        plan=lambda: plan_subscription_delete(node),
+        execute=lambda: subscription_delete(pbs, node),
+        confirm=confirm)
 
 
 # --- Status ---
@@ -517,12 +499,11 @@ def pbs_node_task_stop(
     /nodes/{node}/tasks/{upid}) and returns {"status": "ok", "result": None} — a cancellation
     signal, not immediate. Find UPIDs via pbs_tasks_list. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
-    plan = _plan("pbs_node_task_stop", upid, lambda: plan_task_stop(upid, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_node_task_stop", upid,
-                    lambda: task_stop(pbs, upid, node),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_node_task_stop", upid,
+        plan=lambda: plan_task_stop(upid, node),
+        execute=lambda: task_stop(pbs, upid, node),
+        confirm=confirm)
 
 
 # --- Journal / Syslog (read-only; ADVERSARIAL — free-text logs) ---

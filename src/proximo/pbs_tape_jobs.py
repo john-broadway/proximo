@@ -256,6 +256,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list
 from .pbs_tape_config import _check_tape_id  # reuse: identical drive/pool/id/store/vault shape
@@ -273,10 +274,6 @@ from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 # Media UUID — standard lowercase-hex UUID shape, shared by `media`/`media-set` filter params on
 # /tape/media/content, `uuid` on destroy/move, and the {uuid} path segment on status get/set.
 _MEDIA_UUID_RE = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
-
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars — CONFIG-plane only (fact #9).
-# Each PBS module keeps its own copy — established convention.
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # backup-id filter on /tape/media/content: schema pattern only, NO length bound at all (unlike
 # pbs.py's own _check_backup_id, which caps at 64 and disallows a leading underscore — a fresh,
@@ -359,13 +356,6 @@ def _check_media_uuid(value: str) -> str:
     s = str(value)
     if not _MEDIA_UUID_RE.match(s):
         raise ProximoError(f"invalid media uuid: {value!r} (expected a lowercase-hex UUID)")
-    return s
-
-
-def _check_digest(value: str) -> str:
-    s = str(value)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {value!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 

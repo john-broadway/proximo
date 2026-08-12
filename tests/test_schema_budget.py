@@ -23,18 +23,18 @@ import json
 
 import pytest
 
-from proximo import server
+from proximo import door, server
 from proximo.targets import _TARGET_DESC
 
 REGISTRY = server.mcp._tool_manager._tools
 
 
 def _schema(tool) -> dict:
-    for attr in ("parameters", "inputSchema", "input_schema"):
-        value = getattr(tool, attr, None)
-        if value:
-            return value
-    return {}
+    """Internal registry Tools spell their JSON schema `.parameters` on BOTH mcp majors —
+    every caller in this file feeds REGISTRY values, never wire Tools. Spelled directly so a
+    future rename fails LOUD: the old three-spelling getattr chain here was exactly the
+    quiet-fallback shape _mcpcompat's accessors forbid (first lens, finding 8)."""
+    return tool.parameters or {}
 
 
 def _payload_bytes(names, registry=None) -> int:
@@ -66,9 +66,9 @@ def _payload_bytes(names, registry=None) -> int:
 
 async def _list_tools_for(registry):
     """The MCP `tools/list` payload for a registry, via the server's own converter."""
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
 
-    probe = FastMCP("proximo-budget-probe")
+    probe = ServerClass("proximo-budget-probe")
     probe._tool_manager._tools = dict(registry)
     return await probe.list_tools()
 
@@ -161,7 +161,7 @@ def test_full_surface_payload_within_budget():
 
 def test_single_plane_payload_within_budget():
     """The realistic deployment: one plane, auto-scoped. This is what a local model faces."""
-    pve = server.surface_keep(list(REGISTRY), "pve")
+    pve = door.surface_keep(list(REGISTRY), "pve")
     size = _payload_bytes(sorted(pve))
     assert size <= PVE_SURFACE_BUDGET, (
         f"pve-only payload is {size:,} B (~{size // 4:,} tokens) across {len(pve)} tools, "
@@ -195,11 +195,11 @@ def _lean_facade_registry() -> dict:
     the full-catalog REGISTRY, so this must not be a bare copy of REGISTRY's keys pointed
     back at REGISTRY's objects — it needs its own tool objects, from its own registry.
     """
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
 
-    m = FastMCP("proximo-test-schema-budget")
+    m = ServerClass("proximo-test-schema-budget")
     m._tool_manager._tools = dict(REGISTRY)
-    server.apply_lean(m)
+    door.apply_lean(m)
     return m._tool_manager._tools
 
 
@@ -251,15 +251,15 @@ def test_doc_printed_token_figures_match_live_measurement(label, doc_tokens):
         lean_registry = _lean_facade_registry()
         names, registry = list(lean_registry), lean_registry
     elif label.startswith("one domain toolset"):
-        names, registry = sorted(server.toolset_keep(REGISTRY.keys(), "pve.guests")), REGISTRY
+        names, registry = sorted(door.toolset_keep(REGISTRY.keys(), "pve.guests")), REGISTRY
     elif label.startswith("three exact tools"):
-        names = sorted(server.tool_keep(set(REGISTRY), "pve_list_guests,pve_guest_power,pve_rollback"))
+        names = sorted(door.tool_keep(set(REGISTRY), "pve_list_guests,pve_guest_power,pve_rollback"))
         registry = REGISTRY
     elif label.startswith("two domain toolsets"):
-        names = sorted(server.toolset_keep(REGISTRY.keys(), "pve.guests,pve.storage"))
+        names = sorted(door.toolset_keep(REGISTRY.keys(), "pve.guests,pve.storage"))
         registry = REGISTRY
     elif label.startswith("one plane"):
-        names, registry = sorted(server.surface_keep(list(REGISTRY), "pve")), REGISTRY
+        names, registry = sorted(door.surface_keep(list(REGISTRY), "pve")), REGISTRY
     else:
         names, registry = list(REGISTRY), REGISTRY
 
@@ -280,7 +280,7 @@ def test_doc_printed_token_figures_match_live_measurement(label, doc_tokens):
 def test_nullable_anyof_is_collapsed_to_a_type_union():
     """`anyOf:[{type:X},{type:null}]` and `type:[X,"null"]` are the SAME JSON Schema; one is
     ~30 chars longer, and pydantic emits it on every optional parameter across the surface."""
-    from proximo.server import collapse_nullable_anyof
+    from proximo.door import collapse_nullable_anyof
 
     node = {"properties": {"node": {"anyOf": [{"type": "string"}, {"type": "null"}],
                                     "default": None, "description": "d"}}}
@@ -295,7 +295,7 @@ def test_nullable_anyof_collapse_leaves_real_unions_alone():
     """Only the two-branch X-or-null shape collapses. A genuine union, or a branch carrying
     more than `type`, must survive untouched — a shorter schema that means something else is
     not a saving."""
-    from proximo.server import collapse_nullable_anyof
+    from proximo.door import collapse_nullable_anyof
 
     real = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
     constrained = {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
@@ -315,7 +315,7 @@ def test_target_param_dropped_when_no_registry_but_kept_when_configured():
     Both directions asserted, because a prune that fires unconditionally would silently remove a
     parameter that multi-target deployments genuinely need.
     """
-    from proximo.server import drop_unusable_target_param
+    from proximo.door import drop_unusable_target_param
 
     def fresh():
         return {"properties": {"vmid": {"type": "string"},

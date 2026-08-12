@@ -18,7 +18,7 @@ from __future__ import annotations
 import anyio
 import pytest
 
-from proximo import lean, server
+from proximo import door, lean, server
 from proximo.backends import ProximoError
 
 
@@ -202,10 +202,10 @@ def test_tool_schema_suggests_near_misses():
     assert "pve_guest_power" in str(exc.value)
 
 
-# --- dispatch: unknown-name fail-closed (server.dispatch_tool) ----------------------------
+# --- dispatch: unknown-name fail-closed (door.dispatch_tool) ----------------------------
 #
 # `proximo_tool_schema` (above) already fails closed on a typo with did-you-mean candidates.
-# `proximo_call` -> `server.dispatch_tool` is the OTHER unknown-name path, and the one a small
+# `proximo_call` -> `door.dispatch_tool` is the OTHER unknown-name path, and the one a small
 # model in dynamic mode is most likely to hit directly: its whole incentive is conserving round
 # trips, which is exactly the incentive to skip the schema-lookup step and call a remembered or
 # guessed name straight through. A bare KeyError there is a dead end with no recovery signal;
@@ -214,9 +214,9 @@ def test_tool_schema_suggests_near_misses():
 
 def _fresh_mcp_mirroring_the_real_registry():
     """A throwaway FastMCP server whose registry mirrors the real one, safe to prune in a test."""
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
 
-    m = FastMCP("proximo-test-lean-dispatch")
+    m = ServerClass("proximo-test-lean-dispatch")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
     return m
 
@@ -226,7 +226,7 @@ def test_dispatch_tool_refuses_unknown_name_as_proximo_error():
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(m, catalog, "pve_delete_gust", {})
+        return await door.dispatch_tool(m, catalog, "pve_delete_gust", {})
 
     with pytest.raises(ProximoError, match="pve_delete_gust"):
         anyio.run(go)
@@ -239,7 +239,7 @@ def test_dispatch_tool_unknown_name_suggests_near_matches():
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(m, catalog, "pve_delete_gust", {})
+        return await door.dispatch_tool(m, catalog, "pve_delete_gust", {})
 
     with pytest.raises(ProximoError) as exc:
         anyio.run(go)

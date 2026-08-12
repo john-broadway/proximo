@@ -67,6 +67,7 @@ def build_app(url: str | None = None, *, token: str | None = None,
     from starlette.routing import Route  # noqa: PLC0415
 
     from . import server  # noqa: PLC0415
+    from ._mcpcompat import streamable_http_app as compat_streamable_http_app  # noqa: PLC0415
     from .webguard import guard_middleware, require_auth_for_public  # noqa: PLC0415
 
     if url is None:
@@ -76,9 +77,6 @@ def build_app(url: str | None = None, *, token: str | None = None,
     require_auth_for_public(urlparse(url).hostname, token, where="advertised URL",
                             face="MCP-HTTP", token_env=_TOKEN_FILE_ENV)
 
-    server.mcp.settings.streamable_http_path = _MCP_PATH
-    server.mcp.settings.stateless_http = stateless
-    server.mcp.settings.json_response = json_response
     # ONE authoritative perimeter, not two: newer SDKs default their own DNS-rebind guard ON with
     # a fixed loopback-only, port-suffixed allowlist — which would 421 every legitimate non-default
     # deployment (public bind with token, reverse-proxy Hosts, the operator's PROXIMO_MCP_HTTP_
@@ -86,14 +84,11 @@ def build_app(url: str | None = None, *, token: str | None = None,
     # guard_middleware stack below covers both of its checks — TrustedHost validates Host (rebind),
     # the CSRF guard validates Origin + Content-Type — so the SDK layer is disabled rather than fed
     # a second, driftable copy of the allowlist. (Its POST Content-Type check stays on either way.)
-    server.mcp.settings.transport_security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=False)
-    # Fresh session manager per app: FastMCP caches its manager on first use, and a manager's
-    # run() is once-per-instance — a second build (tests, embedders) would otherwise crash at
-    # lifespan start, and the settings above would silently not apply. Private-attr reach, like
-    # governed.list_governed_sync's — the SDK exposes no reset.
-    server.mcp._session_manager = None
-    app = server.mcp.streamable_http_app()
+    # Per-major wiring (1.x settings mutation + its cached-manager reset / 2.x kwargs) lives in
+    # _mcpcompat.streamable_http_app.
+    app = compat_streamable_http_app(
+        server.mcp, path=_MCP_PATH, stateless=stateless, json_response=json_response,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
 
     async def _healthz(_request):
         return JSONResponse({"ok": True})

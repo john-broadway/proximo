@@ -33,7 +33,7 @@ from proximo.pbs_notifications import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -134,13 +134,11 @@ def pbs_notification_endpoint_create(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/endpoints/{ep_type}/{name}"
     kw = {"comment": comment, "disable": disable, **(options or {})}
-    plan = _plan("pbs_notification_endpoint_create", tgt,
-                 lambda: plan_notification_endpoint_create(ep_type, name, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_endpoint_create", tgt,
-                    lambda: notification_endpoint_create(pbs, ep_type, name, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_notification_endpoint_create", tgt,
+        plan=lambda: plan_notification_endpoint_create(ep_type, name, **kw),
+        execute=lambda: notification_endpoint_create(pbs, ep_type, name, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -162,13 +160,11 @@ def pbs_notification_endpoint_update(
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/endpoints/{ep_type}/{name}"
     kw = {"comment": comment, "disable": disable, "digest": digest, **(options or {})}
-    plan = _plan("pbs_notification_endpoint_update", tgt,
-                 lambda: plan_notification_endpoint_update(pbs, ep_type, name, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_endpoint_update", tgt,
-                    lambda: notification_endpoint_update(pbs, ep_type, name, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_notification_endpoint_update", tgt,
+        plan=lambda: plan_notification_endpoint_update(pbs, ep_type, name, **kw),
+        execute=lambda: notification_endpoint_update(pbs, ep_type, name, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -185,13 +181,11 @@ def pbs_notification_endpoint_delete(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/endpoints/{ep_type}/{name}"
-    plan = _plan("pbs_notification_endpoint_delete", tgt,
-                 lambda: plan_notification_endpoint_delete(pbs, ep_type, name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_endpoint_delete", tgt,
-                    lambda: notification_endpoint_delete(pbs, ep_type, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_notification_endpoint_delete", tgt,
+        plan=lambda: plan_notification_endpoint_delete(pbs, ep_type, name),
+        execute=lambda: notification_endpoint_delete(pbs, ep_type, name),
+        confirm=confirm)
 
 
 # --- Mutations: Matchers ---
@@ -220,21 +214,19 @@ def pbs_notification_matcher_set(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/matchers/{name}"
-    plan = _plan("pbs_notification_matcher_set", tgt,
-                 lambda: plan_notification_matcher_set(
+    return run_governed(
+        "pbs_notification_matcher_set", tgt,
+        plan=lambda: plan_notification_matcher_set(
                      name, comment=comment, mode=mode, match_severity=match_severity,
                      match_field=match_field, match_calendar=match_calendar,
                      invert_match=invert_match, target=target, disable=disable,
-                     digest=digest, delete=delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_matcher_set", tgt,
-                    lambda: notification_matcher_set(
+                     digest=digest, delete=delete),
+        execute=lambda: notification_matcher_set(
                         pbs, name, comment=comment, mode=mode, match_severity=match_severity,
                         match_field=match_field, match_calendar=match_calendar,
                         invert_match=invert_match, target=target, disable=disable,
                         digest=digest, delete=delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -248,13 +240,11 @@ def pbs_notification_matcher_delete(
     un-routed until re-created with pbs_notification_matcher_set. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/matchers/{name}"
-    plan = _plan("pbs_notification_matcher_delete", tgt,
-                 lambda: plan_notification_matcher_delete(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_matcher_delete", tgt,
-                    lambda: notification_matcher_delete(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_notification_matcher_delete", tgt,
+        plan=lambda: plan_notification_matcher_delete(name),
+        execute=lambda: notification_matcher_delete(pbs, name),
+        confirm=confirm)
 
 
 # --- Mutation: Target Test ---
@@ -271,10 +261,8 @@ def pbs_notification_target_test(
     pbs_notification_targets_list for target names. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/notifications/targets/{name}"
-    plan = _plan("pbs_notification_target_test", tgt,
-                 lambda: plan_notification_target_test(name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_notification_target_test", tgt,
-                    lambda: notification_target_test(pbs, name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_notification_target_test", tgt,
+        plan=lambda: plan_notification_target_test(name),
+        execute=lambda: notification_target_test(pbs, name),
+        confirm=confirm)

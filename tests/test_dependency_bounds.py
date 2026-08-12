@@ -2,7 +2,8 @@
 
 Earned 2026-07-30, the hard way. `pyproject.toml` declared `mcp>=1.2.0` with no upper bound.
 The MCP SDK published 2.0.0 on 2026-07-28, which removed `mcp.server.fastmcp` — the module
-`proximo.server` imports on line 29. From that moment every fresh `pip install
+`proximo.server` imported at the time (the A13 dual-major port later moved that import behind
+the `_mcpcompat` seam). From that moment every fresh `pip install
 proximo-proxmox` (any version) resolved mcp 2.0.0 and could not import the package at all.
 `uvx proximo-proxmox`, the zero-install path the README leads with, was broken too.
 
@@ -90,11 +91,42 @@ def test_the_cryptography_floor_excludes_the_bleichenbacher_range():
     )
 
 
-def test_the_mcp_bound_excludes_the_sdk_major_that_removed_fastmcp():
-    """Named explicitly, because this is the one that actually bit."""
-    reqs = [r for where, r in _requirements()
-            if where == "dependencies" and r.split(">=")[0].strip() == "mcp"]
-    assert reqs, "mcp is a runtime dependency; it must stay declared"
-    assert all("<2" in r.replace(" ", "") for r in reqs), (
-        f"mcp must be capped below 2.0.0 until proximo.server is ported off "
-        f"mcp.server.fastmcp, which 2.x removed: {reqs}")
+# The mcp majors this build actually RUNS, proven by the full suite on each (the CI matrix
+# re-proves both on every push). A new major joins this set only when its port lands — never
+# because the resolver found it. Twin of _mcpcompat's own closed-set assertion.
+SUPPORTED_MAJORS = {"mcp": {1, 2}}
+
+
+def test_the_mcp_bounds_admit_exactly_the_supported_majors():
+    """Replaces the `<2`-era guard, and NOT with a substring: pacioli's twin of the old check
+    (`"<2" in req`) was proven to pass `<2.5` — which resolves mcp 2.0.0 — because a substring
+    answers an easier question than "what does this range admit". `packaging` evaluates the
+    real specifier. Three properties, each with teeth: every supported major is admitted, the
+    floor stays at the MEASURED 1.24 (1.2.0 could not import; 1.22-1.23 could not run the
+    suite — see pyproject's dependency comment), and the unproven next major is excluded
+    including its prereleases (the exact unbounded shape of the 2026-07-30 outage)."""
+    from packaging.requirements import Requirement
+
+    mcp_reqs = [Requirement(r) for where, r in _requirements() if where == "dependencies"
+                and Requirement(r).name == "mcp"]
+    assert mcp_reqs, "mcp is a runtime dependency; it must stay declared"
+    spec = mcp_reqs[0].specifier
+
+    for major in sorted(SUPPORTED_MAJORS["mcp"]):
+        assert spec.contains(f"{major}.99.0"), (
+            f"mcp major {major} is suite-proven supported but the declared range {spec} "
+            f"excludes it")
+    assert spec.contains("1.24"), (
+        f"the range {spec} excludes the measured floor 1.24 itself — a silently RAISED floor "
+        "is a compat break for adopters on the proven releases (the first lens caught this "
+        "assertion missing: without it, '>=1.28,<3' passed every bounds test)")
+    assert not spec.contains("1.23.0"), (
+        f"the range {spec} admits releases below the measured floor 1.24 — 1.21.1-1.23 import "
+        "but cannot run the suite (no streamable_http_client), and 1.21.0 and below cannot "
+        "import proximo (probed: a fastmcp union-annotation registration crash through 1.21.0; "
+        "ToolAnnotations itself absent through 1.6)")
+    next_major = max(SUPPORTED_MAJORS["mcp"]) + 1
+    assert not spec.contains(f"{next_major}.0.0"), (
+        f"the unproven mcp {next_major}.x is admitted by {spec} — the 2026-07-30 outage shape")
+    assert not spec.contains(f"{next_major}.0.0rc1", prereleases=True), (
+        f"a prerelease of mcp {next_major}.x slips through {spec}")

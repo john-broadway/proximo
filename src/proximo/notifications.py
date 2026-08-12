@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .planning import RISK_LOW, Plan
 
@@ -47,8 +48,9 @@ _SECRET_KEYS = frozenset({"token", "password", "secret", "header"})
 
 
 def _redact_secrets(d: dict) -> dict:
-    """Mask credential-shaped fields before they enter a plan string or Plan.current."""
-    return {k: ("[redacted]" if k in _SECRET_KEYS else v) for k, v in d.items()}
+    """Mask credential-shaped fields before they enter a plan string or Plan.current — the
+    shared `_validate.redact_secrets` mechanic over this plane's own `_SECRET_KEYS`."""
+    return redact_secrets(d, _SECRET_KEYS)
 
 
 def _check_endpoint_type(ep_type: str) -> str:

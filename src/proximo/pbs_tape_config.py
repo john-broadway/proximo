@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list
 from .planning import RISK_LOW, RISK_MEDIUM, Plan
@@ -122,10 +123,6 @@ from .planning import RISK_LOW, RISK_MEDIUM, Plan
 # Length (3-32) enforced separately since the regex itself doesn't encode it.
 _TAPE_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*\Z")
 
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars, PUT-only (fact #3). Each PBS
-# module keeps its own copy — established convention (pbs_notifications.py, pbs_acme.py).
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
-
 
 def _check_tape_id(value: str) -> str:
     s = str(value)
@@ -134,13 +131,6 @@ def _check_tape_id(value: str) -> str:
             f"invalid PBS tape drive/changer identifier: {value!r} (must start with alnum or "
             "underscore, then alnum/./_/-, 3-32 chars)"
         )
-    return s
-
-
-def _check_digest(value: str) -> str:
-    s = str(value)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {value!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 

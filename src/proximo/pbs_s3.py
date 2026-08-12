@@ -197,6 +197,8 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
+from ._validate import redact_secrets
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
@@ -231,10 +233,6 @@ _REGION_RE = re.compile(r"^[_a-z\d][-_a-z\d]+\Z")
 # (a TLS cert pin here, a key identity there) — a fresh copy per this module's own convention,
 # matching every other PBS module's "keep your own copy" practice even for identical shapes.
 _FINGERPRINT_RE = re.compile(r"^(?:[0-9a-fA-F][0-9a-fA-F])(?::[0-9a-fA-F][0-9a-fA-F]){31}\Z")
-
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars. Each PBS module keeps its own
-# copy — established convention.
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # Complete no-control-characters class, shared by every free-text-ish field on this plane that the
 # schema gives no pattern for (bucket, store-prefix, rate/burst byte-size strings).
@@ -279,13 +277,6 @@ def _check_fingerprint(value: str) -> str:
             f"invalid X509 fingerprint: {value!r} (expected 32 colon-separated hex byte-pairs — "
             "a formatted SHA-256)"
         )
-    return s
-
-
-def _check_digest(value: str) -> str:
-    s = str(value)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {value!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 
@@ -367,10 +358,9 @@ _SECRET_KEYS = frozenset({"secret-key", "key"})
 
 
 def _redact_secrets(d: dict) -> dict:
-    """Mask credential-shaped fields before they enter a plan string or Plan.current. Mirrors
-    `pbs_tape_media.py`'s `_redact_secrets` idiom — the whole value is swapped, never partially
-    redacted."""
-    return {k: ("[redacted]" if k in _SECRET_KEYS else v) for k, v in d.items()}
+    """Mask credential-shaped fields before they enter a plan string or Plan.current — the
+    shared `_validate.redact_secrets` mechanic over this plane's own `_SECRET_KEYS`."""
+    return redact_secrets(d, _SECRET_KEYS)
 
 
 def _s3_fields(

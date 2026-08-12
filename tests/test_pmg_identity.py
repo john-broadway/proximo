@@ -389,6 +389,12 @@ class TestCheckDigest:
         with pytest.raises(ProximoError):
             _check_digest("z" * 64)
 
+    def test_rejects_trailing_newline(self):
+        # A11 tightening: the retired per-module copy .strip()ped before matching, which
+        # re-admitted the trailing newline the \Z anchor exists to refuse.
+        with pytest.raises(ProximoError):
+            _check_digest("a" * 64 + "\n")
+
 
 def test_reject_dot_traversal_raises_on_lone_dot():
     with pytest.raises(ProximoError):
@@ -1100,6 +1106,17 @@ class TestCheckDigestSha1:
     def test_rejects_too_short(self):
         with pytest.raises(ProximoError):
             _check_digest_sha1("a" * 39)
+
+    def test_rejects_trailing_newline(self):
+        # A11 adjudication: this was the LAST digest validator still .strip()ping before its
+        # \Z-anchored match — the strip re-admitted the trailing newline the anchor refuses.
+        # Divergent shape (SHA-1), same strict no-strip law as every sibling.
+        with pytest.raises(ProximoError):
+            _check_digest_sha1("a" * 40 + "\n")
+
+    def test_rejects_surrounding_whitespace(self):
+        with pytest.raises(ProximoError):
+            _check_digest_sha1(" " + "a" * 40)
 
 
 class TestRedactPmgHttpProxy:

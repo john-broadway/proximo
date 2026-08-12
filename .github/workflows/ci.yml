@@ -41,6 +41,10 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
+        # The dual-major port (A13): every push proves the suite on BOTH supported mcp majors.
+        # Leg 1 runs the lock's own hash-pinned 1.x; leg 2 overrides to the newest 2.x so a
+        # breaking 2.x release turns up here first, not in an adopter's fresh install.
+        mcp-major: ["1", "2"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -50,6 +54,22 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
           python -m pip install --no-deps --no-build-isolation -e .
+      - name: Pin the mcp major under test (2.x leg; the lock itself stays on 1.x by design)
+        if: matrix.mcp-major == '2'
+        # Deliberate exception to this job's --require-hashes guarantee: the 2.x SDK and its
+        # transitive deps are not in the lock (the lock is constrained to 1.x), so this leg
+        # installs them unpinned. Scope: test-only; nothing this step installs reaches a
+        # shipped artifact (container/SBOM install from the hash-pinned exports).
+        run: python -m pip install "mcp>=2,<3"
+      - name: Assert the installed mcp major matches this leg (never trust the resolver)
+        run: |
+          python - <<'EOF'
+          import importlib.metadata as m
+          v = m.version("mcp")
+          want = "${{ matrix.mcp-major }}"
+          assert v.split(".")[0] == want, f"leg wants mcp {want}.x, resolved {v}"
+          print(f"mcp {v} matches leg {want}")
+          EOF
       - name: Lint
         run: ruff check .
       - name: Test

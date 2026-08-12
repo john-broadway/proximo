@@ -3,7 +3,7 @@ import textwrap
 
 import pytest
 
-from proximo import server, targets
+from proximo import door, server, targets
 from proximo.backends import ProximoError
 
 
@@ -343,7 +343,7 @@ def test_advertised_schema_carries_the_target_param_when_a_registry_exists(monke
         def __init__(self): self._tool_manager = type("M", (), {"_tools": {"t": _Tool()}})()
 
     stand = _Stand()
-    server._slim_registry_schemas(stand)
+    door._slim_registry_schemas(stand)
     kept = stand._tool_manager._tools["t"].parameters["properties"]
     assert "proximo_target" in kept, (
         "with a registry configured the slimming pass dropped the parameter a multi-target "
@@ -352,6 +352,6 @@ def test_advertised_schema_carries_the_target_param_when_a_registry_exists(monke
     # ...and the negative control, same pass, registry removed: it must actually prune.
     monkeypatch.delenv("PROXIMO_TARGETS", raising=False)
     stand2 = _Stand()
-    server._slim_registry_schemas(stand2)
+    door._slim_registry_schemas(stand2)
     assert "proximo_target" not in stand2._tool_manager._tools["t"].parameters["properties"], (
         "negative control failed — the prune never fires, so the positive case proves nothing")

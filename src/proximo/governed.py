@@ -22,10 +22,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 
 from . import server
+from ._mcpcompat import ToolError, in_process_result, tool_input_schema
 
 
 class GovernedError(Exception):
@@ -45,7 +45,8 @@ class GovernedError(Exception):
 async def list_governed() -> list[Any]:
     """The governed tool surface — the operator's configured set, same as an MCP client sees.
 
-    Returns MCP ``Tool`` objects (``.name`` / ``.description`` / ``.inputSchema``)."""
+    Returns MCP ``Tool`` objects (``.name`` / ``.description``; read their schema through
+    ``_mcpcompat.tool_input_schema`` — the field is spelled per mcp major)."""
     return await server.mcp.list_tools()
 
 
@@ -53,10 +54,11 @@ def list_governed_sync() -> list[Any]:
     """Synchronous variant for build paths that may run inside a running event loop (e.g.
     ``build_agent_card`` called from an async server bootstrap, where ``anyio.run`` can't nest).
 
-    Reads the FastMCP tool manager directly. The returned internal ``Tool`` objects expose
-    ``.name`` and ``.description`` (their JSON schema is ``.parameters``, not ``.inputSchema``) —
-    enough for the agent card, which advertises names + descriptions. For the request schema use
-    the async ``list_governed`` (its ``.inputSchema``) from an async context."""
+    Reads the SDK's tool manager directly (same spelling on both mcp majors). The returned
+    internal ``Tool`` objects expose ``.name`` and ``.description`` (their JSON schema is
+    ``.parameters``, not the wire Tool's schema field) — enough for the agent card, which
+    advertises names + descriptions. For the request schema use the async ``list_governed``
+    (via ``_mcpcompat.tool_input_schema``) from an async context."""
     return server.mcp._tool_manager.list_tools()
 
 
@@ -87,7 +89,8 @@ async def call_governed(name: str, arguments: Any) -> dict[str, Any]:
 
     # Structural pre-check (clean 400 for the common client mistake). Type validation stays with
     # the tool's own pydantic model via call_tool, so we never diverge from MCP's coercion.
-    required = tool.inputSchema.get("required", []) if isinstance(tool.inputSchema, dict) else []
+    schema = tool_input_schema(tool)
+    required = schema.get("required", []) if isinstance(schema, dict) else []
     missing = [r for r in required if r not in arguments]
     if missing:
         raise GovernedError(400, f"missing required param(s): {sorted(missing)}")
@@ -109,17 +112,21 @@ async def call_governed(name: str, arguments: Any) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — a non-ToolError escape is an internal fault; sanitize hard
         raise GovernedError(502, f"internal error: {type(e).__name__}") from None
 
-    return _normalize(result)
+    return _normalize(in_process_result(result))
 
 
 def _normalize(result: Any) -> dict[str, Any]:
-    """Normalize a call_tool result to a JSON object for the response body.
+    """Normalize a call_tool result (pre-shaped by ``_mcpcompat.in_process_result``) to a JSON
+    object for the response body.
 
-    FastMCP's ``call_tool`` returns a 2-tuple ``(content_blocks, structured_content)`` — element 1
-    is the tool's structured output: a dict return passes through as itself, a non-dict (list/scalar)
-    is wrapped by FastMCP under ``{"result": ...}``. That structured dict IS what an MCP client's
-    structured output carries, so it is exactly what the REST/A2A caller should get — return it
-    verbatim. Fallbacks cover a bare-dict return and the older single-content-block shape.
+    On mcp 1.x FastMCP's ``call_tool`` returns a 2-tuple ``(content_blocks, structured_content)``
+    — element 1 is the tool's structured output: a dict return passes through as itself, a
+    non-dict (list/scalar) is wrapped by FastMCP under ``{"result": ...}``. That structured dict
+    IS what an MCP client's structured output carries, so it is exactly what the REST/A2A caller
+    should get — return it verbatim. On 2.x ``in_process_result`` has already unwrapped the
+    CallToolResult to either that structured dict or the content-block list (a plain-dict tool
+    return arrives as one JSON TextContent there; the parse path below renders it identically).
+    Fallbacks cover a bare-dict return and the older single-content-block shape.
 
     (Getting this wrong returns an empty body for every read — caught only by driving the live face,
     not by the unit tests, because the tuple shape is what the real SDK returns.)

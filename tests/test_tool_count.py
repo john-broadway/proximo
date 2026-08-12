@@ -30,6 +30,7 @@ import asyncio
 import re
 from pathlib import Path
 
+import proximo.door as door
 import proximo.server as server
 
 EXPECTED_TOOL_COUNT = 906  # +1 (audit_entries, 2026-08-01): the READ side of PROVE. 0.29.0
@@ -447,7 +448,7 @@ def test_readme_surface_subset_counts_are_real():
         if not (spec and claim):
             continue
         checked += 1
-        actual = len(server.surface_keep(names, spec.group(1)))
+        actual = len(door.surface_keep(names, spec.group(1)))
         assert int(claim.group(1)) == actual, (
             f"README claims PROXIMO_SURFACES={spec.group(1)} yields {claim.group(1)} tools, "
             f"but surface_keep resolves {actual}. Refresh the worked example with the "

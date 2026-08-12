@@ -422,7 +422,7 @@ def _recall_unfed_remedy() -> str:
     Lazy import: proximo.server imports proximo.tools.memory_tools (which imports this module)
     by name near the bottom of its own file, so a module-level import here would be a real cycle.
     """
-    from proximo.server import configured_surfaces
+    from proximo.door import configured_surfaces
     if "pve" in configured_surfaces():
         return ("Memory fills opportunistically from reads; call pve_list_guests or "
                 "pve_cluster_resources for live state (which also feeds the map). "

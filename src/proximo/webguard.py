@@ -145,10 +145,10 @@ def apply_surfaces_or_exit(face_cmd: str) -> None:
     this silently ignores the operator's surface config. A bad surface name exits 1 with a
     face-prefixed one-liner (refuse startup, never serve the wrong set — same contract as stdio).
     """
-    from . import server  # noqa: PLC0415 -- late import; webguard stays server-independent
+    from . import door  # noqa: PLC0415 -- late import; webguard stays server-independent
 
     try:
-        server._apply_surfaces()
+        door._apply_surfaces()
     except ValueError as e:
         print(f"{face_cmd}: {e}", file=sys.stderr)
         raise SystemExit(1) from None

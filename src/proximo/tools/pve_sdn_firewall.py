@@ -34,7 +34,7 @@ from proximo.sdn_firewall import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -114,13 +114,11 @@ def pve_sdn_vnet_firewall_options_set(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/firewall/options"
-    plan = _plan("pve_sdn_vnet_firewall_options_set", tgt,
-                 lambda: plan_vnet_firewall_options_set(api, vnet, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_firewall_options_set", tgt,
-                    lambda: vnet_firewall_options_set(api, vnet, options, delete, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_firewall_options_set", tgt,
+        plan=lambda: plan_vnet_firewall_options_set(api, vnet, options, delete),
+        execute=lambda: vnet_firewall_options_set(api, vnet, options, delete, digest),
+        confirm=confirm)
 
 
 @tool()
@@ -156,16 +154,14 @@ def pve_sdn_vnet_firewall_rule_add(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/firewall/rules"
-    plan = _plan("pve_sdn_vnet_firewall_rule_add", tgt,
-                 lambda: plan_vnet_firewall_rule_add(vnet, action, fw_type, source, dest, dport,
-                                                     proto, iface, pos))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_firewall_rule_add", tgt,
-                    lambda: vnet_firewall_rule_add(api, vnet, action, fw_type, source, dest,
+    return run_governed(
+        "pve_sdn_vnet_firewall_rule_add", tgt,
+        plan=lambda: plan_vnet_firewall_rule_add(vnet, action, fw_type, source, dest, dport,
+                                                     proto, iface, pos),
+        execute=lambda: vnet_firewall_rule_add(api, vnet, action, fw_type, source, dest,
                                                    proto, dport, sport, icmp_type, iface, log,
                                                    macro, comment, enable, pos, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -234,13 +230,11 @@ def pve_sdn_vnet_firewall_rule_update(
         changes["enable"] = enable
     if moveto is not None:
         changes["moveto"] = moveto
-    plan = _plan("pve_sdn_vnet_firewall_rule_update", tgt,
-                 lambda: plan_vnet_firewall_rule_update(api, vnet, pos, **changes))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_firewall_rule_update", tgt,
-                    lambda: vnet_firewall_rule_update(api, vnet, pos, digest=digest, **changes),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_firewall_rule_update", tgt,
+        plan=lambda: plan_vnet_firewall_rule_update(api, vnet, pos, **changes),
+        execute=lambda: vnet_firewall_rule_update(api, vnet, pos, digest=digest, **changes),
+        confirm=confirm)
 
 
 @tool()
@@ -264,13 +258,11 @@ def pve_sdn_vnet_firewall_rule_remove(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/firewall/rules/{pos}"
-    plan = _plan("pve_sdn_vnet_firewall_rule_remove", tgt,
-                 lambda: plan_vnet_firewall_rule_remove(api, vnet, pos))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_firewall_rule_remove", tgt,
-                    lambda: vnet_firewall_rule_remove(api, vnet, pos, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_firewall_rule_remove", tgt,
+        plan=lambda: plan_vnet_firewall_rule_remove(api, vnet, pos),
+        execute=lambda: vnet_firewall_rule_remove(api, vnet, pos, digest),
+        confirm=confirm)
 
 
 # --- vnet IP mappings (REST API, MUTATION — confirm-gated; no read endpoint exists) ---
@@ -295,12 +287,11 @@ def pve_sdn_vnet_ip_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/ips"
-    plan = _plan("pve_sdn_vnet_ip_create", tgt, lambda: plan_vnet_ip_create(vnet, zone, ip, mac))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_ip_create", tgt,
-                    lambda: vnet_ip_create(api, vnet, zone, ip, mac),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_ip_create", tgt,
+        plan=lambda: plan_vnet_ip_create(vnet, zone, ip, mac),
+        execute=lambda: vnet_ip_create(api, vnet, zone, ip, mac),
+        confirm=confirm)
 
 
 @tool()
@@ -322,13 +313,11 @@ def pve_sdn_vnet_ip_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/ips"
-    plan = _plan("pve_sdn_vnet_ip_update", tgt,
-                 lambda: plan_vnet_ip_update(vnet, zone, ip, mac, vmid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_ip_update", tgt,
-                    lambda: vnet_ip_update(api, vnet, zone, ip, mac, vmid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_ip_update", tgt,
+        plan=lambda: plan_vnet_ip_update(vnet, zone, ip, mac, vmid),
+        execute=lambda: vnet_ip_update(api, vnet, zone, ip, mac, vmid),
+        confirm=confirm)
 
 
 @tool()
@@ -349,9 +338,8 @@ def pve_sdn_vnet_ip_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/ips"
-    plan = _plan("pve_sdn_vnet_ip_delete", tgt, lambda: plan_vnet_ip_delete(vnet, zone, ip, mac))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_ip_delete", tgt,
-                    lambda: vnet_ip_delete(api, vnet, zone, ip, mac),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_ip_delete", tgt,
+        plan=lambda: plan_vnet_ip_delete(vnet, zone, ip, mac),
+        execute=lambda: vnet_ip_delete(api, vnet, zone, ip, mac),
+        confirm=confirm)

@@ -19,15 +19,15 @@ from __future__ import annotations
 import anyio
 import pytest
 
-from proximo import server
+from proximo import door, server
 from proximo.backends import ProximoError
 
 
 def _fresh_mcp():
     """A server whose registry mirrors the real one, safe to prune in a test."""
-    from mcp.server.fastmcp import FastMCP
+    from proximo._mcpcompat import ServerClass
 
-    m = FastMCP("proximo-test")
+    m = ServerClass("proximo-test")
     m._tool_manager._tools = dict(server.mcp._tool_manager._tools)
     return m
 
@@ -35,20 +35,20 @@ def _fresh_mcp():
 # --- per-tool selection --------------------------------------------------------------------
 
 def test_exact_tool_selection_keeps_only_those():
-    kept = server.tool_keep(server.mcp._tool_manager._tools, "pve_list_guests,pve_cluster_status")
-    assert kept == {"pve_list_guests", "pve_cluster_status"} | set(server._ALWAYS_REGISTERED), (
+    kept = door.tool_keep(server.mcp._tool_manager._tools, "pve_list_guests,pve_cluster_status")
+    assert kept == {"pve_list_guests", "pve_cluster_status"} | set(door._ALWAYS_REGISTERED), (
         "tool_keep must return the named tools PLUS everything never scopeable away — read\n"
         "the set from the code, never restate it here")
 
 
 def test_unknown_tool_name_refuses_startup():
     with pytest.raises(ValueError, match="unknown tool"):
-        server.tool_keep(server.mcp._tool_manager._tools, "pve_list_guests,pve_no_such_thing")
+        door.tool_keep(server.mcp._tool_manager._tools, "pve_list_guests,pve_no_such_thing")
 
 
 def test_blank_tool_spec_is_inert():
     reg = server.mcp._tool_manager._tools
-    assert server.tool_keep(reg, "") == set(reg)
+    assert door.tool_keep(reg, "") == set(reg)
 
 
 # --- the dynamic facade --------------------------------------------------------------------
@@ -56,7 +56,7 @@ def test_blank_tool_spec_is_inert():
 def test_lean_mode_registers_only_the_facade():
     # proximo_recall is part of the default facade since the 0.30 flip (memory default-on).
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     assert set(m._tool_manager._tools) == {
         "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
         "audit_verify", "audit_entries",
@@ -67,7 +67,7 @@ def test_lean_mode_keeps_the_full_catalog_for_dispatch():
     """Pruning the registry must not destroy what the facade dispatches into."""
     m = _fresh_mcp()
     before = len(m._tool_manager._tools)
-    catalog = server.apply_lean(m)
+    catalog = door.apply_lean(m)
     assert len(catalog) >= before - 4, "catalog lost tools when the registry was pruned"
     assert "pve_list_guests" in catalog
 
@@ -77,7 +77,7 @@ def test_lean_payload_is_a_fraction_of_the_full_surface():
     import json
 
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     reg = m._tool_manager._tools
     payload = len(json.dumps([
         {"name": n, "description": getattr(t, "description", "") or "",
@@ -114,7 +114,7 @@ def test_dispatch_runs_the_decorated_function():
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(
+        return await door.dispatch_tool(
             m, catalog, "_probe_target_aware", {"proximo_target": "box-b"}
         )
 
@@ -130,7 +130,7 @@ def test_dispatch_refuses_an_unknown_tool():
     catalog = dict(m._tool_manager._tools)
 
     async def go():
-        return await server.dispatch_tool(m, catalog, "no_such_tool", {})
+        return await door.dispatch_tool(m, catalog, "no_such_tool", {})
 
     # ProximoError with a did-you-mean, not a bare KeyError: in dynamic mode a small model
     # calls directly without the schema step, and a dead-end KeyError was its whole answer
@@ -142,7 +142,7 @@ def test_dispatch_refuses_an_unknown_tool():
 def test_dispatch_reaches_tools_pruned_from_the_registry():
     """The point of lean mode: a tool absent from tools/list must still be callable."""
     m = _fresh_mcp()
-    catalog = server.apply_lean(m)
+    catalog = door.apply_lean(m)
     assert "pve_list_guests" not in m._tool_manager._tools
     assert "pve_list_guests" in catalog
 
@@ -169,8 +169,8 @@ def test_lean_catalog_respects_configured_planes(monkeypatch):
     monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
 
     m = _fresh_mcp()
-    server._apply_surfaces(m)
-    catalog = server.LEAN_CATALOG
+    door._apply_surfaces(m)
+    catalog = door.LEAN_CATALOG
 
     offered = {n.split("_")[0] for n in catalog}
     assert "pmg" not in offered and "pbs" not in offered and "pdm" not in offered, (
@@ -194,7 +194,7 @@ def test_lean_catalog_respects_configured_planes(monkeypatch):
 def test_memory_on_makes_recall_resident_in_the_facade(monkeypatch):
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     assert set(m._tool_manager._tools) == {
         "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
         "audit_verify", "audit_entries",
@@ -205,7 +205,7 @@ def test_memory_off_leaves_the_facade_at_three(monkeypatch):
     """No dead tool burning resident tokens on a first call that could only fail."""
     monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     assert "proximo_recall" not in m._tool_manager._tools
 
 
@@ -218,7 +218,7 @@ def test_resident_recall_is_the_governed_tool_itself_not_a_copy(monkeypatch):
     """
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     m = _fresh_mcp()
-    catalog = server.apply_lean(m)
+    catalog = door.apply_lean(m)
     assert m._tool_manager._tools["proximo_recall"] is catalog["proximo_recall"]
 
 
@@ -227,7 +227,7 @@ def test_recall_scoped_away_is_not_resurrected_by_memory_being_on(monkeypatch):
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     m = _fresh_mcp()
     m._tool_manager._tools.pop("proximo_recall", None)
-    server.apply_lean(m)
+    door.apply_lean(m)
     assert "proximo_recall" not in m._tool_manager._tools
 
 
@@ -239,7 +239,7 @@ def test_find_tools_sends_estate_questions_to_recall_when_memory_is_on(monkeypat
     """
     monkeypatch.setenv("PROXIMO_MEMORY", "1")
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     desc = m._tool_manager._tools["proximo_find_tools"].description
     assert "proximo_recall" in desc
     assert "three tools" not in desc.lower()
@@ -248,6 +248,6 @@ def test_find_tools_sends_estate_questions_to_recall_when_memory_is_on(monkeypat
 def test_find_tools_does_not_advertise_recall_when_memory_is_off(monkeypatch):
     monkeypatch.setenv("PROXIMO_MEMORY", "0")
     m = _fresh_mcp()
-    server.apply_lean(m)
+    door.apply_lean(m)
     desc = m._tool_manager._tools["proximo_find_tools"].description
     assert "proximo_recall" not in desc

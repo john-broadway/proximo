@@ -2,6 +2,57 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.33.0] — 2026-08-12
+
+**The mcp dual-major port: one build runs the SDK's 1.x (FastMCP) and 2.x (MCPServer).**
+Tool estate unchanged at 906; no wire shape changes.
+
+### Added
+
+- **mcp 1.x AND 2.x support from one build** (`mcp>=1.24,<3`). Every spelling that differs
+  between the majors crosses one seam, `proximo._mcpcompat`: server construction (Proximo's
+  own version in the `initialize` handshake on both), the unknown-tool pointer (1.x keeps the
+  low-level handler re-registration; 2.x builds the same outcome into a `call_tool` subclass
+  override at construction), the renamed wire-model fields (`inputSchema`/`input_schema`,
+  `isError`/`is_error`, `readOnlyHint`/`read_only_hint`, `serverInfo`/`server_info`), the
+  in-process call result (1.x tuple / 2.x `CallToolResult`), and the Streamable-HTTP wiring
+  (1.x `settings` mutation / 2.x kwargs). Detection is by import of the exact surface used,
+  never a version parse.
+- **CI proves both majors on every push**: the test matrix gains `mcp-major: ["1", "2"]` and
+  asserts the installed major matches the leg instead of trusting the resolver.
+
+### Changed
+
+- **The mcp floor is measured, and the old one was false**: the declared `>=1.2.0` admitted
+  SDK releases proximo cannot even import (`mcp.types.ToolAnnotations` is absent through
+  1.6, and a tool-registration crash blocks import through 1.21.0). The floor is now
+  `>=1.24`, the oldest release that imports AND runs the full suite. The `[mcp-http]`
+  extra's separate `mcp>=1.8` pin is gone; the base floor covers it.
+- **Our own artifacts stay on mcp 1.x this release, deliberately** (uv.lock, the hash-pinned
+  requirements exports, the container, the SBOM). The published metadata admits both majors
+  and both are suite-proven; flipping the shipped container's major is its own later act.
+
+### Known SDK ceiling (documented, pinned by a test)
+
+- **An mcp 2.x client cannot receive a single SSE event over 1 MiB** (its bundled HTTP
+  library's default; mcp 2.0.0 exposes no knob), and its `call_tool` implicitly refreshes
+  the full tool list. A server advertising the full unscoped 906-tool catalog (1,099,438
+  bytes on the SSE data line — about 4.9% over the cap, so a modest description trim could
+  bring a near-full catalog back under it) therefore breaks every SSE-mode Streamable-HTTP
+  exchange for that client,
+  whichever mcp major the SERVER runs, and it surfaces only as
+  `SSE stream ended without a response`. The default lean facade, scoped
+  surfaces (`PROXIMO_SURFACES`), JSON-response mode, and stdio are all unaffected.
+  `tests/test_mcphttp_e2e.py` pins this ceiling so an SDK release that lifts it turns up loud.
+
+### For embedders (owed since 0.32.0)
+
+- `proximo.server` no longer re-exports the registration-scoping layer: `FULL_CATALOG`,
+  `LEAN_CATALOG`, the scoping ladder, and `dispatch_tool` live in `proximo.door` (moved in
+  the 0.32.0 architecture pass; the compatibility shims are gone). Import them from
+  `proximo.door`, and read the catalogs through module attribute access, never a static
+  `from` import of the dict object.
+
 ## [0.32.0] — 2026-08-11
 
 **The estate-scale envelope batch (M4 Bucket 2) — BREAKING response shapes on nine

@@ -302,6 +302,7 @@ from __future__ import annotations
 
 import re
 
+from ._validate import check_digest as _check_digest
 from .backends import ProximoError
 from .pbs import PbsBackend, _check_delete_list, _check_namespace, _check_pbs_node, _check_store
 from .planning import RISK_HIGH, RISK_MEDIUM, Plan
@@ -315,10 +316,6 @@ from .planning import RISK_HIGH, RISK_MEDIUM, Plan
 # `_check_tape_id` (all `^[A-Za-z0-9_][A-Za-z0-9._-]*$`, 3-32 chars) — kept as a fresh copy per
 # this module's own convention (each PBS module keeps its own copy, even for an identical shape).
 _ID_RE = re.compile(r"^(?:[A-Za-z0-9_][A-Za-z0-9._\-]*)\Z")
-
-# digest optimistic-lock: SHA-256 hex, exactly 64 lowercase chars. Each PBS module keeps its own
-# copy — established convention (pbs_s3.py, pbs_metrics.py, pbs_notifications.py, ...).
-_DIGEST_RE = re.compile(r"^[a-f0-9]{64}\Z")
 
 # Complete no-control-characters class, shared by every free-text-ish field on this plane the
 # schema gives no character pattern for. Mirrors pbs_s3.py's/pbs_metrics.py's `_NO_CONTROL_RE`.
@@ -390,13 +387,6 @@ def _check_id(value: str, label: str = "id") -> str:
             f"invalid {label}: {value!r} (must start alnum/underscore, then alnum/./_/-, "
             "3-32 chars)"
         )
-    return s
-
-
-def _check_digest(value: str) -> str:
-    s = str(value)
-    if not _DIGEST_RE.match(s):
-        raise ProximoError(f"invalid digest: {value!r} — expected 64 lowercase hex chars (SHA-256)")
     return s
 
 

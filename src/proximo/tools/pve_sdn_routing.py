@@ -44,7 +44,7 @@ from proximo.sdn_routing import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -94,13 +94,11 @@ def pve_sdn_prefix_list_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}"
-    plan = _plan("pve_sdn_prefix_list_create", tgt,
-                lambda: plan_prefix_list_create(prefix_list, entries))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_create", tgt,
-                    lambda: prefix_list_create(api, prefix_list, entries, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_prefix_list_create", tgt,
+        plan=lambda: plan_prefix_list_create(prefix_list, entries),
+        execute=lambda: prefix_list_create(api, prefix_list, entries, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -119,13 +117,11 @@ def pve_sdn_prefix_list_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}"
-    plan = _plan("pve_sdn_prefix_list_update", tgt,
-                lambda: plan_prefix_list_update(prefix_list, entries, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_update", tgt,
-                    lambda: prefix_list_update(api, prefix_list, entries, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_prefix_list_update", tgt,
+        plan=lambda: plan_prefix_list_update(prefix_list, entries, delete),
+        execute=lambda: prefix_list_update(api, prefix_list, entries, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -145,12 +141,11 @@ def pve_sdn_prefix_list_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}"
-    plan = _plan("pve_sdn_prefix_list_delete", tgt, lambda: plan_prefix_list_delete(api, prefix_list))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_delete", tgt,
-                    lambda: prefix_list_delete(api, prefix_list, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_prefix_list_delete", tgt,
+        plan=lambda: plan_prefix_list_delete(api, prefix_list),
+        execute=lambda: prefix_list_delete(api, prefix_list, lock_token),
+        confirm=confirm)
 
 
 # --- prefix-list entries (REST API, read) ---
@@ -202,13 +197,11 @@ def pve_sdn_prefix_list_entry_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}/entries"
-    plan = _plan("pve_sdn_prefix_list_entry_create", tgt,
-                lambda: plan_prefix_list_entry_create(prefix_list, action, prefix, ge, le, seq))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_entry_create", tgt,
-                    lambda: prefix_list_entry_create(api, prefix_list, action, prefix, ge, le, seq, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_prefix_list_entry_create", tgt,
+        plan=lambda: plan_prefix_list_entry_create(prefix_list, action, prefix, ge, le, seq),
+        execute=lambda: prefix_list_entry_create(api, prefix_list, action, prefix, ge, le, seq, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -232,14 +225,12 @@ def pve_sdn_prefix_list_entry_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}/entries/{entry_id}"
-    plan = _plan("pve_sdn_prefix_list_entry_update", tgt,
-                lambda: plan_prefix_list_entry_update(prefix_list, entry_id, action, prefix, ge, le, seq, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_entry_update", tgt,
-                    lambda: prefix_list_entry_update(api, prefix_list, entry_id, action, prefix, ge, le, seq,
+    return run_governed(
+        "pve_sdn_prefix_list_entry_update", tgt,
+        plan=lambda: plan_prefix_list_entry_update(prefix_list, entry_id, action, prefix, ge, le, seq, delete),
+        execute=lambda: prefix_list_entry_update(api, prefix_list, entry_id, action, prefix, ge, le, seq,
                                                      delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -256,13 +247,11 @@ def pve_sdn_prefix_list_entry_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/prefix-lists/{prefix_list}/entries/{entry_id}"
-    plan = _plan("pve_sdn_prefix_list_entry_delete", tgt,
-                lambda: plan_prefix_list_entry_delete(api, prefix_list, entry_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_prefix_list_entry_delete", tgt,
-                    lambda: prefix_list_entry_delete(api, prefix_list, entry_id, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_prefix_list_entry_delete", tgt,
+        plan=lambda: plan_prefix_list_entry_delete(api, prefix_list, entry_id),
+        execute=lambda: prefix_list_entry_delete(api, prefix_list, entry_id, lock_token),
+        confirm=confirm)
 
 
 # --- route-maps (REST API, read) ---
@@ -341,15 +330,13 @@ def pve_sdn_route_map_entry_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/route-maps/entries/{route_map_id}"
-    plan = _plan("pve_sdn_route_map_entry_create", tgt,
-                lambda: plan_route_map_entry_create(route_map_id, order, action, match, set_clauses,
-                                                    exit_action, call))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_route_map_entry_create", tgt,
-                    lambda: route_map_entry_create(api, route_map_id, order, action, match, set_clauses,
+    return run_governed(
+        "pve_sdn_route_map_entry_create", tgt,
+        plan=lambda: plan_route_map_entry_create(route_map_id, order, action, match, set_clauses,
+                                                    exit_action, call),
+        execute=lambda: route_map_entry_create(api, route_map_id, order, action, match, set_clauses,
                                                    exit_action, call, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -373,15 +360,13 @@ def pve_sdn_route_map_entry_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/route-maps/entries/{route_map_id}/entry/{order}"
-    plan = _plan("pve_sdn_route_map_entry_update", tgt,
-                lambda: plan_route_map_entry_update(route_map_id, order, action, match, set_clauses,
-                                                    exit_action, call, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_route_map_entry_update", tgt,
-                    lambda: route_map_entry_update(api, route_map_id, order, action, match, set_clauses,
+    return run_governed(
+        "pve_sdn_route_map_entry_update", tgt,
+        plan=lambda: plan_route_map_entry_update(route_map_id, order, action, match, set_clauses,
+                                                    exit_action, call, delete),
+        execute=lambda: route_map_entry_update(api, route_map_id, order, action, match, set_clauses,
                                                    exit_action, call, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -399,10 +384,8 @@ def pve_sdn_route_map_entry_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/route-maps/entries/{route_map_id}/entry/{order}"
-    plan = _plan("pve_sdn_route_map_entry_delete", tgt,
-                lambda: plan_route_map_entry_delete(api, route_map_id, order))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_route_map_entry_delete", tgt,
-                    lambda: route_map_entry_delete(api, route_map_id, order, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_route_map_entry_delete", tgt,
+        plan=lambda: plan_route_map_entry_delete(api, route_map_id, order),
+        execute=lambda: route_map_entry_delete(api, route_map_id, order, lock_token),
+        confirm=confirm)

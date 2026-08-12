@@ -59,7 +59,7 @@ from proximo.network import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -250,12 +250,11 @@ def pve_sdn_zone_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/zones/{zone}"
-    plan = _plan("pve_sdn_zone_create", tgt, lambda: plan_sdn_zone_create(zone, zone_type, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_zone_create", tgt,
-                    lambda: sdn_zone_create(api, zone, zone_type, options, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_zone_create", tgt,
+        plan=lambda: plan_sdn_zone_create(zone, zone_type, options),
+        execute=lambda: sdn_zone_create(api, zone, zone_type, options, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -275,12 +274,11 @@ def pve_sdn_zone_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/zones/{zone}"
-    plan = _plan("pve_sdn_zone_update", tgt, lambda: plan_sdn_zone_update(zone, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_zone_update", tgt,
-                    lambda: sdn_zone_update(api, zone, options, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_zone_update", tgt,
+        plan=lambda: plan_sdn_zone_update(zone, options, delete),
+        execute=lambda: sdn_zone_update(api, zone, options, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -297,12 +295,11 @@ def pve_sdn_zone_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/zones/{zone}"
-    plan = _plan("pve_sdn_zone_delete", tgt, lambda: plan_sdn_zone_delete(api, zone))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_zone_delete", tgt,
-                    lambda: sdn_zone_delete(api, zone, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_zone_delete", tgt,
+        plan=lambda: plan_sdn_zone_delete(api, zone),
+        execute=lambda: sdn_zone_delete(api, zone, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -321,12 +318,11 @@ def pve_sdn_vnet_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}"
-    plan = _plan("pve_sdn_vnet_create", tgt, lambda: plan_sdn_vnet_create(vnet, zone, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_create", tgt,
-                    lambda: sdn_vnet_create(api, vnet, zone, options, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_create", tgt,
+        plan=lambda: plan_sdn_vnet_create(vnet, zone, options),
+        execute=lambda: sdn_vnet_create(api, vnet, zone, options, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -346,12 +342,11 @@ def pve_sdn_vnet_update(
     network effect)."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}"
-    plan = _plan("pve_sdn_vnet_update", tgt, lambda: plan_sdn_vnet_update(vnet, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_update", tgt,
-                    lambda: sdn_vnet_update(api, vnet, options, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_update", tgt,
+        plan=lambda: plan_sdn_vnet_update(vnet, options, delete),
+        execute=lambda: sdn_vnet_update(api, vnet, options, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -368,12 +363,11 @@ def pve_sdn_vnet_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}"
-    plan = _plan("pve_sdn_vnet_delete", tgt, lambda: plan_sdn_vnet_delete(api, vnet))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_vnet_delete", tgt,
-                    lambda: sdn_vnet_delete(api, vnet, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_vnet_delete", tgt,
+        plan=lambda: plan_sdn_vnet_delete(api, vnet),
+        execute=lambda: sdn_vnet_delete(api, vnet, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -393,12 +387,11 @@ def pve_sdn_subnet_create(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/subnets/{subnet}"
-    plan = _plan("pve_sdn_subnet_create", tgt, lambda: plan_sdn_subnet_create(vnet, subnet, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_subnet_create", tgt,
-                    lambda: sdn_subnet_create(api, vnet, subnet, options, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_subnet_create", tgt,
+        plan=lambda: plan_sdn_subnet_create(vnet, subnet, options),
+        execute=lambda: sdn_subnet_create(api, vnet, subnet, options, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -419,12 +412,11 @@ def pve_sdn_subnet_update(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/subnets/{subnet}"
-    plan = _plan("pve_sdn_subnet_update", tgt, lambda: plan_sdn_subnet_update(vnet, subnet, options, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_subnet_update", tgt,
-                    lambda: sdn_subnet_update(api, vnet, subnet, options, delete, digest, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_subnet_update", tgt,
+        plan=lambda: plan_sdn_subnet_update(vnet, subnet, options, delete),
+        execute=lambda: sdn_subnet_update(api, vnet, subnet, options, delete, digest, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -442,12 +434,11 @@ def pve_sdn_subnet_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"sdn/vnets/{vnet}/subnets/{subnet}"
-    plan = _plan("pve_sdn_subnet_delete", tgt, lambda: plan_sdn_subnet_delete(vnet, subnet))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_subnet_delete", tgt,
-                    lambda: sdn_subnet_delete(api, vnet, subnet, lock_token),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_subnet_delete", tgt,
+        plan=lambda: plan_sdn_subnet_delete(vnet, subnet),
+        execute=lambda: sdn_subnet_delete(api, vnet, subnet, lock_token),
+        confirm=confirm)
 
 
 @tool()
@@ -467,13 +458,11 @@ def pve_network_iface_create(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"nodes/{node or cfg.node}/network/{iface}"
-    plan = _plan("pve_network_iface_create", tgt,
-                 lambda: plan_iface_create(api, iface, iface_type, node, options or {}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_network_iface_create", tgt,
-                    lambda: network_iface_create(api, iface, iface_type, node, **(options or {})),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_network_iface_create", tgt,
+        plan=lambda: plan_iface_create(api, iface, iface_type, node, options or {}),
+        execute=lambda: network_iface_create(api, iface, iface_type, node, **(options or {})),
+        confirm=confirm)
 
 
 @tool()
@@ -492,13 +481,11 @@ def pve_network_iface_update(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"nodes/{node or cfg.node}/network/{iface}"
-    plan = _plan("pve_network_iface_update", tgt,
-                 lambda: plan_iface_update(api, iface, node, options or {}))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_network_iface_update", tgt,
-                    lambda: network_iface_update(api, iface, node, **(options or {})),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_network_iface_update", tgt,
+        plan=lambda: plan_iface_update(api, iface, node, options or {}),
+        execute=lambda: network_iface_update(api, iface, node, **(options or {})),
+        confirm=confirm)
 
 
 @tool()
@@ -517,12 +504,11 @@ def pve_network_apply(
     """
     cfg, api, _, _ = _proximo_server._svc()
     tgt = f"nodes/{node or cfg.node}/network"
-    plan = _plan("pve_network_apply", tgt, lambda: plan_network_apply(api, node))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_network_apply", tgt,
-                    lambda: network_apply(api, node),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_network_apply", tgt,
+        plan=lambda: plan_network_apply(api, node),
+        execute=lambda: network_apply(api, node),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -547,12 +533,11 @@ def pve_sdn_apply(
     lock_token is never written to the audit ledger (see network.py module docstring).
     """
     _, api, _, _ = _proximo_server._svc()
-    plan = _plan("pve_sdn_apply", "cluster/sdn", lambda: plan_sdn_apply(api))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_apply", "cluster/sdn",
-                    lambda: sdn_apply(api, lock_token, release_lock),
-                    mutation=True, outcome="submitted", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_apply", "cluster/sdn",
+        plan=lambda: plan_sdn_apply(api),
+        execute=lambda: sdn_apply(api, lock_token, release_lock),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -578,15 +563,13 @@ def pve_sdn_lock_acquire(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = "cluster/sdn/lock"
-    plan = _plan("pve_sdn_lock_acquire", tgt, lambda: plan_sdn_lock_acquire(allow_pending))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING (mirrors pve_token_create): detail must NEVER contain the returned token —
     # only {"confirmed": True, "allow_pending": ...}. The token flows to the caller via `result`.
-    return _audited("pve_sdn_lock_acquire", tgt,
-                    lambda: sdn_lock_acquire(api, allow_pending),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "allow_pending": allow_pending})
+    return run_governed(
+        "pve_sdn_lock_acquire", tgt,
+        plan=lambda: plan_sdn_lock_acquire(allow_pending),
+        execute=lambda: sdn_lock_acquire(api, allow_pending),
+        confirm=confirm, detail={"allow_pending": allow_pending})
 
 
 @tool()
@@ -602,13 +585,11 @@ def pve_sdn_lock_release(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = "cluster/sdn/lock"
-    plan = _plan("pve_sdn_lock_release", tgt, lambda: plan_sdn_lock_release(lock_token, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_lock_release", tgt,
-                    lambda: sdn_lock_release(api, lock_token, force),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pve_sdn_lock_release", tgt,
+        plan=lambda: plan_sdn_lock_release(lock_token, force),
+        execute=lambda: sdn_lock_release(api, lock_token, force),
+        confirm=confirm, detail={"force": force})
 
 
 @tool()
@@ -632,9 +613,8 @@ def pve_sdn_rollback(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = "cluster/sdn/rollback"
-    plan = _plan("pve_sdn_rollback", tgt, lambda: plan_sdn_rollback(api))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_sdn_rollback", tgt,
-                    lambda: sdn_rollback(api, lock_token, release_lock),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_sdn_rollback", tgt,
+        plan=lambda: plan_sdn_rollback(api),
+        execute=lambda: sdn_rollback(api, lock_token, release_lock),
+        confirm=confirm)

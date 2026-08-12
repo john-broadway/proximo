@@ -4,6 +4,7 @@ import textwrap
 import pytest
 
 from proximo import targets
+from proximo._mcpcompat import tool_input_schema
 from proximo.backends import ProximoError
 
 
@@ -97,10 +98,11 @@ def test_target_aware_injects_proximo_target_into_fastmcp_schema():
     """The de-risk gate: FastMCP must advertise proximo_target from the injected __signature__,
     route it to the contextvar, and reset it after the call."""
     import anyio
-    from mcp.server.fastmcp import FastMCP
+
+    from proximo._mcpcompat import ServerClass
 
     captured = {}
-    m = FastMCP("spike")
+    m = ServerClass("spike")
 
     @m.tool()
     @targets.target_aware
@@ -112,7 +114,7 @@ def test_target_aware_injects_proximo_target_into_fastmcp_schema():
     #    isn't an undocumented parameter on every multi-target tool (Glama/agent legibility).
     tools = anyio.run(m.list_tools)
     sample_tool = next(t for t in tools if t.name == "sample")
-    target_schema = sample_tool.inputSchema["properties"]["proximo_target"]
+    target_schema = tool_input_schema(sample_tool)["properties"]["proximo_target"]
     assert target_schema.get("description"), "proximo_target must carry a schema description"
     assert "target" in target_schema["description"].lower()
 
@@ -158,8 +160,9 @@ def test_vmid_int_is_coerced_to_str_at_the_boundary():
     body still receives the str it expects. Proven through FastMCP's validated call path."""
     from typing import Annotated
 
-    from mcp.server.fastmcp import FastMCP
     from pydantic import Field
+
+    from proximo._mcpcompat import ServerClass
 
     seen = {}
 
@@ -168,11 +171,11 @@ def test_vmid_int_is_coerced_to_str_at_the_boundary():
         seen["value"] = vmid
         return {"ok": True}
 
-    m = FastMCP("proximo-m3-test")
+    m = ServerClass("proximo-m3-test")
     m.tool(name="probe")(targets.target_aware(probe))
 
     import anyio
-    anyio.run(lambda: m._tool_manager.call_tool("probe", {"vmid": 100}))
+    anyio.run(lambda: m._tool_manager.call_tool("probe", {"vmid": 100}, context=None))
     assert seen["type"] == "str"   # body got a str, not an int
     assert seen["value"] == "100"  # coerced from the int
 
@@ -180,8 +183,9 @@ def test_vmid_int_is_coerced_to_str_at_the_boundary():
 def test_plain_str_vmid_still_passes_through():
     from typing import Annotated
 
-    from mcp.server.fastmcp import FastMCP
     from pydantic import Field
+
+    from proximo._mcpcompat import ServerClass
 
     seen = {}
 
@@ -189,9 +193,9 @@ def test_plain_str_vmid_still_passes_through():
         seen["value"] = ctid
         return {"ok": True}
 
-    m = FastMCP("proximo-m3-test2")
+    m = ServerClass("proximo-m3-test2")
     m.tool(name="probe")(targets.target_aware(probe))
 
     import anyio
-    anyio.run(lambda: m._tool_manager.call_tool("probe", {"ctid": "105"}))
+    anyio.run(lambda: m._tool_manager.call_tool("probe", {"ctid": "105"}, context=None))
     assert seen["value"] == "105"  # a string still works unchanged

@@ -38,7 +38,7 @@ from proximo.pbs_acme import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -139,17 +139,15 @@ def pbs_acme_account_create(
     PLAN dict. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/acme/account/{name}" if name else "pbs/config/acme/account"
-    plan = _plan("pbs_acme_account_create", tgt,
-                 lambda: plan_acme_account_create(
+    return run_governed(
+        "pbs_acme_account_create", tgt,
+        plan=lambda: plan_acme_account_create(
                      contact, name=name, directory=directory, eab_hmac_key=eab_hmac_key,
-                     eab_kid=eab_kid, tos_url=tos_url))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_account_create", tgt,
-                    lambda: acme_account_create(
+                     eab_kid=eab_kid, tos_url=tos_url),
+        execute=lambda: acme_account_create(
                         pbs, contact, name=name, directory=directory,
                         eab_hmac_key=eab_hmac_key, eab_kid=eab_kid, tos_url=tos_url),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -166,13 +164,11 @@ def pbs_acme_account_update(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/acme/account/{name}"
-    plan = _plan("pbs_acme_account_update", tgt,
-                 lambda: plan_acme_account_update(pbs, name, contact=contact))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_account_update", tgt,
-                    lambda: acme_account_update(pbs, name, contact=contact),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_acme_account_update", tgt,
+        plan=lambda: plan_acme_account_update(pbs, name, contact=contact),
+        execute=lambda: acme_account_update(pbs, name, contact=contact),
+        confirm=confirm)
 
 
 @tool()
@@ -192,13 +188,11 @@ def pbs_acme_account_delete(
     returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/acme/account/{name}"
-    plan = _plan("pbs_acme_account_delete", tgt,
-                 lambda: plan_acme_account_delete(pbs, name, force=force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_account_delete", tgt,
-                    lambda: acme_account_delete(pbs, name, force=force),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pbs_acme_account_delete", tgt,
+        plan=lambda: plan_acme_account_delete(pbs, name, force=force),
+        execute=lambda: acme_account_delete(pbs, name, force=force),
+        confirm=confirm, detail={"force": force})
 
 
 # --- Mutations: Plugins ---
@@ -231,13 +225,11 @@ def pbs_acme_plugin_create(
         kw["disable"] = disable
     if validation_delay is not None:
         kw["validation_delay"] = validation_delay
-    plan = _plan("pbs_acme_plugin_create", tgt,
-                 lambda: plan_acme_plugin_create(plugin_id, plugin_type, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_plugin_create", tgt,
-                    lambda: acme_plugin_create(pbs, plugin_id, plugin_type, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_acme_plugin_create", tgt,
+        plan=lambda: plan_acme_plugin_create(plugin_id, plugin_type, **kw),
+        execute=lambda: acme_plugin_create(pbs, plugin_id, plugin_type, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -274,13 +266,11 @@ def pbs_acme_plugin_update(
         kw["digest"] = digest
     if delete is not None:
         kw["delete"] = delete
-    plan = _plan("pbs_acme_plugin_update", tgt,
-                 lambda: plan_acme_plugin_update(pbs, plugin_id, **kw))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_plugin_update", tgt,
-                    lambda: acme_plugin_update(pbs, plugin_id, **kw),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_acme_plugin_update", tgt,
+        plan=lambda: plan_acme_plugin_update(pbs, plugin_id, **kw),
+        execute=lambda: acme_plugin_update(pbs, plugin_id, **kw),
+        confirm=confirm)
 
 
 @tool()
@@ -298,13 +288,11 @@ def pbs_acme_plugin_delete(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/acme/plugins/{plugin_id}"
-    plan = _plan("pbs_acme_plugin_delete", tgt,
-                 lambda: plan_acme_plugin_delete(pbs, plugin_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_plugin_delete", tgt,
-                    lambda: acme_plugin_delete(pbs, plugin_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_acme_plugin_delete", tgt,
+        plan=lambda: plan_acme_plugin_delete(pbs, plugin_id),
+        execute=lambda: acme_plugin_delete(pbs, plugin_id),
+        confirm=confirm)
 
 
 # --- Mutations: node cert order/renew ---
@@ -327,12 +315,11 @@ def pbs_acme_cert_order(
     Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/certificates/acme/certificate"
-    plan = _plan("pbs_acme_cert_order", tgt, lambda: plan_acme_cert_order(node, force=force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_cert_order", tgt,
-                    lambda: acme_cert_order(pbs, node, force=force),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pbs_acme_cert_order", tgt,
+        plan=lambda: plan_acme_cert_order(node, force=force),
+        execute=lambda: acme_cert_order(pbs, node, force=force),
+        confirm=confirm, detail={"force": force})
 
 
 @tool()
@@ -351,9 +338,8 @@ def pbs_acme_cert_renew(
     certificate) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/node/{node}/certificates/acme/certificate"
-    plan = _plan("pbs_acme_cert_renew", tgt, lambda: plan_acme_cert_renew(node, force=force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_acme_cert_renew", tgt,
-                    lambda: acme_cert_renew(pbs, node, force=force),
-                    mutation=True, outcome="ok", detail={"confirmed": True, "force": force})
+    return run_governed(
+        "pbs_acme_cert_renew", tgt,
+        plan=lambda: plan_acme_cert_renew(node, force=force),
+        execute=lambda: acme_cert_renew(pbs, node, force=force),
+        confirm=confirm, detail={"force": force})

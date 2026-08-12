@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import __version__
+from ._mcpcompat import tool_input_schema
 from .principal import ledger_principal, set_serving_face
 
 _DEFAULT_HOST = "127.0.0.1"
@@ -32,13 +33,15 @@ _TOOLS_PREFIX = "/tools/"
 def build_openapi(tools: list[Any], *, secured: bool = False) -> dict[str, Any]:
     """Build the OpenAPI 3.1 document from the governed tool surface (pure — no I/O).
 
-    One ``POST /tools/{name}`` per tool; the request body schema IS the tool's MCP inputSchema
-    (already JSON Schema). ``secured=True`` declares the bearer scheme globally so clients know to
+    One ``POST /tools/{name}`` per tool; the request body schema IS the tool's MCP input schema
+    (already JSON Schema; read through ``_mcpcompat.tool_input_schema`` — the field is spelled
+    per mcp major). ``secured=True`` declares the bearer scheme globally so clients know to
     authenticate before they hit a 401.
     """
     paths: dict[str, Any] = {}
     for tool in tools:
-        schema = tool.inputSchema if isinstance(tool.inputSchema, dict) else {"type": "object"}
+        raw = tool_input_schema(tool)
+        schema = raw if isinstance(raw, dict) else {"type": "object"}
         paths[f"/tools/{tool.name}"] = {
             "post": {
                 "operationId": tool.name,

@@ -64,7 +64,7 @@ from proximo.access_users import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -145,13 +145,11 @@ def pve_acl_modify(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"acl:{path}:{target}"
-    plan = _plan("pve_acl_modify", tgt,
-                 lambda: plan_acl_modify(api, path, roles, target, kind, propagate, delete))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acl_modify", tgt,
-                    lambda: acl_modify(api, path, roles, target, kind, propagate, delete),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_acl_modify", tgt,
+        plan=lambda: plan_acl_modify(api, path, roles, target, kind, propagate, delete),
+        execute=lambda: acl_modify(api, path, roles, target, kind, propagate, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -173,15 +171,11 @@ def pve_acl_prune(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"acl:prune:{path}:{target}"
-    plan = _plan("pve_acl_prune", tgt,
-                 lambda: plan_prune_grant(api, path, target, kind, roleid, narrow_role, narrow_path))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_acl_prune", tgt,
-                    lambda: acl_prune(api, path, target, kind, roleid, narrow_role, narrow_path),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "roleid": roleid,
-                            "narrow_role": narrow_role, "narrow_path": narrow_path})
+    return run_governed(
+        "pve_acl_prune", tgt,
+        plan=lambda: plan_prune_grant(api, path, target, kind, roleid, narrow_role, narrow_path),
+        execute=lambda: acl_prune(api, path, target, kind, roleid, narrow_role, narrow_path),
+        confirm=confirm, detail={"roleid": roleid, "narrow_role": narrow_role, "narrow_path": narrow_path})
 
 
 @tool()
@@ -203,16 +197,13 @@ def pve_token_create(
     _, api, _, _ = _proximo_server._svc()
     tgt = f"token:{userid}!{tokenid}"
     # L03: pass expire+comment so the PLAN surface reflects what will actually be created
-    plan = _plan("pve_token_create", tgt,
-                 lambda: plan_token_create(userid, tokenid, privsep, expire=expire, comment=comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING: return op result directly (carries the token value to caller);
     # detail dict must NEVER contain the secret — only {"confirmed": True} + non-secret params.
-    return _audited("pve_token_create", tgt,
-                    lambda: token_create(api, userid, tokenid, privsep, comment, expire),
-                    mutation=True, outcome="ok",
-                    detail={"confirmed": True, "expire": expire, "privsep": privsep})
+    return run_governed(
+        "pve_token_create", tgt,
+        plan=lambda: plan_token_create(userid, tokenid, privsep, expire=expire, comment=comment),
+        execute=lambda: token_create(api, userid, tokenid, privsep, comment, expire),
+        confirm=confirm, detail={"expire": expire, "privsep": privsep})
 
 
 @tool()
@@ -229,12 +220,11 @@ def pve_token_revoke(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"token:{userid}!{tokenid}"
-    plan = _plan("pve_token_revoke", tgt, lambda: plan_token_revoke(userid, tokenid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_token_revoke", tgt,
-                    lambda: token_revoke(api, userid, tokenid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_token_revoke", tgt,
+        plan=lambda: plan_token_revoke(userid, tokenid),
+        execute=lambda: token_revoke(api, userid, tokenid),
+        confirm=confirm)
 
 
 # --- Access governance: users & groups ---
@@ -287,15 +277,13 @@ def pve_user_create(
     Use pve_user_update to change it afterward, or pve_user_delete to remove it."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"user/{userid}"
-    plan = _plan("pve_user_create", tgt,
-                 lambda: plan_user_create(userid, comment, email, enable, expire, groups,
-                                          firstname, lastname))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_user_create", tgt,
-                    lambda: user_create(api, userid, comment, email, enable, expire,
+    return run_governed(
+        "pve_user_create", tgt,
+        plan=lambda: plan_user_create(userid, comment, email, enable, expire, groups,
+                                          firstname, lastname),
+        execute=lambda: user_create(api, userid, comment, email, enable, expire,
                                        groups, firstname, lastname),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -316,15 +304,13 @@ def pve_user_update(
     pve_user_get to see current state first, or pve_user_delete to remove the user instead."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"user/{userid}"
-    plan = _plan("pve_user_update", tgt,
-                 lambda: plan_user_update(userid, comment, email, enable, expire, groups,
-                                          firstname, lastname, append))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_user_update", tgt,
-                    lambda: user_update(api, userid, comment, email, enable, expire,
+    return run_governed(
+        "pve_user_update", tgt,
+        plan=lambda: plan_user_update(userid, comment, email, enable, expire, groups,
+                                          firstname, lastname, append),
+        execute=lambda: user_update(api, userid, comment, email, enable, expire,
                                        groups, firstname, lastname, append),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+        confirm=confirm)
 
 
 @tool()
@@ -338,12 +324,11 @@ def pve_user_delete(
     pve_user_update (enable=False) instead."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"user/{userid}"
-    plan = _plan("pve_user_delete", tgt, lambda: plan_user_delete(api, userid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_user_delete", tgt,
-                    lambda: user_delete(api, userid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_user_delete", tgt,
+        plan=lambda: plan_user_delete(api, userid),
+        execute=lambda: user_delete(api, userid),
+        confirm=confirm)
 
 
 @tool()
@@ -357,12 +342,11 @@ def pve_group_create(
     added (pve_user_update/pve_user_create with groups=) or pve_acl_modify grants it privileges."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"group/{groupid}"
-    plan = _plan("pve_group_create", tgt, lambda: plan_group_create(groupid, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_group_create", tgt,
-                    lambda: group_create(api, groupid, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_group_create", tgt,
+        plan=lambda: plan_group_create(groupid, comment),
+        execute=lambda: group_create(api, groupid, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -376,12 +360,11 @@ def pve_group_update(
     pve_user_update (groups=) to add/remove members, or pve_group_get to see current members."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"group/{groupid}"
-    plan = _plan("pve_group_update", tgt, lambda: plan_group_update(groupid, comment))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_group_update", tgt,
-                    lambda: group_update(api, groupid, comment),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_group_update", tgt,
+        plan=lambda: plan_group_update(groupid, comment),
+        execute=lambda: group_update(api, groupid, comment),
+        confirm=confirm)
 
 
 @tool()
@@ -394,12 +377,11 @@ def pve_group_delete(
     dict; synchronous, no UPID. Use pve_group_get first to see current members."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"group/{groupid}"
-    plan = _plan("pve_group_delete", tgt, lambda: plan_group_delete(api, groupid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_group_delete", tgt,
-                    lambda: group_delete(api, groupid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_group_delete", tgt,
+        plan=lambda: plan_group_delete(api, groupid),
+        execute=lambda: group_delete(api, groupid),
+        confirm=confirm)
 
 
 # --- Access governance: roles, realms, TFA ---
@@ -464,12 +446,11 @@ def pve_tfa_delete(
     """
     _, api, _, _ = _proximo_server._svc()
     tgt = f"access/tfa/{userid}/{tfa_id}"
-    plan = _plan("pve_tfa_delete", tgt, lambda: plan_tfa_delete(api, userid, tfa_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_tfa_delete", tgt,
-                    lambda: tfa_delete(api, userid, tfa_id, password),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_tfa_delete", tgt,
+        plan=lambda: plan_tfa_delete(api, userid, tfa_id),
+        execute=lambda: tfa_delete(api, userid, tfa_id, password),
+        confirm=confirm)
 
 
 @tool()
@@ -484,12 +465,11 @@ def pve_role_create(
     'VM.PowerMgmt,VM.Config.Disk'). Use pve_acl_modify to assign the new role to a principal."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"role/{roleid}"
-    plan = _plan("pve_role_create", tgt, lambda: plan_role_create(roleid, privs))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_role_create", tgt,
-                    lambda: role_create(api, roleid, privs),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_role_create", tgt,
+        plan=lambda: plan_role_create(roleid, privs),
+        execute=lambda: role_create(api, roleid, privs),
+        confirm=confirm)
 
 
 @tool()
@@ -505,12 +485,11 @@ def pve_role_update(
     and privileges first."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"role/{roleid}"
-    plan = _plan("pve_role_update", tgt, lambda: plan_role_update(api, roleid, privs, append))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_role_update", tgt,
-                    lambda: role_update(api, roleid, privs, append),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_role_update", tgt,
+        plan=lambda: plan_role_update(api, roleid, privs, append),
+        execute=lambda: role_update(api, roleid, privs, append),
+        confirm=confirm)
 
 
 @tool()
@@ -523,12 +502,11 @@ def pve_role_delete(
     returns a dict; synchronous, no UPID. Use pve_acl_list to see which grants reference the role first."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"role/{roleid}"
-    plan = _plan("pve_role_delete", tgt, lambda: plan_role_delete(api, roleid))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_role_delete", tgt,
-                    lambda: role_delete(api, roleid),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_role_delete", tgt,
+        plan=lambda: plan_role_delete(api, roleid),
+        execute=lambda: role_delete(api, roleid),
+        confirm=confirm)
 
 
 @tool()
@@ -545,13 +523,11 @@ def pve_realm_create(
     PVE validates them. Use pve_realms_list to see configured realms first."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"realm/{realm}"
-    plan = _plan("pve_realm_create", tgt,
-                 lambda: plan_realm_create(realm, realm_type, comment, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_realm_create", tgt,
-                    lambda: realm_create(api, realm, realm_type, comment, options),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_realm_create", tgt,
+        plan=lambda: plan_realm_create(realm, realm_type, comment, options),
+        execute=lambda: realm_create(api, realm, realm_type, comment, options),
+        confirm=confirm)
 
 
 @tool()
@@ -567,12 +543,11 @@ def pve_realm_update(
     validates them. Use pve_realm_get to see current config first."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"realm/{realm}"
-    plan = _plan("pve_realm_update", tgt, lambda: plan_realm_update(api, realm, comment, options))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_realm_update", tgt,
-                    lambda: realm_update(api, realm, comment, options),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_realm_update", tgt,
+        plan=lambda: plan_realm_update(api, realm, comment, options),
+        execute=lambda: realm_update(api, realm, comment, options),
+        confirm=confirm)
 
 
 @tool()
@@ -586,9 +561,8 @@ def pve_realm_delete(
     authenticates through the realm first."""
     _, api, _, _ = _proximo_server._svc()
     tgt = f"realm/{realm}"
-    plan = _plan("pve_realm_delete", tgt, lambda: plan_realm_delete(api, realm))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pve_realm_delete", tgt,
-                    lambda: realm_delete(api, realm),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pve_realm_delete", tgt,
+        plan=lambda: plan_realm_delete(api, realm),
+        execute=lambda: realm_delete(api, realm),
+        confirm=confirm)

@@ -40,7 +40,7 @@ from proximo.pbs_tape_jobs import (
 from proximo.projection import cap_newest
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -155,13 +155,11 @@ def pbs_tape_media_destroy(
     _, pbs = _proximo_server._pbs()
     ident = label_text or uuid or "?"
     tgt = f"pbs/tape/media/destroy/{ident}"
-    plan = _plan("pbs_tape_media_destroy", tgt,
-                 lambda: plan_tape_media_destroy(label_text, uuid, force))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_media_destroy", tgt,
-                    lambda: tape_media_destroy(pbs, label_text, uuid, force),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_media_destroy", tgt,
+        plan=lambda: plan_tape_media_destroy(label_text, uuid, force),
+        execute=lambda: tape_media_destroy(pbs, label_text, uuid, force),
+        confirm=confirm)
 
 
 @tool()
@@ -178,13 +176,11 @@ def pbs_tape_media_status_set(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/media/list/{uuid}/status"
-    plan = _plan("pbs_tape_media_status_set", tgt,
-                 lambda: plan_tape_media_status_set(uuid, status))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_media_status_set", tgt,
-                    lambda: tape_media_status_set(pbs, uuid, status),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_media_status_set", tgt,
+        plan=lambda: plan_tape_media_status_set(uuid, status),
+        execute=lambda: tape_media_status_set(pbs, uuid, status),
+        confirm=confirm)
 
 
 @tool()
@@ -204,13 +200,11 @@ def pbs_tape_media_move(
     _, pbs = _proximo_server._pbs()
     ident = label_text or uuid or "?"
     tgt = f"pbs/tape/media/move/{ident}"
-    plan = _plan("pbs_tape_media_move", tgt,
-                 lambda: plan_tape_media_move(label_text, uuid, vault_name))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_media_move", tgt,
-                    lambda: tape_media_move(pbs, label_text, uuid, vault_name),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_media_move", tgt,
+        plan=lambda: plan_tape_media_move(label_text, uuid, vault_name),
+        execute=lambda: tape_media_move(pbs, label_text, uuid, vault_name),
+        confirm=confirm)
 
 
 # --- Mutations: Tape backup jobs (config) ---
@@ -241,16 +235,17 @@ def pbs_tape_backup_job_create(
     returns null) and returns {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/tape-backup-job/{job_id}"
-    plan = _plan("pbs_tape_backup_job_create", tgt, lambda: plan_tape_backup_job_create(
+    return run_governed(
+        "pbs_tape_backup_job_create", tgt,
+        plan=lambda: plan_tape_backup_job_create(
         job_id, drive, pool, store, comment, eject_media, export_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, schedule, worker_threads,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_backup_job_create", tgt, lambda: tape_backup_job_create(
+    ),
+        execute=lambda: tape_backup_job_create(
         pbs, job_id, drive, pool, store, comment, eject_media, export_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, schedule, worker_threads,
-    ), mutation=True, outcome="ok", detail={"confirmed": True})
+    ),
+        confirm=confirm)
 
 
 @tool()
@@ -282,18 +277,19 @@ def pbs_tape_backup_job_update(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/tape-backup-job/{job_id}"
-    plan = _plan("pbs_tape_backup_job_update", tgt, lambda: plan_tape_backup_job_update(
+    return run_governed(
+        "pbs_tape_backup_job_update", tgt,
+        plan=lambda: plan_tape_backup_job_update(
         pbs, job_id, drive, pool, store, comment, eject_media, export_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, schedule, worker_threads,
         digest, delete,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_backup_job_update", tgt, lambda: tape_backup_job_update(
+    ),
+        execute=lambda: tape_backup_job_update(
         pbs, job_id, drive, pool, store, comment, eject_media, export_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, schedule, worker_threads,
         digest, delete,
-    ), mutation=True, outcome="ok", detail={"confirmed": True})
+    ),
+        confirm=confirm)
 
 
 @tool()
@@ -311,12 +307,11 @@ def pbs_tape_backup_job_delete(
     pbs_tape_backup_job_create. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/tape-backup-job/{job_id}"
-    plan = _plan("pbs_tape_backup_job_delete", tgt, lambda: plan_tape_backup_job_delete(pbs, job_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_backup_job_delete", tgt,
-                    lambda: tape_backup_job_delete(pbs, job_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_backup_job_delete", tgt,
+        plan=lambda: plan_tape_backup_job_delete(pbs, job_id),
+        execute=lambda: tape_backup_job_delete(pbs, job_id),
+        confirm=confirm)
 
 
 @tool()
@@ -333,12 +328,11 @@ def pbs_tape_backup_job_run(
     never "submitted". Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/backup/{job_id}"
-    plan = _plan("pbs_tape_backup_job_run", tgt, lambda: plan_tape_backup_job_run(job_id))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_backup_job_run", tgt,
-                    lambda: tape_backup_job_run(pbs, job_id),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_tape_backup_job_run", tgt,
+        plan=lambda: plan_tape_backup_job_run(job_id),
+        execute=lambda: tape_backup_job_run(pbs, job_id),
+        confirm=confirm)
 
 
 # --- Mutations: One-off backup + restore ---
@@ -368,16 +362,17 @@ def pbs_tape_backup(
     {"status": "submitted", "result": "<UPID>"}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/tape/backup/{store}"
-    plan = _plan("pbs_tape_backup", tgt, lambda: plan_tape_backup(
+    return run_governed(
+        "pbs_tape_backup", tgt,
+        plan=lambda: plan_tape_backup(
         drive, pool, store, eject_media, export_media_set, force_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, worker_threads,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_backup", tgt, lambda: tape_backup(
+    ),
+        execute=lambda: tape_backup(
         pbs, drive, pool, store, eject_media, export_media_set, force_media_set, group_filter,
         latest_only, max_depth, notification_mode, notify_user, ns, worker_threads,
-    ), mutation=True, outcome="submitted", detail={"confirmed": True})
+    ),
+        confirm=confirm, outcome="submitted")
 
 
 @tool()
@@ -405,11 +400,12 @@ def pbs_tape_restore(
     # byte can never ride raw into the ledger target, including on the plan-build ERROR path
     # where the audit record is written before validation completes (Wave 4d review finding 3).
     tgt = f"pbs/tape/restore/{media_set!r}"
-    plan = _plan("pbs_tape_restore", tgt, lambda: plan_tape_restore(
+    return run_governed(
+        "pbs_tape_restore", tgt,
+        plan=lambda: plan_tape_restore(
         drive, media_set, store, namespaces, notification_mode, notify_user, owner, snapshots,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_tape_restore", tgt, lambda: tape_restore(
+    ),
+        execute=lambda: tape_restore(
         pbs, drive, media_set, store, namespaces, notification_mode, notify_user, owner, snapshots,
-    ), mutation=True, outcome="submitted", detail={"confirmed": True})
+    ),
+        confirm=confirm, outcome="submitted")

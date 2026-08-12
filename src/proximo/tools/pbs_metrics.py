@@ -32,7 +32,7 @@ from proximo.pbs_metrics import (
 )
 from proximo.server import (
     _audited,
-    _plan,
+    run_governed,
     tool,
 )
 
@@ -140,21 +140,17 @@ def pbs_metrics_influxdb_http_create(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-http/{name}"
-    plan = _plan("pbs_metrics_influxdb_http_create", tgt, lambda: plan_influxdb_http_create(
-        name, url, bucket, comment, enable, max_body_size, organization, token, verify_tls,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
     # SECRET HANDLING: detail must NEVER contain token — only non-secret params.
-    return _audited(
+    return run_governed(
         "pbs_metrics_influxdb_http_create", tgt,
-        lambda: influxdb_http_create(
+        plan=lambda: plan_influxdb_http_create(
+        name, url, bucket, comment, enable, max_body_size, organization, token, verify_tls,
+    ),
+        execute=lambda: influxdb_http_create(
             pbs, name, url, bucket, comment, enable, max_body_size, organization, token,
             verify_tls,
         ),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "url": url},
-    )
+        confirm=confirm, detail={"url": url})
 
 
 @tool()
@@ -182,20 +178,17 @@ def pbs_metrics_influxdb_http_update(
     {"status": "ok", "result": None}. No snapshot primitive. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-http/{name}"
-    plan = _plan("pbs_metrics_influxdb_http_update", tgt, lambda: plan_influxdb_http_update(
+    return run_governed(
+        "pbs_metrics_influxdb_http_update", tgt,
+        plan=lambda: plan_influxdb_http_update(
         pbs, name, bucket, comment, enable, max_body_size, organization, token, url, verify_tls,
         digest, delete,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
-        "pbs_metrics_influxdb_http_update", tgt,
-        lambda: influxdb_http_update(
+    ),
+        execute=lambda: influxdb_http_update(
             pbs, name, bucket, comment, enable, max_body_size, organization, token, url,
             verify_tls, digest, delete,
         ),
-        mutation=True, outcome="ok", detail={"confirmed": True},
-    )
+        confirm=confirm)
 
 
 @tool()
@@ -215,13 +208,11 @@ def pbs_metrics_influxdb_http_delete(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-http/{name}"
-    plan = _plan("pbs_metrics_influxdb_http_delete", tgt,
-                 lambda: plan_influxdb_http_delete(pbs, name, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_metrics_influxdb_http_delete", tgt,
-                    lambda: influxdb_http_delete(pbs, name, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_metrics_influxdb_http_delete", tgt,
+        plan=lambda: plan_influxdb_http_delete(pbs, name, digest),
+        execute=lambda: influxdb_http_delete(pbs, name, digest),
+        confirm=confirm)
 
 
 # --- Mutations: influxdb-udp ---
@@ -243,17 +234,13 @@ def pbs_metrics_influxdb_udp_create(
     {"status": "ok", "result": None}. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-udp/{name}"
-    plan = _plan("pbs_metrics_influxdb_udp_create", tgt, lambda: plan_influxdb_udp_create(
-        name, host, comment, enable, mtu,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_metrics_influxdb_udp_create", tgt,
-        lambda: influxdb_udp_create(pbs, name, host, comment, enable, mtu),
-        mutation=True, outcome="ok",
-        detail={"confirmed": True, "host": host},
-    )
+        plan=lambda: plan_influxdb_udp_create(
+        name, host, comment, enable, mtu,
+    ),
+        execute=lambda: influxdb_udp_create(pbs, name, host, comment, enable, mtu),
+        confirm=confirm, detail={"host": host})
 
 
 @tool()
@@ -276,16 +263,13 @@ def pbs_metrics_influxdb_udp_update(
     PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-udp/{name}"
-    plan = _plan("pbs_metrics_influxdb_udp_update", tgt, lambda: plan_influxdb_udp_update(
-        pbs, name, comment, enable, host, mtu, digest, delete,
-    ))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited(
+    return run_governed(
         "pbs_metrics_influxdb_udp_update", tgt,
-        lambda: influxdb_udp_update(pbs, name, comment, enable, host, mtu, digest, delete),
-        mutation=True, outcome="ok", detail={"confirmed": True},
-    )
+        plan=lambda: plan_influxdb_udp_update(
+        pbs, name, comment, enable, host, mtu, digest, delete,
+    ),
+        execute=lambda: influxdb_udp_update(pbs, name, comment, enable, host, mtu, digest, delete),
+        confirm=confirm)
 
 
 @tool()
@@ -303,10 +287,8 @@ def pbs_metrics_influxdb_udp_delete(
     pbs_metrics_influxdb_udp_create. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/config/metrics/influxdb-udp/{name}"
-    plan = _plan("pbs_metrics_influxdb_udp_delete", tgt,
-                 lambda: plan_influxdb_udp_delete(pbs, name, digest))
-    if not confirm:
-        return {"status": "plan", **plan.as_dict()}
-    return _audited("pbs_metrics_influxdb_udp_delete", tgt,
-                    lambda: influxdb_udp_delete(pbs, name, digest),
-                    mutation=True, outcome="ok", detail={"confirmed": True})
+    return run_governed(
+        "pbs_metrics_influxdb_udp_delete", tgt,
+        plan=lambda: plan_influxdb_udp_delete(pbs, name, digest),
+        execute=lambda: influxdb_udp_delete(pbs, name, digest),
+        confirm=confirm)
