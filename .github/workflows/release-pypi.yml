@@ -10,11 +10,15 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Where to publish"
+        description: "Where to publish (verify-only publishes NOTHING — it re-verifies an already-published version)"
         required: true
         default: testpypi
         type: choice
-        options: [testpypi, pypi]
+        options: [testpypi, pypi, verify-only]
+      verify-version:
+        description: "For verify-only: the published tag to verify (e.g. v0.33.0)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -148,25 +152,51 @@ jobs:
   # hand") and nothing executed the shipped artifact's entrypoint. Real releases only — a
   # workflow_dispatch has no tag to install. No permissions needed (installs from PyPI, writes
   # only a temp script); the version assertion also proves it's the TAGGED wheel, not a stale
-  # cache hit.
+  # cache hit. Runs on every path that publishes to real PyPI (release, dispatch-to-pypi) and
+  # on verify-only dispatch. Since the 0.33.0 dual-major port the matrix drives the same cold-start once per
+  # mcp major: the client venv is PINNED per leg and the resolved major asserted, because an
+  # unpinned install silently follows whatever PyPI resolves that day (the v0.33.0 run resolved
+  # mcp 2.0.0 and this job's 1.x-spelled `serverInfo` read broke on the client side while the
+  # published server answered fine).
   verify-pypi:
     needs: publish-pypi
-    if: github.event_name == 'release'
+    # Three ways in: a real release (only after its publish succeeded), a dispatch-to-pypi
+    # (same — a manual production publish gets the same proof), or a verify-only dispatch
+    # against a version ALREADY on PyPI (publish-pypi is skipped then, hence the
+    # !cancelled() — a bare `if` would let the skipped need skip us too). A dispatch with
+    # an empty verify-version fails RED in the first step rather than skipping: a run that
+    # verified nothing must never read as green.
+    if: >-
+      ${{ !cancelled() &&
+          ((github.event_name == 'release' && needs.publish-pypi.result == 'success') ||
+           (github.event_name == 'workflow_dispatch' &&
+            (inputs.target == 'verify-only' ||
+             (inputs.target == 'pypi' && needs.publish-pypi.result == 'success')))) }}
     runs-on: ubuntu-latest
     permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        mcp-major: ["1", "2"]
     env:
-      VERSION: ${{ github.ref_name }}
+      VERSION: ${{ github.event_name == 'release' && github.ref_name || inputs.verify-version }}
+      MCP_MAJOR: ${{ matrix.mcp-major }}
     steps:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: Refuse a dispatch that names nothing to verify
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          [ -n "$VERSION" ] || { echo "::error::verify-version is required on dispatch (e.g. v0.33.0) — nothing was verified"; exit 1; }
       - name: Install the published wheel from PyPI (retry for index propagation)
         run: |
           set -euo pipefail
           V="${VERSION#v}"
+          if [ "$MCP_MAJOR" = "1" ]; then PIN="mcp>=1.24,<2"; else PIN="mcp>=2,<3"; fi
           python -m venv /tmp/verify-env
           for i in $(seq 1 20); do
-            if /tmp/verify-env/bin/pip install --quiet "proximo-proxmox==$V"; then
+            if /tmp/verify-env/bin/pip install --quiet "proximo-proxmox==$V" "$PIN"; then
               echo "installed proximo-proxmox==$V on attempt $i"; exit 0
             fi
             echo "not on PyPI yet (attempt $i/20) — waiting 30s"; sleep 30
@@ -174,15 +204,21 @@ jobs:
           echo "::error::proximo-proxmox==$V never became installable from PyPI"; exit 1
       - name: Cold-start the server over stdio and assert version + tools/list
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.VERSION }}
         run: |
           set -euo pipefail
           cat > /tmp/verify.py <<'PY'
-          import asyncio, os, sys, tempfile
+          import asyncio, importlib.metadata, os, sys, tempfile
           from mcp import ClientSession, StdioServerParameters
           from mcp.client.stdio import stdio_client
 
           want = os.environ["TAG"].lstrip("v")
+          # The leg's pin must have held — an unpinned resolve following PyPI's whim is
+          # exactly how the v0.33.0 run broke. Major-aware spelling below, never a
+          # getattr-with-default that would pass vacuously on both majors.
+          major = int(os.environ["MCP_MAJOR"])
+          resolved = importlib.metadata.version("mcp")
+          assert int(resolved.split(".")[0]) == major, f"venv resolved mcp {resolved}, leg pins major {major}"
 
           async def main():
               d = tempfile.mkdtemp()
@@ -202,13 +238,14 @@ jobs:
               async with stdio_client(params) as (r, w):
                   async with ClientSession(r, w) as s:
                       init = await asyncio.wait_for(s.initialize(), timeout=60)
-                      assert init.serverInfo.name == "proximo", init.serverInfo.name
-                      got = init.serverInfo.version
+                      si = init.server_info if major == 2 else init.serverInfo
+                      assert si.name == "proximo", si.name
+                      got = si.version
                       assert got == want, f"published wheel reports {got}, tag is {want}"
                       tools = await asyncio.wait_for(s.list_tools(), timeout=60)
                       n = len(tools.tools)
                       assert n > 0, "tools/list returned an empty surface"
-                      print(f"cold-start OK: proximo {got}, {n} tools served")
+                      print(f"cold-start OK on mcp {resolved}: proximo {got}, {n} tools served")
           asyncio.run(main())
           PY
           /tmp/verify-env/bin/python /tmp/verify.py
