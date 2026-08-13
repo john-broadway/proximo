@@ -8293,16 +8293,31 @@ _No parameters._
 #### `pbs_tasks_list`
 
 READ-ONLY: list PBS tasks on a node. Defaults to 'localhost' (standard single-node PBS
-name). Returns a list of task dicts; filter running=True for active tasks or errors=True
-for failed ones. Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,
+name). Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,
 pbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config.
+
+Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+from each raw row's endtime + status, so a custom projection cannot skew it.
+
+PBS names its columns `worker_type`/`worker_id`, NOT PVE's `type`/`id` — same concept,
+different key, so a projection written against pve_tasks_list will come back empty here.
+
+Live-proven on PBS 4.2 (2026-08-13): a RUNNING row omits BOTH `endtime` and `status`
+entirely; a finished row carries `status` "OK" or "WARNINGS: n". errors=True returns the
+WARNINGS rows.
+
+The counts describe ONLY the returned window: with `limit` set, PBS truncates before this
+server sees a row, so an all-ok by_outcome must NEVER be read as "no task ever failed" —
+a failure older than the window is simply not in it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
 | `limit` | integer (nullable) | no | Maximum number of tasks to return. (default: `null`) |
 | `running` | boolean (nullable) | no | If True, return only currently-running tasks. (default: `null`) |
-| `errors` | boolean (nullable) | no | If True, return only tasks that ended in error. (default: `null`) |
+| `errors` | boolean (nullable) | no | If True, return only tasks that ended in error. Live-proven on PBS: this returns WARNINGS rows. (default: `null`) |
+| `fields` | string (nullable) | no | Response fields: omit for the lean default (upid/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pbs_tfa_add`
 
@@ -12406,10 +12421,22 @@ quarantine entries use pmg_quarantine_virus instead. start/end map to starttime/
 
 #### `pmg_tasks_list`
 
-READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config.
-
-Returns a list of task dicts. errors=True returns only failed tasks. For a PVE hypervisor
+READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config. For a PVE hypervisor
 node's tasks use pve_tasks_list instead.
+
+Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+from each raw row's endtime + status, so a custom projection cannot skew it.
+
+Honesty note specific to PMG: every task observed on PMG 9.1 (2026-08-13) finished `OK`,
+including an apt refresh on an offline-sealed bridge, two service restarts and a backup,
+and errors=True returned nothing. PMG's FAILURE and RUNNING vocabularies are therefore
+unobserved, not known. The classifier is safe under that ignorance — an unrecognised
+status classes `failed` and a missing one `unknown`, never `ok` — but do not read a clean
+by_outcome here as proof PMG cannot report otherwise.
+
+The counts describe ONLY the returned window: with `limit`/`start` set, PMG truncates
+before this server sees a row, so an all-ok by_outcome is not "no task ever failed".
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -12422,6 +12449,7 @@ node's tasks use pve_tasks_list instead.
 | `since` | integer (nullable) | no | Unix epoch: only tasks started at or after this time. (default: `null`) |
 | `until` | integer (nullable) | no | Unix epoch: only tasks started at or before this time. (default: `null`) |
 | `statusfilter` | string (nullable) | no | Filter tasks by status text. (default: `null`) |
+| `fields` | string (nullable) | no | Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pmg_tls_inbound_domains_create`
 
@@ -13617,16 +13645,29 @@ _No parameters._
 #### `pdm_tasks_list`
 
 READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all
-registered remotes.
+registered remotes. No state change. Needs PROXIMO_PDM_* config.
 
-No state change. Returns a list of task dicts. `limit` returns only the newest N by
-starttime (its sibling pve_tasks_list bounds the same way). For a target remote's own
-task list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*
-config.
+Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+from each raw row's endtime + status, so a custom projection cannot skew it.
+
+Two PDM-specific shapes, both live-proven 2026-08-13 and both easy to get wrong:
+`upid` is REMOTE-QUALIFIED (`pve:pve-test4!UPID:pve-test4:…`), not the bare UPID the other
+planes return, and `node` names the REMOTE's node — it is the only place the remote's
+identity appears outside that prefix, which is why the lean set keeps it. Columns are
+`worker_type`/`worker_id` as on PBS, NOT PVE's `type`/`id`.
+
+Live-proven: finished rows carry `status` "OK" or the raw error TEXT (e.g. "snapshot
+feature is not available", "Cluster join aborted!"), so bucketing on that string would
+hand a model a fresh key per failure — by_outcome exists to stop that.
+
+`limit` returns only the newest N by starttime; a limited listing is NOT evidence of
+absence. For a target remote's own task list directly, use pve_tasks_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
+| `fields` | string (nullable) | no | Response fields: omit for the lean default (upid/node/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
 #### `pdm_users_list`
 

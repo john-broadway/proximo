@@ -656,7 +656,14 @@ from proximo.pmg import (
 from proximo.pmg import (
     who_groups_list as pmg_who_groups_list_op,
 )
-from proximo.projection import cap_newest, cap_top, envelope_capped
+from proximo.projection import (
+    cap_newest,
+    cap_top,
+    classify_task_outcome,
+    envelope_capped,
+    envelope_windowed,
+    project_rows,
+)
 from proximo.server import (
     _audited,
     _plan,
@@ -1684,17 +1691,32 @@ def pmg_tasks_list(
     since: Annotated[int | None, Field(description="Unix epoch: only tasks started at or after this time.")] = None,
     until: Annotated[int | None, Field(description="Unix epoch: only tasks started at or before this time.")] = None,
     statusfilter: Annotated[str | None, Field(description="Filter tasks by status text.")] = None,
-) -> list[dict]:
-    """READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config.
-
-    Returns a list of task dicts. errors=True returns only failed tasks. For a PVE hypervisor
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
+    """READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config. For a PVE hypervisor
     node's tasks use pve_tasks_list instead.
-    """
+
+    Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+    default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+    from each raw row's endtime + status, so a custom projection cannot skew it.
+
+    Honesty note specific to PMG: every task observed on PMG 9.1 (2026-08-13) finished `OK`,
+    including an apt refresh on an offline-sealed bridge, two service restarts and a backup,
+    and errors=True returned nothing. PMG's FAILURE and RUNNING vocabularies are therefore
+    unobserved, not known. The classifier is safe under that ignorance — an unrecognised
+    status classes `failed` and a missing one `unknown`, never `ok` — but do not read a clean
+    by_outcome here as proof PMG cannot report otherwise.
+
+    The counts describe ONLY the returned window: with `limit`/`start` set, PMG truncates
+    before this server sees a row, so an all-ok by_outcome is not "no task ever failed"."""
     cfg, pmg = _proximo_server._pmg()
     n = node or cfg.node
-    return _audited("pmg_tasks_list", f"pmg/{n}/tasks",
+    rows = _audited("pmg_tasks_list", f"pmg/{n}/tasks",
                     lambda: pmg_tasks_list_op(pmg, n, start, limit, userfilter,
                                               errors, typefilter, since, until, statusfilter))
+    lean = project_rows(rows, fields,
+                        ("upid", "type", "id", "user", "status", "starttime", "endtime"))
+    return envelope_windowed(rows, lean, "tasks", classify_task_outcome)
 
 
 @tool()

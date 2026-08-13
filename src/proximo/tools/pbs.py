@@ -177,7 +177,7 @@ from proximo.pbs_config import (
 from proximo.pbs_config import (
     traffic_controls_list as pbs_cfg_traffic_controls_list,
 )
-from proximo.projection import cap_newest
+from proximo.projection import cap_newest, classify_task_outcome, envelope_windowed, project_rows
 from proximo.server import (
     _audited,
     _plan,
@@ -311,15 +311,33 @@ def pbs_tasks_list(
     ] = "localhost",
     limit: Annotated[int | None, Field(description="Maximum number of tasks to return.")] = None,
     running: Annotated[bool | None, Field(description="If True, return only currently-running tasks.")] = None,
-    errors: Annotated[bool | None, Field(description="If True, return only tasks that ended in error.")] = None,
-) -> list[dict]:
+    errors: Annotated[bool | None, Field(description="If True, return only tasks that ended in error. Live-proven on PBS: this returns WARNINGS rows.")] = None,
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (upid/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
     """READ-ONLY: list PBS tasks on a node. Defaults to 'localhost' (standard single-node PBS
-    name). Returns a list of task dicts; filter running=True for active tasks or errors=True
-    for failed ones. Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,
-    pbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config."""
+    name). Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,
+    pbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config.
+
+    Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+    default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+    from each raw row's endtime + status, so a custom projection cannot skew it.
+
+    PBS names its columns `worker_type`/`worker_id`, NOT PVE's `type`/`id` — same concept,
+    different key, so a projection written against pve_tasks_list will come back empty here.
+
+    Live-proven on PBS 4.2 (2026-08-13): a RUNNING row omits BOTH `endtime` and `status`
+    entirely; a finished row carries `status` "OK" or "WARNINGS: n". errors=True returns the
+    WARNINGS rows.
+
+    The counts describe ONLY the returned window: with `limit` set, PBS truncates before this
+    server sees a row, so an all-ok by_outcome must NEVER be read as "no task ever failed" —
+    a failure older than the window is simply not in it."""
     _, pbs = _proximo_server._pbs()
-    return _audited("pbs_tasks_list", f"pbs/nodes/{node}/tasks",
+    rows = _audited("pbs_tasks_list", f"pbs/nodes/{node}/tasks",
                     lambda: pbs_tasks_list_op(pbs, node, limit, running, errors))
+    lean = project_rows(rows, fields,
+                        ("upid", "worker_type", "worker_id", "user", "status", "starttime", "endtime"))
+    return envelope_windowed(rows, lean, "tasks", classify_task_outcome)
 
 
 @tool()

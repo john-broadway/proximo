@@ -323,6 +323,38 @@ def test_pdm_tasks_list_limit_caps_newest_by_starttime(tmp_path, monkeypatch):
         def tasks_list(self, params=None):
             return [{"upid": f"u{i}", "starttime": i} for i in (5, 1, 9)]
     _wire(tmp_path, monkeypatch, pdm=_TaskPdm())
-    assert len(server.pdm_tasks_list()) == 3
+    assert server.pdm_tasks_list()["returned"] == 3
     capped = server.pdm_tasks_list(limit=1)
-    assert capped[0]["upid"] == "u9"
+    assert capped["tasks"][0]["upid"] == "u9"
+
+
+def test_pdm_tasks_list_classifies_raw_error_text_as_failed(tmp_path, monkeypatch):
+    """Rows are the live PDM shape (probed 2026-08-13 against the sealed lab).
+
+    PDM puts the raw error TEXT in `status`, so bucketing on that string would hand a
+    model a fresh key per failure — four failures, four keys, exactly when things break.
+    by_outcome collapses them to one. The `upid` here is remote-qualified and the columns
+    are worker_type/worker_id, both PDM shapes that differ from PVE.
+    """
+    class _TaskPdm:
+        def tasks_list(self, params=None):
+            base = {"node": "pve-test4", "pid": 1, "pstart": 2, "user": "root@pam",
+                    "worker_type": "aptupdate", "worker_id": None, "starttime": 1, "endtime": 2}
+            return [
+                {**base, "upid": "pve:pve-test1!UPID:x:1", "status": "OK"},
+                {**base, "upid": "pve:pve-test4!UPID:x:2",
+                 "status": "command 'apt-get update' failed: received interrupt"},
+                {**base, "upid": "pve:pve-test4!UPID:x:3",
+                 "status": "snapshot name 'proximosmoke' already used"},
+                {**base, "upid": "pve:pve-test4!UPID:x:4", "status": "Cluster join aborted!"},
+                {**base, "upid": "pve:pve-test4!UPID:x:5",
+                 "status": "snapshot feature is not available"},
+            ]
+    _wire(tmp_path, monkeypatch, pdm=_TaskPdm())
+    out = server.pdm_tasks_list()
+    assert out["by_outcome"] == {"ok": 1, "failed": 4}, "four distinct error texts, one class"
+    assert set(out["tasks"][0]) == {"upid", "node", "worker_type", "worker_id", "user",
+                                    "status", "starttime", "endtime"}
+    assert out["tasks"][0]["node"] == "pve-test4", (
+        "node is the only place the remote appears outside the prefixed upid"
+    )

@@ -10,7 +10,13 @@ from typing import Annotated
 from pydantic import Field
 
 import proximo.server as _proximo_server
-from proximo.projection import cap_newest, envelope_rows
+from proximo.projection import (
+    cap_newest,
+    classify_task_outcome,
+    envelope_rows,
+    envelope_windowed,
+    project_rows,
+)
 from proximo.server import (
     _audited,
     tool,
@@ -284,17 +290,34 @@ def pdm_pbs_snapshots_list(
 @tool()
 def pdm_tasks_list(
     limit: Annotated[int | None, Field(description="Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.")] = None,
-) -> list[dict]:
+    fields: Annotated[str | None, Field(description="Response fields: omit for the lean default (upid/node/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.")] = None,
+) -> dict:
     """READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all
-    registered remotes.
+    registered remotes. No state change. Needs PROXIMO_PDM_* config.
 
-    No state change. Returns a list of task dicts. `limit` returns only the newest N by
-    starttime (its sibling pve_tasks_list bounds the same way). For a target remote's own
-    task list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*
-    config."""
+    Returns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean
+    default set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side
+    from each raw row's endtime + status, so a custom projection cannot skew it.
+
+    Two PDM-specific shapes, both live-proven 2026-08-13 and both easy to get wrong:
+    `upid` is REMOTE-QUALIFIED (`pve:pve-test4!UPID:pve-test4:…`), not the bare UPID the other
+    planes return, and `node` names the REMOTE's node — it is the only place the remote's
+    identity appears outside that prefix, which is why the lean set keeps it. Columns are
+    `worker_type`/`worker_id` as on PBS, NOT PVE's `type`/`id`.
+
+    Live-proven: finished rows carry `status` "OK" or the raw error TEXT (e.g. "snapshot
+    feature is not available", "Cluster join aborted!"), so bucketing on that string would
+    hand a model a fresh key per failure — by_outcome exists to stop that.
+
+    `limit` returns only the newest N by starttime; a limited listing is NOT evidence of
+    absence. For a target remote's own task list directly, use pve_tasks_list."""
     _, pdm = _proximo_server._pdm()
-    return _audited("pdm_tasks_list", "pdm/remotes/tasks",
+    rows = _audited("pdm_tasks_list", "pdm/remotes/tasks",
                     lambda: cap_newest(pdm.tasks_list(), limit, "starttime"))
+    lean = project_rows(rows, fields,
+                        ("upid", "node", "worker_type", "worker_id", "user", "status",
+                         "starttime", "endtime"))
+    return envelope_windowed(rows, lean, "tasks", classify_task_outcome)
 
 
 @tool()

@@ -37,13 +37,23 @@ def envelope_rows(raw_rows: list, projected_rows: list, key: str, by: str) -> di
 
 
 def classify_task_outcome(row) -> str:  # noqa: ANN001 — row shape is heterogeneous by design
-    """Deterministic outcome class for a PVE task row — string matching on what the API
-    returned, never inference. A still-running task carries no ``endtime``; a finished row's
-    ``status`` is raw exitstatus TEXT ("OK", "WARNINGS: n", or the full error message —
-    live-proven e.g. "command 'apt-get update' failed: exit code 100"), so bucketing by that
-    string would hand a model N distinct error keys exactly when tasks fail. Classes:
-    running / ok / warnings / failed / unknown (statusless-finished or garbage — disclosed,
-    not guessed; a row we cannot read must NEVER fail open into a healthy-looking class)."""
+    """Deterministic outcome class for a task row on ANY plane — string matching on what the
+    API returned, never inference.
+
+    A still-running task carries no ``endtime``; a finished row's ``status`` is raw exitstatus
+    TEXT ("OK", "WARNINGS: n", or the full error message — live-proven e.g. "command 'apt-get
+    update' failed: exit code 100"), so bucketing by that string would hand a model N distinct
+    error keys exactly when tasks fail. Classes: running / ok / warnings / failed / unknown
+    (statusless-finished or garbage — disclosed, not guessed; a row we cannot read must NEVER
+    fail open into a healthy-looking class).
+
+    Shared by PVE, PBS, PMG and PDM: it reads only ``endtime`` and ``status``, the two fields
+    all four carry, and never the columns they disagree on (PBS/PDM say worker_type/worker_id
+    where PVE/PMG say type/id). Each plane's vocabulary was live-probed 2026-08-13, except
+    PMG, which never produced a failing or in-flight row — PMG therefore rests on the
+    degradation above rather than on measurement. Per-plane evidence:
+    docs/plans/internal/2026-08-13-task-vocabulary-per-plane.md
+    """
     if not isinstance(row, dict):
         return "unknown"
     if "endtime" not in row:

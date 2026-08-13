@@ -449,7 +449,7 @@
     },
     {
       "name": "pbs_tasks_list",
-      "description": "READ-ONLY: list PBS tasks on a node. Defaults to 'localhost' (standard single-node PBS\nname). Returns a list of task dicts; filter running=True for active tasks or errors=True\nfor failed ones. Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,\npbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config.",
+      "description": "READ-ONLY: list PBS tasks on a node. Defaults to 'localhost' (standard single-node PBS\nname). Use this to check on a UPID returned by pbs_gc_start, pbs_verify_start,\npbs_datastore_create, or pbs_datastore_delete. Needs PROXIMO_PBS_* config.\n\nReturns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean\ndefault set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side\nfrom each raw row's endtime + status, so a custom projection cannot skew it.\n\nPBS names its columns `worker_type`/`worker_id`, NOT PVE's `type`/`id` — same concept,\ndifferent key, so a projection written against pve_tasks_list will come back empty here.\n\nLive-proven on PBS 4.2 (2026-08-13): a RUNNING row omits BOTH `endtime` and `status`\nentirely; a finished row carries `status` \"OK\" or \"WARNINGS: n\". errors=True returns the\nWARNINGS rows.\n\nThe counts describe ONLY the returned window: with `limit` set, PBS truncates before this\nserver sees a row, so an all-ok by_outcome must NEVER be read as \"no task ever failed\" —\na failure older than the window is simply not in it.",
       "inputSchema": {
         "properties": {
           "node": {
@@ -475,9 +475,17 @@
           },
           "errors": {
             "default": null,
-            "description": "If True, return only tasks that ended in error.",
+            "description": "If True, return only tasks that ended in error. Live-proven on PBS: this returns WARNINGS rows.",
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "fields": {
+            "default": null,
+            "description": "Response fields: omit for the lean default (upid/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.",
+            "type": [
+              "string",
               "null"
             ]
           }
@@ -9834,7 +9842,7 @@
     },
     {
       "name": "pdm_tasks_list",
-      "description": "READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all\nregistered remotes.\n\nNo state change. Returns a list of task dicts. `limit` returns only the newest N by\nstarttime (its sibling pve_tasks_list bounds the same way). For a target remote's own\ntask list directly (without going through PDM), use pve_tasks_list. Needs PROXIMO_PDM_*\nconfig.",
+      "description": "READ-ONLY: list recent PDM tasks (queued/running/finished operations) across all\nregistered remotes. No state change. Needs PROXIMO_PDM_* config.\n\nReturns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean\ndefault set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side\nfrom each raw row's endtime + status, so a custom projection cannot skew it.\n\nTwo PDM-specific shapes, both live-proven 2026-08-13 and both easy to get wrong:\n`upid` is REMOTE-QUALIFIED (`pve:pve-test4!UPID:pve-test4:…`), not the bare UPID the other\nplanes return, and `node` names the REMOTE's node — it is the only place the remote's\nidentity appears outside that prefix, which is why the lean set keeps it. Columns are\n`worker_type`/`worker_id` as on PBS, NOT PVE's `type`/`id`.\n\nLive-proven: finished rows carry `status` \"OK\" or the raw error TEXT (e.g. \"snapshot\nfeature is not available\", \"Cluster join aborted!\"), so bucketing on that string would\nhand a model a fresh key per failure — by_outcome exists to stop that.\n\n`limit` returns only the newest N by starttime; a limited listing is NOT evidence of\nabsence. For a target remote's own task list directly, use pve_tasks_list.",
       "inputSchema": {
         "properties": {
           "limit": {
@@ -9842,6 +9850,14 @@
             "description": "Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected.",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "fields": {
+            "default": null,
+            "description": "Response fields: omit for the lean default (upid/node/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.",
+            "type": [
+              "string",
               "null"
             ]
           }
@@ -13992,7 +14008,7 @@
     },
     {
       "name": "pmg_tasks_list",
-      "description": "READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config.\n\nReturns a list of task dicts. errors=True returns only failed tasks. For a PVE hypervisor\nnode's tasks use pve_tasks_list instead.\n",
+      "description": "READ-ONLY: list PMG tasks on a node. Needs PROXIMO_PMG_* config. For a PVE hypervisor\nnode's tasks use pve_tasks_list instead.\n\nReturns a windowed envelope — returned, by_outcome, and `tasks`: the rows in the lean\ndefault set. by_outcome (running/ok/warnings/failed/unknown) is classified server-side\nfrom each raw row's endtime + status, so a custom projection cannot skew it.\n\nHonesty note specific to PMG: every task observed on PMG 9.1 (2026-08-13) finished `OK`,\nincluding an apt refresh on an offline-sealed bridge, two service restarts and a backup,\nand errors=True returned nothing. PMG's FAILURE and RUNNING vocabularies are therefore\nunobserved, not known. The classifier is safe under that ignorance — an unrecognised\nstatus classes `failed` and a missing one `unknown`, never `ok` — but do not read a clean\nby_outcome here as proof PMG cannot report otherwise.\n\nThe counts describe ONLY the returned window: with `limit`/`start` set, PMG truncates\nbefore this server sees a row, so an all-ok by_outcome is not \"no task ever failed\".",
       "inputSchema": {
         "properties": {
           "node": {
@@ -14062,6 +14078,14 @@
           "statusfilter": {
             "default": null,
             "description": "Filter tasks by status text.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fields": {
+            "default": null,
+            "description": "Response fields: omit for the lean default (upid/type/id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list.",
             "type": [
               "string",
               "null"
