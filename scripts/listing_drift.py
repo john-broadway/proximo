@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check what the MCP directories SAY about Proximo against what is true.
 
-`reach.py` answers "how far did we travel". This answers "is what they print still
+Reach answers "how far did we travel". This answers "is what they print still
 correct". Different question, and the one that goes wrong silently: a directory
 indexes you once and freezes, while its version field keeps auto-updating, so the
 listing looks maintained and reads a year out of date.

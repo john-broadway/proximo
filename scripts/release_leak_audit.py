@@ -54,7 +54,12 @@ DENY_PREFIXES: tuple[str, ...] = (".gitea/", "docs/plans/", "docs/specs/", "docs
 # strategy + build-record stay on the internal mirror. These five now live under `docs/internal/`
 # (covered by the prefix above); kept here too as belt-and-suspenders basename matching in case a
 # copy ever lands outside that directory.
-DENY_BASENAMES: tuple[str, ...] = ("CLAUDE.md", "POSITIONING.md", "LANDSCAPE.md", "ROADMAP.md", "CEILING.md", "LAB.md")
+# `reach.py` + `test_reach.py` = internal tooling hardcoded to our own accounts, of no use to an
+# adopter; same category as the strategy docs above. Kept internal by John's call 2026-08-13.
+# The test rides with the module because it imports it — publishing one without the other is a
+# red CI, not a tidy strip.
+DENY_BASENAMES: tuple[str, ...] = ("CLAUDE.md", "POSITIONING.md", "LANDSCAPE.md", "ROADMAP.md",
+                                   "CEILING.md", "LAB.md", "reach.py", "test_reach.py")
 
 # Site-specific internal identifiers (bare node/host names with no generic leak-shape) that must
 # never publish. Sourced from this INTERNAL-ONLY file — it lives under a deny prefix, so it is

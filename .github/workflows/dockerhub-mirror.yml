@@ -2,7 +2,7 @@ name: Mirror image → Docker Hub
 
 # Copy the already-built GHCR image to Docker Hub *by reference* (same multi-arch
 # digest, no rebuild) so the container path gets a readable pull_count — GHCR does
-# not expose pull counts, Docker Hub does. See scripts/reach.py for the reader.
+# not expose pull counts, Docker Hub does.
 #
 # Two ways in:
 #   • called by release.yml after the GHCR image is pushed (automatic, every release)
