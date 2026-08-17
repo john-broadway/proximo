@@ -5,7 +5,7 @@ goes THROUGH the SDK so canonicalization (RFC 8785 JCS) matches every compliant 
 pin ``alg=ES256`` (asymmetric) — never the SDK's ``HS256`` default — and verify with an ES256-only
 allowlist, closing the JWT algorithm-confusion class.
 
-Spec: docs/specs/2026-06-19-signed-agent-cards.md.
+Spec notes are internal and not in the public tree.
 """
 from __future__ import annotations
 

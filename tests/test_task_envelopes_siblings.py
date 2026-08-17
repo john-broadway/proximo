@@ -1,12 +1,13 @@
 """Task-list envelopes for the three sibling planes (PBS / PMG / PDM).
 
 Every fixture below is the shape those planes ACTUALLY returned when probed against the
-sealed lab on 2026-08-13 (pbs-test 4.2, pmg-test 9.1, pdm-test 1.1.4), recorded in
-docs/plans/internal/2026-08-13-task-vocabulary-per-plane.md. They are not PVE rows with
-the names changed, because the planes genuinely disagree:
+sealed lab on 2026-08-13 (PBS 4.2, PMG 9.1, PDM 1.1.4). They are not PVE rows with the
+names changed, because the planes genuinely disagree:
 
   * PBS and PDM name their columns `worker_type`/`worker_id`; PVE and PMG use `type`/`id`.
-    A projection written against one comes back empty on the other.
+    Asking for one plane's names on another is REFUSED by `project_rows` with the available
+    names listed (pinned below by test_an_unknown_field_is_refused_with_the_available_names),
+    so the disagreement surfaces loudly rather than as empty rows.
   * A RUNNING PBS row omits BOTH `endtime` and `status` (proven twice: aptupdate and
     garbage_collection).
   * PDM's `upid` is remote-qualified (`pve:pve-test4!UPID:…`) and its `status` carries raw

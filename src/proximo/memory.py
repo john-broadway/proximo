@@ -1,6 +1,6 @@
 """Tier-1 estate memory — increment 1: the estate map + "what changed" diff.
 
-Design: docs/plans/internal/2026-07-29-tiered-memory-design.md. The thesis is the counted
+Design notes are internal and not in the public tree. The thesis is the counted
 envelope's, one tier up: everything the server can know, the model shouldn't have to
 re-derive. A derived, rebuildable SQLite beside the PROVE ledger remembers WHAT EXISTS
 (guests/nodes/storage identity, first/last-seen, last status) so "what changed since

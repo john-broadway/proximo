@@ -1,6 +1,6 @@
 """The wiki seam, reader side — a sovereign, local knowledge layer.
 
-Design: docs/plans/internal/2026-07-29-wiki-seam-sketch.md. Same thesis as Tier-1 memory,
+Design notes are internal and not in the public tree. Same thesis as Tier-1 memory,
 one layer out: memory remembers what the ESTATE looks like, the wiki remembers what the
 DOCS say. The gate evidence behind the split is five bakes deep — doc-facts (L1) were the
 weakest layer at EVERY model size (the bootloader fact inverted 4-for-4 against an

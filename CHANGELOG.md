@@ -2,6 +2,82 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.35.0] — 2026-08-16
+
+**The three sibling planes get the task envelope PVE got in 0.34.0. BREAKING response shapes
+on `pbs_tasks_list`, `pmg_tasks_list` and `pdm_tasks_list`.** Asking the same question of a
+different plane returned an unclassified pile of rows, and on PDM a fresh status key per
+distinct failure. Each plane's vocabulary was live-probed on the lab BEFORE its classifier
+existed, because PVE's shape is a PVE fact until another plane proves its own. That probe
+paid immediately: the planes disagree in ways that would have been invisible from PVE. Tool
+estate unchanged at 906; no tool added or removed.
+
+### Breaking: bare list to windowed envelope
+
+- **`pbs_tasks_list`, `pmg_tasks_list`, `pdm_tasks_list`** now return
+  `{returned, by_outcome, tasks}` instead of a bare list of rows. `by_outcome` classifies
+  each RAW row server-side (`running` / `ok` / `warnings` / `failed` / `unknown`) through the
+  same single `classify_task_outcome` that 0.34.0 introduced for PVE, so a custom projection
+  cannot skew the counts.
+- As in 0.34.0 there is deliberately **no `total`**, for a reason that differs per plane and
+  is stated per plane rather than averaged. PBS and PMG push `limit` into the query and
+  truncate before this server sees a row, so the population count never arrives. PDM does
+  not: its endpoint is asked for everything it will give and this server applies the cap, so
+  `returned` counts what was kept. It still claims no `total`, because what that endpoint
+  windows before answering has not been measured, and a number we have not proven describes
+  the population must not wear its name.
+- Each of the three gains a **`fields`** escape hatch: omit for the lean default, `all` for
+  the full raw payload, or a comma-separated list. The raw rows stay reachable, always.
+- The lean field set is **per plane, not shared**, because the column names are not shared.
+  PBS and PDM name their task columns `worker_type`/`worker_id` where PVE and PMG say
+  `type`/`id`. Asking for one plane's names on another is **refused, with the available names
+  listed**, so the disagreement surfaces loudly instead of as a quietly thinner row. The one
+  boundary where it cannot: a window that returned zero rows has nothing to validate against,
+  so `fields` is accepted and the empty list comes back empty. That case is reachable here
+  (PMG's `errors=True` returned zero rows on every probe), so it is stated rather than
+  rounded off. PDM
+  additionally keeps `node`, because its `upid` is remote-qualified
+  (`pve:pve-test4!UPID:...`) and `node` is the only other place the remote's identity appears.
+
+### Measured, and what stayed unmeasured
+
+- **PBS**: a running row omits BOTH `endtime` and `status`, proven twice by catching an apt
+  refresh and a garbage collection in flight. PVE's tell is a missing `endtime` alone, so the
+  shared classifier was compatible here by luck rather than by design. It is now recorded
+  either way. `errors=True` on PBS returns `WARNINGS` rows, live-proven.
+- **PDM**: status carries raw error text, live-proven with four distinct strings that now
+  collapse to one `failed` count instead of four keys.
+- **PMG resisted four honest attempts to make it fail** (an apt index refresh on an
+  offline-sealed bridge, two service restarts, a backup; all `OK`, `errors=True` empty every
+  time). PMG's failure and running vocabularies are therefore **unobserved, not known**, and
+  the tool's own docstring says so rather than implying coverage. The classifier is correct
+  there by degradation, not by measurement: an unrecognised status classes `failed`, and a
+  finished row whose status is empty or missing classes `unknown`. Never `ok`, which requires
+  `endtime` present and the status to be exactly `OK`. One caveat the compression must not
+  swallow: a row with no `endtime` classes `running` BEFORE status is consulted, so a keyless
+  DICT (`{}`) lands in `running` rather than `unknown`. A row that is not a dict at all is
+  caught earlier and classes `unknown`. That `{}` wart is pinned by its own test rather than
+  papered over, and closing it means changing a classifier PVE depends on.
+
+### Fixed
+
+- `pbs_tasks_list` and `pmg_tasks_list` had **no test guarding their return shape at all**,
+  which is why changing their contract broke nothing and why the guard needed writing.
+
+### Dependencies
+
+- Base image `python:3.13-slim` re-pinned to `ffb752e`; `github/codeql-action` to `ff2f1c6`
+  (tagged both v4.37.7 and v4, and the pin comment now names the exact patch rather than the
+  moving major); `astral-sh/setup-uv` v9.0.0 to v10.0.1.
+- **v10 disables the cache by default under FOUR conditions, not the three its release notes
+  list**: `pull_request_target`, `workflow_run`, `release`, and a **tag push**. The fourth is
+  in the action's own source and `action.yml` at the pinned commit, and absent from the
+  release-notes body. This repo uses the action exactly once, in the job whose triggers are
+  `push` restricted to `branches: [main]`, plus `pull_request`, `schedule` and
+  `workflow_dispatch`. That branch filter is the load-bearing fact: it means no tag push ever
+  reaches the job, so none of the four conditions applies here. Widen the filter to tags and
+  the reasoning inverts.
+
 ## [0.34.0] — 2026-08-12
 
 **`pve_tasks_list` returns a windowed outcome envelope, and the repo now has exactly one

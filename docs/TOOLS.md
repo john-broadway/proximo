@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.34.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.35.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -8301,7 +8301,9 @@ default set. by_outcome (running/ok/warnings/failed/unknown) is classified serve
 from each raw row's endtime + status, so a custom projection cannot skew it.
 
 PBS names its columns `worker_type`/`worker_id`, NOT PVE's `type`/`id` — same concept,
-different key, so a projection written against pve_tasks_list will come back empty here.
+different key. Asking for PVE's names here is REFUSED with the available names listed,
+not answered with quietly thinner rows — except on a window that returned zero rows,
+where there is nothing to validate against and the empty list comes back empty.
 
 Live-proven on PBS 4.2 (2026-08-13): a RUNNING row omits BOTH `endtime` and `status`
 entirely; a finished row carries `status` "OK" or "WARNINGS: n". errors=True returns the
@@ -13662,7 +13664,12 @@ feature is not available", "Cluster join aborted!"), so bucketing on that string
 hand a model a fresh key per failure — by_outcome exists to stop that.
 
 `limit` returns only the newest N by starttime; a limited listing is NOT evidence of
-absence. For a target remote's own task list directly, use pve_tasks_list.
+absence. Unlike PBS and PMG, which push `limit` into the query and truncate server-side,
+PDM's endpoint is asked for everything it will give and THIS server applies the cap. So
+`returned` counts what was kept, and there is still no `total`: what the endpoint itself
+windows before answering has not been measured, and a number we have not proven describes
+the population must not wear its name. For a target remote's own task list directly, use
+pve_tasks_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

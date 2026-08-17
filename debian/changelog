@@ -1,3 +1,20 @@
+proximo (0.35.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.35.0 (minor, BREAKING: pbs_tasks_list, pmg_tasks_list and
+    pdm_tasks_list return the windowed envelope {returned, by_outcome, tasks}
+    that pve_tasks_list got in 0.34.0, through the same server-side classifier.
+    Each gains a "fields" escape hatch; the lean set is per plane because the
+    column names differ (PBS and PDM say worker_type/worker_id where PVE and
+    PMG say type/id, and asking for the wrong plane's names is refused with the
+    available ones listed). Vocabulary live-probed per plane: a running PBS row
+    omits both endtime and status;
+    PDM upids are remote-qualified and its status carries raw error text; PMG
+    never produced a failing or in-flight row, so its vocabulary is recorded
+    as unobserved rather than known. Pinned bumps: python base image,
+    codeql-action, setup-uv v10. 906 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 16 Aug 2026 22:13:09 +0000
+
 proximo (0.34.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.34.0 (minor: pve_tasks_list returns a windowed outcome

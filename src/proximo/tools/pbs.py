@@ -323,7 +323,9 @@ def pbs_tasks_list(
     from each raw row's endtime + status, so a custom projection cannot skew it.
 
     PBS names its columns `worker_type`/`worker_id`, NOT PVE's `type`/`id` — same concept,
-    different key, so a projection written against pve_tasks_list will come back empty here.
+    different key. Asking for PVE's names here is REFUSED with the available names listed,
+    not answered with quietly thinner rows — except on a window that returned zero rows,
+    where there is nothing to validate against and the empty list comes back empty.
 
     Live-proven on PBS 4.2 (2026-08-13): a RUNNING row omits BOTH `endtime` and `status`
     entirely; a finished row carries `status` "OK" or "WARNINGS: n". errors=True returns the

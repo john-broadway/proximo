@@ -210,17 +210,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.34.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.34.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.35.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.35.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.34.0 (the tasks envelope, honestly windowed).** `pve_tasks_list` returns
-> `{returned, by_outcome, tasks}` — outcomes classified server-side (`running`/`ok`/
-> `warnings`/`failed`/`unknown`) from each raw row, so "did anything fail" is the server's
-> answer, not fifty rows to tally. There is deliberately no `total`: PVE truncates to the
-> newest `limit` tasks before this server sees a row, and a count of the window must not
-> wear the population's name — use `errors=True` for the full-history question. One task
-> classifier repo-wide (`pve_diagnose` uses the same one). Details in the CHANGELOG.
+> **New in 0.35.0 (the sibling planes, on measured vocabulary).** `pbs_tasks_list`,
+> `pmg_tasks_list` and `pdm_tasks_list` return the same `{returned, by_outcome, tasks}`
+> envelope PVE got in 0.34.0, classified server-side from each raw row. Every plane's
+> vocabulary was live-probed first, and they disagree: PBS and PDM name their columns
+> `worker_type`/`worker_id` where PVE and PMG say `type`/`id`, so the lean field set is
+> per plane. PMG never produced a failing row across four honest attempts, so its
+> vocabulary is documented as unobserved rather than known. Details in the CHANGELOG.
 >
-> Recent: **0.33.0** made one build run both majors of the official MCP SDK (`mcp>=1.24,<3`), proven by CI on every push.
+> Recent: **0.34.0** gave `pve_tasks_list` that envelope first, and put one task-outcome classifier repo-wide.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -257,11 +257,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.34.0**: **the tasks envelope, honestly windowed.** `pve_tasks_list` classifies task
-  outcomes server-side and refuses to name a `total` it never saw (PVE truncates before the
-  server counts — the window says `returned`). One outcome classifier repo-wide; the
-  `statusfilter` docs now teach values live PVE actually accepts. Every commit passed an
-  independent adversarial review before the tag; two of three rounds held the release back.
+- 🩸 **0.35.0**: **the sibling planes, on measured vocabulary.** PBS, PMG and PDM task lists
+  return the classified envelope PVE got in 0.34.0. Each plane was live-probed before its
+  classifier existed, so the lean field set is per plane and asking for the wrong plane's
+  column names is refused with the available ones listed. Where a plane refused to fail
+  (PMG, four honest attempts), the docs say unobserved rather than known.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

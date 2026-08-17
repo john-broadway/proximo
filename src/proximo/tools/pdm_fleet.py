@@ -7,7 +7,7 @@ dry-run-by-default (PLAN) → confirm-to-fire, recorded to the hash-chained ledg
 
 All ops are task-backed (return a UPID): the tool records outcome="submitted",
 never "ok" — an accepted task is not a finished one. See
-docs/plans/2026-07-06-pdm-fleet-control-design.md.
+the design notes for this surface, which are internal and not in the public tree.
 """
 from __future__ import annotations
 

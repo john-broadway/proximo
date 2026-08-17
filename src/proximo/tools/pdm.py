@@ -310,7 +310,12 @@ def pdm_tasks_list(
     hand a model a fresh key per failure — by_outcome exists to stop that.
 
     `limit` returns only the newest N by starttime; a limited listing is NOT evidence of
-    absence. For a target remote's own task list directly, use pve_tasks_list."""
+    absence. Unlike PBS and PMG, which push `limit` into the query and truncate server-side,
+    PDM's endpoint is asked for everything it will give and THIS server applies the cap. So
+    `returned` counts what was kept, and there is still no `total`: what the endpoint itself
+    windows before answering has not been measured, and a number we have not proven describes
+    the population must not wear its name. For a target remote's own task list directly, use
+    pve_tasks_list."""
     _, pdm = _proximo_server._pdm()
     rows = _audited("pdm_tasks_list", "pdm/remotes/tasks",
                     lambda: cap_newest(pdm.tasks_list(), limit, "starttime"))

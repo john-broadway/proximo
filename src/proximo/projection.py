@@ -12,7 +12,10 @@ lean field set by default and take a `fields` parameter as the escape hatch:
 Rows are shape-heterogeneous (a stopped guest has no ``pid``; qemu rows add ``memhost``), so
 projection keeps a listed key only where the row carries it. A requested field that appears in
 NO row fails closed with the available field names — same posture as the scoping layers: a
-typo gets an error that teaches, never a silently empty answer.
+typo gets an error that teaches, never a silently empty answer. The one boundary: validation
+needs at least one row to learn the available names from, so on a ZERO-row window `fields` is
+accepted unvalidated and the empty list comes back empty. Nothing is misreported there (there
+is no row to thin), but a typo goes uncaught until the window is non-empty.
 """
 
 from __future__ import annotations
@@ -51,8 +54,10 @@ def classify_task_outcome(row) -> str:  # noqa: ANN001 — row shape is heteroge
     all four carry, and never the columns they disagree on (PBS/PDM say worker_type/worker_id
     where PVE/PMG say type/id). Each plane's vocabulary was live-probed 2026-08-13, except
     PMG, which never produced a failing or in-flight row — PMG therefore rests on the
-    degradation above rather than on measurement. Per-plane evidence:
-    docs/plans/internal/2026-08-13-task-vocabulary-per-plane.md
+    degradation above rather than on measurement. What each plane proved is written into its
+    own tool's docstring and pinned in tests/test_task_envelopes_siblings.py; the probe notes
+    themselves are internal and deliberately not published, so this cites no path you cannot
+    open.
     """
     if not isinstance(row, dict):
         return "unknown"
