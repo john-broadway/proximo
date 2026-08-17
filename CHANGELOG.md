@@ -66,7 +66,16 @@ estate unchanged at 906; no tool added or removed.
 
 ### Dependencies
 
-- Base image `python:3.13-slim` re-pinned to `ffb752e`; `github/codeql-action` to `ff2f1c6`
+- **The `python:3.13-slim` bump is deliberately NOT taken.** Dependabot offered `ffb752e`
+  (Python 3.13.15); the image built on it fails the blocking Trivy gate with two HIGH findings
+  in the tooling that ships beside the interpreter, `setuptools` 70.3.0 (CVE-2025-47273) and
+  `msgpack` 1.1.2 (GHSA-6v7p-g79w-8964). Neither package is a Proximo dependency; neither
+  appears in `pyproject.toml`, `uv.lock`, or any `requirements/*.txt`, and the shipped wheel is
+  unaffected. Measured rather than assumed: the same Trivy v0.70.0 scanned the outgoing digest
+  `9662417` clean four days earlier, and all three advisories predate that scan, so the base is
+  the only variable. The pin stays on `9662417` until the newer base carries fixed tooling or
+  the image stops shipping build tooling at all.
+- `github/codeql-action` re-pinned to `ff2f1c6`
   (tagged both v4.37.7 and v4, and the pin comment now names the exact patch rather than the
   moving major); `astral-sh/setup-uv` v9.0.0 to v10.0.1.
 - **v10 disables the cache by default under FOUR conditions, not the three its release notes

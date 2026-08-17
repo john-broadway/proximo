@@ -10,8 +10,10 @@ proximo (0.35.0-1) UNRELEASED; urgency=medium
     omits both endtime and status;
     PDM upids are remote-qualified and its status carries raw error text; PMG
     never produced a failing or in-flight row, so its vocabulary is recorded
-    as unobserved rather than known. Pinned bumps: python base image,
-    codeql-action, setup-uv v10. 906 tools unchanged).
+    as unobserved rather than known. Pinned bumps:
+    codeql-action and setup-uv v10; the python base bump is NOT taken, it
+    fails the blocking image scan on tooling that is not ours. 906 tools
+    unchanged).
 
  -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 16 Aug 2026 22:13:09 +0000
 
