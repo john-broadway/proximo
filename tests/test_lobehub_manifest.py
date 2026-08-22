@@ -19,6 +19,7 @@ committed artifact so a thin regeneration cannot be committed silently.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import pathlib
 
@@ -91,8 +92,16 @@ def test_manifest_tool_text_matches_what_the_server_registers():
     from proximo import server
 
     manifest = json.loads((ROOT / "lhm.plugin.json").read_text())
-    declared = {t["name"]: (t.get("description") or "") for t in manifest.get("tools", [])}
-    registered = {n: (t.description or "") for n, t in server.mcp._tool_manager._tools.items()}
+    # cleandoc BOTH sides: descriptions originate in __doc__, which Python 3.13 dedents at
+    # compile time and 3.12 does not — without normalization this gate reads every multi-line
+    # description as drift whenever the manifest was generated on the other interpreter
+    # (893/906 "differed" on public CI, 2026-08-22, both 3.12 legs, both 3.13 legs green).
+    # cleandoc-then-compare still catches every real wording change; it stops flagging the
+    # interpreter.
+    declared = {t["name"]: inspect.cleandoc(t.get("description") or "")
+                for t in manifest.get("tools", [])}
+    registered = {n: inspect.cleandoc(t.description or "")
+                  for n, t in server.mcp._tool_manager._tools.items()}
 
     missing = sorted(set(registered) - set(declared))
     extra = sorted(set(declared) - set(registered))

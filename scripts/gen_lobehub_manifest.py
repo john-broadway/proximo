@@ -16,6 +16,7 @@ the version single-sourced from pyproject.toml. Run at release time, then
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import subprocess
@@ -145,14 +146,20 @@ def main() -> int:
         "description": pyproject_description(),
         "version": pyproject_version(),
         "tools": [
-            {"name": t["name"], "description": t.get("description", ""),
+            # cleandoc: descriptions come from __doc__, and Python 3.13 dedents docstrings at
+            # COMPILE time while 3.12 does not — a manifest generated on one interpreter read
+            # as 893 "drifted" descriptions on the other (public CI red, 2026-08-22, the day
+            # the parity gate first met a 3.13-generated manifest). cleandoc is a no-op on
+            # already-dedented text, so the manifest is now byte-identical from either.
+            {"name": t["name"], "description": inspect.cleandoc(t.get("description", "")),
              "inputSchema": t["inputSchema"]}
             for t in tools
         ],
     }
     if prompts:
         manifest["prompts"] = [
-            {"name": p["name"], "description": p.get("description", ""),
+            # same interpreter-dedent class as the tools above
+            {"name": p["name"], "description": inspect.cleandoc(p.get("description", "")),
              "arguments": p.get("arguments", [])}
             for p in prompts
         ]
