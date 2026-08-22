@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from . import lean
+from ._mcpcompat import tool_annotations_kwargs
 from .backends import ProximoError
 from .targets import load_registry
 
@@ -610,19 +611,24 @@ def apply_lean(server_mcp=None) -> dict:
             "old the answer is. Come here for everything else.\n\n"
             f"The facade is resident; {searchable} more tools on this server are searchable but "
             "not. Search for what you want (\"guest power\", \"ceph pool\", \"firewall\"), then "
-            "call proximo_tool_schema on a result to get its arguments, then proximo_call to run "
-            "it. All terms must match."
+            "call proximo_tool_schema on a result to get its arguments, then proximo_read "
+            "(read-only tools) or proximo_call to run it. All terms must match."
         )
     else:
         find_tools_doc = (
             "Search Proximo's full tool catalog by keyword. START HERE.\n\n"
-            f"Only three tools are loaded; {searchable} more on this server are searchable but "
-            "not resident. Search for what you want (\"guest power\", \"ceph pool\", "
+            f"Only this facade is loaded; {searchable} more tools on this server are searchable "
+            "but not resident. Search for what you want (\"guest power\", \"ceph pool\", "
             "\"firewall\"), then call proximo_tool_schema on a result to get its arguments, "
-            "then proximo_call to run it. All terms must match."
+            "then proximo_read (read-only tools) or proximo_call to run it. All terms must match."
         )
 
-    @server_mcp.tool(description=find_tools_doc)
+    # The facade IS the default door, so an unannotated facade swallows every readOnlyHint the
+    # plane tools carry — a client sees three bare tools whichever of 906 rides through them.
+    # These two only read the local catalog: readOnlyHint=True. proximo_call (server.py) is
+    # False — it can dispatch a mutation, and a hint cannot vary per call (annotations ride
+    # tools/list, which is static; nothing in a tools/call result carries them).
+    @server_mcp.tool(description=find_tools_doc, **tool_annotations_kwargs(read_only=True))
     def proximo_find_tools(query: str, limit: int = 25) -> list[dict] | dict:
         # L5: a bare [] on a no-match query reads as a dead end and invites the model to force a
         # near-miss tool or fabricate a name. On no match, return an explicit signal + what to do
@@ -635,17 +641,53 @@ def apply_lean(server_mcp=None) -> dict:
                 "proximo_call(tool=..., arguments=...).")}
         return results
 
-    @server_mcp.tool()
+    @server_mcp.tool(**tool_annotations_kwargs(read_only=True))
     def proximo_tool_schema(name: str) -> dict:
         """Full description + JSON input schema for one tool found via proximo_find_tools."""
         return lean.tool_schema(catalog, name)
+
+    # THE READ DOOR (2026-08-20 external report: "the client can't tell a status read from a
+    # power cycle"). proximo_call's only honest static hint is readOnlyHint=False, so in this
+    # mode a client's permission policy must treat every ride through it as a possible mutation.
+    # This door's True hint is an ENFORCED promise, not a label: the verdict comes from the SAME
+    # leading marker that emits every readOnlyHint (lean.read_only_marker), and anything that is
+    # not True — a MUTATION tool, an unmarked tool, and proximo_call itself (the laundering
+    # loophole) — refuses BEFORE dispatch. Same reach as proximo_call (the full pre-prune
+    # catalog), same single funnel (dispatch_tool); unknown names fall through to dispatch_tool's
+    # own fail-closed did-you-mean.
+    @server_mcp.tool(**tool_annotations_kwargs(read_only=True))
+    async def proximo_read(tool: str, arguments: dict | None = None) -> Any:
+        """READ-ONLY: run a read-only Proximo tool by exact name; refuses anything that can
+        mutate (use proximo_call for those). Same flow: get the shape from proximo_tool_schema
+        first."""
+        resolved = lean.resolve_alias(tool)
+        full = escape_catalog(server_mcp)
+        target = full.get(resolved)
+        if target is not None:
+            # Tool.description IS fn.__doc__ for every tool today (no decorator passes an
+            # explicit description= override, and the SDK copies the raw docstring), so this
+            # reads the same bytes the hint derivation read at decoration time. If a tool ever
+            # gains a description= override, keep its leading marker in agreement with the
+            # docstring's — a split here would let the client's hint and this door disagree.
+            desc = getattr(target, "description", None) or getattr(
+                getattr(target, "fn", None), "__doc__", None)
+            verdict = lean.read_only_marker(desc)
+            if verdict is not True:
+                why = ("a MUTATION tool" if verdict is False
+                       else "not marked READ-ONLY, so it is refused fail-closed")
+                raise ProximoError(
+                    f"proximo_read refuses {resolved!r}: {why}. This door only runs read-only "
+                    f"tools; run it with proximo_call(tool={resolved!r}, arguments=...) instead."
+                )
+        return await dispatch_tool(server_mcp=server_mcp, catalog=full,
+                                   name=tool, arguments=arguments or {})
 
     # proximo_call is NOT redefined here. It is a module-level tool in _ALWAYS_REGISTERED, so it
     # is already resident, and it dispatches from FULL_CATALOG rather than this narrowed snapshot.
     # A facade-local redefinition would collide by name (ToolManager.add_tool returns the existing
     # tool and only WARNS), so the shadow would be silent, and it would re-narrow reachability to
     # exactly the set the escape hatch exists to see past.
-    facade = {"proximo_find_tools", "proximo_tool_schema", "proximo_call"}
+    facade = {"proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_read"}
     if recall_resident:
         facade.add("proximo_recall")
     keep = facade | set(_ALWAYS_REGISTERED)

@@ -1,4 +1,4 @@
-"""HELLO — the print-only front door builder (see docs/plans/2026-07-06-agent-front-door-design.md).
+"""HELLO — the print-only front door builder (see docs/plans/2026-07-06-agent-front-door-design.md (internal-only)).
 
 Pure-unit: no live host, no env, no I/O — and no network stack even imported. The
 assertions pin the six moves in order and the invariants that make the door honest:

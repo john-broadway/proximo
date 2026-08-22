@@ -173,6 +173,10 @@ class ProximoConfig:
             audit_log_path=os.environ.get("PROXIMO_AUDIT_LOG", cls.audit_log_path),
             anchor_sink_raw=os.environ.get("PROXIMO_AUDIT_ANCHOR_SINK", "none"),
             anchor_file_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_FILE_PATH") or None,
+            anchor_url=os.environ.get("PROXIMO_AUDIT_ANCHOR_URL") or None,
+            anchor_token_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_TOKEN_PATH") or None,
+            anchor_ca_bundle=os.environ.get("PROXIMO_AUDIT_ANCHOR_CA_BUNDLE") or None,
+            anchor_syslog_address=os.environ.get("PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS") or None,
         )
 
     @classmethod
@@ -199,6 +203,10 @@ class ProximoConfig:
             audit_log_path=os.environ.get("PROXIMO_AUDIT_LOG", cls.audit_log_path),
             anchor_sink_raw=os.environ.get("PROXIMO_AUDIT_ANCHOR_SINK", "none"),
             anchor_file_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_FILE_PATH") or None,
+            anchor_url=os.environ.get("PROXIMO_AUDIT_ANCHOR_URL") or None,
+            anchor_token_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_TOKEN_PATH") or None,
+            anchor_ca_bundle=os.environ.get("PROXIMO_AUDIT_ANCHOR_CA_BUNDLE") or None,
+            anchor_syslog_address=os.environ.get("PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS") or None,
         )
 
     @classmethod
@@ -246,6 +254,14 @@ class ProximoConfig:
             anchor_sink_raw=str(fields.get("audit_anchor_sink", "none")),
             anchor_file_path=(str(fields["audit_anchor_file_path"])
                               if fields.get("audit_anchor_file_path") else None),
+            anchor_url=(str(fields["audit_anchor_url"])
+                        if fields.get("audit_anchor_url") else None),
+            anchor_token_path=(str(fields["audit_anchor_token_path"])
+                               if fields.get("audit_anchor_token_path") else None),
+            anchor_ca_bundle=(str(fields["audit_anchor_ca_bundle"])
+                              if fields.get("audit_anchor_ca_bundle") else None),
+            anchor_syslog_address=(str(fields["audit_anchor_syslog_address"])
+                                   if fields.get("audit_anchor_syslog_address") else None),
         )
 
     @classmethod
@@ -270,6 +286,10 @@ class ProximoConfig:
         audit_log_path: str,
         anchor_sink_raw: str = "none",
         anchor_file_path: str | None = None,
+        anchor_url: str | None = None,
+        anchor_token_path: str | None = None,
+        anchor_ca_bundle: str | None = None,
+        anchor_syslog_address: str | None = None,
     ) -> ProximoConfig:
         """Shared validation/normalization/warnings for from_env and from_target.
 
@@ -396,8 +416,24 @@ class ProximoConfig:
         #   - Manual pin that DIFFERS from the sink head => warn (drift), honor the manual pin (the
         #     sink is advisory; the operator has explicit control).
         #   - Sink reachable but empty (None) => first run; leave expected_head as-is.
-        anchor_sink = build_anchor_sink(anchor_sink_raw, anchor_file_path)
-        if anchor_sink is not None:
+        #   - WRITE-ONLY sink (fetches_pins False — syslog): nothing to fetch, so none of the
+        #     above applies. The sink witnesses heads on an off-box append trail; automatic
+        #     tail detection needs a pin from somewhere else, and if nothing provides one we
+        #     say so at startup rather than let "an anchor is configured" read as covered.
+        anchor_sink = build_anchor_sink(anchor_sink_raw, anchor_file_path,
+                                        url=anchor_url, token_path=anchor_token_path,
+                                        ca_bundle=anchor_ca_bundle,
+                                        syslog_address=anchor_syslog_address)
+        if anchor_sink is not None and not anchor_sink.fetches_pins:
+            if expected_head is None:
+                warnings.warn(
+                    "PROXIMO_AUDIT_ANCHOR_SINK is a write-only witness sink: heads are appended "
+                    "off-box, but nothing pins the ledger for AUTOMATIC tail-attack detection. "
+                    "Cover it with PROXIMO_AUDIT_EXPECTED_HEAD, a readable sink (file/http), or "
+                    "collector-side comparison of the witnessed heads.",
+                    stacklevel=2,
+                )
+        elif anchor_sink is not None:
             try:
                 pinned = anchor_sink.last_head()
             except AnchorError as e:

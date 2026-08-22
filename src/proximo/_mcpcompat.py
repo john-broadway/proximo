@@ -23,6 +23,7 @@ module's map is wrong, and it should be loud.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 try:  # mcp 1.x — the fastmcp module IS the 1.x marker; 2.0.0 deleted it.
@@ -46,8 +47,26 @@ __all__ = [
     "make_server",
     "result_is_error",
     "streamable_http_app",
+    "tool_annotations_kwargs",
     "tool_input_schema",
 ]
+
+# Does this SDK's tool() decorator accept `annotations=`? The kwarg arrived well after the 1.24
+# floor, so passing it unconditionally is a TypeError on the floor — and CI's 1.x leg runs the
+# lock's pin, not the floor, so only this gate (not a green build) protects that path.
+TOOL_SUPPORTS_ANNOTATIONS = "annotations" in inspect.signature(ServerClass.tool).parameters
+
+
+def tool_annotations_kwargs(read_only: bool) -> dict[str, Any]:
+    """`annotations=` kwarg for ServerClass.tool(), or {} when this SDK predates the kwarg.
+
+    Construction by camelCase kwargs is alias-safe on both majors (see annotations_read_only);
+    on a pre-annotations SDK the hint degrades to absent, same as the derived-marker path."""
+    if not TOOL_SUPPORTS_ANNOTATIONS:
+        return {}
+    from mcp.types import ToolAnnotations
+
+    return {"annotations": ToolAnnotations(readOnlyHint=read_only)}
 
 
 def make_server(name: str, version: str) -> Any:

@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.35.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.36.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -128,7 +128,7 @@ primitive on this plane.
 
 #### `pve_acl_list`
 
-List all ACL entries on the Proxmox cluster (read-only). Returns each entry's path (resource
+READ-ONLY: List all ACL entries on the Proxmox cluster. Returns each entry's path (resource
 scope), roleid (privilege set), principal (user/group/token), type, and propagate flag. Use
 pve_acl_modify to grant/revoke; use pve_overbroad_grants to flag Administrator or root-path
 grants.
@@ -1329,7 +1329,7 @@ on a full clone). To create a guest from scratch instead use pve_create_vm / pve
 
 #### `pve_cloudinit_get`
 
-Read a QEMU guest's cloud-init configuration (read-only). Returns cloud-init fields
+READ-ONLY: Read a QEMU guest's cloud-init configuration. Returns cloud-init fields
 (ciuser, sshkeys, ipconfigN, cipassword placeholder) with secret fields masked for safety.
 Use pve_cloudinit_set to mutate it; the set operation auto-captures an undo record for
 rollback.
@@ -1375,8 +1375,8 @@ pve_list_guests.
 
 #### `pve_cluster_status`
 
-Retrieve the cluster's overall status: nodes, quorum state, and the corosync
-config version (read-only). Returns a list of status dicts with node names, types, online
+READ-ONLY: Retrieve the cluster's overall status: nodes, quorum state, and the corosync
+config version. Returns a list of status dicts with node names, types, online
 status, and quorum info. Use pve_cluster_resources to list all resources across the cluster.
 
 _No parameters._
@@ -1750,7 +1750,7 @@ by updating the rule back to its prior values, or remove it with pve_firewall_ru
 
 #### `pve_firewall_rules_list`
 
-List firewall rules for the given scope (cluster, node, or guest) (read-only).
+READ-ONLY: List firewall rules for the given scope (cluster, node, or guest).
 
 Returns the active rules at that scope level, including action, direction, protocol,
 and address/port fields. Use pve_firewall_options_get to read firewall settings
@@ -1834,7 +1834,7 @@ dict; synchronous, no UPID. Use pve_group_get first to see current members.
 
 #### `pve_group_get`
 
-Get a group's full config (read-only). Returns groupid, comment, and member list (users in
+READ-ONLY: Get a group's full config. Returns groupid, comment, and member list (users in
 the group). Use pve_group_create/update/delete to manage the group; use pve_acl_list to see
 ACL entries referencing this group.
 
@@ -1856,7 +1856,7 @@ pve_user_update (groups=) to add/remove members, or pve_group_get to see current
 
 #### `pve_groups_list`
 
-List all Proxmox groups (read-only). Returns each group's id, comment, and member count.
+READ-ONLY: List all Proxmox groups. Returns each group's id, comment, and member count.
 Use pve_group_get for full member list; use pve_group_create/update/delete to manage groups.
 
 _No parameters._
@@ -1940,8 +1940,8 @@ and returns the task UPID — poll it with pve_task_status.
 
 #### `pve_guest_status`
 
-Read the operational status and current configuration of a single guest (kind='lxc' or
-'qemu') (read-only). Returns the guest's runtime state and resource utilization
+READ-ONLY: Read the operational status and current configuration of a single guest (kind='lxc' or
+'qemu'). Returns the guest's runtime state and resource utilization
 (CPU/memory/disk/network/uptime) — operational metrics, not its stored configuration.
 Use pve_guest_config_get for the full configuration.
 
@@ -1992,11 +1992,11 @@ UPID. To re-add HA management use pve_ha_resource_add.
 
 #### `pve_ha_resources_list`
 
-List all guests managed by HA (High Availability) with their current HA settings
-(read-only). Returns a counted envelope — total, by_state, and `resources`: HA resource
-dicts with SID, type, state, group, and restart settings. Trust total/by_state for count
-questions; they are computed server-side from the full listing. Use pve_ha_groups_list or
-pve_ha_rules_list to view HA placement rules, not for resource enumeration.
+READ-ONLY: List all guests managed by HA (High Availability) with their current HA settings
+. Returns a counted envelope — total, by_state, and `resources`: HA resource
+ dicts with SID, type, state, group, and restart settings. Trust total/by_state for count
+ questions; they are computed server-side from the full listing. Use pve_ha_groups_list or
+ pve_ha_rules_list to view HA placement rules, not for resource enumeration.
 
 _No parameters._
 
@@ -2447,7 +2447,7 @@ pve_node_disk_smart.
 
 #### `pve_node_dns`
 
-Read a Proxmox node's DNS configuration (read-only). Returns a dict with
+READ-ONLY: Read a Proxmox node's DNS configuration. Returns a dict with
 search domain and configured nameservers (dns1/dns2/dns3). Use pve_node_dns_set
 to change it.
 
@@ -2872,9 +2872,9 @@ pve_pool_update). confirm=True to execute. Synchronous — returns null.
 
 #### `pve_pool_get`
 
-Retrieve a single resource pool's configuration and complete member list by pool ID
-(read-only). Returns the pool's config including all VMs and storage resources assigned.
-Use pve_pools_list to enumerate all pools.
+READ-ONLY: Retrieve a single resource pool's configuration and complete member list by pool ID
+. Returns the pool's config including all VMs and storage resources assigned.
+ Use pve_pools_list to enumerate all pools.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -2897,7 +2897,7 @@ pve_pool_delete.
 
 #### `pve_pools_list`
 
-List all resource pools defined cluster-wide (read-only). Returns a list of pool dicts
+READ-ONLY: List all resource pools defined cluster-wide. Returns a list of pool dicts
 with pool IDs and optional comments. Use pve_pool_get to fetch a pool's detailed
 configuration and complete member list.
 
@@ -2932,7 +2932,7 @@ authenticates through the realm first.
 
 #### `pve_realm_get`
 
-Get a realm's full config (read-only). Returns realm type, comment, TFA requirement, and
+READ-ONLY: Get a realm's full config. Returns realm type, comment, TFA requirement, and
 type-specific settings (server1/base_dn for ldap; domain/server1 for ad; issuer-url/client-id
 for openid). Use pve_realm_create/update/delete to manage realms.
 
@@ -2956,7 +2956,7 @@ validates them. Use pve_realm_get to see current config first.
 
 #### `pve_realms_list`
 
-List authentication realms/domains configured in Proxmox (read-only). Returns each realm's
+READ-ONLY: List authentication realms/domains configured in Proxmox. Returns each realm's
 type (pam/pve/ldap/ad/openid), comment, TFA setting, and default flag. Use pve_realm_get for
 type-specific config; use pve_realm_create/update/delete to manage realms.
 
@@ -3066,7 +3066,7 @@ and privileges first.
 
 #### `pve_roles_list`
 
-List all Proxmox roles and their privileges (read-only). Returns each role's id, privilege
+READ-ONLY: List all Proxmox roles and their privileges. Returns each role's id, privilege
 set, and whether it is built-in. Use pve_role_create/update/delete to modify roles; use
 pve_acl_list to see which principals hold which roles at which paths.
 
@@ -4238,7 +4238,7 @@ network effect).
 
 #### `pve_sdn_vnets_list`
 
-List SDN vnets in the cluster (read-only). Returns vnet name, zone, tag,
+READ-ONLY: List SDN vnets in the cluster. Returns vnet name, zone, tag,
 alias, and vlanaware state. Use pve_sdn_vnet_create to add and pve_sdn_apply
 to commit.
 
@@ -4345,7 +4345,7 @@ RISK_LOW (staging; inert until pve_sdn_apply).
 
 #### `pve_sdn_zones_list`
 
-List SDN zones in the cluster (read-only). Returns zone id, type
+READ-ONLY: List SDN zones in the cluster. Returns zone id, type
 (simple/vlan/qinq/vxlan/evpn/faucet), and state. Use pve_sdn_zone_create to add and
 pve_sdn_apply to commit.
 
@@ -4353,7 +4353,7 @@ _No parameters._
 
 #### `pve_security_groups_list`
 
-List the cluster's firewall security groups (read-only).
+READ-ONLY: List the cluster's firewall security groups.
 
 Returns each group's id (keyed `group`), comment, and digest. A security group is a reusable
 named rule set you attach to a VM/node firewall; use pve_firewall_rules_list to read
@@ -4394,7 +4394,7 @@ pve_task_status. To create a snapshot instead of removing one use pve_snapshot_c
 
 #### `pve_snapshot_list`
 
-List a guest's snapshots (read-only). Returns each snapshot's name, description, parent,
+READ-ONLY: List a guest's snapshots. Returns each snapshot's name, description, parent,
 and creation time, plus the synthetic 'current' node showing live state. Works for both VMs
 and containers (kind='qemu' or 'lxc'). Use pve_snapshot_create / pve_rollback to act on them.
 
@@ -4406,7 +4406,7 @@ and containers (kind='qemu' or 'lxc'). Use pve_snapshot_create / pve_rollback to
 
 #### `pve_storage_config_get`
 
-Retrieve a single storage definition from storage.cfg by storage ID (read-only).
+READ-ONLY: Retrieve a single storage definition from storage.cfg by storage ID.
 Returns the storage's complete configuration including type, paths, servers, and access
 settings. Use pve_storage_config_list to enumerate all storages.
 
@@ -4508,7 +4508,7 @@ fetches. Use pve_storage_content to see what's already on a storage.
 
 #### `pve_storage_status`
 
-Read a storage backend's capacity and state (read-only). Returns total size, used space,
+READ-ONLY: Read a storage backend's capacity and state. Returns total size, used space,
 available free space, and enabled status. Use pve_storage_content to list ISOs, templates,
 and backups stored on it.
 
@@ -4536,7 +4536,7 @@ pve_storage_delete then pve_storage_create instead.
 
 #### `pve_task_log`
 
-Retrieve a task's log output by UPID (read-only). Returns the task's log lines with
+READ-ONLY: Retrieve a task's log output by UPID. Returns the task's log lines with
 line numbers, paginated via start/limit. Use pve_task_wait for completion polling, or
 pve_tasks_list to find a UPID.
 
@@ -4577,8 +4577,8 @@ the task may run briefly before it sees the signal. Find UPIDs to stop via pve_t
 
 #### `pve_task_wait`
 
-Block until an async Proxmox task reaches a terminal state — or the timeout — then report the
-outcome (read). The ergonomic complement to the submit-an-async-op tools (migrate / backup /
+READ-ONLY: Block until an async Proxmox task reaches a terminal state — or the timeout — then report the
+outcome. The ergonomic complement to the submit-an-async-op tools (migrate / backup /
 restore / clone / rollback / snapshot + guest create) that return a UPID: wait for completion
 without hand-rolling a pve_task_status poll loop.
 
@@ -4661,7 +4661,7 @@ so this delete will 403 on PVE; the read tools (pve_tfa_get/pve_tfa_list) work n
 
 #### `pve_tfa_get`
 
-Read a user's TFA entries (read-only). Returns list of entries if tfa_id is omitted; a
+READ-ONLY: Read a user's TFA entries. Returns list of entries if tfa_id is omitted; a
 single entry dict if tfa_id is specified. Each entry includes factor type, id, and metadata.
 Use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH — can lock the user out).
 
@@ -4672,7 +4672,7 @@ Use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH — can lock the
 
 #### `pve_tfa_list`
 
-List all per-user TFA (two-factor) entries across the cluster (read-only). Returns the
+READ-ONLY: List all per-user TFA (two-factor) entries across the cluster. Returns the
 configured TFA entries; the exact shape varies by PVE version (typically per-user with a
 nested `entries` list of factor type/id). Use pve_tfa_get
 for one user's entries; use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH).
@@ -4713,7 +4713,7 @@ user's tokens first, or pve_token_create to issue a new one instead.
 
 #### `pve_tokens_list`
 
-List API tokens for a specific user (read-only). Returns each token's id, comment, expiry,
+READ-ONLY: List API tokens for a specific user. Returns each token's id, comment, expiry,
 and privsep (privilege separation) flag — NOT the secret (shown only at creation). userid
 format: 'user@realm'. Use pve_token_create/revoke to manage tokens.
 
@@ -4753,7 +4753,7 @@ pve_user_update (enable=False) instead.
 
 #### `pve_user_get`
 
-Get a user's full config (read-only). Returns userid, enabled flag, expiry, email, comment,
+READ-ONLY: Get a user's full config. Returns userid, enabled flag, expiry, email, comment,
 group membership, API tokens, and firstname/lastname. Use pve_user_create/update/delete to
 modify the user; use pve_acl_list to see the cluster's raw ACL entries (not a resolved
 per-user effective-permission view).
@@ -4783,7 +4783,7 @@ pve_user_get to see current state first, or pve_user_delete to remove the user i
 
 #### `pve_users_list`
 
-List all Proxmox users across every realm (read-only). Returns each user's id (user@realm),
+READ-ONLY: List all Proxmox users across every realm. Returns each user's id (user@realm),
 enabled flag, expiry, group membership, email, and comment. Use pve_user_get for one user's
 full config, tokens, and effective ACL.
 
@@ -5263,7 +5263,7 @@ Smoke-confirm: destroy-data / keep-job-configs param names; sync-vs-async.
 
 #### `pbs_datastore_get`
 
-Get full config of one PBS datastore by name (read). Returns path, gc-schedule, etc.
+READ-ONLY: Get full config of one PBS datastore by name. Returns path, gc-schedule, etc.
 For runtime usage stats use pbs_datastore_status instead. Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
@@ -5341,7 +5341,7 @@ null return records "ok"). No undo — the cache is rebuilt. Needs PROXIMO_PBS_*
 
 #### `pbs_datastore_status`
 
-Get runtime usage statistics for one PBS datastore (read-only). Returns total
+READ-ONLY: Get runtime usage statistics for one PBS datastore. Returns total
 capacity, used bytes, and available bytes. Use pbs_datastores_list to enumerate
 datastores (with backend type) or pbs_gc_status for garbage-collection state.
 
@@ -5388,7 +5388,7 @@ Smoke-confirm: accepted param names (hyphenated vs underscored).
 
 #### `pbs_datastores_list`
 
-List all PBS datastores (read-only). Returns datastore objects with store name,
+READ-ONLY: List all PBS datastores. Returns datastore objects with store name,
 backend type, and mount status. Use pbs_datastore_status for runtime usage statistics
 or pbs_datastore_get for full configuration. Needs PROXIMO_PBS_* config.
 
@@ -5482,7 +5482,7 @@ UPID (async task) — check progress with pbs_gc_status or pbs_tasks_list.
 
 #### `pbs_gc_status`
 
-Get garbage-collection status for one PBS datastore (read-only). Returns current GC
+READ-ONLY: Get garbage-collection status for one PBS datastore. Returns current GC
 state, disk/index statistics, and pending/removed chunk counts (the GC schedule field
 appears only when a schedule is configured on the datastore).
 Use pbs_gc_start to execute garbage collection or pbs_datastore_status for capacity.
@@ -5913,7 +5913,7 @@ single-call undo. Needs PROXIMO_PBS_* config.
 
 #### `pbs_namespaces_list`
 
-List namespaces within a PBS datastore with optional hierarchical filtering (read-only).
+READ-ONLY: List namespaces within a PBS datastore with optional hierarchical filtering.
 Returns each namespace's hierarchical path (the `ns` field); optionally filter by
 parent namespace or limit recursion depth. Use pbs_namespace_create to add namespaces.
 
@@ -12270,7 +12270,7 @@ time-bucketed counts use pmg_statistics_mailcount. start/end map to starttime/en
 
 #### `pmg_statistics_mail`
 
-Get PMG mail delivery statistics (read). Needs PROXIMO_PMG_* config.
+READ-ONLY: Get PMG mail delivery statistics. Needs PROXIMO_PMG_* config.
 
 PMG 9.1 live-verified: /statistics/mail returns today's aggregate counters
 (count_in, count_out, spam, virus, bytes, …). Always returns today's totals;

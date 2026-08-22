@@ -2,7 +2,7 @@
 every co-tenant guest (one with a disk on the target) at risk if the target fills or the move
 won't fit.
 
-Spec: docs/specs/2026-06-19-disk-move-blast-radius.md. Load-bearing invariants:
+Spec: docs/specs/2026-06-19-disk-move-blast-radius.md (internal-only). Load-bearing invariants:
 - fit check uses PROVISIONED size (worst case) → only over-flags "won't fit", never under-flags;
 - co-tenants = every guest with a disk on the target (minus the guest being moved);
 - capacity-unknown (size or avail None) is NEVER read as safe → forced HIGH;

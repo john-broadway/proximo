@@ -189,7 +189,7 @@ from proximo.server import (
 
 @tool()
 def pbs_datastores_list() -> list[dict]:
-    """List all PBS datastores (read-only). Returns datastore objects with store name,
+    """READ-ONLY: List all PBS datastores. Returns datastore objects with store name,
     backend type, and mount status. Use pbs_datastore_status for runtime usage statistics
     or pbs_datastore_get for full configuration. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
@@ -201,7 +201,7 @@ def pbs_datastores_list() -> list[dict]:
 def pbs_datastore_status(
     store: Annotated[str, Field(description="PBS datastore name.")],
 ) -> dict:
-    """Get runtime usage statistics for one PBS datastore (read-only). Returns total
+    """READ-ONLY: Get runtime usage statistics for one PBS datastore. Returns total
     capacity, used bytes, and available bytes. Use pbs_datastores_list to enumerate
     datastores (with backend type) or pbs_gc_status for garbage-collection state."""
     _, pbs = _proximo_server._pbs()
@@ -213,7 +213,7 @@ def pbs_datastore_status(
 def pbs_gc_status(
     store: Annotated[str, Field(description="PBS datastore name.")],
 ) -> dict:
-    """Get garbage-collection status for one PBS datastore (read-only). Returns current GC
+    """READ-ONLY: Get garbage-collection status for one PBS datastore. Returns current GC
     state, disk/index statistics, and pending/removed chunk counts (the GC schedule field
     appears only when a schedule is configured on the datastore).
     Use pbs_gc_start to execute garbage collection or pbs_datastore_status for capacity."""
@@ -252,7 +252,7 @@ def pbs_namespaces_list(
     ] = None,
     max_depth: Annotated[int | None, Field(description="Maximum recursion depth below the parent namespace.")] = None,
 ) -> list[dict]:
-    """List namespaces within a PBS datastore with optional hierarchical filtering (read-only).
+    """READ-ONLY: List namespaces within a PBS datastore with optional hierarchical filtering.
     Returns each namespace's hierarchical path (the `ns` field); optionally filter by
     parent namespace or limit recursion depth. Use pbs_namespace_create to add namespaces."""
     _, pbs = _proximo_server._pbs()
@@ -346,7 +346,7 @@ def pbs_tasks_list(
 def pbs_datastore_get(
     name: Annotated[str, Field(description="PBS datastore name.")],
 ) -> dict:
-    """Get full config of one PBS datastore by name (read). Returns path, gc-schedule, etc.
+    """READ-ONLY: Get full config of one PBS datastore by name. Returns path, gc-schedule, etc.
     For runtime usage stats use pbs_datastore_status instead. Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_datastore_get", f"pbs/config/datastore/{name}",

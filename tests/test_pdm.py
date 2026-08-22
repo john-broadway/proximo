@@ -835,7 +835,7 @@ def test_strip_secrets_catches_common_credential_key_variants():
 # Fleet control — guest lifecycle mutations (increment 1).
 # PDM proxies these on EXISTING guests (start/stop/shutdown/resume/migrate/
 # remote-migrate/snapshot); create/clone is NOT proxiable (out of scope — see
-# docs/plans/2026-07-06-pdm-fleet-control-design.md). PATH + BODY shaping asserted;
+# docs/plans/2026-07-06-pdm-fleet-control-design.md (internal-only)). PATH + BODY shaping asserted;
 # live-prove-pending (PDM alpha).
 # ---------------------------------------------------------------------------
 

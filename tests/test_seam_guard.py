@@ -43,11 +43,10 @@ ALLOWLIST: dict[str, tuple[int, str]] = {
     "src/proximo/_mcpcompat.py": (-1, "the seam — spelled reads are its whole job"),
     # This file: the pattern text above matches itself.
     "tests/test_seam_guard.py": (-1, "the guard — carries the pattern it hunts"),
-    # The release verify script's explicit per-major conditional read (both spellings on one
-    # guarded line). It cannot import proximo's seam: it runs in a scratch venv against the
-    # PUBLISHED wheel, before proximo is importable, and its point is to read the answer the
-    # way a real client of that major would.
-    ".github/workflows/release-pypi.yml": (1, "verify.py per-major read, guarded by MCP_MAJOR"),
+    # (release-pypi.yml's inline verify script held the third entry until 2026-08-20: its
+    # per-major read moved to scripts/pypi_smoke.py, which imports the INSTALLED wheel's own
+    # seam instead of spelling one — proximo IS importable there, since the wheel under
+    # verification is installed in the very venv the script runs in.)
 }
 
 

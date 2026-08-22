@@ -64,14 +64,14 @@ DENY_BASENAMES: tuple[str, ...] = ("CLAUDE.md", "POSITIONING.md", "LANDSCAPE.md"
 # Site-specific internal identifiers (bare node/host names with no generic leak-shape) that must
 # never publish. Sourced from this INTERNAL-ONLY file — it lives under a deny prefix, so it is
 # stripped from the public mirror and can safely name real infra while THIS public tool names none.
-DENY_LITERALS_FILE = ".gitea/leak-deny.txt"
+DENY_LITERALS_FILE = ".gitea/leak-deny.txt"  # leak-audit: allow
 
 # Rival handles/products whose competitive analysis is internal strategy (see docs/internal/LANDSCAPE)
 # and must never surface in public copy. Same design as the literals file: INTERNAL-ONLY, under a deny
 # prefix, so it is stripped from the public mirror and THIS public tool names no competitor. The
 # generic ecosystem tools users legitimately reference (Terraform, Ansible, proxmoxer, …) are NOT
 # listed — only distinctive tokens with low false-positive risk belong here.
-COMPETITOR_DENY_FILE = ".gitea/competitor-deny.txt"
+COMPETITOR_DENY_FILE = ".gitea/competitor-deny.txt"  # leak-audit: allow
 
 # Generic leak-shape patterns. No real infra literals — this file ships publicly.
 _RFC1918 = re.compile(
@@ -100,6 +100,45 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("root-path", _ROOT_PATH),
     ("token", _TOKEN),
 )
+
+# A PUBLISHED file citing a path this audit STRIPS sends a public reader to a file that does not
+# exist for them. The audit already knows both halves — kept and stripped — and never compared
+# them, so the class recurred: on 2026-08-17 four such citations were shipping inside the wheel
+# (memory.py, wiki.py, a2a/signing.py, tools/pdm_fleet.py) and a sweep closed two of them while
+# leaving the rest. A sweep is not a mechanism; this is.
+#
+# Built FROM DENY_PREFIXES so it can never drift from what is actually stripped, and it requires a
+# real filename after the prefix: a line that merely names the directory (this module's own
+# DENY_PREFIXES tuple, prose about `docs/plans/`) is not a citation and must not fire.
+# Honest citations are exempt by saying so on the line — "internal-only", "not in the public tree"
+# — because a reader told the path is internal was never misled. Fixture lines that must embed
+# such a path use the same ALLOW_MARKER as every other pattern here, which the audit REPORTS
+# rather than silently honoring.
+_INTERNAL_CITED = re.compile(
+    "(?:" + "|".join(re.escape(p) for p in (".gitea/", "docs/plans/", "docs/specs/", "docs/internal/"))
+    + r")[\w./-]*\.\w+"
+)
+_CITATION_IS_DISCLOSED = re.compile(
+    r"internal[- ]only|not in the public tree|not published|internal and deliberately not|"
+    r"stripped from the public|internal mirror",
+    re.I,
+)
+
+
+def scan_internal_citations(path: str, text: str) -> list[Finding]:
+    """Findings for lines in a PUBLISHED file that cite a path the audit strips.
+
+    Fires on a specific file under a deny prefix, never on the bare directory. Silent when the
+    same line discloses that the path is internal, and when the line carries ALLOW_MARKER.
+    """
+    out: list[Finding] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if ALLOW_MARKER in line or _CITATION_IS_DISCLOSED.search(line):
+            continue
+        m = _INTERNAL_CITED.search(line)
+        if m:
+            out.append(Finding(path, lineno, "dangling-internal-path", m.group(0)))
+    return out
 
 # Inline escape hatch: a line carrying this marker is skipped (e.g. THIS tool's own tests, which
 # must embed leak-shaped literals to prove the patterns fire). Same spirit as gitleaks `#gitleaks:allow`.
@@ -333,6 +372,9 @@ def audit_files(
     marker_skips: list[tuple[str, int]] = []
     for p in sorted(kept_set & set(files)):
         findings.extend(scan_text(p, files[p], tuple(extra), marker_skips))
+        # Only KEPT files are checked: a stripped file citing another stripped file is fine,
+        # since neither reaches a public reader.
+        findings.extend(scan_internal_citations(p, files[p]))
     for p in sorted(kept_set & set(binaries or {})):
         findings.extend(scan_binary(p, binaries[p], tuple(extra)))
     return AuditResult(

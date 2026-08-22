@@ -1619,7 +1619,7 @@ def test_plan_security_group_delete_read_failure_surfaces_unknown():
 
 # ---------------------------------------------------------------------------
 # PLAN: firewall-lockout blast-radius wiring (set_enabled / options_set)
-# Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md
+# Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md (internal-only)
 # ---------------------------------------------------------------------------
 
 

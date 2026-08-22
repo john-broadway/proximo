@@ -1,7 +1,7 @@
 """storage content-delete blast — deleting a volume that is an ACTIVE guest disk destroys that disk's
 data. Scans guest configs for the exact volid.
 
-Spec: coverage push rank 9 (docs/specs/2026-06-19-disk-move-blast-radius.md lists the order).
+Spec: coverage push rank 9 (docs/specs/2026-06-19-disk-move-blast-radius.md (internal-only) lists the order).
 """
 from __future__ import annotations
 

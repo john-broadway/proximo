@@ -82,7 +82,7 @@ def pve_network_list(
 
 @tool()
 def pve_sdn_zones_list() -> list[dict]:
-    """List SDN zones in the cluster (read-only). Returns zone id, type
+    """READ-ONLY: List SDN zones in the cluster. Returns zone id, type
     (simple/vlan/qinq/vxlan/evpn/faucet), and state. Use pve_sdn_zone_create to add and
     pve_sdn_apply to commit."""
     _, api, _, _ = _proximo_server._svc()
@@ -91,7 +91,7 @@ def pve_sdn_zones_list() -> list[dict]:
 
 @tool()
 def pve_sdn_vnets_list() -> list[dict]:
-    """List SDN vnets in the cluster (read-only). Returns vnet name, zone, tag,
+    """READ-ONLY: List SDN vnets in the cluster. Returns vnet name, zone, tag,
     alias, and vlanaware state. Use pve_sdn_vnet_create to add and pve_sdn_apply
     to commit."""
     _, api, _, _ = _proximo_server._svc()

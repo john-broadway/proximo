@@ -2,7 +2,7 @@
 locks out management on every node whose (datacenter ∪ node) ruleset lacks an inbound ACCEPT for
 SSH(22)/PVE(8006).
 
-Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md. Soundness (no under-flag): a rule only
+Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md (internal-only). Soundness (no under-flag): a rule only
 counts as protective if ENABLED + inbound + ACCEPT + tcp-ish + covers 22/8006; a disabled rule, a
 udp/22 rule, or a source-restricted ACCEPT must NOT be treated as blanket protection.
 """

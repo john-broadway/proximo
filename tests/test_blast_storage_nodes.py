@@ -1,7 +1,7 @@
 """storage_update(nodes-restrict) blast — restricting a storage's `nodes` strands guests on the
 excluded nodes from their disks on that storage.
 
-Spec: docs/specs/2026-06-19-storage-nodes-restrict-blast.md. The load-bearing invariant: a guest is
+Spec: docs/specs/2026-06-19-storage-nodes-restrict-blast.md (internal-only). The load-bearing invariant: a guest is
 stranded iff it has a disk on S AND its node ∉ new_nodes. node ∈ new_nodes ⟹ keeps access (no
 under-flag path); the only error direction is over-flag (safe).
 """

@@ -1,4 +1,4 @@
-"""MINT — the print-only onboarding recipe builder (see docs/plans/2026-07-06-mint-helper-design.md).
+"""MINT — the print-only onboarding recipe builder (see docs/plans/2026-07-06-mint-helper-design.md (internal-only)).
 
 Pure-unit: no live host, no env, no I/O. The file-format separator assertions (= / : / password)
 are the regression guard for the exact bug that motivated the helper — a wrong separator

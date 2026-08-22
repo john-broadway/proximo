@@ -276,7 +276,8 @@ standing plaintext secret.
 `PROXIMO_AUDIT_EXPECTED_HEAD` pins the ledger head so a tail truncation, a forged append,
 or a full wipe is caught. But **every recorded call advances the head, reads included**,
 so a hand-pinned value goes stale immediately. Prefer the auto-anchor
-(`PROXIMO_AUDIT_ANCHOR_SINK=file` + `PROXIMO_AUDIT_ANCHOR_FILE_PATH`): Proximo reads the
+(`PROXIMO_AUDIT_ANCHOR_SINK=file` + `PROXIMO_AUDIT_ANCHOR_FILE_PATH`, or
+`PROXIMO_AUDIT_ANCHOR_SINK=http` + `PROXIMO_AUDIT_ANCHOR_URL`): Proximo reads the
 last pin at startup and verifies against it, and the anti-poisoning rule means it never
 re-pins a head that has MOVED (a verify that just caught a truncation cannot overwrite the
 good pin).
@@ -284,9 +285,27 @@ good pin).
 Placement is the whole game, because the anchor's value is that it's less compromisable
 than the agent box:
 
-- **The strong form is genuinely off-box.** Point the anchor file at a mount or store on
-  a different, less-compromisable host, where this box writes the latest head but a
-  separate authority retains and monitors history.
+- **The strong form is genuinely off-box.** The `http` sink exists for exactly this: a
+  receiver on a different, less-compromisable host — any endpoint that answers GET with
+  the stored pin (404 when empty) and accepts PUT: a WebDAV location, an object-store
+  gateway, a ten-line receiver that retains every head it is ever handed. TLS verification
+  has no off switch on this channel by design (`PROXIMO_AUDIT_ANCHOR_CA_BUNDLE` for a
+  private CA; a bearer token by file reference via `PROXIMO_AUDIT_ANCHOR_TOKEN_PATH`); a
+  plain `http://` URL works for a genuinely trusted hop but warns loudly, because an
+  on-path attacker who can rewrite the pin in transit defeats the anchor against that
+  attacker. The `file` sink reaches the same posture pointed at a mount or store on such
+  a host, where this box writes the latest head but a separate authority retains and
+  monitors history.
+- **The retained-history arm has its own sink now.** The paragraph below asks the operator
+  to "independently retain each published head: a root-only append log" — the `syslog` sink
+  (`PROXIMO_AUDIT_ANCHOR_SINK=syslog` + `PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS`) is that
+  sentence mechanized: every clean `audit_verify` appends the head to a collector's
+  append-only trail. The trade is stated as the limit it is: syslog cannot hand a pin back,
+  so this sink alone gives NO automatic tail detection — pair it with
+  `PROXIMO_AUDIT_EXPECTED_HEAD`, a readable sink, or collector-side comparison (Proximo
+  warns at startup when nothing covers it). TCP speaks TLS when the CA bundle is set; UDP
+  is refused by design, because a fire-and-forget publish cannot fail and a publish that
+  cannot fail is not a check.
 - **On a single box, mind the mechanism.** Proximo itself (as the agent user) writes the
   pin, via `audit_verify`'s on-demand export, so a file the agent literally *cannot* write
   fails closed and breaks the tool. The property you want is not "the agent can't touch

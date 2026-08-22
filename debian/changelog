@@ -1,3 +1,22 @@
+proximo (0.36.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.36.0 (minor: the external-report release. proximo_read
+    joins the default lean facade — a read-only dispatch door whose
+    readOnlyHint=true is enforced, not labeled: the verdict derives from the
+    same READ-ONLY/MUTATION docstring marker that emits every hint, and a
+    mutating, unmarked, or dispatcher tool refuses before dispatch. 33 read
+    tools gained their missing READ-ONLY marker; the facade trio carries
+    hints now. Two new PROVE anchor sinks: http (GET/PUT one pin resource on
+    a remote receiver, TLS with no off switch, redirects refused) and syslog
+    (write-only witness — appends every clean verify's head to a collector's
+    trail; declares fetches_pins=false, UDP refused by design). audit_verify's
+    unpinned nudge names the automated anchor. A daily pypi-smoke workflow
+    fresh-resolves the published wheel on both mcp majors through the same
+    verifier the release job runs. Doorway figures re-measured (default door
+    ~1,740 tokens). 906 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 22 Aug 2026 08:00:00 +0000
+
 proximo (0.35.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.35.0 (minor, BREAKING: pbs_tasks_list, pmg_tasks_list and

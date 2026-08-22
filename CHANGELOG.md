@@ -2,6 +2,97 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.36.0] — 2026-08-22
+
+**One external end-to-end report became the whole release.** An adopter ran Proximo end to end
+and reported three findings: two were shipped mechanisms an adopter could not see — the
+per-tool `readOnlyHint`s swallowed by the unannotated facade, and the off-box anchor hidden by
+its own nudge — and one gap the report showed plainly: the client could not tell a status read
+from a power cycle through the default door. This release is the fixes plus everything the
+fixes pointed at: the enforced `proximo_read` door, a daily fresh-resolve smoke of the
+published wheel, and two new anchor sinks (`http` and the write-only `syslog` witness). Tool
+estate unchanged at 906 registered; the default doorway gains one resident tool
+(`proximo_read`) and now measures ~1,740 tokens.
+
+- **`proximo_read` — the enforced read-only door.** In the default lean mode every call rides
+  `proximo_call`, whose only honest static hint is `readOnlyHint: false` (a hint cannot vary per
+  dispatched call — annotations ride `tools/list`, which is static), so a client's permission
+  policy could not tell a status read from a power cycle. `proximo_read(tool, arguments)` is the
+  hatch's read-only twin: same reach (the full pre-prune catalog), same single dispatch funnel,
+  `readOnlyHint: true` — and the hint is an **enforced promise, not a label**. The verdict comes
+  from the same leading `READ-ONLY:`/`MUTATION:` marker that emits every readOnlyHint, so promise
+  and enforcement cannot diverge; anything not marked read-only refuses BEFORE dispatch,
+  fail-closed — a MUTATION tool, an unmarked tool, and `proximo_call` itself (the laundering
+  loophole). Registered where the facade is (the dynamic default door); catalog modes carry
+  per-tool hints already.
+- **33 read tools gained their missing `READ-ONLY:` marker** (`*_list`/`*_get`/`*_status`
+  shapes across pve/pbs/pmg — each body verified a pure read before stamping). They were
+  hint-invisible to clients and would have been refused by the read door's fail-closed rule.
+  A new gate pins the unmarked set to exactly the two tools that defy the binary
+  (`audit_verify`, which may advance the anchor pin file; `proximo_call`, which dispatches
+  either kind) so a tool can never ship unmarked again.
+- **The facade carries readOnlyHints now.** The per-tool hints (0.32.0) never reached a
+  lean-mode client, because the DEFAULT door was three unannotated facade tools — "the client
+  can't tell a status read from a power cycle." `proximo_find_tools` and `proximo_tool_schema`
+  are local catalog reads and say so (`readOnlyHint: true`); `proximo_call` honestly says
+  `false`. On an mcp SDK older than the annotations kwarg the hints degrade to absent (never a
+  crash); an explicit `annotations=` through the `tool()` wrapper now degrades the same way
+  instead of raising TypeError at import on the 1.24 floor.
+- **Daily fresh-resolve smoke of the published wheel** (`.github/workflows/pypi-smoke.yml`) —
+  closes the report's honest residual: CI's dual-major matrix tests the checkout, and the
+  release-time verify fresh-resolves the published wheel, but between releases nobody exercised
+  the exact path an adopter's bare `uvx proximo-proxmox` takes. Two daily legs: an unpinned
+  resolve of PyPI's latest with every published extra (plus an import probe of the real face
+  modules — the shims defer imports, so only this catches a dead extra), and the still-supported
+  mcp 1.x pin. Both run `scripts/pypi_smoke.py` — the release verify's cold-start check,
+  extracted from its inline heredoc so ONE verifier serves both workflows and the release-day
+  path is exercised daily instead of rotting between releases (every check preserved; the
+  per-major serverInfo read now routes through the installed wheel's own `_mcpcompat` seam,
+  which floors verify-only re-verification at v0.33.0 — the script refuses older wheels by
+  name). A red here means a dependency
+  release broke fresh adopter installs (the mcp 2.0.0 class); it detects, a human remediates.
+  The PyPI-served version string is shape-validated before it may touch a shell command, and
+  the verifier fails by explicit exit, never assert (an assert vanishes under `python -O`).
+- **HTTP anchor sink** (`PROXIMO_AUDIT_ANCHOR_SINK=http` + `PROXIMO_AUDIT_ANCHOR_URL`) — the
+  extension finding 3 named, built: GET/PUT one pin resource on a receiver on a DIFFERENT host,
+  which is where the anchor's trust model wants it. Same payload, same single validation path
+  as the file sink (extracted into one `_validate_pin` so a second sink cannot drift), same
+  fail-closed shape: only a 404 reads as the first run; any other non-2xx, connection/TLS
+  failure, garbage body, or redirect — deliberately not followed; a redirected pin store is a
+  tamper signal — refuses. TLS verification has no off switch on this channel by design
+  (private CA via `PROXIMO_AUDIT_ANCHOR_CA_BUNDLE`; plain `http://` warns loudly); the bearer
+  token is a file reference (`PROXIMO_AUDIT_ANCHOR_TOKEN_PATH`), read fresh per call behind
+  the shared secret-file permission floor. Startup auto-pin and `audit_verify`'s anti-poisoning
+  export are sink-agnostic and work unchanged. Syslog/journal sinks remain later extensions.
+- **Syslog anchor sink — the write-only witness** (`PROXIMO_AUDIT_ANCHOR_SINK=syslog` +
+  `PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS`) — the anchor module's other named extension, built
+  out the same day. Different trust shape, stated as such: syslog can carry a head OUT but
+  never hand one back, so the sink declares `fetches_pins=False`, every clean `audit_verify`
+  APPENDS the current head to the collector's trail (SECURITY.md's "root-only append log"
+  sentence, mechanized — the anti-poisoning v.ok guard still withholds a tampered head), and
+  automatic startup verification is honestly unavailable with this sink alone — Proximo warns
+  at startup when neither a manual pin nor a readable sink covers detection. Transports chosen
+  so a publish can always FAIL: unix socket (datagram, stream fallback that names both
+  attempts) or TCP — TLS-verified against `PROXIMO_AUDIT_ANCHOR_CA_BUNDLE` when set (proven
+  in tests against a real TLS collector, wrong-CA refusal included), plaintext warns loudly;
+  UDP refused by design (fire-and-forget cannot fail, so it cannot be a check). RFC 5424
+  frames, LF-terminated; header slots are sanitized tokens so a hostile field cannot forge a
+  second record (full fidelity rides the JSON payload). A write-only sink that forgets its
+  flag fails LOUD (the fetch raises, the verify refuses) — a designed default, tested.
+- **`audit_verify`'s unpinned nudge names the automated anchor.** The off-box anchor
+  (`PROXIMO_AUDIT_ANCHOR_SINK=file`, shipped 0.13.0) was invisible from the tool itself: the
+  nudge named only the manual `PROXIMO_AUDIT_EXPECTED_HEAD` path, so an end-to-end adopter
+  reasonably read the anchor as unshipped. The nudge now leads with the automated pin, and
+  `packaging/proximo.env.example` documents both anchor vars beside the manual one.
+- **Every doorway figure re-measured** (all had drifted 4-8% in-band across 0.34/0.35's
+  description work; the hints and the new door are deliberate additions on top): the default
+  door is **~1,740 tokens** (printed ~1,449 before tonight), MEMORY=0 ~1,166; three-exact-tools
+  ~1,704; `pve.guests` ~9,781; two domains ~16,825; pve-only catalog ~101,398; full surface
+  ~289,839. SETUP.md's "12x over the 8,192-token default window" also corrected to ~35x — the
+  12x was the one-plane figure wearing the full surface's sentence. A new every-live-surface
+  gate now requires the current figure and refuses any superseded one on every file that
+  prints it.
+
 ## [0.35.0] — 2026-08-16
 
 **The three sibling planes get the task envelope PVE got in 0.34.0. BREAKING response shapes
@@ -1397,7 +1488,7 @@ previews and tool docstrings drifted from what the code actually does. Fleet 544
     (`proximo.mcp@gmail.com`) for agents that prefer not to post.
   - **The invariant (the point):** no telemetry, no phone-home, no install data — Proximo
     only ever *invites* a hello; it never *receives* one. Looking is free and leaves no trace.
-    Design: `docs/plans/2026-07-06-agent-front-door-design.md`.
+    Design: `docs/plans/2026-07-06-agent-front-door-design.md` (internal-only).
 
 ## [0.17.0] — 2026-07-06
 
@@ -1407,7 +1498,7 @@ previews and tool docstrings drifted from what the code actually does. Fleet 544
   least-privilege by default (`--write` opt-in), `--json` for structured output. Bakes in
   the per-product credential formats (`=` vs `:` vs password) and the two hard-won grant
   gotchas (PDM user∩token intersection; PVE privsep token ACLs). Makes no API call and
-  never handles a secret. See `docs/plans/2026-07-06-mint-helper-design.md`.
+  never handles a secret. See `docs/plans/2026-07-06-mint-helper-design.md` (internal-only).
 - **PDM fleet control** — the Proxmox Datacenter Manager plane goes from read-only (22 tools) to
   governed guest control (**+12 → 34**): power (start/stop/shutdown/resume), in-cluster migrate,
   **cross-remote (datacenter-to-datacenter) migrate**, and snapshot create/delete/rollback, for
@@ -1420,7 +1511,7 @@ previews and tool docstrings drifted from what the code actually does. Fleet 544
   end-to-end against a real PDM 1.1.4 + nested PVE 9.2 cluster (`scripts/live-smoke/pdm-fleet-smoke.py`):
   power stop/start, snapshot create → rollback (auto safety-snapshot taken first) → delete, and
   **online migrate node→node and back**, with the 92-entry PROVE hash-chain verified (PLAN + submit +
-  undo_point all chained). See `docs/plans/2026-07-06-pdm-fleet-control-design.md`.
+  undo_point all chained). See `docs/plans/2026-07-06-pdm-fleet-control-design.md` (internal-only).
   **Cross-remote `remote-migrate` now LIVE-PROVEN too** (2026-07-06) — a real
   datacenter-to-datacenter MOVE (source `labclu` → a standalone 4th node), guest present on the
   target and removed from the source (`delete=True`), PLAN + PROVE-chain verified
@@ -2489,14 +2580,14 @@ onboarding preflight (`pve_doctor`). All additive and backward-compatible; tool 
   and is never read as "nothing affected = safe". New pure engine `proximo.blast` (the graph
   reasoning is unit-tested with zero API). First op-class of the broader blast-radius thesis —
   access/ACL and firewall/network follow the same seam.
-  (Spec: `docs/specs/2026-06-15-blast-radius-engine.md`.)
+  (Spec: `docs/specs/2026-06-15-blast-radius-engine.md` (internal-only).)
 - **Computed blast-radius (access/ACL class).** `pve_acl_modify` now extracts its shadow/widen
   reasoning into the pure `proximo.blast.compute_acl_blast`, populates the structured `affected`
   field, **completes** the target's shadow by resolving their own group-inherited grants (#1), and
   lists who-else-can-reach the path as explicit **UNCHANGED** context (#2). Honest per-principal
   model: only the target gains/loses; group members are never reported as gaining/losing. privsep=1
   tokens do not fold owner groups. Fail-closed throughout (caveat retained when a read fails; risk
-  never lowered). (Spec: `docs/specs/2026-06-15-acl-blast-radius.md`.)
+  never lowered). (Spec: `docs/specs/2026-06-15-acl-blast-radius.md` (internal-only).)
 - **Computed blast-radius (firewall reach — Part A).** `pve_firewall_rule_add` / `rule_remove` /
   `rule_update` now classify the **per-rule REACH** — *"this rule permits SSH (22/tcp) from
   0.0.0.0/0"* — via the new pure `proximo.blast.compute_firewall_reach`, surfaced as `blast_radius`
@@ -2507,7 +2598,7 @@ onboarding preflight (`pve_doctor`). All additive and backward-compatible; tool 
   an ipset/alias reference (`+name`/`dc/name`) → unknown-conservative (never "low"). `enable=0` →
   *"staged, not active"*. Removing an ACCEPT names what it **closes**; removing a DROP/REJECT names
   what it **re-permits**; an update classifies the **post-update** rule. Risk is only ever raised,
-  never below the MEDIUM floor. (Spec: `docs/specs/2026-06-15-firewall-network-blast-radius.md`.)
+  never below the MEDIUM floor. (Spec: `docs/specs/2026-06-15-firewall-network-blast-radius.md` (internal-only).)
 - **Computed blast-radius (network-apply lockout — Part B).** `pve_network_apply` now best-effort
   **names the management interface** a network apply would touch: it parses the management host from
   the configured API base URL and, via the pure `proximo.blast.compute_apply_lockout`, names the
@@ -2518,7 +2609,7 @@ onboarding preflight (`pve_doctor`). All additive and backward-compatible; tool 
   management host, an addressless interface read, a non-pending match, or a read failure all yield
   *"could not identify the management interface — HIGH stands; assume lockout risk"*, **never** "no
   lockout". `pve_sdn_apply` gains a light note that the management path is normally on a plain
-  bridge, not an SDN vnet. (Spec: `docs/specs/2026-06-15-firewall-network-blast-radius.md`.)
+  bridge, not an SDN vnet. (Spec: `docs/specs/2026-06-15-firewall-network-blast-radius.md` (internal-only).)
 - **`pve_doctor` — onboarding preflight (read-only).** Checks API reachability + reads the calling
   token's *effective* permissions, then reports what the token CAN / CANNOT do — with the privilege
   + role to grant for each gap. Turns raw `403`s into an actionable checklist; run it first after

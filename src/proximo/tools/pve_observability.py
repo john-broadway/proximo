@@ -158,7 +158,7 @@ def pve_node_syslog(
 def pve_node_dns(
     node: Annotated[str | None, Field(description="PVE node name; defaults to the configured node")] = None,
 ) -> dict:
-    """Read a Proxmox node's DNS configuration (read-only). Returns a dict with
+    """READ-ONLY: Read a Proxmox node's DNS configuration. Returns a dict with
     search domain and configured nameservers (dns1/dns2/dns3). Use pve_node_dns_set
     to change it."""
     cfg, api, _, _ = _proximo_server._svc()

@@ -60,7 +60,7 @@ def pve_firewall_rules_list(
     vmid: Annotated[str | None, Field(description="Guest VMID/CTID, required for scope='guest'.")] = None,
     kind: Annotated[str | None, Field(description="Guest kind for scope='guest': 'qemu' or 'lxc'.")] = None,
 ) -> list[dict]:
-    """List firewall rules for the given scope (cluster, node, or guest) (read-only).
+    """READ-ONLY: List firewall rules for the given scope (cluster, node, or guest).
 
     Returns the active rules at that scope level, including action, direction, protocol,
     and address/port fields. Use pve_firewall_options_get to read firewall settings
@@ -93,7 +93,7 @@ def pve_firewall_options_get(
 
 @tool()
 def pve_security_groups_list() -> list[dict]:
-    """List the cluster's firewall security groups (read-only).
+    """READ-ONLY: List the cluster's firewall security groups.
 
     Returns each group's id (keyed `group`), comment, and digest. A security group is a reusable
     named rule set you attach to a VM/node firewall; use pve_firewall_rules_list to read

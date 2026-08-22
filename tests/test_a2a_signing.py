@@ -1,6 +1,6 @@
 """Signed Agent Cards (SIGNET): ES256/JWS over the A2A card.
 
-Spec: docs/specs/2026-06-19-signed-agent-cards.md. We sign THROUGH the a2a-sdk helpers
+Spec: docs/specs/2026-06-19-signed-agent-cards.md (internal-only). We sign THROUGH the a2a-sdk helpers
 (a2a.utils.signing) so canonicalization matches every compliant verifier, and we enforce
 ES256 (asymmetric) — never the SDK's HS256 default — on both signer and verifier.
 """

@@ -1,7 +1,7 @@
 """network-iface attachment blast — editing a bridge disrupts every guest with a NIC on it when the
 staged change is applied. Names the attached guests.
 
-Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md (coverage push, rank 4).
+Spec: docs/specs/2026-06-19-firewall-lockout-blast-radius.md (internal-only) (coverage push, rank 4).
 """
 from __future__ import annotations
 

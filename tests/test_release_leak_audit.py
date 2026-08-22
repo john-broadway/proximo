@@ -26,11 +26,11 @@ def _git_out(args: list[str]) -> str:
 
 # --- pure: deny-path partition ---
 def test_deny_prefixed_paths_are_stripped_not_kept():
-    files = {".gitea/workflows/ci.yml": "x", "src/proximo/server.py": "y"}
+    files = {".gitea/workflows/ci.yml": "x", "src/proximo/server.py": "y"}  # leak-audit: allow
     res = rla.audit_files(files)
-    assert ".gitea/workflows/ci.yml" in res.stripped
+    assert ".gitea/workflows/ci.yml" in res.stripped  # leak-audit: allow
     assert "src/proximo/server.py" in res.kept
-    assert ".gitea/workflows/ci.yml" not in res.kept
+    assert ".gitea/workflows/ci.yml" not in res.kept  # leak-audit: allow
 
 
 def test_leak_inside_a_stripped_file_is_not_reported():
@@ -44,16 +44,16 @@ def test_leak_inside_a_stripped_file_is_not_reported():
 def test_design_docs_are_stripped_from_public_tree():
     # docs/plans/ + docs/specs/ are our engineering design docs — internal by John's call 2026-07-13.
     files = {
-        "docs/plans/2026-06-15-blast-radius-engine.md": "design memo",
-        "docs/specs/2026-06-15-acl-blast-radius.md": "spec",
-        "docs/plans/internal/COPY-CANON.md": "build-record",
+        "docs/plans/2026-06-15-blast-radius-engine.md": "design memo",  # leak-audit: allow
+        "docs/specs/2026-06-15-acl-blast-radius.md": "spec",  # leak-audit: allow
+        "docs/plans/internal/COPY-CANON.md": "build-record",  # leak-audit: allow
         "docs/TOOLS.md": "user-facing tool reference",
         "README.md": "x",
     }
     res = rla.audit_files(files)
-    assert "docs/plans/2026-06-15-blast-radius-engine.md" in res.stripped
-    assert "docs/specs/2026-06-15-acl-blast-radius.md" in res.stripped
-    assert "docs/plans/internal/COPY-CANON.md" in res.stripped
+    assert "docs/plans/2026-06-15-blast-radius-engine.md" in res.stripped  # leak-audit: allow
+    assert "docs/specs/2026-06-15-acl-blast-radius.md" in res.stripped  # leak-audit: allow
+    assert "docs/plans/internal/COPY-CANON.md" in res.stripped  # leak-audit: allow
     assert "docs/TOOLS.md" in res.kept  # user-facing docs still publish
     assert "README.md" in res.kept
 
@@ -162,7 +162,7 @@ def test_no_competitor_names_means_no_competitor_findings():
 
 def test_competitor_name_inside_stripped_file_is_not_reported():
     # The internal landscape legitimately names rivals; it is stripped, so it must NOT be a finding.
-    files = {"docs/internal/LANDSCAPE.md": "RivalMCP has 200 stars"}
+    files = {"docs/internal/LANDSCAPE.md": "RivalMCP has 200 stars"}  # leak-audit: allow
     res = rla.audit_files(files, competitor_names=("RivalMCP",))
     assert res.ok
     assert res.findings == []

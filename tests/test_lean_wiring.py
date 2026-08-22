@@ -58,8 +58,8 @@ def test_lean_mode_registers_only_the_facade():
     m = _fresh_mcp()
     door.apply_lean(m)
     assert set(m._tool_manager._tools) == {
-        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
-        "audit_verify", "audit_entries",
+        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_read",
+        "proximo_recall", "audit_verify", "audit_entries",
     }
 
 
@@ -84,7 +84,10 @@ def test_lean_payload_is_a_fraction_of_the_full_surface():
          "inputSchema": getattr(t, "parameters", {}) or {}}
         for n, t in reg.items()
     ]))
-    assert payload <= 6_000, f"lean surface is {payload:,} B (~{payload // 4:,} tokens)"
+    # 6_000 -> 6_500 on 2026-08-20: proximo_read joined the facade (the enforced read-only
+    # door), measured 6,294 B by this rebuild. A deliberate, stated cost — the wire-true
+    # figures live in test_schema_budget; this cap only guards against silent facade growth.
+    assert payload <= 6_500, f"lean surface is {payload:,} B (~{payload // 4:,} tokens)"
 
 
 # --- THE SAFETY INVARIANT ------------------------------------------------------------------
@@ -196,12 +199,12 @@ def test_memory_on_makes_recall_resident_in_the_facade(monkeypatch):
     m = _fresh_mcp()
     door.apply_lean(m)
     assert set(m._tool_manager._tools) == {
-        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_recall",
-        "audit_verify", "audit_entries",
+        "proximo_find_tools", "proximo_tool_schema", "proximo_call", "proximo_read",
+        "proximo_recall", "audit_verify", "audit_entries",
     }
 
 
-def test_memory_off_leaves_the_facade_at_three(monkeypatch):
+def test_memory_off_leaves_the_facade_at_four(monkeypatch):
     """No dead tool burning resident tokens on a first call that could only fail."""
     monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
     m = _fresh_mcp()

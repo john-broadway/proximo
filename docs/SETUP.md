@@ -245,23 +245,23 @@ typo must not switch deletion on.
 ## Fitting a smaller model — scoping the tool surface
 
 Proximo governs 906 operations, and **the default door is small**: with nothing configured,
-the server serves the dynamic facade — search, schema, call, recall and the audit trail
-(~1,449 tokens) — with everything this box serves still callable through it. That is the 0.30
+the server serves the dynamic facade — search, schema, read, call, recall and the audit
+trail (~1,740 tokens) — with everything this box serves still callable through it. That is the 0.30
 flip, and the reason is measured: the catalog doors below cost your model context at
-connection time, before you ask anything, and the full surface is ~277k tokens of schema —
-12x over the 8,192-token default window of a stock local model, which means dead on connect.
+connection time, before you ask anything, and the full surface is ~290k tokens of schema —
+~35x over the 8,192-token default window of a stock local model, which means dead on connect.
 The catalog doors are explicit choices now. Four layers, most specific wins. Every figure
 below was measured against the full 906-tool registry:
 
 | Set this | Serves | Real cost |
 |---|---|---|
-| *(nothing — the default)* | the dynamic facade; every tool this box serves still callable | **~1,449 tokens** |
-| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those, plus the audit trail and `proximo_call` | **~1,579 tokens** |
-| `PROXIMO_TOOLSETS=pve.guests` | one domain (28 tools) | ~9,123 tokens |
-| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (49 tools) | ~15,783 tokens |
+| *(nothing — the default)* | the dynamic facade; every tool this box serves still callable | **~1,740 tokens** |
+| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those, plus the audit trail and `proximo_call` | **~1,704 tokens** |
+| `PROXIMO_TOOLSETS=pve.guests` | one domain (28 tools) | ~9,781 tokens |
+| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (49 tools) | ~16,825 tokens |
 | `PROXIMO_SURFACES=pve` | the dynamic facade, with the *searchable* catalog scoped to that plane (312 tools). `proximo_recall` is **not** resident here: `memory` is a utility surface, not a plane, so naming planes scopes it away — add it (`PROXIMO_SURFACES=pve,memory`) to keep the one-call estate answer | **~868 tokens** |
-| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes (~97,432 tokens on a pve-only box) | up to ~277,376 tokens |
-| `PROXIMO_TOOLSETS=all` | the full surface, auto-scope overridden | ~277,376 tokens |
+| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes (~101,398 tokens on a pve-only box) | up to ~289,839 tokens |
+| `PROXIMO_TOOLSETS=all` | the full surface, auto-scope overridden | ~289,839 tokens |
 
 > These figures were **revised upward 16-20% on 2026-08-01**, and the surface did not grow.
 > They are now measured from what `tools/list` actually serializes, verified by installing
@@ -289,12 +289,14 @@ instead of the whole served surface:
 
 - `proximo_find_tools(query)` — search the catalog
 - `proximo_tool_schema(name)` — get one tool's arguments
-- `proximo_call(tool, arguments)` — run it
+- `proximo_read(tool, arguments)` — run a READ-ONLY tool; refuses anything that can mutate,
+  so its `readOnlyHint: true` is an enforced promise your client's permission policy can trust
+- `proximo_call(tool, arguments)` — run anything (`readOnlyHint: false`, honestly)
 - `proximo_recall()` — estate questions (what exists, how many, what changed) in one call
 
 `audit_verify` and `audit_entries` ride alongside these on every surface (PROVE — the write
 proof and the read-back — is never scopeable away), so a raw `tools/list` in this mode shows
-**six** entries at ~1,449 tokens — five at ~888 with `PROXIMO_MEMORY=0`, which removes
+**seven** entries at ~1,740 tokens — six at ~1,166 with `PROXIMO_MEMORY=0`, which removes
 `proximo_recall` rather than leaving a call that could only fail.
 
 The rest stay callable; they stop being *resident*. This is the only mode that fits an ~8k

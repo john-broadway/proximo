@@ -991,7 +991,7 @@ def test_ha_rule_update_caller_type_not_overridden_by_autofetch():
 
 # ---------------------------------------------------------------------------
 # plan_migrate — disk-residency blast wiring
-# Spec: docs/specs/2026-06-19-migrate-disk-residency-blast.md
+# Spec: docs/specs/2026-06-19-migrate-disk-residency-blast.md (internal-only)
 # ---------------------------------------------------------------------------
 
 

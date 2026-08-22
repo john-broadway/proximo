@@ -110,8 +110,8 @@ def pve_guest_status(
     kind: Annotated[str, Field(description="Guest type: `lxc` for a container or `qemu` for a VM.")] = "lxc",
     node: Annotated[str | None, Field(description="PVE node the guest runs on. Omit to resolve it automatically from the cluster.")] = None,
 ) -> dict:
-    """Read the operational status and current configuration of a single guest (kind='lxc' or
-    'qemu') (read-only). Returns the guest's runtime state and resource utilization
+    """READ-ONLY: Read the operational status and current configuration of a single guest (kind='lxc' or
+    'qemu'). Returns the guest's runtime state and resource utilization
     (CPU/memory/disk/network/uptime) — operational metrics, not its stored configuration.
     Use pve_guest_config_get for the full configuration."""
     _, api, _, _ = _proximo_server._svc()
@@ -155,7 +155,7 @@ def pve_snapshot_list(
     kind: Annotated[str, Field(description="Guest type: `lxc` for a container or `qemu` for a VM.")] = "lxc",
     node: Annotated[str | None, Field(description="PVE node the guest runs on. Omit to resolve it automatically from the cluster.")] = None,
 ) -> list[dict]:
-    """List a guest's snapshots (read-only). Returns each snapshot's name, description, parent,
+    """READ-ONLY: List a guest's snapshots. Returns each snapshot's name, description, parent,
     and creation time, plus the synthetic 'current' node showing live state. Works for both VMs
     and containers (kind='qemu' or 'lxc'). Use pve_snapshot_create / pve_rollback to act on them."""
     _, api, _, _ = _proximo_server._svc()
@@ -440,7 +440,7 @@ def pve_storage_status(
     storage: Annotated[str, Field(description="Storage backend name to read capacity and state for.")],
     node: Annotated[str | None, Field(description="PVE node hosting the storage. Omit to use the configured default node.")] = None,
 ) -> dict:
-    """Read a storage backend's capacity and state (read-only). Returns total size, used space,
+    """READ-ONLY: Read a storage backend's capacity and state. Returns total size, used space,
     available free space, and enabled status. Use pve_storage_content to list ISOs, templates,
     and backups stored on it."""
     _, api, _, _ = _proximo_server._svc()
@@ -605,7 +605,7 @@ def pve_cloudinit_get(
     node: Annotated[str | None, Field(description="PVE node the guest runs on. Omit to resolve it automatically from the cluster.")] = None,
     kind: Annotated[str, Field(description="Guest type; cloud-init applies to `qemu` guests.")] = "qemu",
 ) -> dict:
-    """Read a QEMU guest's cloud-init configuration (read-only). Returns cloud-init fields
+    """READ-ONLY: Read a QEMU guest's cloud-init configuration. Returns cloud-init fields
     (ciuser, sshkeys, ipconfigN, cipassword placeholder) with secret fields masked for safety.
     Use pve_cloudinit_set to mutate it; the set operation auto-captures an undo record for
     rollback."""

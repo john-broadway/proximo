@@ -72,3 +72,40 @@ def test_committed_manifest_is_not_a_facade_sized_stub():
     assert declared >= registered * 0.9, (
         f"lhm.plugin.json declares {declared} tools but {registered} are registered — the "
         f"manifest is stale or was generated behind a scoped/leaned door.")
+
+
+def test_manifest_tool_text_matches_what_the_server_registers():
+    """Exact parity on NAMES and DESCRIPTION TEXT, not a 90% count threshold.
+
+    The floor test above tolerates 10% drift and never looks at a single character of tool
+    text, so a manifest could carry last release's descriptions for every tool and still pass.
+    Nothing else covers it either: only `scripts/release.sh` regenerates and diffs the manifest,
+    so between releases the committed artifact could drift silently, and that artifact is what
+    LobeHub serves and what `docs/TOOLS.md` is generated FROM.
+
+    Honest scope, because this gate is easy to over-trust: it catches a manifest that has gone
+    STALE against the code. It cannot catch a description that is WRONG — on 2026-08-17 a false
+    sentence in a tool docstring reached the manifest and TOOLS.md, and all three agreed with
+    each other perfectly. Only reading the claim against the behaviour caught that.
+    """
+    from proximo import server
+
+    manifest = json.loads((ROOT / "lhm.plugin.json").read_text())
+    declared = {t["name"]: (t.get("description") or "") for t in manifest.get("tools", [])}
+    registered = {n: (t.description or "") for n, t in server.mcp._tool_manager._tools.items()}
+
+    missing = sorted(set(registered) - set(declared))
+    extra = sorted(set(declared) - set(registered))
+    assert not missing, (
+        f"{len(missing)} registered tool(s) are absent from lhm.plugin.json (e.g. {missing[:3]}) "
+        f"— regenerate with scripts/gen_lobehub_manifest.py")
+    assert not extra, (
+        f"{len(extra)} tool(s) in lhm.plugin.json no longer exist (e.g. {extra[:3]}) "
+        f"— the manifest is stale; regenerate it")
+
+    drifted = sorted(n for n in registered if declared[n].strip() != registered[n].strip())
+    assert not drifted, (
+        f"{len(drifted)} tool description(s) differ between lhm.plugin.json and the live "
+        f"registry (e.g. {drifted[:3]}). The manifest is what LobeHub serves and what "
+        f"docs/TOOLS.md is generated from, so a stale one publishes last release's words. "
+        f"Regenerate with scripts/gen_lobehub_manifest.py")

@@ -33,7 +33,7 @@ from pydantic import Field
 
 from . import __version__
 from . import audit as audit_mod
-from ._mcpcompat import MCP_MAJOR, make_server
+from ._mcpcompat import MCP_MAJOR, make_server, tool_annotations_kwargs
 from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger, read_entries
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
@@ -46,6 +46,7 @@ from .envelope import (
     enforce_envelope_forbid,
     enforce_envelope_rate,
 )
+from .lean import read_only_marker
 from .lease import enforce_lease
 from .pbs import (
     PbsBackend,
@@ -101,15 +102,11 @@ def _annotations_from_doc(doc: str | None) -> ToolAnnotations | None:
     """Derive MCP tool annotations from the docstring's leading marker. Clients (Claude Code among
     them) use readOnlyHint for permission-prompt policy. Read-only tools mark readOnlyHint=True;
     mutating tools mark readOnlyHint=False (destructiveHint then defaults per the MCP spec). A
-    docstring with neither marker (a handful) gets no annotation rather than a guessed one."""
-    if not doc:
-        return None
-    first = doc.lstrip().split("\n", 1)[0].strip()
-    if first.startswith("READ-ONLY"):
-        return ToolAnnotations(readOnlyHint=True)
-    if first.startswith("MUTATION"):
-        return ToolAnnotations(readOnlyHint=False)
-    return None
+    docstring with neither marker (exactly two, pinned by test) gets no annotation rather than a
+    guessed one. The parse itself lives in lean.read_only_marker — the read door enforces from
+    the same verdict, so hint and enforcement cannot diverge."""
+    verdict = read_only_marker(doc)
+    return None if verdict is None else ToolAnnotations(readOnlyHint=verdict)
 
 
 def tool(*d_args: Any, **d_kwargs: Any):
@@ -125,8 +122,12 @@ def tool(*d_args: Any, **d_kwargs: Any):
     """
     def deco(fn):
         kwargs = dict(d_kwargs)
-        if (_MCP_TOOL_SUPPORTS_ANNOTATIONS and "annotations" not in kwargs
-                and (ann := _annotations_from_doc(fn.__doc__)) is not None):
+        if not _MCP_TOOL_SUPPORTS_ANNOTATIONS:
+            # An EXPLICIT annotations= kwarg must degrade the same way the derived path does:
+            # on a pre-annotations SDK (the 1.24 floor) passing it through is a TypeError at
+            # import — and CI's 1.x leg runs the lock's pin, not the floor, so it never sees it.
+            kwargs.pop("annotations", None)
+        elif "annotations" not in kwargs and (ann := _annotations_from_doc(fn.__doc__)) is not None:
             kwargs["annotations"] = ann
         return mcp.tool(*d_args, **kwargs)(target_aware(fn))
 
@@ -981,10 +982,14 @@ def audit_verify(
     # When nothing is pinned, the forward walk can't see tail truncation / forged append / wipe —
     # nudge the operator to anchor the head off-box (the strong guarantee), so the feature isn't
     # silently unused. No nudge once a pin is in effect.
+    # Name BOTH paths, the automated one first: the FileSink anchor shipped in 0.13.0, but this
+    # hint used to name only the manual env pin — so an end-to-end adopter read "off-box anchor"
+    # as unshipped (2026-08-20 external report). The nudge is where the feature is discovered.
     hint = None if pin is not None else (
-        "not pinned against tail attacks: set PROXIMO_AUDIT_EXPECTED_HEAD (or pass expected_head=) "
-        "to the current 'head' value, stored off-box, to detect tail truncation / forged append / "
-        "full wipe — the off-box anchor is the strong guarantee."
+        "not pinned against tail attacks: set PROXIMO_AUDIT_ANCHOR_SINK=file + "
+        "PROXIMO_AUDIT_ANCHOR_FILE_PATH to auto-pin the head off-box (see SECURITY.md), or pin by "
+        "hand via PROXIMO_AUDIT_EXPECTED_HEAD / expected_head=. Unpinned, tail truncation / "
+        "forged append / full wipe are invisible — the off-box anchor is the strong guarantee."
     )
     # A pinned "head mismatch" with the chain otherwise intact is byte-identical whether it's a tail
     # attack or a keyed-default upgrade that rotated the head. If a rotation archive sits beside the
@@ -1019,13 +1024,21 @@ def audit_verify(
     anchor_hint = None
     if anchor is not None:
         anchor_name = anchor.name
-        try:
-            prev = anchor.last_pin()
-        except AnchorError as e:
-            raise ProximoError(
-                f"off-box audit anchor is unreachable: {e}. Refusing the verify (fail-closed; a "
-                "verify that can't consult its own tamper anchor is not a clean check)."
-            ) from e
+        if not getattr(anchor, "fetches_pins", True):
+            # Write-only witness sink (syslog): nothing to fetch, so prev stays None and every
+            # CLEAN verify APPENDS the current head to the off-box trail below (the v.ok guard
+            # still withholds a tampered head). getattr defaults True so a sink that FORGETS
+            # the flag fails LOUD — last_pin gets called, raises, and the verify refuses —
+            # never silently; that default is a designed property, not a fallback.
+            prev = None
+        else:
+            try:
+                prev = anchor.last_pin()
+            except AnchorError as e:
+                raise ProximoError(
+                    f"off-box audit anchor is unreachable: {e}. Refusing the verify (fail-closed; "
+                    "a verify that can't consult its own tamper anchor is not a clean check)."
+                ) from e
         head_now = audit.head()
         prev_head = prev["head"] if prev else None
         # v.ok guard: NEVER publish off a ledger we just failed to verify. An interior-body tamper
@@ -1045,8 +1058,21 @@ def audit_verify(
                     "stale off-box pin is not mistaken for a clean check)."
                 ) from e
             anchor_last_export = ts
+        elif not getattr(anchor, "fetches_pins", True):
+            # Write-only witness sink, verify FAILED. _anchor_moved_hint's text is about a PIN
+            # ("re-pin the anchor deliberately") and this sink structurally has none — its
+            # last_pin always raises — so that hint would order the operator to do the
+            # impossible (lens catch 2026-08-20; the recommended syslog+manual-pin pairing hits
+            # this ROUTINELY, since a manual pin goes stale on the next recorded call). Say
+            # what is actually true and actionable for this shape instead.
+            anchor_hint = (
+                "verify failed; nothing was appended to the witness trail. This sink has no pin "
+                "to re-pin — if PROXIMO_AUDIT_EXPECTED_HEAD is set and stale, re-pin THAT to the "
+                "current 'head' once the ledger is confirmed intact; otherwise compare the "
+                "witnessed heads/entries at the collector."
+            )
         else:
-            # Reached when the publish was withheld: either the head MOVED from the pin, or the
+            # Readable sink, publish withheld: either the head MOVED from the pin, or the
             # verify FAILED (v.ok False) so we refused to advance. `prev` is None on a first run
             # whose verify failed — guard it (_anchor_moved_hint already handles prev_entries None).
             # Explain which way it moved via the pinned vs live entry count so a forward-grow reads
@@ -1232,7 +1258,11 @@ from .door import (  # noqa: E402
 # Why a tool for an unconfigured plane is still reachable rather than hidden: it fails with its
 # OWN named config error ("Missing required PMG env var: PROXIMO_PMG_BASE_URL"), which tells an
 # operator what to fix, where "unknown tool" would send them to build something that exists.
-@mcp.tool()
+# readOnlyHint=False, explicitly: the facade is the default door, and without this the hints the
+# plane tools carry are invisible to a lean-mode client — every call rides one bare tool. False is
+# the only honest static value (a hint cannot vary per call; annotations ride tools/list), and the
+# read-distinguishing door, if John wants one, is a separate enforced proximo_read, not a label.
+@mcp.tool(**tool_annotations_kwargs(read_only=False))
 async def proximo_call(
     tool: Annotated[str, Field(description="Exact tool name to run, e.g. 'pve_guest_power' "
                                           "(from proximo_find_tools). Non-resident names are fine.")],

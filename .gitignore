@@ -53,3 +53,8 @@ htmlcov/
 .coverage
 .coverage.*
 .venv-mcp2/
+
+# mcp-publisher writes its registry session token beside the server.json it publishes.
+# Untracked is not the same as ignored: `git add -A` would stage it, and this session used
+# exactly that. Ignore it before a successful login can create it.
+.mcpregistry_token

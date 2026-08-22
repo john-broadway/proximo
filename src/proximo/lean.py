@@ -1,20 +1,21 @@
 """LEAN mode — a searchable catalog instead of 906 resident tool schemas. THE DEFAULT since
 the 0.30 flip.
 
-WHY THIS EXISTS. Proximo's tools/list payload is ~277k tokens across 906 tools (~97k for one
+WHY THIS EXISTS. Proximo's tools/list payload is ~290k tokens across 906 tools (~101k for one
 auto-scoped plane). A local model with an 8k-32k window cannot connect at all: the catalog
 arrives before the first question and exhausts the context. That was reported from the outside,
 with a measurement, and it is correct. Byte-trimming already took ~21% off and cannot close a
 12x gap — the remaining payload is descriptions, which is how a model knows what it is calling.
 
-What closes it is making the catalog NON-RESIDENT. Lean mode serves three small tools:
+What closes it is making the catalog NON-RESIDENT. Lean mode serves four small tools:
 
     proximo_find_tools(query)      search names + one-line summaries
     proximo_tool_schema(name)      the full input schema, for the one or two that matched
-    proximo_call(tool, arguments)  dispatch
+    proximo_read(tool, arguments)  dispatch, READ-ONLY tools only (enforced, not a label)
+    proximo_call(tool, arguments)  dispatch, anything
 
-~1,449 tokens resident by default (six entries, `proximo_recall` and the audit pair included;
-~888 with PROXIMO_MEMORY=0) instead of ~277,376 (measured on the wire). The ~906 tools still
+~1,740 tokens resident by default (seven entries, `proximo_recall` and the audit pair included;
+~1,166 with PROXIMO_MEMORY=0) instead of ~289,839 (measured on the wire). The ~906 tools still
 exist and still work; they stop
 being sent to every client on every connection. This is the same pattern the agent harnesses
 themselves use at this scale — deferred schemas fetched on demand — and it is the only approach
@@ -60,6 +61,24 @@ ALIASES: dict[str, str] = {
 def resolve_alias(name: str) -> str:
     """Map a fabricated verb-order guess to the real tool name; pass any other name through."""
     return ALIASES.get(name, name)
+
+
+def read_only_marker(doc: str | None) -> bool | None:
+    """The READ-ONLY/MUTATION leading-marker verdict for a tool docstring or description.
+
+    True = leading READ-ONLY marker; False = leading MUTATION (startswith, so MUTATION-CAPABLE
+    counts); None = unmarked. ONE source of truth by design: the readOnlyHint derivation
+    (server._annotations_from_doc) and the read door's enforcement (door's proximo_read) both
+    classify through this, so the promise a client sees in tools/list and the refusal that
+    backs it cannot diverge. Moved verbatim from server._annotations_from_doc's parse."""
+    if not doc:
+        return None
+    first = doc.lstrip().split("\n", 1)[0].strip()
+    if first.startswith("READ-ONLY"):
+        return True
+    if first.startswith("MUTATION"):
+        return False
+    return None
 
 def _term_variants(term: str) -> tuple[str, ...]:
     """A query term plus its synonyms, so any spelling finds a tool.

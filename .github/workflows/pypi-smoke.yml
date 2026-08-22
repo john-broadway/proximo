@@ -1,0 +1,116 @@
+# Daily fresh-resolve smoke of the PUBLISHED wheel — the adopter's install, not this repo's.
+#
+# WHAT A RED HERE MEANS: a fresh `pip install proximo-proxmox` off PyPI is broken or lying
+# RIGHT NOW for new adopters — most likely a dependency released a breaking version inside our
+# published ranges (the mcp 2.0.0 class, which broke two of our repos identically in one August
+# and was found by hand both times). It does NOT mean main is bad: no commit is implicated, and
+# every per-commit gate stays green while this reds, because they all test the repo, not the
+# published artifact. Remediation is a human moving a dependency bound and cutting a release —
+# this job detects, it cannot fix.
+#
+# WHY IT EXISTS (2026-08-20 external report): CI's dual-major matrix tests the CHECKOUT, with
+# only mcp swapped over the 1.x lock; release-pypi's verify job fresh-resolves the published
+# wheel but runs only at release time. Between releases, the exact path most adopters take —
+# an unpinned resolve of the published wheel picking whatever PyPI serves today — was covered
+# by nobody. This closes that window at daily cost.
+#
+# Two legs, deliberately different questions:
+# - adopter-latest: NO pin, WITH every published extra — the maximal fresh resolve; what
+#   `uvx proximo-proxmox` gets today, plus proof the optional faces still import together.
+# - floor-major: mcp pinned <2 — the still-supported 1.x combo an adopter who pins gets.
+# Both install the exact version PyPI calls latest and run scripts/pypi_smoke.py (the same
+# verifier release-pypi runs, so the release path is exercised daily instead of rotting
+# between releases). Slot 07:47 daily, clear of ci (06:13) and the weekly three
+# (03:27/04:41/05:23 Monday); ci.yml's keepalive re-enables this schedule like every other.
+name: pypi-smoke
+
+on:
+  schedule:
+    - cron: "47 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: adopter-latest
+            pin: ""
+            extras: "[a2a,http,mcp-http]"
+            mcp-major: ""
+          - leg: floor-major
+            pin: "mcp>=1.24,<2"
+            extras: ""
+            mcp-major: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Resolve the version PyPI currently calls latest
+        id: latest
+        run: |
+          set -euo pipefail
+          # Retries live inside python (3 attempts, transient blips only), and the version
+          # string is SHAPE-VALIDATED before it may touch a shell command below: this value
+          # comes off the network, and an unvalidated one interpolated into `pip install`
+          # would be an injection seam even if PyPI serving hostile JSON for our own package
+          # already implies a deeper compromise. Fail-closed on a shape we don't recognize.
+          V=$(python - <<'PY'
+          import json, re, sys, time, urllib.request
+          for i in range(3):
+              try:
+                  with urllib.request.urlopen("https://pypi.org/pypi/proximo-proxmox/json", timeout=30) as r:
+                      v = json.load(r)["info"]["version"]
+                  break
+              except Exception as e:
+                  print(f"PyPI JSON fetch failed ({e}) — attempt {i + 1}/3", file=sys.stderr)
+                  time.sleep(10)
+          else:
+              sys.exit("could not read the latest version from PyPI — nothing was smoked")
+          if not re.fullmatch(r"[0-9]+(\.[0-9]+)*((a|b|rc|\.post|\.dev)[0-9]+)*", v):
+              sys.exit(f"PyPI returned a version shaped wrong: {v!r} — refusing to interpolate it")
+          print(v)
+          PY
+          )
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "PyPI latest: $V"
+      - name: Fresh-resolve the published wheel (no lock, no hashes — the adopter's install)
+        env:
+          V: ${{ steps.latest.outputs.version }}
+          PIN: ${{ matrix.pin }}
+          EXTRAS: ${{ matrix.extras }}
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/smoke-env
+          # 3 short retries for a transient network blip only — NOT the release job's 20x30s
+          # index-propagation loop; the version this installs has been public for days.
+          for i in 1 2 3; do
+            if /tmp/smoke-env/bin/pip install --quiet "proximo-proxmox${EXTRAS}==${V}" ${PIN:+"$PIN"}; then
+              echo "installed proximo-proxmox${EXTRAS}==${V} on attempt $i"; exit 0
+            fi
+            echo "install failed (attempt $i/3) — waiting 10s"; sleep 10
+          done
+          echo "::error::fresh resolve of proximo-proxmox${EXTRAS}==${V} failed — adopter installs are breaking"; exit 1
+      - name: Cold-start the installed server over stdio (shared verifier)
+        env:
+          PROXIMO_SMOKE_VERSION: ${{ steps.latest.outputs.version }}
+          PROXIMO_SMOKE_MCP_MAJOR: ${{ matrix.mcp-major }}
+        run: /tmp/smoke-env/bin/python scripts/pypi_smoke.py
+      - name: Optional faces and their declared deps import together (extras leg only)
+        if: matrix.extras != ''
+        # The pacioli lesson: verifying the bare package while the extra ships the door called
+        # a dead door verified. Two layers, both needed (lens catch 2026-08-20 — the first
+        # draft imported only the face modules, and every face defers `import uvicorn` into
+        # serve time, so a broken ASGI stack would have smiled through): the REAL face modules
+        # (the shims defer imports, so only these exercise the faces' import-time code), plus
+        # every dep the extras declare, by name. uvicorn/starlette also ride in transitively
+        # via mcp itself, so "missing" can't happen for those two — this still catches a
+        # fresh-resolved release of any of them that breaks at import. a2a (a2a-sdk) and jwt
+        # (PyJWT via a2a-sdk[signing]) are genuinely extras-only.
+        run: /tmp/smoke-env/bin/python -c "import proximo.a2a.app, proximo.httpface, proximo.mcphttp, uvicorn, starlette, cryptography, a2a, jwt; print('faces + declared extra deps import clean')"

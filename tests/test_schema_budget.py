@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 
 import pytest
 
@@ -211,7 +212,14 @@ DOC_PRINTED_TOKEN_FIGURES = {
     # proximo_recall (and its memory-first find_tools description) is part of the DEFAULT
     # door. This row is what a bare install serves. Still ~18% of ollama's default 8,192
     # window; the 888 figure survives as the PROXIMO_MEMORY=0 variant, not pinned here.
-    "dynamic (the default; also PROXIMO_TOOLSETS=dynamic)": 1_449,
+    # 2026-08-20: 1,449 -> 1,595 -> 1,740, one night, two deliberate costs. First the facade
+    # readOnlyHints (find_tools/tool_schema True, proximo_call False; the external "the facade
+    # swallows the hint" report) — ~29 tokens, which tripped the re-measure and exposed +117 of
+    # accumulated drift since the 08-01 pin. Then proximo_read, the ENFORCED read-only door John
+    # commissioned on that report, joined the facade: +145. Every row below was re-measured the
+    # same night (all had drifted 4-8% in-band across 0.34/0.35's description work); the MEMORY=0
+    # variant moved ~888 -> ~1,020 -> ~1,166 (printed, still unpinned).
+    "dynamic (the default; also PROXIMO_TOOLSETS=dynamic)": 1_740,
     # Added 2026-07-31. These two SETUP.md rows were NOT pinned here, so nothing watched them.
     # The toolsets row had genuinely drifted 17% after the doorway work. The PROXIMO_TOOLS row
     # had NOT — a review lens and I both measured it at 828 by summing the three NAMED tools,
@@ -229,19 +237,57 @@ DOC_PRINTED_TOKEN_FIGURES = {
     # sent 36,494 B for pve.guests and 1,109,504 B for the full surface, matching these
     # numbers byte-for-byte. The figures a user was reading before were understated by up
     # to 20%.
-    "three exact tools (PROXIMO_TOOLS)": 1_579,
-    "two domain toolsets (pve.guests,pve.storage)": 15_783,
-    "one domain toolset (pve.guests)": 9_123,
+    "three exact tools (PROXIMO_TOOLS)": 1_704,
+    "two domain toolsets (pve.guests,pve.storage)": 16_825,
+    "one domain toolset (pve.guests)": 9_781,
     # Relabelled 2026-08-02: this measures the pve PLANE CATALOG, and PROXIMO_SURFACES=pve stopped
     # producing it when surfaces became scope-only — that config now serves the facade (~868
     # tokens). The measurement is unchanged and still real; it is what `PROXIMO_TOOLSETS=catalog`
     # costs on a pve-only box. The old label was true of the filter and false of the env var, the
     # same shape as the README line the external vet caught.
-    "one plane catalog (PROXIMO_TOOLSETS=catalog on a pve-only box)": 97_432,
+    "one plane catalog (PROXIMO_TOOLSETS=catalog on a pve-only box)": 101_398,
     # Label updated at the 0.30 flip: nothing-configured now serves the dynamic facade;
     # the full surface is an explicit choice.
-    "full surface (PROXIMO_TOOLSETS=all)": 277_376,
+    "full surface (PROXIMO_TOOLSETS=all)": 289_839,
 }
+
+
+# Every LIVE surface that prints the default-doorway figure. 2026-08-20 lens finding: the
+# re-measure gate above pinned the README/SETUP rows, but lean.py's module docstring and
+# proximo.env.example printed the same figure UNWATCHED — both sat at the stale ~1,449 while
+# this gate reported success. A figure that prints in N places needs all N in one list, or the
+# gate's green speaks for a subset while reading as the whole. (CHANGELOG and debian/changelog
+# are deliberately absent: their old figures live inside dated release entries, true at their
+# time.) The MEMORY=0 variant figure rides along where it prints.
+DOORWAY_FIGURE_SURFACES = [
+    "README.md",
+    "docs/SETUP.md",
+    "src/proximo/lean.py",
+    "packaging/proximo.env.example",
+]
+_MEMORY0_DOORWAY_TOKENS = 1_166  # the PROXIMO_MEMORY=0 variant; printed, not pinned to a live run
+
+# Every figure a live surface ever printed for the two doorway rows above. When a re-measure
+# moves the pin, append the OUTGOING figures here rather than replacing — the stale check walks
+# this whole history, so a surface reverted to ANY old number reds, not just last release's.
+# (Advisor catch, same night the gate was born: a hardcoded two-figure tuple would itself have
+# gone stale on the very next re-measure.)
+_SUPERSEDED_DOORWAY_FIGURES = ("~1,449", "~888", "~1,595", "~1,020")
+
+
+@pytest.mark.parametrize("surface", DOORWAY_FIGURE_SURFACES)
+def test_live_surfaces_print_the_current_doorway_figure(surface):
+    """Each surface prints the CURRENT default-doorway figure and no superseded one."""
+    current = DOC_PRINTED_TOKEN_FIGURES["dynamic (the default; also PROXIMO_TOOLSETS=dynamic)"]
+    text = (pathlib.Path(__file__).resolve().parents[1] / surface).read_text()
+    assert f"~{current:,} tokens" in text, (
+        f"{surface} does not print the pinned default-doorway figure ~{current:,}"
+    )
+    for stale in _SUPERSEDED_DOORWAY_FIGURES:
+        assert stale not in text, (
+            f"{surface} still prints superseded doorway figure {stale} — "
+            f"re-measure moved it (default ~{current:,}, MEMORY=0 ~{_MEMORY0_DOORWAY_TOKENS:,})"
+        )
 
 
 @pytest.mark.parametrize("label,doc_tokens", DOC_PRINTED_TOKEN_FIGURES.items())

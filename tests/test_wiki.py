@@ -1,6 +1,6 @@
 """The wiki seam, reader side — increment 1: the contract pin and the opt-in gate.
 
-Design: docs/plans/internal/2026-07-29-wiki-seam-sketch.md. Proximo owns the reader; the
+Design: docs/plans/internal/2026-07-29-wiki-seam-sketch.md (internal-only). Proximo owns the reader; the
 builder the OPERATOR runs writes this schema. The seam is a FILE CONTRACT, so the
 version pin is the load-bearing part: a builder that drifts must be refused loudly and by
 name, never guessed at. An index read with the wrong shape would answer Proxmox questions

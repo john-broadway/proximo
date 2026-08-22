@@ -66,8 +66,8 @@ from proximo.tasks_pools import (
 
 @tool()
 def pve_cluster_status() -> list[dict]:
-    """Retrieve the cluster's overall status: nodes, quorum state, and the corosync
-    config version (read-only). Returns a list of status dicts with node names, types, online
+    """READ-ONLY: Retrieve the cluster's overall status: nodes, quorum state, and the corosync
+    config version. Returns a list of status dicts with node names, types, online
     status, and quorum info. Use pve_cluster_resources to list all resources across the cluster."""
     _, api, _, _ = _proximo_server._svc()
     return _audited("pve_cluster_status", "cluster/status", lambda: cluster_status(api))
@@ -119,8 +119,8 @@ def pve_ha_rules_list() -> list[dict]:
 
 @tool()
 def pve_ha_resources_list() -> dict:
-    """List all guests managed by HA (High Availability) with their current HA settings
-    (read-only). Returns a counted envelope — total, by_state, and `resources`: HA resource
+    """READ-ONLY: List all guests managed by HA (High Availability) with their current HA settings
+   . Returns a counted envelope — total, by_state, and `resources`: HA resource
     dicts with SID, type, state, group, and restart settings. Trust total/by_state for count
     questions; they are computed server-side from the full listing. Use pve_ha_groups_list or
     pve_ha_rules_list to view HA placement rules, not for resource enumeration."""
@@ -323,7 +323,7 @@ def pve_task_log(
     start: Annotated[int, Field(description="Line offset to start returning log output from (for pagination).")] = 0,
     limit: Annotated[int, Field(description="Max number of log lines to return.")] = 50,
 ) -> list[dict]:
-    """Retrieve a task's log output by UPID (read-only). Returns the task's log lines with
+    """READ-ONLY: Retrieve a task's log output by UPID. Returns the task's log lines with
     line numbers, paginated via start/limit. Use pve_task_wait for completion polling, or
     pve_tasks_list to find a UPID."""
     cfg, api, _, _ = _proximo_server._svc()
@@ -337,8 +337,8 @@ def pve_task_wait(
     timeout: Annotated[int, Field(description="Max seconds to wait for the task to reach a terminal state, clamped to 1-600.")] = 120,
     interval: Annotated[int, Field(description="Seconds between status polls, clamped to 1-60.")] = 2,
 ) -> dict:
-    """Block until an async Proxmox task reaches a terminal state — or the timeout — then report the
-    outcome (read). The ergonomic complement to the submit-an-async-op tools (migrate / backup /
+    """READ-ONLY: Block until an async Proxmox task reaches a terminal state — or the timeout — then report the
+    outcome. The ergonomic complement to the submit-an-async-op tools (migrate / backup /
     restore / clone / rollback / snapshot + guest create) that return a UPID: wait for completion
     without hand-rolling a pve_task_status poll loop.
 
@@ -361,7 +361,7 @@ def pve_task_wait(
 
 @tool()
 def pve_pools_list() -> list[dict]:
-    """List all resource pools defined cluster-wide (read-only). Returns a list of pool dicts
+    """READ-ONLY: List all resource pools defined cluster-wide. Returns a list of pool dicts
     with pool IDs and optional comments. Use pve_pool_get to fetch a pool's detailed
     configuration and complete member list."""
     _, api, _, _ = _proximo_server._svc()
@@ -370,8 +370,8 @@ def pve_pools_list() -> list[dict]:
 
 @tool()
 def pve_pool_get(poolid: Annotated[str, Field(description="Pool ID to look up.")]) -> dict:
-    """Retrieve a single resource pool's configuration and complete member list by pool ID
-    (read-only). Returns the pool's config including all VMs and storage resources assigned.
+    """READ-ONLY: Retrieve a single resource pool's configuration and complete member list by pool ID
+   . Returns the pool's config including all VMs and storage resources assigned.
     Use pve_pools_list to enumerate all pools."""
     _, api, _, _ = _proximo_server._svc()
     return _audited("pve_pool_get", f"pool/{poolid}", lambda: pool_get(api, poolid))
@@ -467,7 +467,7 @@ def pve_storage_config_list() -> list[dict]:
 
 @tool()
 def pve_storage_config_get(storage: Annotated[str, Field(description="Storage ID to look up.")]) -> dict:
-    """Retrieve a single storage definition from storage.cfg by storage ID (read-only).
+    """READ-ONLY: Retrieve a single storage definition from storage.cfg by storage ID.
     Returns the storage's complete configuration including type, paths, servers, and access
     settings. Use pve_storage_config_list to enumerate all storages."""
     _, api, _, _ = _proximo_server._svc()

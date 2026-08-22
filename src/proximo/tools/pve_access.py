@@ -72,7 +72,7 @@ from proximo.server import (
 
 @tool()
 def pve_users_list() -> list[dict]:
-    """List all Proxmox users across every realm (read-only). Returns each user's id (user@realm),
+    """READ-ONLY: List all Proxmox users across every realm. Returns each user's id (user@realm),
     enabled flag, expiry, group membership, email, and comment. Use pve_user_get for one user's
     full config, tokens, and effective ACL."""
     _, api, _, _ = _proximo_server._svc()
@@ -81,7 +81,7 @@ def pve_users_list() -> list[dict]:
 
 @tool()
 def pve_roles_list() -> list[dict]:
-    """List all Proxmox roles and their privileges (read-only). Returns each role's id, privilege
+    """READ-ONLY: List all Proxmox roles and their privileges. Returns each role's id, privilege
     set, and whether it is built-in. Use pve_role_create/update/delete to modify roles; use
     pve_acl_list to see which principals hold which roles at which paths."""
     _, api, _, _ = _proximo_server._svc()
@@ -90,7 +90,7 @@ def pve_roles_list() -> list[dict]:
 
 @tool()
 def pve_acl_list() -> list[dict]:
-    """List all ACL entries on the Proxmox cluster (read-only). Returns each entry's path (resource
+    """READ-ONLY: List all ACL entries on the Proxmox cluster. Returns each entry's path (resource
     scope), roleid (privilege set), principal (user/group/token), type, and propagate flag. Use
     pve_acl_modify to grant/revoke; use pve_overbroad_grants to flag Administrator or root-path
     grants."""
@@ -102,7 +102,7 @@ def pve_acl_list() -> list[dict]:
 def pve_tokens_list(
     userid: Annotated[str, Field(description="Owning user, format 'user@realm'.")],
 ) -> list[dict]:
-    """List API tokens for a specific user (read-only). Returns each token's id, comment, expiry,
+    """READ-ONLY: List API tokens for a specific user. Returns each token's id, comment, expiry,
     and privsep (privilege separation) flag — NOT the secret (shown only at creation). userid
     format: 'user@realm'. Use pve_token_create/revoke to manage tokens."""
     _, api, _, _ = _proximo_server._svc()
@@ -233,7 +233,7 @@ def pve_token_revoke(
 def pve_user_get(
     userid: Annotated[str, Field(description="User id to look up, format 'user@realm'.")],
 ) -> dict:
-    """Get a user's full config (read-only). Returns userid, enabled flag, expiry, email, comment,
+    """READ-ONLY: Get a user's full config. Returns userid, enabled flag, expiry, email, comment,
     group membership, API tokens, and firstname/lastname. Use pve_user_create/update/delete to
     modify the user; use pve_acl_list to see the cluster's raw ACL entries (not a resolved
     per-user effective-permission view)."""
@@ -243,7 +243,7 @@ def pve_user_get(
 
 @tool()
 def pve_groups_list() -> list[dict]:
-    """List all Proxmox groups (read-only). Returns each group's id, comment, and member count.
+    """READ-ONLY: List all Proxmox groups. Returns each group's id, comment, and member count.
     Use pve_group_get for full member list; use pve_group_create/update/delete to manage groups."""
     _, api, _, _ = _proximo_server._svc()
     return _audited("pve_groups_list", "access/groups", lambda: groups_list(api))
@@ -253,7 +253,7 @@ def pve_groups_list() -> list[dict]:
 def pve_group_get(
     groupid: Annotated[str, Field(description="Group id to look up.")],
 ) -> dict:
-    """Get a group's full config (read-only). Returns groupid, comment, and member list (users in
+    """READ-ONLY: Get a group's full config. Returns groupid, comment, and member list (users in
     the group). Use pve_group_create/update/delete to manage the group; use pve_acl_list to see
     ACL entries referencing this group."""
     _, api, _, _ = _proximo_server._svc()
@@ -388,7 +388,7 @@ def pve_group_delete(
 
 @tool()
 def pve_realms_list() -> list[dict]:
-    """List authentication realms/domains configured in Proxmox (read-only). Returns each realm's
+    """READ-ONLY: List authentication realms/domains configured in Proxmox. Returns each realm's
     type (pam/pve/ldap/ad/openid), comment, TFA setting, and default flag. Use pve_realm_get for
     type-specific config; use pve_realm_create/update/delete to manage realms."""
     _, api, _, _ = _proximo_server._svc()
@@ -399,7 +399,7 @@ def pve_realms_list() -> list[dict]:
 def pve_realm_get(
     realm: Annotated[str, Field(description="Realm id to look up, e.g. 'pam', 'pve', or a configured ldap/ad/openid realm name.")],
 ) -> dict:
-    """Get a realm's full config (read-only). Returns realm type, comment, TFA requirement, and
+    """READ-ONLY: Get a realm's full config. Returns realm type, comment, TFA requirement, and
     type-specific settings (server1/base_dn for ldap; domain/server1 for ad; issuer-url/client-id
     for openid). Use pve_realm_create/update/delete to manage realms."""
     _, api, _, _ = _proximo_server._svc()
@@ -408,7 +408,7 @@ def pve_realm_get(
 
 @tool()
 def pve_tfa_list() -> list[dict]:
-    """List all per-user TFA (two-factor) entries across the cluster (read-only). Returns the
+    """READ-ONLY: List all per-user TFA (two-factor) entries across the cluster. Returns the
     configured TFA entries; the exact shape varies by PVE version (typically per-user with a
     nested `entries` list of factor type/id). Use pve_tfa_get
     for one user's entries; use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH)."""
@@ -421,7 +421,7 @@ def pve_tfa_get(
     userid: Annotated[str, Field(description="User id whose TFA entries to read, format 'user@realm'.")],
     tfa_id: Annotated[str | None, Field(description="Specific TFA entry id to return; omit to return all of the user's entries.")] = None,
 ) -> object:
-    """Read a user's TFA entries (read-only). Returns list of entries if tfa_id is omitted; a
+    """READ-ONLY: Read a user's TFA entries. Returns list of entries if tfa_id is omitted; a
     single entry dict if tfa_id is specified. Each entry includes factor type, id, and metadata.
     Use pve_tfa_delete (confirm=True) to remove a factor (RISK_HIGH — can lock the user out)."""
     _, api, _, _ = _proximo_server._svc()

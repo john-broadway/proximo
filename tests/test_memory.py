@@ -1,6 +1,6 @@
 """Tier-1 estate memory — increment 1: the estate map + "what changed" diff.
 
-Design: docs/plans/internal/2026-07-29-tiered-memory-design.md. The rails under test:
+Design: docs/plans/internal/2026-07-29-tiered-memory-design.md (internal-only). The rails under test:
 opt-in (PROXIMO_MEMORY unset => fully inert, no file ever created); derived + rebuildable
 (delete the db, the next observe recreates it); age-stamped recall (as_of / age_seconds /
 source:"memory" — cached state never masquerades as a live read); a memory write failure

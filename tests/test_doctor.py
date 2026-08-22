@@ -471,17 +471,17 @@ def test_dynamic_scoping_line_counts_the_memory_first_facade(monkeypatch):
     m = _leaned_registry(monkeypatch)
     assert "proximo_recall" in m._tool_manager._tools          # precondition, not an assumption
     scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
-    assert "4 facade tools resident" in scoping, scoping
+    assert "5 facade tools resident" in scoping, scoping
     assert "proximo_recall" in scoping
 
 
-def test_dynamic_scoping_line_stays_three_without_memory(monkeypatch):
+def test_dynamic_scoping_line_stays_four_without_memory(monkeypatch):
     monkeypatch.setenv("PROXIMO_TOOLSETS", "dynamic")
     monkeypatch.setenv("PROXIMO_MEMORY", "0")   # memory is default-on since the 0.30 flip
     m = _leaned_registry(monkeypatch)
     assert "proximo_recall" not in m._tool_manager._tools
     scoping = doctor_check(_DoctorApi())["surfaces"]["scoping"]
-    assert "3 facade tools resident" in scoping, scoping
+    assert "4 facade tools resident" in scoping, scoping
     assert "proximo_recall" not in scoping
 
 

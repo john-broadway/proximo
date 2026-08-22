@@ -688,7 +688,7 @@ def test_invalid_sizes_rejected(size):
 
 # ---------------------------------------------------------------------------
 # plan_disk_move — TARGET blast-radius wiring (capacity + co-tenants)
-# Spec: docs/specs/2026-06-19-disk-move-blast-radius.md
+# Spec: docs/specs/2026-06-19-disk-move-blast-radius.md (internal-only)
 # ---------------------------------------------------------------------------
 
 _GiB = 1024 ** 3

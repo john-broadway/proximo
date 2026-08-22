@@ -189,7 +189,7 @@ Run it yourself anywhere: <a href="./scripts/demo/hand_the_keys.py"><code>script
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
-906 tools is an estate, not a starting point, and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,449 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,123, a whole plane ~97,432, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 906. The doorway is yours to size.** Coverage and context stopped being the same number.
+906 tools is an estate, not a starting point, and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,740 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,781, a whole plane ~101,398, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 906. The doorway is yours to size.** Coverage and context stopped being the same number.
 
 Where an operator actually starts:
 
@@ -210,17 +210,17 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.35.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.35.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.36.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.36.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.35.0 (the sibling planes, on measured vocabulary).** `pbs_tasks_list`,
-> `pmg_tasks_list` and `pdm_tasks_list` return the same `{returned, by_outcome, tasks}`
-> envelope PVE got in 0.34.0, classified server-side from each raw row. Every plane's
-> vocabulary was live-probed first, and they disagree: PBS and PDM name their columns
-> `worker_type`/`worker_id` where PVE and PMG say `type`/`id`, so the lean field set is
-> per plane. PMG never produced a failing row across four honest attempts, so its
-> vocabulary is documented as unobserved rather than known. Details in the CHANGELOG.
+> **New in 0.36.0 (the external-report release).** An adopter's end-to-end report became the
+> whole release. `proximo_read` joins the default door: a read-only dispatcher whose
+> `readOnlyHint: true` is enforced, not labeled — anything that can mutate refuses before
+> dispatch, so your client's permission policy can finally tell a status read from a power
+> cycle. Two new audit-anchor sinks (`http`, and the write-only `syslog` witness), the
+> anchor discoverable from `audit_verify` itself, and a daily smoke that installs the
+> published wheel fresh from PyPI so a dependency break hits our CI before your install.
 >
-> Recent: **0.34.0** gave `pve_tasks_list` that envelope first, and put one task-outcome classifier repo-wide.
+> Recent: **0.35.0** gave PBS, PMG and PDM task lists the classified envelope, on each plane's own live-probed vocabulary. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -239,7 +239,7 @@ Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env 
 
 > **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist.
 >
-> **Smallest footprint by design:** you don't have to load the whole estate: what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load*; the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps three search-and-call tools resident plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out), with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
+> **Smallest footprint by design:** you don't have to load the whole estate: what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (316 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load*; the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps four search-and-call tools resident (`proximo_read` runs read-only tools with an enforced `readOnlyHint`; `proximo_call` runs anything) plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out), with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
 
 **The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's.
 
@@ -257,11 +257,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.35.0**: **the sibling planes, on measured vocabulary.** PBS, PMG and PDM task lists
-  return the classified envelope PVE got in 0.34.0. Each plane was live-probed before its
-  classifier existed, so the lean field set is per plane and asking for the wrong plane's
-  column names is refused with the available ones listed. Where a plane refused to fail
-  (PMG, four honest attempts), the docs say unobserved rather than known.
+- 🩸 **0.36.0**: **the external-report release.** An adopter ran Proximo end to end and
+  reported three findings; this release is the fixes plus what they pointed at. The default
+  door gains `proximo_read`, whose read-only hint is an enforced promise (a mutating,
+  unmarked, or dispatcher tool refuses before dispatch); the off-box audit anchor gains
+  `http` and write-only `syslog` sinks and is named by `audit_verify`'s own nudge; a daily
+  smoke fresh-resolves the published wheel from PyPI on both mcp majors.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

@@ -1205,7 +1205,7 @@ def test_plan_tfa_delete_read_failure_discloses_uncertainty():
 # ---------------------------------------------------------------------------
 # Blast-radius coverage (rank 7): role_update / realm_update name the principals
 # they re-privilege / lock out — mirroring their delete siblings.
-# Spec: docs/specs/2026-06-19-disk-move-blast-radius.md (coverage push)
+# Spec: docs/specs/2026-06-19-disk-move-blast-radius.md (internal-only) (coverage push)
 # ---------------------------------------------------------------------------
 
 def test_plan_role_update_names_affected_acl_grants():

@@ -2,7 +2,7 @@
 storage that is SHARED and available on the target node. Local (shared=0) storage forces a copy (or
 fails); a nodes-restricted storage absent from the target can't place the disk at all.
 
-Spec: docs/specs/2026-06-19-migrate-disk-residency-blast.md. Soundness: a disk is OK (unflagged) ONLY
+Spec: docs/specs/2026-06-19-migrate-disk-residency-blast.md (internal-only). Soundness: a disk is OK (unflagged) ONLY
 when its storage is provably shared AND available on the target — local/unavailable/unknown all flag.
 """
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Native async-task wait — pve_task_wait over PVE UPIDs.
 
-Spec: docs/specs/2026-06-19-async-task-wait.md. The pure poll helper takes injected sleep/monotonic
+Spec: docs/specs/2026-06-19-async-task-wait.md (internal-only). The pure poll helper takes injected sleep/monotonic
 so tests are deterministic and never actually sleep.
 """
 from __future__ import annotations

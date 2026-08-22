@@ -16,7 +16,7 @@ on:
         type: choice
         options: [testpypi, pypi, verify-only]
       verify-version:
-        description: "For verify-only: the published tag to verify (e.g. v0.33.0)"
+        description: "For verify-only: the published tag to verify (v0.33.0 or later — older wheels predate the _mcpcompat seam scripts/pypi_smoke.py imports, and the script refuses them by name)"
         required: false
         default: ""
 
@@ -173,7 +173,8 @@ jobs:
             (inputs.target == 'verify-only' ||
              (inputs.target == 'pypi' && needs.publish-pypi.result == 'success')))) }}
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read   # checkout below — the cold-start verifier is scripts/pypi_smoke.py now
     strategy:
       fail-fast: false
       matrix:
@@ -182,6 +183,11 @@ jobs:
       VERSION: ${{ github.event_name == 'release' && github.ref_name || inputs.verify-version }}
       MCP_MAJOR: ${{ matrix.mcp-major }}
     steps:
+      # Checkout only for scripts/pypi_smoke.py — the SHARED cold-start verifier this job's
+      # inline copy was extracted into (2026-08-20), so the daily pypi-smoke.yml exercises the
+      # same code and this release-day path can no longer rot unexecuted between releases. On a
+      # release event this ref IS the tag, so the script matches the release being verified.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -203,49 +209,14 @@ jobs:
           done
           echo "::error::proximo-proxmox==$V never became installable from PyPI"; exit 1
       - name: Cold-start the server over stdio and assert version + tools/list
+        # The verifier body lived inline here until 2026-08-20; it moved to
+        # scripts/pypi_smoke.py (every check preserved; the per-major serverInfo read now
+        # routes through the installed wheel's own _mcpcompat seam, which floors verify-only
+        # at v0.33.0) so the daily pypi-smoke.yml runs the identical check and this
+        # release-day step is exercised every day instead of only at release time. The script
+        # runs inside the verify venv (it imports the mcp client) and finds the server binary
+        # beside its own interpreter.
         env:
-          TAG: ${{ env.VERSION }}
-        run: |
-          set -euo pipefail
-          cat > /tmp/verify.py <<'PY'
-          import asyncio, importlib.metadata, os, sys, tempfile
-          from mcp import ClientSession, StdioServerParameters
-          from mcp.client.stdio import stdio_client
-
-          want = os.environ["TAG"].lstrip("v")
-          # The leg's pin must have held — an unpinned resolve following PyPI's whim is
-          # exactly how the v0.33.0 run broke. Major-aware spelling below, never a
-          # getattr-with-default that would pass vacuously on both majors.
-          major = int(os.environ["MCP_MAJOR"])
-          resolved = importlib.metadata.version("mcp")
-          assert int(resolved.split(".")[0]) == major, f"venv resolved mcp {resolved}, leg pins major {major}"
-
-          async def main():
-              d = tempfile.mkdtemp()
-              tok = os.path.join(d, "verify.tok")
-              with open(tok, "w") as fh:
-                  fh.write("verify@pam!t=00000000-0000-0000-0000-000000000000")  # dummy; no live PVE
-              os.chmod(tok, 0o600)  # the config guard refuses group/other-readable tokens
-              env = {
-                  **os.environ,
-                  "PROXIMO_API_BASE_URL": "https://127.0.0.1:8006/api2/json",  # unreachable on purpose
-                  "PROXIMO_NODE": "verify-node",
-                  "PROXIMO_TOKEN_PATH": tok,
-                  "PROXIMO_VERIFY_TLS": "true",
-                  "PROXIMO_AUDIT_LOG": os.path.join(d, "verify-audit.log"),
-              }
-              params = StdioServerParameters(command="/tmp/verify-env/bin/proximo", args=[], env=env)
-              async with stdio_client(params) as (r, w):
-                  async with ClientSession(r, w) as s:
-                      init = await asyncio.wait_for(s.initialize(), timeout=60)
-                      si = init.server_info if major == 2 else init.serverInfo
-                      assert si.name == "proximo", si.name
-                      got = si.version
-                      assert got == want, f"published wheel reports {got}, tag is {want}"
-                      tools = await asyncio.wait_for(s.list_tools(), timeout=60)
-                      n = len(tools.tools)
-                      assert n > 0, "tools/list returned an empty surface"
-                      print(f"cold-start OK on mcp {resolved}: proximo {got}, {n} tools served")
-          asyncio.run(main())
-          PY
-          /tmp/verify-env/bin/python /tmp/verify.py
+          PROXIMO_SMOKE_VERSION: ${{ env.VERSION }}
+          PROXIMO_SMOKE_MCP_MAJOR: ${{ env.MCP_MAJOR }}
+        run: /tmp/verify-env/bin/python scripts/pypi_smoke.py

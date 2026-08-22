@@ -730,7 +730,7 @@ def pmg_domains_list() -> list[dict]:
 
 @tool()
 def pmg_statistics_mail() -> dict:
-    """Get PMG mail delivery statistics (read). Needs PROXIMO_PMG_* config.
+    """READ-ONLY: Get PMG mail delivery statistics. Needs PROXIMO_PMG_* config.
 
     PMG 9.1 live-verified: /statistics/mail returns today's aggregate counters
     (count_in, count_out, spam, virus, bytes, …). Always returns today's totals;

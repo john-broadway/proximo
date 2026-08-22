@@ -606,6 +606,10 @@ def test_audit_verify_unpinned_emits_discoverability_hint(tmp_path, monkeypatch)
     out = server.audit_verify()
     assert out["hint"] is not None
     assert "PROXIMO_AUDIT_EXPECTED_HEAD" in out["hint"]
+    # The AUTOMATED pin must be named too. The anchor shipped in 0.13.0, but this hint named only
+    # the manual path — so an end-to-end adopter read "off-box anchor" as unshipped (2026-08-20
+    # external report). A shipped mechanism its own nudge hides is a feature nobody has.
+    assert "PROXIMO_AUDIT_ANCHOR_SINK" in out["hint"]
 
 
 def test_audit_verify_pinned_has_no_hint(tmp_path, monkeypatch):
