@@ -2,6 +2,33 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.36.1] — 2026-08-23
+
+- **The runtime image drops the installer, and the held base bump is taken.** `f4411bd`
+  declined python:3.13-slim `ffb752e` on 2026-08-17 because Trivy found two HIGH issues in it
+  (setuptools 70.3.0 / CVE-2025-47273, msgpack 1.1.2 / GHSA-6v7p-g79w-8964) and wrote down that
+  the pin rollback was "a hold, not a cure". This is the cure. Both findings live in a single
+  place, pip's vendored tree (`pip/_vendor/vendor.txt` pins exactly those two), so the runtime
+  stage now uninstalls setuptools, wheel and pip once the hash-pinned install is done. The
+  runtime never installs anything, so the installer was pure CVE surface and pure attack
+  surface: an adopter's container no longer ships a working package manager. This retires the
+  whole finding class rather than declining the same digest every week, and it makes true a
+  claim this Dockerfile's own header had been making since the two-stage build landed.
+- Verified in the order that makes the proof mean something: the digest bump landed alone and
+  first so the scan could name the failure, and only then the strip. A cold start with pip,
+  setuptools and wheel removed serves all 7 resident tools, so nothing in the runtime path
+  reached for `pkg_resources`.
+- **Correction to the 2026-08-17 reading, measured against both images.** That entry treated the
+  newer base as the thing that introduced the two findings. It did not. Scanning both digests
+  from the registry with the gate's own criteria (Trivy 0.70.0, CRITICAL/HIGH, ignore-unfixed):
+  the old base reports pip 26.1.2 and zero Python findings, the new base reports pip 26.2.1 and
+  the two. But the pip wheels for 26.1.2 and 26.2.1 vendor the identical versions,
+  `msgpack==1.1.2` and `setuptools==70.3.0`. The vulnerable code is in the image Proximo ships
+  today and has been all along; what changed is that the scanner started seeing it. Holding the
+  old pin never removed that code, it only removed the report of it. Both digests also carry the
+  same 36 fixable Debian findings, which the runtime stage's `apt-get upgrade` clears, which is
+  why the shipping image scans green on a base that does not.
+
 ## [0.36.0] — 2026-08-22
 
 **One external end-to-end report became the whole release.** An adopter ran Proximo end to end

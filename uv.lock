@@ -527,7 +527,7 @@ wheels = [
 
 [[package]]
 name = "proximo-proxmox"
-version = "0.36.0"
+version = "0.36.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -5,10 +5,18 @@
 # on every push to main + weekly; the build layer also applies Debian's current security
 # patches (apt-get upgrade below), so fixes land at build time, not only on the digest bump.
 #
+# NOTE for whoever reviews the next digest-bump PR: trivy.yml has no `pull_request` trigger
+# (by design, fork PRs cannot hold `security-events: write`), so a base-image bump PR showing
+# all-green has NOT been image-scanned. That green speaks for the tests, never for the gate
+# that governs this line. Scan a preflight branch before you believe it.
+#
 # Two stages so the WHOLE dependency chain is hash-pinned (requirements/*.txt, exported
 # from uv.lock) and the final image carries neither the build tooling nor the source tree.
+# That last clause was a claim this file made and the image did not keep until 2026-08-23:
+# multi-stage removed the SOURCE tree but the runtime stage still installed with pip and left
+# it there. The strip at the end of the runtime RUN is what makes the sentence true.
 
-FROM python:3.13-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6 AS build
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS build
 
 WORKDIR /app
 # Allow-list copy: only what the wheel build needs. The working tree is never copied
@@ -22,7 +30,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
  && python -m build --wheel --no-isolation
 
-FROM python:3.13-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.
@@ -39,9 +47,17 @@ WORKDIR /app
 # nothing can ride in unpinned beside it.
 COPY requirements/runtime.txt ./requirements/runtime.txt
 COPY --from=build /app/dist/ /tmp/dist/
+# ...then REMOVE the installer itself. Both HIGH findings that made 08-17 decline this very
+# digest live in one place: pip's vendored tree (`pip/_vendor/vendor.txt` pins setuptools 70.3.0
+# and msgpack). They are not two problems, they are one, and neither is a Proximo dependency.
+# The runtime never installs anything, so pip is pure attack surface and pure CVE surface here.
+# `pip uninstall -y` exits 0 on an absent package, so this holds whatever the base ships.
+# pip goes LAST, because the earlier uninstalls need it.
 RUN pip install --no-cache-dir --require-hashes -r requirements/runtime.txt \
  && pip install --no-cache-dir --no-deps /tmp/dist/*.whl \
- && rm -rf /tmp/dist
+ && rm -rf /tmp/dist \
+ && pip uninstall -y setuptools wheel \
+ && pip uninstall -y pip
 
 # MCP stdio server — no daemon, no open port. Launched on demand by the client.
 ENTRYPOINT ["proximo"]

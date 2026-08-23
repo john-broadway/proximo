@@ -210,15 +210,15 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.36.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.36.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.36.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.36.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.36.0 (the external-report release).** An adopter's end-to-end report became the
-> whole release. `proximo_read` joins the default door: a read-only dispatcher whose
-> `readOnlyHint: true` is enforced, not labeled — anything that can mutate refuses before
-> dispatch, so your client's permission policy can finally tell a status read from a power
-> cycle. Two new audit-anchor sinks (`http`, and the write-only `syslog` witness), the
-> anchor discoverable from `audit_verify` itself, and a daily smoke that installs the
-> published wheel fresh from PyPI so a dependency break hits our CI before your install.
+> **New in 0.36.1 (the runtime image drops its installer).** The container no longer ships a
+> package manager it never used. The runtime stage uninstalls setuptools, wheel and pip once
+> the hash-pinned install is done, which removes the single source of the two HIGH findings
+> that had held a base-image bump back twice. Measuring both digests showed the hold was the
+> wrong instrument: the two pip versions vendor identical copies of the flagged packages, so
+> that code was in the image all along and only its detectability changed. No API change, and
+> the published wheel is unaffected.
 >
 > Recent: **0.35.0** gave PBS, PMG and PDM task lists the classified envelope, on each plane's own live-probed vocabulary. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
@@ -257,12 +257,13 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.36.0**: **the external-report release.** An adopter ran Proximo end to end and
-  reported three findings; this release is the fixes plus what they pointed at. The default
-  door gains `proximo_read`, whose read-only hint is an enforced promise (a mutating,
-  unmarked, or dispatcher tool refuses before dispatch); the off-box audit anchor gains
-  `http` and write-only `syslog` sinks and is named by `audit_verify`'s own nudge; a daily
-  smoke fresh-resolves the published wheel from PyPI on both mcp majors.
+- 🩸 **0.36.1**: **the runtime image stops shipping its own installer.** The same Python base
+  digest was offered twice and declined twice, because the image built on it failed the blocking
+  Trivy gate on two HIGH findings. Measuring both digests from the registry showed the hold was
+  the wrong instrument: pip 26.1.2 and 26.2.1 vendor identical copies of the flagged packages,
+  so that code was in the shipped image all along and only the report of it changed. The runtime
+  stage now uninstalls setuptools, wheel and pip once the hash-pinned install is done. The bump
+  is taken, the finding class is retired, and the container no longer carries a package manager.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

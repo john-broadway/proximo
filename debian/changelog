@@ -1,3 +1,18 @@
+proximo (0.36.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.36.1 (patch: the runtime image stops shipping its own
+    installer. The runtime stage now uninstalls setuptools, wheel and pip once
+    the hash-pinned install is done, and the python:3.13-slim base digest held
+    back on 2026-08-17 is taken. Both HIGH findings that caused that hold live
+    in one place, pip's vendored tree, so removing the installer removes their
+    single source; the container also no longer carries a working package
+    manager. Measured, not assumed: pip 26.1.2 and 26.2.1 vendor identical
+    copies of the flagged packages, so the code was in the shipped image all
+    along and only its detectability changed. No Python source change; the
+    published wheel is unaffected. 906 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 23 Aug 2026 21:05:00 +0000
+
 proximo (0.36.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.36.0 (minor: the external-report release. proximo_read
