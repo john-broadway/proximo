@@ -16,8 +16,9 @@ where the trust model wants the anchor; added 2026-08-20), and :class:`SyslogSin
 WRITE-ONLY witness — appends every clean verify's head to a collector's trail and can never
 read one back; same day; see its docstring for the trade). Config-load auto-pin and on-demand
 export from ``audit_verify`` are sink-agnostic across the readable sinks and skip the fetch
-for write-only ones. A journal sink and a background export thread are deliberate later
-extensions.
+for write-only ones. The journal sink (2026-08-23) is the second write-only witness and the
+last of the module's named extensions; a background export thread is the one deliberate later
+extension still unbuilt.
 
 TLS ON THE HTTP SINK, deliberately not configurable OFF: there is no
 ``PROXIMO_AUDIT_ANCHOR_VERIFY_TLS`` knob and its absence is a refusal, not an oversight — this
@@ -60,9 +61,12 @@ stays put and the count-direction hint keeps a routine op from reading as tamper
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import re
 import socket
+import struct
 import tempfile
 import warnings
 from abc import ABC, abstractmethod
@@ -75,10 +79,11 @@ from .audit import looks_like_head
 
 # Sink types recognized by build_anchor_sink(). "file" shipped as the first slice; "http" and
 # "syslog" (the write-only witness) arrived 2026-08-20 — the module's own named extensions,
-# built out after finding 3 of the external end-to-end report pointed at the anchor. A journal
-# sink and a background export thread remain the deliberate later extensions.
+# built out after finding 3 of the external end-to-end report pointed at the anchor. "journal"
+# (2026-08-23) is the last of those named extensions. A background export thread remains the
+# one deliberate later extension still unbuilt.
 # "none" (and "") = disabled.
-_KNOWN_SINKS = frozenset({"none", "file", "http", "syslog"})
+_KNOWN_SINKS = frozenset({"none", "file", "http", "syslog", "journal"})
 
 
 class AnchorError(Exception):
@@ -456,9 +461,98 @@ class SyslogSink(AnchorSink):
         )
 
 
+class JournalSink(AnchorSink):
+    """Append the ledger head to the systemd journal — the second WRITE-ONLY witness.
+
+    Same trust shape as :class:`SyslogSink` (``fetches_pins`` False, an append-only trail
+    rather than one overwritten pin, so startup auto-verification is honestly unavailable and
+    the operator pairs it with ``PROXIMO_AUDIT_EXPECTED_HEAD``, a readable sink, or
+    journal-side comparison). Different wire: journald's native protocol over a unix DATAGRAM
+    socket, which is the transport already present on any systemd box, needs no collector, and
+    inherits the journal's own retention, rotation and (where configured) FSS sealing.
+
+    A datagram to a unix socket still REPORTS failure — a missing or unreadable socket raises
+    — so this sink can fail, which is what separates a publish from a hope. That is also why
+    remote UDP stays refused on the syslog sink and why nothing here silently degrades.
+
+    The forgery class is the same as syslog's and the defence is better. journald separates
+    fields with LF, so a raw newline inside a value would inject a field (``PRIORITY=0``, say).
+    Rather than sanitizing the value down to a token, this uses the protocol's length-prefixed
+    binary form for any value containing a newline: full fidelity travels, and an injected
+    field is structurally impossible. Field NAMES are validated against journald's own charset
+    and refuse loudly, since a malformed key would corrupt the whole record.
+    """
+
+    fetches_pins = False
+    DEFAULT_SOCKET = "/run/systemd/journal/socket"
+    _KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+    _TIMEOUT = 10.0  # seconds; same posture as the other network sinks
+
+    def __init__(self, address: str):
+        self.address = address
+
+    @property
+    def name(self) -> str:
+        return "journal"
+
+    @classmethod
+    def _field(cls, key: str, value: str) -> bytes:
+        """One journald field. ``KEY=value`` when the value is single-line, else the
+        length-prefixed binary form (``KEY\\n<u64 LE length>\\n<raw>\\n``)."""
+        if not cls._KEY_RE.match(key):
+            raise AnchorError(
+                f"journal anchor sink: refusing malformed field name {key!r} "
+                f"(journald keys are A-Z, 0-9 and _, starting with a letter)"
+            )
+        data = value.encode()
+        if b"\n" in data:
+            return key.encode() + b"\n" + struct.pack("<Q", len(data)) + data + b"\n"
+        return key.encode() + b"=" + data + b"\n"
+
+    def publish(self, head: str, ts: str, node: str, ledger_path: str,
+                entries: int | None = None) -> None:
+        payload: dict = {"head": head, "ts": ts, "node": node, "ledger_path": ledger_path}
+        if entries is not None:
+            payload["entries"] = entries
+        fields = [
+            ("PRIORITY", "6"),                       # info
+            ("SYSLOG_IDENTIFIER", "proximo-anchor"),
+            ("MESSAGE", f"proximo audit head {head} at {ts}"),
+            ("PROXIMO_HEAD", head),
+            ("PROXIMO_TS", ts),
+            ("PROXIMO_NODE", node),
+            ("PROXIMO_LEDGER_PATH", ledger_path),
+        ]
+        if entries is not None:
+            fields.append(("PROXIMO_ENTRIES", str(entries)))
+        # Full fidelity in one JSON field as well, so a journal reader gets the same payload
+        # shape every other sink stores.
+        fields.append(("PROXIMO_ANCHOR_JSON", json.dumps(payload, separators=(",", ":"))))
+        datagram = b"".join(self._field(k, v) for k, v in fields)
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sk:
+                sk.settimeout(self._TIMEOUT)
+                sk.sendto(datagram, self.address)
+        except OSError as e:
+            # journald takes an oversized record over a memfd instead; we do not carry that
+            # path, so say WHY rather than letting a size error read as "the journal is down".
+            hint = (" — record too large for a datagram; journald's memfd path is not "
+                    "implemented here") if getattr(e, "errno", None) == errno.EMSGSIZE else ""
+            raise AnchorError(
+                f"journal anchor sink: cannot publish to {self.address!r}: {e}{hint}"
+            ) from e
+
+    def last_pin(self) -> dict | None:
+        raise AnchorError(
+            "journal anchor sink is write-only: it appends heads to the journal's trail and "
+            "cannot read a pin back — check fetches_pins before fetching"
+        )
+
+
 def build_anchor_sink(sink_type: str, file_path: str | None, url: str | None = None,
                       token_path: str | None = None, ca_bundle: str | None = None,
-                      syslog_address: str | None = None) -> AnchorSink | None:
+                      syslog_address: str | None = None,
+                      journal_socket: str | None = None) -> AnchorSink | None:
     """Instantiate the configured anchor sink, or ``None`` when disabled (``"none"``/``""``).
 
     Raises ``RuntimeError`` (a config error) on an unknown sink type, a ``"file"`` sink with no
@@ -473,8 +567,13 @@ def build_anchor_sink(sink_type: str, file_path: str | None, url: str | None = N
     if sink not in _KNOWN_SINKS:
         raise RuntimeError(
             f"PROXIMO_AUDIT_ANCHOR_SINK={sink!r} is not a recognized sink "
-            f"(supported: 'none', 'file', 'http', 'syslog')"
+            f"(supported: 'none', 'file', 'http', 'syslog', 'journal')"
         )
+    if sink == "journal":
+        # The only sink with a sane default address: systemd fixes the socket path, so an
+        # operator on a systemd box configures nothing beyond the sink name. The override
+        # exists because a fixed path is untestable otherwise.
+        return JournalSink((journal_socket or "").strip() or JournalSink.DEFAULT_SOCKET)
     if sink == "syslog":
         if not syslog_address or not syslog_address.strip():
             raise RuntimeError(

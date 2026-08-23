@@ -1025,7 +1025,8 @@ def audit_verify(
     if anchor is not None:
         anchor_name = anchor.name
         if not getattr(anchor, "fetches_pins", True):
-            # Write-only witness sink (syslog): nothing to fetch, so prev stays None and every
+            # Write-only witness sink (syslog, journal): nothing to fetch, so prev stays None,
+            # and every
             # CLEAN verify APPENDS the current head to the off-box trail below (the v.ok guard
             # still withholds a tampered head). getattr defaults True so a sink that FORGETS
             # the flag fails LOUD — last_pin gets called, raises, and the verify refuses —
@@ -1069,7 +1070,7 @@ def audit_verify(
                 "verify failed; nothing was appended to the witness trail. This sink has no pin "
                 "to re-pin — if PROXIMO_AUDIT_EXPECTED_HEAD is set and stale, re-pin THAT to the "
                 "current 'head' once the ledger is confirmed intact; otherwise compare the "
-                "witnessed heads/entries at the collector."
+                "witnessed heads/entries where this sink appends them (collector, journal)."
             )
         else:
             # Readable sink, publish withheld: either the head MOVED from the pin, or the

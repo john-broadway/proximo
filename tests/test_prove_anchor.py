@@ -807,9 +807,18 @@ def test_build_anchor_sink_syslog_requires_an_address():
         build_anchor_sink("syslog", None)
 
 
-def test_build_anchor_sink_unknown_sink_names_all_four():
-    with pytest.raises(RuntimeError, match="'syslog'"):
-        build_anchor_sink("journal", None)
+def test_build_anchor_sink_unknown_sink_names_every_supported_sink():
+    """The refusal must LIST what is supported, so a typo is self-correcting.
+
+    This test used to spell the unknown sink "journal" — a plausible name that did not exist.
+    It exists now (2026-08-23), which is exactly why the assertion is on the LIST rather than
+    on one example: the example went stale, the contract did not.
+    """
+    with pytest.raises(RuntimeError) as e:
+        build_anchor_sink("not-a-sink", None)
+    msg = str(e.value)
+    for supported in ("none", "file", "http", "syslog", "journal"):
+        assert f"'{supported}'" in msg
 
 
 def test_config_syslog_sink_skips_the_fetch_and_warns_only_when_unpinned(monkeypatch, tmp_path):
@@ -933,3 +942,147 @@ def test_audit_verify_flagless_sink_fails_loud_not_silent(tmp_path, monkeypatch)
     led.record("a", target="t1")
     with pytest.raises(ProximoError, match="unreachable"):
         server_mod.audit_verify()
+
+
+# --- JournalSink — the systemd write-only witness (the module's last named extension) ---------
+#
+# Same trust shape as syslog (fetches_pins=False, append-only trail), different wire: journald's
+# native protocol over a unix DATAGRAM socket. The forgery class is the same and the defence is
+# different — journald separates fields with LF, but its protocol has a length-prefixed binary
+# form for values that contain one, so fidelity is kept STRUCTURALLY rather than sanitized away.
+
+def _journal_socket(tmp_path):
+    """A real AF_UNIX datagram socket standing in for /run/systemd/journal/socket."""
+    path = str(tmp_path / "journal.sock")
+    sk = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sk.bind(path)
+    sk.settimeout(5)
+    return sk, path
+
+
+def _parse_journal(datagram: bytes) -> dict:
+    """Parse journald's native export-ish framing: KEY=value\\n, or KEY\\n<u64 LE len>\\n<raw>\\n."""
+    import struct
+    fields, i = {}, 0
+    while i < len(datagram):
+        nl = datagram.index(b"\n", i)
+        line = datagram[i:nl]
+        if b"=" in line:
+            k, v = line.split(b"=", 1)
+            fields[k.decode()] = v.decode()
+            i = nl + 1
+        else:
+            key = line.decode()
+            (size,) = struct.unpack("<Q", datagram[nl + 1:nl + 9])
+            start = nl + 9
+            fields[key] = datagram[start:start + size].decode()
+            i = start + size + 1
+    return fields
+
+
+def test_journal_sink_is_write_only_and_says_so():
+    from proximo.audit_anchor import JournalSink
+    s = JournalSink("/run/systemd/journal/socket")
+    assert s.name == "journal"
+    assert s.fetches_pins is False
+    # A write-only sink must RAISE, never return a fake first-run None that a caller
+    # would read as "the anchor is empty" — the syslog lesson, held here too.
+    with pytest.raises(AnchorError):
+        s.last_pin()
+
+
+def test_journal_sink_publishes_one_datagram_with_the_head(tmp_path):
+    from proximo.audit_anchor import JournalSink
+    sk, path = _journal_socket(tmp_path)
+    try:
+        s = JournalSink(path)
+        s.publish("d" * 64, "2026-08-23T22:00:00+00:00", "node-a", "/var/log/a.log", entries=9)
+        fields = _parse_journal(sk.recv(65536))
+        assert fields["PROXIMO_HEAD"] == "d" * 64
+        assert fields["PROXIMO_NODE"] == "node-a"
+        assert fields["PROXIMO_ENTRIES"] == "9"
+        assert fields["SYSLOG_IDENTIFIER"] == "proximo-anchor"
+        assert json.loads(fields["PROXIMO_ANCHOR_JSON"])["head"] == "d" * 64
+    finally:
+        sk.close()
+
+
+def test_journal_sink_appends_a_trail_not_a_pin(tmp_path):
+    """Two publishes are two records. The append trail IS this sink's value."""
+    from proximo.audit_anchor import JournalSink
+    sk, path = _journal_socket(tmp_path)
+    try:
+        s = JournalSink(path)
+        s.publish("d" * 64, "t1", "n", "/p", entries=1)
+        s.publish("e" * 64, "t2", "n", "/p", entries=2)
+        heads = [_parse_journal(sk.recv(65536))["PROXIMO_HEAD"] for _ in range(2)]
+        assert heads == ["d" * 64, "e" * 64]
+    finally:
+        sk.close()
+
+
+def test_journal_sink_newline_in_a_value_cannot_forge_a_field(tmp_path):
+    """LF separates journald fields, so a raw newline in a value would inject one. The protocol's
+    length-prefixed binary form carries it instead — fidelity kept, forgery impossible."""
+    from proximo.audit_anchor import JournalSink
+    sk, path = _journal_socket(tmp_path)
+    try:
+        s = JournalSink(path)
+        s.publish("f" * 64, "t", "pwn\nPRIORITY=0", "/var/\nlog/x")
+        fields = _parse_journal(sk.recv(65536))
+        assert fields["PROXIMO_NODE"] == "pwn\nPRIORITY=0"   # fidelity, not sanitized away
+        assert fields["PRIORITY"] == "6"                      # the injection did NOT take
+        assert fields["PROXIMO_LEDGER_PATH"] == "/var/\nlog/x"
+    finally:
+        sk.close()
+
+
+def test_journal_sink_unreachable_socket_fails_closed(tmp_path):
+    """A publish that cannot fail is not a check. A unix datagram to a missing socket DOES fail."""
+    from proximo.audit_anchor import JournalSink
+    missing = str(tmp_path / "not-there.sock")
+    s = JournalSink(missing)
+    with pytest.raises(AnchorError) as e:
+        s.publish("a" * 64, "t", "n", "/p")
+    assert missing in str(e.value)
+
+
+def test_build_anchor_sink_knows_journal_and_defaults_its_socket(tmp_path):
+    from proximo.audit_anchor import JournalSink, build_anchor_sink
+    s = build_anchor_sink("journal", None)
+    assert isinstance(s, JournalSink)
+    assert s.address == "/run/systemd/journal/socket"
+    override = str(tmp_path / "other.sock")
+    s2 = build_anchor_sink("journal", None, journal_socket=override)
+    assert s2.address == override
+
+
+def test_unknown_sink_error_lists_journal():
+    from proximo.audit_anchor import build_anchor_sink
+    with pytest.raises(RuntimeError) as e:
+        build_anchor_sink("nope", None)
+    assert "journal" in str(e.value)
+
+
+def test_config_journal_sink_skips_the_fetch_and_warns_only_when_unpinned(monkeypatch, tmp_path):
+    """The write-only path is generic (it keys off fetches_pins). This proves the JOURNAL sink
+    actually rides it rather than merely looking like it should: startup must not fetch, must
+    still start, and must warn that tail detection is not automatic when nothing pins it."""
+    sk, path = _journal_socket(tmp_path)
+    try:
+        monkeypatch.setenv("PROXIMO_AUDIT_LOG", str(tmp_path / "audit.log"))
+        monkeypatch.setenv("PROXIMO_AUDIT_ANCHOR_SINK", "journal")
+        monkeypatch.setenv("PROXIMO_AUDIT_ANCHOR_JOURNAL_SOCKET", path)
+        monkeypatch.delenv("PROXIMO_AUDIT_EXPECTED_HEAD", raising=False)
+        with pytest.warns(UserWarning, match="write-only"):
+            cfg = ProximoConfig.from_env_ledger()
+        assert cfg.anchor_sink is not None and cfg.anchor_sink.name == "journal"
+        assert cfg.anchor_sink.fetches_pins is False
+        # With a manual pin, detection is covered — the write-only warn must NOT fire.
+        monkeypatch.setenv("PROXIMO_AUDIT_EXPECTED_HEAD", "a" * 64)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            cfg = ProximoConfig.from_env_ledger()
+        assert cfg.expected_head == "a" * 64
+    finally:
+        sk.close()

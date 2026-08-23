@@ -2,6 +2,43 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.37.0] — 2026-08-23
+
+**Two open findings closed, and one of them was recorded backwards.** A `journal` anchor sink
+(new capability, hence the minor) and a TLS pin that means the same thing on every interpreter.
+
+- **`journal` anchor sink — the second write-only witness, and the module's last named
+  extension.** Same trust shape as `syslog` (`fetches_pins=False`, `last_pin` raises rather than
+  returning a fake first-run `None`, an append-only trail instead of one overwritten pin, so
+  automatic tail detection is honestly unavailable and pairs with
+  `PROXIMO_AUDIT_EXPECTED_HEAD`, a readable sink, or journal-side comparison). Different wire:
+  journald's native protocol over a unix datagram socket, which needs no collector stood up and
+  inherits the journal's own retention, rotation and FSS sealing. Read the trail with
+  `journalctl -t proximo-anchor -o json`. Configure with `PROXIMO_AUDIT_ANCHOR_SINK=journal`;
+  the socket path is fixed by systemd, so `PROXIMO_AUDIT_ANCHOR_JOURNAL_SOCKET` exists mainly
+  for testing. A datagram to a unix socket still reports failure, which is the property that
+  keeps a publish a check rather than a hope.
+- **Its field-injection defence keeps fidelity rather than sanitizing it away.** journald
+  separates fields with LF, so a newline in a value could inject `PRIORITY=0` or a forged
+  `MESSAGE`. The syslog sink defends by reducing header slots to tokens, which costs data. This
+  uses journald's length-prefixed binary form, so hostile values travel intact and an injected
+  field is structurally impossible. Verified against the real journal, not only a test double.
+- **A pinned TLS bundle is now a trust anchor on every interpreter.** Python 3.13 changed what
+  `create_default_context()` enables: 3.12 sets neither `VERIFY_X509_STRICT` nor
+  `VERIFY_X509_PARTIAL_CHAIN`, 3.13 sets both. The consequence was that the same pinned file
+  verified on one interpreter and failed on the next, in opposite directions depending on
+  whether you pinned a node certificate or your cluster CA, and a combined bundle fixed
+  neither. `httpx_verify` now sets `VERIFY_X509_PARTIAL_CHAIN` on a pinned context, so pinning a
+  file means what an operator means by it: trust exactly this. `VERIFY_X509_STRICT` is left
+  alone; adding it would break CA pins on 3.12, and clearing it would relax conformance
+  checking nobody asked to relax.
+- **Pin your node's certificate, not your cluster CA.** Proxmox issues its cluster CA with
+  `CA:TRUE` and no `keyUsage` extension, which a strict-verifying stack rejects outright with
+  "CA cert does not include key usage extension". That is the verifier being right, not a bug to
+  work around, so the guidance changed instead: `docs/SETUP.md` and
+  `packaging/proximo.env.example` now say pin the node certificate, and the troubleshooting
+  table answers that exact OpenSSL string. The previous advice pointed at the cluster CA.
+
 ## [0.36.1] — 2026-08-23
 
 - **The runtime image drops the installer, and the held base bump is taken.** `f4411bd`

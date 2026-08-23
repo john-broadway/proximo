@@ -362,6 +362,33 @@ def test_apibackend_verify_bool_passes_through():
     assert isinstance(httpx_verify("/etc/ssl/certs/ca-certificates.crt"), ssl.SSLContext)
 
 
+def test_httpx_verify_pin_is_a_partial_chain_anchor():
+    """An explicit bundle pin must anchor on the pinned cert itself, on EVERY interpreter.
+
+    Python 3.13 changed what create_default_context() enables: 3.12 sets neither
+    VERIFY_X509_STRICT nor VERIFY_X509_PARTIAL_CHAIN, 3.13 sets both. Without
+    PARTIAL_CHAIN a pinned *leaf* cannot be a trust anchor at all (3.12 answers
+    "unable to get local issuer certificate"), so the same pinned file verified on
+    one interpreter and failed on the next. Setting it ourselves makes the pin mean
+    the same thing everywhere: trust exactly this file.
+
+    STRICT is deliberately NOT touched. Adding it would break CA pins on 3.12, and
+    clearing it on 3.13 would quietly weaken conformance checking that the operator
+    never asked us to relax.
+    """
+    import ssl
+
+    from proximo._tls import httpx_verify
+
+    ctx = httpx_verify("/etc/ssl/certs/ca-certificates.crt")
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.verify_flags & ssl.VERIFY_X509_PARTIAL_CHAIN
+
+    # We add exactly that one flag on top of the interpreter's default policy.
+    default_flags = ssl.create_default_context().verify_flags
+    assert ctx.verify_flags == default_flags | ssl.VERIFY_X509_PARTIAL_CHAIN
+
+
 # ---------------------------------------------------------------------------
 # L09: backend-layer file path validation for agent_file_read/write
 # These tests exercise the BACKEND guard directly (no server layer involved).

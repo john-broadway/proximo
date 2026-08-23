@@ -1,3 +1,20 @@
+proximo (0.37.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.37.0 (minor: new capability. A journal anchor sink, the second
+    write-only witness and the audit module's last named extension: heads are appended
+    to systemd's journal over its native protocol, needing no collector and inheriting
+    the journal's retention, rotation and FSS sealing (journalctl -t proximo-anchor).
+    Its field-injection defence uses journald's length-prefixed binary form, so hostile
+    values travel intact rather than being sanitized to a token. Separately, a pinned
+    TLS bundle is now a trust anchor on every interpreter: Python 3.13 changed the
+    defaults create_default_context applies, so one pinned file had been verifying on
+    one Python and failing on the next; httpx_verify sets VERIFY_X509_PARTIAL_CHAIN and
+    deliberately leaves VERIFY_X509_STRICT alone. Guidance now says pin the node
+    certificate, not the cluster CA, which Proxmox issues without keyUsage. 906 tools
+    unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 23 Aug 2026 22:10:00 +0000
+
 proximo (0.36.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.36.1 (patch: the runtime image stops shipping its own

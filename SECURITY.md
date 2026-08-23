@@ -296,9 +296,11 @@ than the agent box:
   attacker. The `file` sink reaches the same posture pointed at a mount or store on such
   a host, where this box writes the latest head but a separate authority retains and
   monitors history.
-- **The retained-history arm has its own sink now.** The paragraph below asks the operator
+- **The retained-history arm has its own sinks now.** The paragraph below asks the operator
   to "independently retain each published head: a root-only append log" — the `syslog` sink
-  (`PROXIMO_AUDIT_ANCHOR_SINK=syslog` + `PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS`) is that
+  (`PROXIMO_AUDIT_ANCHOR_SINK=syslog` + `PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS`), and on a
+  systemd box the `journal` sink (`PROXIMO_AUDIT_ANCHOR_SINK=journal`, no address to
+  configure, read back with `journalctl -t proximo-anchor -o json`), are that
   sentence mechanized: every clean `audit_verify` appends the head to a collector's
   append-only trail. The trade is stated as the limit it is: syslog cannot hand a pin back,
   so this sink alone gives NO automatic tail detection — pair it with

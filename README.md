@@ -210,15 +210,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.36.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.36.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.37.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.37.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.36.1 (the runtime image drops its installer).** The container no longer ships a
-> package manager it never used. The runtime stage uninstalls setuptools, wheel and pip once
-> the hash-pinned install is done, which removes the single source of the two HIGH findings
-> that had held a base-image bump back twice. Measuring both digests showed the hold was the
-> wrong instrument: the two pip versions vendor identical copies of the flagged packages, so
-> that code was in the image all along and only its detectability changed. No API change, and
-> the published wheel is unaffected.
+> **New in 0.37.0 (a journal witness, and a pin that travels).** The audit anchor gains a
+> `journal` sink: the same write-only witness as `syslog` with nothing to stand up, appending
+> each verified head to systemd's journal and inheriting its retention and sealing. Read the
+> trail with `journalctl -t proximo-anchor -o json`. Separately, a pinned TLS bundle now means
+> the same thing on every interpreter. Python 3.13 quietly changed the default verification
+> policy, which made one pinned file verify on one Python and fail on the next. Pin your node's
+> certificate rather than your cluster CA: Proxmox issues that CA without a `keyUsage`
+> extension, and a strict verifier is right to refuse it.
 >
 > Recent: **0.35.0** gave PBS, PMG and PDM task lists the classified envelope, on each plane's own live-probed vocabulary. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
@@ -257,13 +258,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.36.1**: **the runtime image stops shipping its own installer.** The same Python base
-  digest was offered twice and declined twice, because the image built on it failed the blocking
-  Trivy gate on two HIGH findings. Measuring both digests from the registry showed the hold was
-  the wrong instrument: pip 26.1.2 and 26.2.1 vendor identical copies of the flagged packages,
-  so that code was in the shipped image all along and only the report of it changed. The runtime
-  stage now uninstalls setuptools, wheel and pip once the hash-pinned install is done. The bump
-  is taken, the finding class is retired, and the container no longer carries a package manager.
+- 🩸 **0.37.0**: **a second witness, and a pin that travels.** The audit anchor gains a
+  `journal` sink: the write-only witness for a systemd box, with no collector to stand up and
+  a field-injection defence that keeps hostile values intact instead of scrubbing them. And a
+  pinned TLS bundle now anchors on every interpreter, after Python 3.13 changed the default
+  verification policy and left one pinned file verifying on one Python and failing on the next.
+  Pin the node certificate, not the cluster CA: Proxmox issues that CA without `keyUsage`.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

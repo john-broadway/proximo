@@ -177,6 +177,7 @@ class ProximoConfig:
             anchor_token_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_TOKEN_PATH") or None,
             anchor_ca_bundle=os.environ.get("PROXIMO_AUDIT_ANCHOR_CA_BUNDLE") or None,
             anchor_syslog_address=os.environ.get("PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS") or None,
+            anchor_journal_socket=os.environ.get("PROXIMO_AUDIT_ANCHOR_JOURNAL_SOCKET") or None,
         )
 
     @classmethod
@@ -207,6 +208,7 @@ class ProximoConfig:
             anchor_token_path=os.environ.get("PROXIMO_AUDIT_ANCHOR_TOKEN_PATH") or None,
             anchor_ca_bundle=os.environ.get("PROXIMO_AUDIT_ANCHOR_CA_BUNDLE") or None,
             anchor_syslog_address=os.environ.get("PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS") or None,
+            anchor_journal_socket=os.environ.get("PROXIMO_AUDIT_ANCHOR_JOURNAL_SOCKET") or None,
         )
 
     @classmethod
@@ -262,6 +264,8 @@ class ProximoConfig:
                               if fields.get("audit_anchor_ca_bundle") else None),
             anchor_syslog_address=(str(fields["audit_anchor_syslog_address"])
                                    if fields.get("audit_anchor_syslog_address") else None),
+            anchor_journal_socket=(str(fields["audit_anchor_journal_socket"])
+                                   if fields.get("audit_anchor_journal_socket") else None),
         )
 
     @classmethod
@@ -290,6 +294,7 @@ class ProximoConfig:
         anchor_token_path: str | None = None,
         anchor_ca_bundle: str | None = None,
         anchor_syslog_address: str | None = None,
+        anchor_journal_socket: str | None = None,
     ) -> ProximoConfig:
         """Shared validation/normalization/warnings for from_env and from_target.
 
@@ -423,14 +428,15 @@ class ProximoConfig:
         anchor_sink = build_anchor_sink(anchor_sink_raw, anchor_file_path,
                                         url=anchor_url, token_path=anchor_token_path,
                                         ca_bundle=anchor_ca_bundle,
-                                        syslog_address=anchor_syslog_address)
+                                        syslog_address=anchor_syslog_address,
+                                        journal_socket=anchor_journal_socket)
         if anchor_sink is not None and not anchor_sink.fetches_pins:
             if expected_head is None:
                 warnings.warn(
                     "PROXIMO_AUDIT_ANCHOR_SINK is a write-only witness sink: heads are appended "
                     "off-box, but nothing pins the ledger for AUTOMATIC tail-attack detection. "
                     "Cover it with PROXIMO_AUDIT_EXPECTED_HEAD, a readable sink (file/http), or "
-                    "collector-side comparison of the witnessed heads.",
+                    "comparison of the witnessed heads where they land (collector, journal).",
                     stacklevel=2,
                 )
         elif anchor_sink is not None:

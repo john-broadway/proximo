@@ -23,9 +23,26 @@ def httpx_verify(value: bool | str) -> bool | ssl.SSLContext:
       a backend that sends a token secret over the wire.
 
     Note ``isinstance(True, str)`` is False, so bool values never hit the str branch.
+
+    The pinned context enables ``VERIFY_X509_PARTIAL_CHAIN`` so the pin means the same
+    thing on every interpreter: trust exactly this file as an anchor. Python 3.13
+    changed the defaults ``create_default_context()`` applies (3.12 sets neither
+    ``VERIFY_X509_STRICT`` nor ``VERIFY_X509_PARTIAL_CHAIN``; 3.13 sets both), and
+    without partial chain a pinned *leaf* is not an anchor at all — the same pinned
+    file that verified under 3.13 failed under 3.12 with "unable to get local issuer
+    certificate". Pinning a node's leaf is the robust choice against Proxmox: it
+    generates its cluster CA with ``CA:TRUE`` but no ``keyUsage`` extension, and a
+    strict-verifying stack rejects that CA outright ("CA cert does not include key
+    usage extension") whatever this flag says.
+
+    ``VERIFY_X509_STRICT`` is deliberately left alone. Adding it would break CA pins
+    on 3.12, and clearing it on 3.13 would quietly relax conformance checking the
+    operator never asked us to relax.
     """
     if isinstance(value, str):
-        return ssl.create_default_context(cafile=value)
+        ctx = ssl.create_default_context(cafile=value)
+        ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        return ctx
     return value
 
 
