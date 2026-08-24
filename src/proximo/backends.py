@@ -748,6 +748,19 @@ class ExecResult:
     stderr: str
 
 
+# The DIAGNOSE battery. It lives HERE, beside the only method allowed to run it ungated, so
+# that "the argv is fixed in this class" is a fact about the code and not a promise made by a
+# caller in another module. Callers name a KEY; argv is never caller-supplied.
+CONTAINER_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("failed_units", ("systemctl", "--failed", "--no-legend", "--no-pager")),
+    ("disk", ("df", "-h")),
+    ("recent_errors", ("journalctl", "-p", "err", "-n", "40", "--no-pager")),
+    ("memory", ("free", "-m")),
+    ("listening", ("ss", "-tlnp")),
+)
+_PROBE_ARGV = dict(CONTAINER_PROBES)
+
+
 class ExecBackend:
     """Runs commands inside an LXC via `ssh <target> pct exec <ctid> -- ...` (or local `pct`).
 
@@ -759,6 +772,29 @@ class ExecBackend:
         self.config = config
 
     def run(self, ctid: str, command: list[str], *, timeout: int = 60) -> ExecResult:
+        """Arbitrary in-container command. ARM-GATED: this path is ssh -> pct exec as root on
+        the PVE host, so the PVE token — and therefore `arm`/`disarm` — never touches it. The
+        server layer gates it too and does the ledgering; this is the same defense-in-depth the
+        `enable_exec` check below applies, for a future caller reaching the backend directly.
+        Dormant unless the operator uses the arm pattern (PROXIMO_ARM_SOURCE) — see armgate.py.
+        """
+        # Imported lazily: armgate imports ProximoError from this module, so a top-level
+        # import here would be circular.
+        from .armgate import arm_state
+        # self.config, not the process env: this backend may be aimed at a registry
+        # target whose token is not the one the env names.
+        st = arm_state(self.config)
+        if st.enforced and not st.armed:
+            raise ProximoError(
+                f"not armed: in-container exec refused — {st.reason}. This path is ssh -> pct "
+                "exec, which does not carry the PVE token, so the arm is the only thing gating "
+                "it. Arm the operator to continue."
+            )
+        return self._run_unchecked(ctid, command, timeout=timeout)
+
+    def _run_unchecked(self, ctid: str, command: list[str], *, timeout: int = 60) -> ExecResult:
+        """The exec itself, WITHOUT the arm gate. Only for argv this class fixes itself and
+        that therefore cannot mutate (see `logs`). Never call this with caller-supplied argv."""
         # Defense-in-depth: enforce the opt-in gate AT the backend, not only at the server
         # layer. A future caller reaching ExecBackend.run() directly must not bypass the
         # PROXIMO_ENABLE_EXEC opt-in and ride on the allowlist alone.
@@ -787,8 +823,28 @@ class ExecBackend:
         inner = f"psql -d {shlex.quote(db)} -v ON_ERROR_STOP=1 -c {shlex.quote(sql)}"
         return self.run(ctid, ["su", user, "-c", inner], timeout=timeout)
 
+    def probe(self, ctid: str, key: str) -> ExecResult:
+        """NOT arm-gated, deliberately — the same reasoning as `logs`, and the same shape: the
+        argv is fixed HERE in CONTAINER_PROBES and the caller supplies only a KEY, never argv,
+        so this cannot express a mutation. DIAGNOSE is a trust-spine pillar and you diagnose a
+        box precisely when it is broken and you are NOT armed; a diagnostic that goes dark on
+        disarm is the wrong shape. An unknown key raises before anything runs. `enable_exec`,
+        the CTID validation and the allowlist all still apply — this drops the ARM check only.
+        """
+        argv = _PROBE_ARGV.get(key)
+        if argv is None:
+            raise ProximoError(
+                f"unknown probe {key!r} — the DIAGNOSE battery is fixed; probes are "
+                f"{', '.join(k for k, _ in CONTAINER_PROBES)}"
+            )
+        return self._run_unchecked(ctid, list(argv))
+
     def logs(self, ctid: str, unit: str, *, lines: int = 50) -> ExecResult:
-        return self.run(ctid, ["journalctl", "-u", unit, "-n", str(lines), "--no-pager"])
+        """NOT arm-gated, deliberately: the argv is fixed HERE (journalctl, read-only flags) and
+        the caller supplies only a unit name and a line count, so this cannot express a
+        mutation. Reading logs is exactly what an operator needs while disarmed — often to
+        decide whether to arm at all. `unit` still goes through the same quoting as any argv."""
+        return self._run_unchecked(ctid, ["journalctl", "-u", unit, "-n", str(lines), "--no-pager"])
 
 
 class ApiBackend:

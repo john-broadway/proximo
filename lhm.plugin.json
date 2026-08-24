@@ -2,11 +2,11 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "tools": [
     {
       "name": "ct_exec",
-      "description": "MUTATION-CAPABLE: run a command inside an LXC (ssh -> pct exec).\n\nDry-run by default: without confirm=True you get a PLAN — the command plus a heuristic\nread-vs-write / destructive-pattern classification (advisory only) — recorded to the ledger.\nRe-call with confirm=True to execute. Disabled unless PROXIMO_ENABLE_EXEC is set (safe default\nis API-only). Allowlist-scoped (fail-closed) and audited.\n\nsnapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made\n(e.g. storage doesn't support snapshots) the command is NOT run (fail-closed). On success the\nresult carries an `undo_point` you can revert with pve_rollback.",
+      "description": "MUTATION-CAPABLE: run a command inside an LXC (ssh -> pct exec).\n\nDry-run by default: without confirm=True you get a PLAN — the command plus a heuristic\nread-vs-write / destructive-pattern classification (advisory only) — recorded to the ledger.\nRe-call with confirm=True to execute. Disabled unless PROXIMO_ENABLE_EXEC is set (safe default\nis API-only). Allowlist-scoped (fail-closed) and audited.\n\nsnapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made\n(e.g. storage doesn't support snapshots) the command is NOT run (fail-closed). On success the\nresult carries an `undo_point` you can revert with pve_rollback.\n\nNOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does\nNOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`\nis the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a\nconfirmed call is REFUSED unless the operator is armed — the command does not run and the\nrefusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.",
       "inputSchema": {
         "properties": {
           "ctid": {
@@ -40,7 +40,7 @@
     },
     {
       "name": "ct_psql",
-      "description": "MUTATION-CAPABLE: run SQL via psql inside a container (as the db OS user).\n\nDry-run by default: without confirm=True you get a PLAN — the SQL plus a heuristic\nread/DML/DDL classification (advisory only) — recorded to the ledger. Re-call with\nconfirm=True to execute.\n\nsnapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made the\nSQL is NOT run (fail-closed). On success the result carries an `undo_point` (revert via pve_rollback).",
+      "description": "MUTATION-CAPABLE: run SQL via psql inside a container (as the db OS user).\n\nDry-run by default: without confirm=True you get a PLAN — the SQL plus a heuristic\nread/DML/DDL classification (advisory only) — recorded to the ledger. Re-call with\nconfirm=True to execute.\n\nsnapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made the\nSQL is NOT run (fail-closed). On success the result carries an `undo_point` (revert via pve_rollback).\n\nNOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does\nNOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`\nis the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a\nconfirmed call is REFUSED unless the operator is armed — the SQL does not run and the\nrefusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.",
       "inputSchema": {
         "properties": {
           "ctid": {

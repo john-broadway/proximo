@@ -44,6 +44,11 @@ class _Exec:
         out = self._outputs.get(key, "ok")
         return ExecResult(str(ctid), " ".join(command), 0, out, "")
 
+    def probe(self, ctid, key):
+        """Mirrors ExecBackend.probe: a KEY, never argv. The battery is fixed in backends.py."""
+        from proximo.backends import CONTAINER_PROBES
+        return self.run(ctid, list(dict(CONTAINER_PROBES)[key]))
+
 
 # --- container ---
 

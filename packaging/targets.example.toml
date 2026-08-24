@@ -8,6 +8,10 @@
 #   - A tool checks kind: a pbs_* tool given a pve target errors (no silent cross-plane call).
 #   - Arming (read-only -> operator) stays out-of-band and per-target: it swaps the token at that
 #     target's token_path. Proximo's code only ever reads whatever token is there.
+#   - If you use the arm pattern (PROXIMO_ARM_SOURCE) AND enable exec on a target, give that
+#     target its own `arm_source` (and optionally `readonly_source`). They are NOT inherited from
+#     the env: the env pair belongs to the default box, and one box's arm must never authorize
+#     another. A target with exec enabled and no arm_source is REFUSED, not permitted.
 #   - This file is runtime config, like the env — keep it untracked.
 #   - Audit/PROVE settings (audit_key_path, audit_keyed, audit_expected_head, audit_log) are
 #     INSTANCE-level — the PROVE ledger is ONE chain built from the env. They have NO effect
@@ -22,6 +26,8 @@ token_path = "/etc/proximo/home-pve.token"   # file holds: USER@REALM!TOKENID=SE
 verify_tls = true
 ca_bundle  = "/etc/proximo/home-pve-ca.pem"   # preferred over disabling TLS verify
 ssh_target = "pve"                            # exec half; "local" if Proximo runs ON the host
+# arm_source      = "/etc/proximo/home-pve.operator-token"   # THIS box's write token (armgate)
+# readonly_source = "/etc/proximo/home-pve.token.readonly"   # its read-only counterpart
 
 # --- external PVE (public FQDN, e.g. a colocated or partner cluster) ---
 [targets.edge-pve]

@@ -34,6 +34,7 @@ from pydantic import Field
 from . import __version__
 from . import audit as audit_mod
 from ._mcpcompat import MCP_MAJOR, make_server, tool_annotations_kwargs
+from .armgate import enforce_arm
 from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger, read_entries
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
@@ -768,6 +769,12 @@ def ct_exec(
     snapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made
     (e.g. storage doesn't support snapshots) the command is NOT run (fail-closed). On success the
     result carries an `undo_point` you can revert with pve_rollback.
+
+    NOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does
+    NOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`
+    is the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a
+    confirmed call is REFUSED unless the operator is armed — the command does not run and the
+    refusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.
     """
     cfg, api, exec_, audit = _svc()
     # Audit completeness is the default; PROXIMO_LEDGER_REDACT records a command fingerprint instead
@@ -788,6 +795,10 @@ def ct_exec(
         # _audited uses (RATE after consent — see the order comment there / envelope.py).
         enforce_containment("ct_exec", str(ctid), audit, detail=detail)
         enforce_scope("ct_exec", str(ctid), audit, detail=detail)
+        # ARM before LEASE: this tool reaches the container over ssh, which does NOT carry
+        # the PVE token, so the arm is the only thing gating it — and "you are not armed"
+        # is more actionable than "your arm expired". Same D3 reasoning as lease-before-consent.
+        enforce_arm("ct_exec", str(ctid), audit, detail=detail, cfg=cfg)
         enforce_lease("ct_exec", str(ctid), audit, detail=detail)
         enforce_envelope_forbid("ct_exec", str(ctid), audit, detail=detail)
         enforce_consent("ct_exec", str(ctid), audit, detail=detail)
@@ -833,6 +844,12 @@ def ct_psql(
 
     snapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made the
     SQL is NOT run (fail-closed). On success the result carries an `undo_point` (revert via pve_rollback).
+
+    NOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does
+    NOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`
+    is the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a
+    confirmed call is REFUSED unless the operator is armed — the SQL does not run and the
+    refusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.
     """
     cfg, api, exec_, audit = _svc()
     # Audit completeness is the default; PROXIMO_LEDGER_REDACT records a fingerprint instead of
@@ -853,6 +870,10 @@ def ct_psql(
         # _audited uses (RATE after consent — see the order comment there / envelope.py).
         enforce_containment("ct_psql", str(ctid), audit, detail=detail)
         enforce_scope("ct_psql", str(ctid), audit, detail=detail)
+        # ARM before LEASE: this tool reaches the container over ssh, which does NOT carry
+        # the PVE token, so the arm is the only thing gating it — and "you are not armed"
+        # is more actionable than "your arm expired". Same D3 reasoning as lease-before-consent.
+        enforce_arm("ct_psql", str(ctid), audit, detail=detail, cfg=cfg)
         enforce_lease("ct_psql", str(ctid), audit, detail=detail)
         enforce_envelope_forbid("ct_psql", str(ctid), audit, detail=detail)
         enforce_consent("ct_psql", str(ctid), audit, detail=detail)

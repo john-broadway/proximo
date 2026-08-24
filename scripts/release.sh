@@ -75,7 +75,8 @@ NEXT (Claude does the git; John's go for the public push):
   2. commit, then: git tag v$V   (internal gitea: git push origin main --tags)
   3. publish to github via the curated FF tree (strips .gitea/, refuses leaks):
        T=\$(uv run python scripts/release_leak_audit.py build-tree) || exit 1
-       C=\$(git commit-tree "\$T" -p github/main -m "release: v$V")
+       M=\$(uv run python scripts/public_commit_message.py $V) || exit 1   # the CHANGELOG entry IS the reason
+       C=\$(printf '%s' "\$M" | git commit-tree "\$T" -p github/main -F -)
        git push github "\$C:main"          # fast-forward, NEVER --force
   4. gh release create v$V                 # fires the signed GHCR build
   5. approve the gated PyPI publish job     (John's click — tokenless OIDC)

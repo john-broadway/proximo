@@ -211,6 +211,12 @@ Set `PROXIMO_ARM_SOURCE` (the write token), `PROXIMO_READONLY_SOURCE` (the every
 leaves the rest read-only. If you name a session without that directory set, `arm` refuses
 rather than quietly arming every caller on the box — drop `--session` to arm globally on purpose.
 
+If you also use the target registry, give any exec-enabled target its own `arm_source` in that
+file. It is not inherited from `PROXIMO_ARM_SOURCE`, which names this box's write token, and a
+target with exec enabled and no `arm_source` is refused rather than armed by proxy. Do not point
+`PROXIMO_ARM_SOURCE` at `PROXIMO_TOKEN_PATH` either: one file in both roles would make the check
+compare a file to itself and read as armed forever, so Proximo refuses that configuration.
+
 `arm` prints whether the arm is a **real** boundary or only **advisory** — on a single-user box
 the process that reads the token can also replace it, so it says so rather than implying more.
 Pair it with `PROXIMO_ARM_TTL=3600` and a forgotten `disarm` expires on its own. See

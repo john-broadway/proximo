@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.37.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.38.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -13728,6 +13728,12 @@ snapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it ca
 (e.g. storage doesn't support snapshots) the command is NOT run (fail-closed). On success the
 result carries an `undo_point` you can revert with pve_rollback.
 
+NOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does
+NOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`
+is the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a
+confirmed call is REFUSED unless the operator is armed — the command does not run and the
+refusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.
+
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `ctid` | string | yes | Numeric CTID of the target LXC container (allowlist-scoped). |
@@ -13759,6 +13765,12 @@ confirm=True to execute.
 
 snapshot=True (UNDO): take an auto-undo snapshot first and WAIT for it; if it can't be made the
 SQL is NOT run (fail-closed). On success the result carries an `undo_point` (revert via pve_rollback).
+
+NOT AVAILABLE WHILE DISARMED: this reaches the container over ssh -> pct exec, which does
+NOT carry the PVE token, so PVE's own permission check cannot gate it and `arm`/`disarm`
+is the only thing that does. With the arm pattern configured (PROXIMO_ARM_SOURCE), a
+confirmed call is REFUSED unless the operator is armed — the SQL does not run and the
+refusal is recorded as blocked:not_armed. Dry-run plans (confirm=False) stay available.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

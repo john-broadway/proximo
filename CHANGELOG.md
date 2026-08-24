@@ -2,6 +2,83 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.38.0] — 2026-08-24
+
+**The arm did not gate the one path it most needed to.** `arm`/`disarm` swap the PVE API token,
+so the boundary is enforced by PVE's own permission check — which binds only the API backend.
+`ct_exec`/`ct_psql` reach containers over `ssh -> pct exec` as root on the Proxmox host, authority
+that never touches the token. A fully disarmed caller could run arbitrary in-container commands
+with every other gate satisfied. Found on the dogfood estate 2026-08-24, by noticing that a
+read-only session was still executing.
+
+- **New `armgate` leg: `enforce_arm`, wired at the two ssh seams and at the backend.** With
+  `PROXIMO_ARM_SOURCE` set, a confirmed `ct_exec`/`ct_psql` is refused unless the served token's
+  bytes equal the arm source's; the refusal records `blocked:not_armed` to the PROVE ledger before
+  raising. `ExecBackend.run` checks independently, so a future caller reaching the backend directly
+  cannot ride on the allowlist alone — the same defence-in-depth the `enable_exec` check already had.
+- **`LEASE` could not have caught this, structurally.** It proves the served token is *fresh*,
+  never that it is the *write* one — and `arm.py` deliberately stamps a fresh mtime on `disarm`
+  too, so a disarmed token reads as a brand-new lease. Freshness and authority are different
+  questions; this asks the second.
+- **The predicate fails closed by construction.** Armed *iff* the served token equals the arm
+  source. The inverse ("armed unless it matches the read-only source") fails OPEN on a garbled,
+  rotated or truncated token, which matches neither. Equality also self-heals on rotation: an
+  unrecognized token refuses and the operator re-arms. `PROXIMO_READONLY_SOURCE` is read for
+  message quality only, never for enforcement. An empty served token is never armed (`b"" == b""`).
+- **Dormant unless you use the arm pattern.** No `PROXIMO_ARM_SOURCE` => no enforcement and zero
+  behavior change, which is correct for mint-and-revoke deployments: no write token exists at rest
+  there, so there is no standing authority to gate.
+- **Still available while disarmed:** dry-run plans (`confirm=False`), and `ct_logs`, whose argv is
+  fixed in the backend (`journalctl`, read-only flags) and cannot express a mutation. `logs()` now
+  calls a private unchecked path rather than a bypass flag, so no public parameter can skip the gate.
+- **SECURITY.md is honest about what kind of boundary this is.** It is local machinery, the thing
+  that document otherwise warns not to mistake for a boundary: it closes *drift*, not an attacker
+  who already has code execution and can reach the ssh key directly. The stronger posture is named
+  — give the exec path its own ssh identity and swap the key, not just the token.
+- Tool descriptions state the limit negatively ("NOT AVAILABLE WHILE DISARMED"); manifest and
+  `docs/TOOLS.md` regenerated to match.
+
+**Then an adversarial pass took the gate apart, and four things came back.** Four independent
+lenses (reachability, predicate, test-vacuity, mutation) plus two refute passes that tried to kill
+each finding rather than confirm it. The gate itself held: no path to `ssh -> pct exec` skips the
+check, and 7 of 8 mutations to the gate were caught by the suite. Everything below is what sat
+*around* the gate.
+
+- **The gate now judges the box the command is aimed at, not the process environment.** This is
+  the important one. `arm_state()` read `PROXIMO_ARM_SOURCE` and `PROXIMO_TOKEN_PATH` from the
+  process env only, while `ct_exec` resolved its backend per target. With the target registry in
+  use, armed on the default box read as armed on every registry target. `packaging/targets.example.toml`
+  had already promised the opposite ("arming stays out-of-band and per-target"), and `envelope.py`
+  already resolved the active target correctly, so this was a promise the code quietly broke.
+  `arm_source` and `readonly_source` are now per-target registry fields, never inherited from the
+  env, and a target with exec enabled and no `arm_source` of its own is refused with a reason that
+  names the field. `ExecBackend.run` grades `self.config`, which it already held.
+- **`PROXIMO_ARM_SOURCE` pointing at `PROXIMO_TOKEN_PATH` is refused.** One file in both roles made
+  the predicate compare a file to itself, reporting armed forever, silently, with no way for
+  `disarm` to ever change the answer. Compared as configured paths, deliberately not by inode: a
+  symlinked token stays armed on purpose, because `arm` installs via temp+rename and replaces it.
+- **`ct_diagnose` joins `ct_logs` as available while disarmed, and that is the point of DIAGNOSE.**
+  Its probe battery ran through the arm-gated path, so while disarmed all five probes raised, the
+  reasons were swallowed into `{"error": "ProximoError"}`, nothing reached the ledger, and the call
+  recorded `outcome="ok"`. You diagnose a box precisely when it is broken and you are not armed.
+  The battery moved into `backends.py` beside the one method allowed to run it ungated, reached by
+  a new `ExecBackend.probe(ctid, key)` that takes a KEY and never argv, so "the argv is fixed in
+  this class" is now a property of the code rather than a promise made by another module.
+  `enable_exec`, CTID validation and the allowlist all still apply.
+- **Failing probes report why.** A bare exception class name is not a diagnosis: allowlist denial,
+  exec-disabled and a dead ssh host all rendered identically.
+- **The gate order is pinned by a test.** `enforce_arm` runs before `enforce_lease` so the operator
+  is told to re-arm rather than to renew. Swapping them left all 11,999 tests green, because no
+  test had ever configured a disarmed token and an expired lease at once. Neither order lets the
+  command through, so this was never a bypass, only the wrong remedy in the ledger and the message.
+- **A flaky anchor test asserted an ordering nothing guarantees.** `SyslogSink.publish` opens a
+  new connection per call and the test collector is a `ThreadingTCPServer`, so two handler threads
+  append to one list: TCP orders bytes within a connection and promises nothing across two.
+  Measured on that harness, 4 of 300 runs recorded the second head first, and it surfaced as a head
+  mismatch, which reads like the sink writing the wrong head. The test now asserts what the design
+  guarantees, and the sink's docstring states the limit: append-only is the property it holds,
+  arrival order is not, so order a trail by `ts` or by the chain.
+
 ## [0.37.0] — 2026-08-23
 
 **Two open findings closed, and one of them was recorded backwards.** A `journal` anchor sink

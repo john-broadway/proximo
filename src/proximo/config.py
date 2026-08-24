@@ -139,6 +139,9 @@ class ProximoConfig:
     # by default; "0"/"false"/"off"/"no" records the full body instead
     expected_head: str | None = None  # PROXIMO_AUDIT_EXPECTED_HEAD — off-box-pinned head() for tail-attack detection
     anchor_sink: AnchorSink | None = None  # PROXIMO_AUDIT_ANCHOR_* — off-box head-pinning sink (None=off)
+    # --- Write authority (see armgate.py) — PER TARGET, because arming is per target ---
+    arm_source: str | None = None       # file holding the WRITE token this box is armed WITH
+    readonly_source: str | None = None  # file holding its read-only counterpart (message quality only)
 
     @classmethod
     def from_env(cls) -> ProximoConfig:
@@ -159,6 +162,8 @@ class ProximoConfig:
             node=node,
             token_path=token_path,
             ssh_target=os.environ.get("PROXIMO_SSH_TARGET", "pve"),
+            arm_source=os.environ.get("PROXIMO_ARM_SOURCE") or None,
+            readonly_source=os.environ.get("PROXIMO_READONLY_SOURCE") or None,
             ct_allow_raw=os.environ.get("PROXIMO_CT_ALLOWLIST", ""),
             agent_allow_raw=os.environ.get("PROXIMO_AGENT_ALLOWLIST", ""),
             vtls_raw=os.environ.get("PROXIMO_VERIFY_TLS", "true"),
@@ -235,6 +240,11 @@ class ProximoConfig:
             node=node,
             token_path=token_path,
             ssh_target=fields.get("ssh_target", "pve"),
+            # Deliberately NOT inherited from the env: the env arm source is the DEFAULT box's
+            # write token, and one box's arm must never authorize another. Absent here means
+            # armgate fails closed for this target, with a reason naming this field.
+            arm_source=fields.get("arm_source") or None,
+            readonly_source=fields.get("readonly_source") or None,
             ct_allow_raw=_csv("ct_allowlist"),
             agent_allow_raw=_csv("agent_allowlist"),
             vtls_raw=str(fields.get("verify_tls", "true")),
@@ -295,6 +305,8 @@ class ProximoConfig:
         anchor_ca_bundle: str | None = None,
         anchor_syslog_address: str | None = None,
         anchor_journal_socket: str | None = None,
+        arm_source: str | None = None,
+        readonly_source: str | None = None,
     ) -> ProximoConfig:
         """Shared validation/normalization/warnings for from_env and from_target.
 
@@ -479,6 +491,8 @@ class ProximoConfig:
             anchor_sink=anchor_sink,
             enable_agent=enable_agent,
             agent_allowlist=agent_allowlist,
+            arm_source=arm_source,
+            readonly_source=readonly_source,
         )
 
     def ct_permitted(self, ctid: str) -> bool:

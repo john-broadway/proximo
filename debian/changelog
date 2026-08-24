@@ -1,3 +1,21 @@
+proximo (0.38.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.38.0 (minor: new capability. A new armgate leg gates the ssh ->
+    pct exec path that the PVE token never touched, so a disarmed caller can no longer
+    run in-container commands with every other gate satisfied. An adversarial pass then
+    took the gate apart and four things around it were fixed: the gate now judges the
+    box a command is aimed at rather than the process environment, with arm_source and
+    readonly_source as per-target registry fields that are never inherited from the env,
+    so one box's arm cannot authorize another and a target with exec enabled but no arm
+    source of its own is refused; pointing the arm source at the served token is refused
+    rather than read as armed forever; ct_diagnose joins ct_logs as available while
+    disarmed, since a diagnostic that goes dark on disarm is the wrong shape, reached by
+    a new keyed ExecBackend.probe that takes a probe name and never argv; failing probes
+    now report why instead of a bare exception class; and the arm-before-lease gate order
+    is pinned by a mutation-proved test. 906 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Mon, 24 Aug 2026 04:20:00 +0000
+
 proximo (0.37.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.37.0 (minor: new capability. A journal anchor sink, the second

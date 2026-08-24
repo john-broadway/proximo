@@ -337,6 +337,13 @@ class SyslogSink(AnchorSink):
     every clean ``audit_verify`` APPENDS the current head to the trail instead of re-pinning
     one resource. The anti-poisoning v.ok guard still holds: a failed verify appends nothing.
 
+    Order the trail by content, not by arrival. Each ``publish`` is its own connection, so a
+    collector can record two rapid heads in either order and nothing in the protocol forbids
+    it (measured: 4 in 300 on a local threaded collector). That does not weaken the witness,
+    because every head chains to the one before it and each frame carries its own ``ts``, but
+    a consumer that assumes arrival order will eventually be wrong. Append-only is the
+    property this sink guarantees; arrival order is not.
+
     Transports — chosen so a publish can always FAIL, because a publish that cannot fail is
     not a check: a unix socket path (``/dev/log`` — datagram first, stream if the socket
     refuses datagrams, an AnchorError naming BOTH attempts if neither connects), or

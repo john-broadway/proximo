@@ -635,13 +635,24 @@ def _syslog_sink(address, **kw):
     return SyslogSink(address, **kw)
 
 
-def _wait_frames(srv, n, tries=50):
+def _wait_frames(srv, n, tries=200):
+    """Wait for `n` frames, then FAIL AS A TIMEOUT rather than returning short.
+
+    This used to return whatever had arrived after 2.5s, so a scheduling starvation under full
+    suite load surfaced downstream as `assert len(frames) == 2` failing with 1 — which reads like
+    the sink dropped a frame, i.e. a protocol bug, and sent a 2026-08-24 session hunting one. The
+    collector is a daemon thread on an ephemeral port; when this box is busy it simply does not
+    get scheduled inside the window. Say so in the message, and give it 10s of headroom.
+    """
     import time
     for _ in range(tries):
         if len(srv.frames) >= n:
             return srv.frames
         time.sleep(0.05)
-    return srv.frames
+    raise AssertionError(
+        f"timed out after {tries * 0.05:.0f}s waiting for {n} syslog frame(s); got "
+        f"{len(srv.frames)}. This is a collector-thread scheduling timeout under load, NOT the "
+        f"sink dropping frames — check machine load before suspecting the protocol.")
 
 
 def test_syslog_sink_appends_one_clean_frame_per_publish():
@@ -653,13 +664,25 @@ def test_syslog_sink_appends_one_clean_frame_per_publish():
         s.publish("d" * 64, "2026-08-20T14:00:00+00:00", "node-a", "/var/log/a.log", entries=9)
         s.publish("e" * 64, "2026-08-20T14:01:00+00:00", "node-a", "/var/log/a.log", entries=10)
         frames = _wait_frames(srv, 2)
-        # The append TRAIL is this sink's entire value: two publishes = two frames, in order.
+        # The append TRAIL is this sink's entire value: two publishes = two frames, each a
+        # clean single-line frame carrying its own head.
+        #
+        # ARRIVAL ORDER IS DELIBERATELY NOT ASSERTED, and this used to be, which made the test
+        # flaky and lied about why. `publish` opens a NEW connection per call and the collector
+        # is a ThreadingTCPServer, so two independent handler threads append to one list. TCP
+        # orders bytes WITHIN a connection and promises nothing ACROSS two. Measured on this
+        # harness 2026-08-24: 4 of 300 runs recorded the second head first, and under full-suite
+        # load the rate is far higher. It surfaced downstream as a head mismatch, which reads
+        # like the sink writing the wrong head, i.e. a protocol bug, and cost a session real
+        # time. No product doc claims arrival order (they claim append-only, which holds and is
+        # a different property); a consumer orders the trail by `ts` or by the chain itself.
         assert len(frames) == 2
-        for frame, head in zip(frames, ("d" * 64, "e" * 64), strict=True):
+        heads = []
+        for frame in frames:
             assert frame.endswith(b"\n") and frame.count(b"\n") == 1
             assert frame.startswith(b"<134>1 ")  # local0(16)*8 + info(6) = 134
-            payload = json.loads(frame.decode().split("AUDITHEAD - ", 1)[1])
-            assert payload["head"] == head
+            heads.append(json.loads(frame.decode().split("AUDITHEAD - ", 1)[1])["head"])
+        assert sorted(heads) == sorted(("d" * 64, "e" * 64)), heads
     finally:
         srv.shutdown()
 

@@ -210,18 +210,18 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.37.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.37.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.38.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.38.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.37.0 (a journal witness, and a pin that travels).** The audit anchor gains a
-> `journal` sink: the same write-only witness as `syslog` with nothing to stand up, appending
-> each verified head to systemd's journal and inheriting its retention and sealing. Read the
-> trail with `journalctl -t proximo-anchor -o json`. Separately, a pinned TLS bundle now means
-> the same thing on every interpreter. Python 3.13 quietly changed the default verification
-> policy, which made one pinned file verify on one Python and fail on the next. Pin your node's
-> certificate rather than your cluster CA: Proxmox issues that CA without a `keyUsage`
-> extension, and a strict verifier is right to refuse it.
+> **New in 0.38.0 (the arm now gates the path it could not reach).** `arm`/`disarm` swap the
+> PVE API token, so PVE's own permission check binds only the API. `ct_exec` and `ct_psql`
+> reach containers over `ssh -> pct exec` as root, authority no token carries, so a disarmed
+> caller could still run in-container commands. A new gate closes that, and it judges the box
+> a command is aimed at: give each registry target its own `arm_source`, never the default
+> box's. `ct_diagnose` and `ct_logs` stay available while disarmed, because you diagnose a box
+> when it is broken and you are not armed. See [SECURITY.md](SECURITY.md) for what kind of
+> boundary this is.
 >
-> Recent: **0.35.0** gave PBS, PMG and PDM task lists the classified envelope, on each plane's own live-probed vocabulary. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.37.0** added the `journal` anchor sink and made a pinned TLS bundle anchor on every interpreter. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,16 +258,15 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.37.0**: **a second witness, and a pin that travels.** The audit anchor gains a
-  `journal` sink: the write-only witness for a systemd box, with no collector to stand up and
-  a field-injection defence that keeps hostile values intact instead of scrubbing them. And a
-  pinned TLS bundle now anchors on every interpreter, after Python 3.13 changed the default
-  verification policy and left one pinned file verifying on one Python and failing on the next.
-  Pin the node certificate, not the cluster CA: Proxmox issues that CA without `keyUsage`.
+- 🩸 **0.38.0**: **the arm now gates the path it could not reach.** `ct_exec` and `ct_psql` run
+  over `ssh -> pct exec` as root, authority the PVE token never carries, so swapping that token
+  never gated them. The new gate judges the box a command is aimed at, not the process
+  environment, and refuses a registry target with no `arm_source` of its own. `ct_diagnose` and
+  `ct_logs` stay available while disarmed.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
-**The numbers, honestly:** 906 MCP tools, proved in two deliberate layers. **11,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.
+**The numbers, honestly:** 906 MCP tools, proved in two deliberate layers. **12,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.
 
 **Proven live** (not mocks): the trust spine end-to-end; identity/storage/SDN/firewall/HA create→read→delete with the ledger verified throughout; offline + online live-migration and HA fencing (softdog) on a real 3-node cluster; full PBS/PMG/PDM planes including a real cross-datacenter move.
 **Not yet proven — said plainly:** *hardware*-watchdog fencing (needs physical iTCO/IPMI) and behavior at production scale. The unrecoverable ops (SDN *apply*, etc.) are deliberately never fired live: proven by plan, held back by design, not a gap. Per-surface detail: [`CHANGELOG.md`](./CHANGELOG.md).

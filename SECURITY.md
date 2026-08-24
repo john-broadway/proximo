@@ -60,6 +60,9 @@ enforcement. Use Proxmox's model directly:
    the agent's world between arms. This is privilege separation done with Proxmox-side
    objects — two credentials with different server-enforced scopes — rather than with
    local machinery pretending to be a boundary.
+   **This binds every tool that speaks to the Proxmox API — and only those.**
+   `ct_exec`/`ct_psql` reach containers over `ssh -> pct exec`, a path that never carries
+   the token, so no swap of it can gate them. See "The ssh exec path" below.
 4. **Verify the boundary before any AI sees it.** `proximo doctor` prints the token's
    `can` / `cannot` lists — the grant, confirmed by Proxmox itself, in writing. When a
    capability is missing it prints the exact `pveum` command that would grant it, so
@@ -177,6 +180,41 @@ every caller on the box — wider than what was asked for, and widening authorit
 operator's stated intent is the failure this whole section exists to prevent. Drop
 `--session` to arm globally on purpose. `disarm` does not mirror that refusal: its fallback
 only ever *removes* authority, so it restores the shared token and says so.
+
+#### The ssh exec path — what the token swap cannot reach
+
+`ct_exec` and `ct_psql` do not use the API. Proxmox exposes no REST endpoint for container
+exec, so they run `ssh <target> pct exec ...` as root on the Proxmox host. That authority
+comes from an ssh key, not from `PROXIMO_TOKEN_PATH` — so **swapping the token has no effect
+on them, and PVE's permission check never sees them.** Until 2026-08-24 that meant a fully
+disarmed caller could still run arbitrary in-container commands with every other gate
+satisfied. `LEASE` did not catch it and could not: it proves the served token is *fresh*,
+never that it is the *write* one, and `disarm` stamps a fresh mtime too.
+
+Proximo now gates that path itself. With `PROXIMO_ARM_SOURCE` set, a confirmed `ct_exec` /
+`ct_psql` is refused unless the served token's bytes equal the arm source's — recorded as
+`blocked:not_armed`. Dry-run plans still work while disarmed, and so do `ct_logs` and
+`ct_diagnose`, whose argv is fixed here (`journalctl` and a read-only probe battery) and cannot
+express a mutation. Keeping DIAGNOSE alive while disarmed is deliberate: you diagnose a box
+precisely when it is broken and you are not armed.
+
+**The gate judges the box the command is aimed at, not the process environment.** If you use the
+target registry, give any exec-enabled target its own `arm_source` in that file. It is never
+inherited from `PROXIMO_ARM_SOURCE`, because that names the *default* box's write token and one
+box's arm must not authorize another. A target with exec enabled and no `arm_source` of its own
+is refused, and the refusal names the field to set. Two related configurations are also refused
+rather than trusted: an unset or unreadable token, and `PROXIMO_ARM_SOURCE` pointing at
+`PROXIMO_TOKEN_PATH` — one file in both roles would make the check compare a file to itself and
+report armed forever.
+
+**Be clear about what kind of boundary this is.** It is local machinery — the thing this
+section otherwise warns you not to mistake for a boundary. It closes *drift*: a caller that
+believes it is disarmed, an agent that forgot, a session that was never armed. It does not
+constrain an attacker who already has code execution in the Proximo process, who can reach
+the ssh key directly and skip Proximo altogether. The honest fix for that case is the same
+shape as mint-and-revoke: **give the exec path its own ssh identity and swap the key, not
+just the token** — key present only while armed, so the authority itself is absent between
+arms. Proximo does not do that for you; it is a deployment posture, and the stronger one.
 
 **These commands grant no authority the caller did not already have.** Anyone who can run
 `proximo arm` can already read `PROXIMO_ARM_SOURCE` and copy it into place; the command is

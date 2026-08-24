@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+from proximo.backends import CONTAINER_PROBES
 from proximo.projection import classify_task_outcome
 
 _DIAG_NOTE = (
@@ -17,14 +18,6 @@ _DIAG_NOTE = (
     "root-cause diagnosis. Verify before acting."
 )
 
-# Fixed read-only in-container probes (argv only — no caller input ever reaches these).
-_CONTAINER_PROBES: list[tuple[str, list[str]]] = [
-    ("failed_units", ["systemctl", "--failed", "--no-legend", "--no-pager"]),
-    ("disk", ["df", "-h"]),
-    ("recent_errors", ["journalctl", "-p", "err", "-n", "40", "--no-pager"]),
-    ("memory", ["free", "-m"]),
-    ("listening", ["ss", "-tlnp"]),
-]
 
 _GUEST_FIELDS = ("status", "name", "cpu", "mem", "maxmem", "disk", "maxdisk", "uptime")
 
@@ -65,12 +58,19 @@ def diagnose_container(api, exec_, ctid: str, kind: str = "lxc", node: str | Non
         flags.append("in-container probes skipped — incomplete diagnosis (exec disabled or CTID not permitted)")
     else:
         probes: dict = {}
-        for key, argv in _CONTAINER_PROBES:
+        for key, _argv in CONTAINER_PROBES:
             try:
-                r = exec_.run(ctid, argv)
+                # `probe` is the deliberately ungated path: argv is fixed in backends.py and we
+                # pass a KEY, never argv. DIAGNOSE must survive being disarmed — you diagnose a
+                # box precisely when it is broken and you are not armed. enable_exec, the CTID
+                # validation and the allowlist all still apply.
+                r = exec_.probe(ctid, key)
                 probes[key] = {"returncode": r.returncode, "output": r.stdout or r.stderr}
             except Exception as e:  # a missing tool / failing probe is recorded, not fatal
-                probes[key] = {"error": type(e).__name__}
+                # Carry the REASON, not just the class. A bare "ProximoError" told an operator
+                # running a DIAGNOSE tool nothing at all: allowlist denial, exec-disabled and a
+                # dead ssh host all collapsed into the same thirteen characters.
+                probes[key] = {"error": f"{type(e).__name__}: {e}" if str(e) else type(e).__name__}
         report["probes"] = probes
         fu = probes.get("failed_units", {})
         out = (fu.get("output") or "")
