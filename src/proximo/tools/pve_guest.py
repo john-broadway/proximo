@@ -12,7 +12,7 @@ from pydantic import Field
 
 import proximo.server as _proximo_server
 from proximo import memory
-from proximo.backends import _check_vmid
+from proximo.backends import NODE_PROBES, _check_vmid
 from proximo.cloudinit import (
     capture_cloudinit_undo,
     cloudinit_get,
@@ -58,7 +58,10 @@ from proximo.provisioning import (
 from proximo.server import (
     _audited,
     _blocked_allowlist,
+    _blocked_mirror,
+    _blocked_node_mirror,
     _exec_disabled,
+    _node_shell_disabled,
     _plan,
     run_governed,
     tool,
@@ -255,13 +258,19 @@ def ct_logs(
     fails closed (returns a disclosed blocked status, not an exception) if exec is disabled or the
     CTID isn't allowed. For a fixed evidence battery instead of one unit's logs use ct_diagnose;
     for an arbitrary in-container command use ct_exec."""
-    cfg, _, exec_, _ = _proximo_server._svc()
+    cfg, api, exec_, _ = _proximo_server._svc()
     detail = {"unit": unit, "lines": lines}
     if not cfg.enable_exec:
         return _exec_disabled("ct_logs", str(ctid), detail, mutation=False)
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
         return _blocked_allowlist("ct_logs", str(ctid), detail, mutation=False)
+    # MIRROR: reach is reach — journald from a guest the token holds no reach privilege on is
+    # disclosure at allowlist breadth. Deliberately mirror-gated while staying ARM-free:
+    # authority (arm) and reach (mirror) are different questions, and the 08-24 diagnose
+    # ruling covered the first, not the second. mutation=False keeps the ledger honest.
+    if (r := _blocked_mirror("ct_logs", ctid, api, detail, mutation=False)) is not None:
+        return r
 
     def _do() -> dict:
         r = exec_.logs(ctid, unit, lines=lines)
@@ -288,6 +297,11 @@ def ct_diagnose(
     target = f"{kind}/{ctid}"
     if cfg.enable_exec and not cfg.ct_permitted(ctid):
         return _blocked_allowlist("ct_diagnose", str(ctid), mutation=False)
+    # MIRROR: same precedent the allowlist set two lines up — with exec on, a guest outside
+    # the token's reach map refuses the WHOLE tool (reach, not authority; stays arm-free).
+    if cfg.enable_exec and (r := _blocked_mirror("ct_diagnose", ctid, api,
+                                                 mutation=False)) is not None:
+        return r
     use_exec = exec_ if cfg.enable_exec else None
     report = _audited("ct_diagnose", target, lambda: diagnose_container(api, use_exec, ctid, kind, node))
     memory.journal_record("ct_diagnose", target, report)  # inert unless PROXIMO_MEMORY
@@ -307,6 +321,84 @@ def pve_diagnose(
     _, api, _, _ = _proximo_server._svc()
     report = _audited("pve_diagnose", node or "node", lambda: diagnose_node(api, node))
     memory.journal_record("pve_diagnose", node or "node", report)  # inert unless PROXIMO_MEMORY
+    return report
+
+
+@tool()
+def pve_node_logs(
+    unit: Annotated[str, Field(description="systemd unit to tail journalctl for ON THE HOST (e.g. `pveproxy.service`, `pve-cluster.service`).")],
+    lines: Annotated[int, Field(description="Number of most-recent log lines to return.")] = 50,
+) -> dict:
+    """READ-ONLY: tail journalctl for a systemd unit ON THE PVE HOST — the host side of the
+    junction (upgrades, cluster services, recovery), the lane the API plane cannot see. Fixed
+    read-only argv; there is deliberately NO node_exec. Gated by PROXIMO_ENABLE_NODE_SHELL (its
+    OWN opt-in, separate from container exec) and, when the mirror is on, by the token holding
+    the reach privilege at /nodes/<node>. Operates on THIS instance's node (the box `ssh_target`
+    reaches); there is no node argument, because the shell cannot reach any other box and letting
+    a caller name a node the mirror gates on while the ssh runs elsewhere would decouple the gate
+    from the target. For a fixed host evidence battery use pve_node_diagnose; for a container's unit
+    use ct_logs."""
+    cfg, api, exec_, _ = _proximo_server._svc()
+    n = cfg.node
+    detail = {"unit": unit, "lines": lines, "node": n}
+    if not cfg.enable_node_shell:
+        return _node_shell_disabled("pve_node_logs", f"node:{n}", detail)
+    if (r := _blocked_node_mirror("pve_node_logs", n, api, detail)) is not None:
+        return r
+
+    def _do() -> dict:
+        r = exec_.node_logs(unit, lines=lines)
+        return {"returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
+
+    return _audited("pve_node_logs", f"node:{n}", _do, detail=detail)
+
+
+@tool()
+def pve_node_diagnose() -> dict:
+    """READ-ONLY: gather 'what's broken' evidence for the PVE HOST itself — the API-only node
+    health (status, storage, failed tasks) PLUS a fixed read-only shell battery over ssh (failed
+    units, PVE service states, host journal errors, disk, memory, pveversion, cluster status).
+
+    The host side of the junction: this is the evidence you need precisely when the API plane is
+    degraded. No mutation, no confirm. Operates on THIS instance's node — no node argument, so a
+    CALLER cannot decouple the mirror gate from the ssh target (both resolve from config: the
+    mirror gates /nodes/<PROXIMO_NODE>, the shell reaches PROXIMO_SSH_TARGET, which the operator
+    is expected to point at the same box). The shell battery needs PROXIMO_ENABLE_NODE_SHELL and,
+    with the mirror on, the reach privilege at /nodes/<node>; with the battery off it returns the
+    API-only part and discloses the skipped battery. For a container use ct_diagnose; for token
+    connectivity use pve_doctor."""
+    cfg, api, exec_, _ = _proximo_server._svc()
+    n = cfg.node
+    skip: dict | None = None
+    if not cfg.enable_node_shell:
+        skip = {"skipped": "node shell disabled (PROXIMO_ENABLE_NODE_SHELL)"}
+    elif (r := _blocked_node_mirror("pve_node_diagnose", n, api, {"node": n})) is not None:
+        skip = {"skipped": r.get("status"), "reason": r.get("message")}
+
+    def _gather() -> dict:
+        rpt = diagnose_node(api, n)
+        if skip is not None:
+            rpt["shell_battery"] = skip
+            return rpt
+        battery: dict = {}
+        for key, _argv in NODE_PROBES:
+            # Per-probe containment, like diagnose_container: a nonzero exit is data
+            # (returncode/stderr), and a HUNG probe (ssh TimeoutExpired) must not abort the
+            # whole battery and discard the API report gathered above — the degraded-host
+            # case is exactly when this tool is run.
+            try:
+                res = exec_.node_probe(key)
+                battery[key] = {"returncode": res.returncode, "stdout": res.stdout,
+                                "stderr": res.stderr}
+            except Exception as e:
+                battery[key] = {"error": type(e).__name__}
+        rpt["shell_battery"] = battery
+        return rpt
+
+    # The battery runs INSIDE _audited so the ledger records the complete report (API + shell),
+    # not an "ok" stamped before the shell half ran (lens finding).
+    report = _audited("pve_node_diagnose", f"node:{n}", _gather)
+    memory.journal_record("pve_node_diagnose", f"node:{n}", report)  # inert unless PROXIMO_MEMORY
     return report
 
 

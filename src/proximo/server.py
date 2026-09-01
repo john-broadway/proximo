@@ -699,6 +699,59 @@ def _blocked(action: str, target: str, outcome: str, message: str, detail: dict 
     return {"status": outcome, "message": message}
 
 
+def _blocked_mirror(action: str, ctid: str, api, detail: dict | None = None,
+                    *, mutation: bool = True) -> dict | None:
+    """The reach-mirror gate at the tool seam: None = pass (dormant or allowed); otherwise a
+    refuse+audit dict. Fail-CLOSED on an unanswerable map — no reachable map, no reach; the
+    break-glass for an API outage is unsetting PROXIMO_REACH_PRIVILEGE, itself a witnessed
+    reach-grant change. Sits AFTER the allowlist: intersection, never widening."""
+    from .reachmirror import mirror_verdict
+    verdict, vdetail = mirror_verdict(api, str(ctid))
+    if verdict in ("off", "allowed"):
+        return None
+    merged = {**(detail or {}), **vdetail}
+    if verdict == "misconfigured":
+        return _blocked(action, str(ctid), "blocked:mirror_misconfigured",
+                        f"{vdetail.get('error')}", merged, mutation=mutation)
+    if verdict == "unavailable":
+        return _blocked(action, str(ctid), "blocked:mirror_unavailable",
+                        f"the reach mirror could not read the permission map for /vms/{ctid} "
+                        f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
+                        "If the API is down and shell reach is needed, unset "
+                        "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
+                        "to the allowlist alone.", merged, mutation=mutation)
+    return _blocked(action, str(ctid), "blocked:mirror",
+                    f"the served token does not hold '{vdetail.get('privilege')}' on /vms/{ctid} "
+                    "— the reach mirror refuses (grant it there via pveum, on the path or its "
+                    "pool, to permit).", merged, mutation=mutation)
+
+
+def _blocked_node_mirror(action: str, node: str, api, detail: dict | None = None,
+                         *, mutation: bool = False) -> dict | None:
+    """The reach mirror one altitude up: gates the host shell battery on the token holding the
+    reach privilege at `/nodes/<node>`. Same fail-closed contract as `_blocked_mirror`; the node
+    battery is read-only so the default is mutation=False."""
+    from .reachmirror import node_verdict
+    verdict, vdetail = node_verdict(api, str(node))
+    if verdict in ("off", "allowed"):
+        return None
+    merged = {**(detail or {}), **vdetail, "node": str(node)}
+    if verdict == "misconfigured":
+        return _blocked(action, str(node), "blocked:mirror_misconfigured",
+                        f"{vdetail.get('error')}", merged, mutation=mutation)
+    if verdict == "unavailable":
+        return _blocked(action, str(node), "blocked:mirror_unavailable",
+                        f"the reach mirror could not read the permission map for /nodes/{node} "
+                        f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
+                        "If the API is down and node evidence is needed, unset "
+                        "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
+                        "to the allowlist-free node gate.", merged, mutation=mutation)
+    return _blocked(action, str(node), "blocked:mirror",
+                    f"the served token does not hold '{vdetail.get('privilege')}' on "
+                    f"/nodes/{node} — the reach mirror refuses (grant it there via pveum to "
+                    "permit host-side evidence).", merged, mutation=mutation)
+
+
 def _blocked_allowlist(action: str, target: str, detail: dict | None = None,
                        *, mutation: bool = True) -> dict:
     """Refuse + audit a container op whose CTID isn't on the allowlist (fail-closed), as a clean dict
@@ -716,6 +769,18 @@ def _exec_disabled(action: str, target: str, detail: dict | None = None,
     return _blocked(action, target, "blocked:exec_disabled",
                     ("In-container exec is disabled (safe default: API-only). It grants near-root on the "
                      "PVE host; enable deliberately with PROXIMO_ENABLE_EXEC=1 and set PROXIMO_CT_ALLOWLIST."),
+                    detail, mutation=mutation)
+
+
+def _node_shell_disabled(action: str, target: str, detail: dict | None = None,
+                         *, mutation: bool = False) -> dict:
+    """The node shell battery is off by default. Refuse + audit; explain the opt-in. Its own
+    flag, NOT enable_exec: host-journal breadth is a different disclosure grade than one
+    container's, so opting into guest exec must not silently open the host battery."""
+    return _blocked(action, target, "blocked:node_shell_disabled",
+                    ("The read-only node shell battery is disabled (safe default: API-only). It "
+                     "reaches the HOST's journal/service state over ssh; enable deliberately with "
+                     "PROXIMO_ENABLE_NODE_SHELL=1."),
                     detail, mutation=mutation)
 
 
@@ -785,6 +850,9 @@ def ct_exec(
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
         return _blocked_allowlist("ct_exec", str(ctid), detail)
+    # MIRROR after the allowlist (intersection — it can only narrow), before any plan/snapshot.
+    if (r := _blocked_mirror("ct_exec", ctid, api, detail)) is not None:
+        return r
     plan = _plan("ct_exec", str(ctid), lambda: plan_exec(ctid, command, redact=cfg.redact_ledger))
     if not confirm:
         return {"status": "plan", "auto_snapshot": snapshot, **plan.as_dict()}
@@ -860,6 +928,9 @@ def ct_psql(
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
         return _blocked_allowlist("ct_psql", str(ctid), detail)
+    # MIRROR after the allowlist (intersection — it can only narrow), before any plan/snapshot.
+    if (r := _blocked_mirror("ct_psql", ctid, api, detail)) is not None:
+        return r
     plan = _plan("ct_psql", str(ctid), lambda: plan_psql(ctid, sql, db=db, redact=cfg.redact_ledger))
     if not confirm:
         return {"status": "plan", "auto_snapshot": snapshot, **plan.as_dict()}
@@ -1374,6 +1445,26 @@ def _record_session(kind: str) -> None:
                      remote=ledger_remote())
 
 
+def _reach_grant_check() -> None:
+    """The reach grant observed at serve start — EVERY door calls this beside its
+    session_start (any door, one spine: a grant change witnessed only on stdio would be the
+    gate greeting one door). Unconditional, unlike _record_session — the grant perimeter is
+    not an opt-in feature. Ledger failures propagate: a serve start that cannot PROVE is
+    already broken louder than this check."""
+    from .reachgrant import check_and_record
+
+    def _env_api():
+        # Built ONLY when the mirror is enforcing (grant_snapshot calls the factory then):
+        # the derived-reach half of the witness asks PVE for the served token's per-guest
+        # answer. A pure-targets box (no env triple) raises here and the snapshot records
+        # derived_error — the derive is env-lane only, like the privilege itself.
+        from .backends import ApiBackend
+        from .config import ProximoConfig
+        return ApiBackend(ProximoConfig.from_env())
+
+    check_and_record(_instance_ledger(), door=serving_face(), api_factory=_env_api)
+
+
 def _announce_estate_memory() -> None:
     """Name the estate-memory file on startup, every start, while it is on.
 
@@ -1422,6 +1513,10 @@ def _print_stdio_usage() -> None:
         "  proximo                start the MCP stdio server (wire into an MCP client)\n"
         "  proximo doctor         read-only token/config preflight (never starts the server)\n"
         "  proximo mint           print a least-privilege credential runbook\n"
+        "  proximo harden         which agent-binding pillars stand + recipes for the empty "
+        "(--check: exit 1 while any is empty)\n"
+        "  proximo reach-audit    reach-privilege candidate evidence for the reach mirror (aliasing + "
+        "derived per-guest reach)\n"
         "  proximo badge ...      mint / inspect a caller badge\n"
         "  proximo arm | disarm   operator arm-lease control\n"
         "  proximo reap           drop an expired arm lease\n"
@@ -1429,6 +1524,41 @@ def _print_stdio_usage() -> None:
         "Network faces are separate console scripts: proximo-http, proximo-mcp-http, proximo-a2a\n"
         "(each --help too). Configuration is via PROXIMO_* env — see packaging/proximo.env.example."
     )
+
+
+def _cmd_reach_audit() -> None:
+    """`proximo reach-audit` — extracted from main() for the mccabe ceiling, same as badge.
+    Print-only marker-decision packet: aliasing per candidate + the SERVED token's derived
+    per-guest reach; header printed and FLUSHED before the sweep (the count must precede the
+    flood it warns about); doctor-style plain errors."""
+    import argparse as _ap
+
+    from proximo import reach_audit
+    p = _ap.ArgumentParser(prog="proximo reach-audit", add_help=True)
+    p.add_argument("--priv", action="append", default=None,
+                   help="candidate marker privilege (repeatable); default: the built-in "
+                        f"candidate sweep {', '.join(reach_audit.CANDIDATES)}")
+    p.add_argument("--ctids", default=None,
+                   help="comma-separated guest ids to audit (default: every lxc guest "
+                        "on the box — announced as a query count before running)")
+    p.add_argument("--token-path", default=None,
+                   help="audit a different token's map (e.g. the write token) without "
+                        "arming — path is read locally, the secret never prints")
+    args = p.parse_args(sys.argv[2:])
+    try:
+        api, token_id = reach_audit._api_and_token(args.token_path)
+        if args.ctids:
+            ctids = list(dict.fromkeys(
+                c.strip() for c in args.ctids.split(",") if c.strip()))
+        else:
+            ctids = sorted((str(g.get("vmid")) for g in api.list_guests()
+                            if g.get("type") == "lxc"), key=reach_audit._ctid_key)
+        privs: list[str] = [str(pv) for pv in (args.priv or reach_audit.CANDIDATES)]
+        print(reach_audit.render_header(ctids, privs, token_id), end="", flush=True)
+        print(reach_audit.render_body(api, ctids, privs), end="")
+    except Exception as e:  # config/token/connectivity — plain message, not a trace
+        print(f"proximo reach-audit: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 def _cmd_badge() -> None:
@@ -1519,7 +1649,7 @@ def main() -> None:
     # would prefix every `proximo badge`/`mint` error with scoping noise (pinned by
     # test_badge_cli's err.startswith contracts).
     if not (len(sys.argv) > 1 and sys.argv[1] in ("mint", "arm", "disarm", "reap", "hello",
-                                                  "badge")):
+                                                  "badge", "harden", "reach-audit")):
         try:
             _apply_surfaces()
         except ValueError as e:
@@ -1559,7 +1689,14 @@ def main() -> None:
             from datetime import datetime
 
             from proximo import __version__
+            from proximo.reachgrant import receipt_view
             from proximo.receipt import render
+            # Bare CTIDs match no redaction pattern, so the reach-grant roster must become
+            # counts+digest HERE, before render ever sees it — the id lists are exactly the
+            # estate shape --receipt promises to remove.
+            _rg = (result.get("config") or {}).get("reach_grant")
+            if _rg is not None:
+                result["config"]["reach_grant"] = receipt_view(_rg)
             # The clock AND the optional bare-name denylist live at this impure edge on purpose, so
             # `render` stays pure/I/O-free and the same report always produces the same artifact.
             print(render(result, version=__version__,
@@ -1568,6 +1705,25 @@ def main() -> None:
                   end="")
             return
         print(json.dumps(result, indent=2))
+        return
+    # `proximo harden` — print-only: which agent-binding pillars stand (CONSENT / CONTAIN /
+    # PROVE-ANCHOR / ARM), and the exact operator-shell recipe for each empty one. Never
+    # creates anything (a pillar Proximo raised would be a pillar the agent could lower) and
+    # never echoes a configured path (doctor's disclosure rule). --check exits 1 while any
+    # core station is empty — the cron/CI teeth that keep "opt-in" from meaning "forgotten".
+    if len(sys.argv) > 1 and sys.argv[1] == "harden":
+        from proximo.harden import check_exit, posture, render
+        stations = posture()
+        print(render(stations), end="")
+        if "--check" in sys.argv[2:]:
+            raise SystemExit(check_exit(stations))
+        return
+    # `proximo reach-audit` — print-only reach-privilege decision packet for the mirror: per candidate
+    # privilege, the roles carrying it (standing hazard), today's grants of those roles
+    # (`/` flagged), and the SERVED token's derived per-guest reach via per-path permission
+    # queries (the full map returns anchored paths only — probed 2026-08-26). Read-only.
+    if len(sys.argv) > 1 and sys.argv[1] == "reach-audit":
+        _cmd_reach_audit()
         return
     # `proximo mint` — print-only onboarding recipe: create → write → grant → wire → verify.
     # Prints the exact runbook for a least-privilege credential per product; makes NO API call,
@@ -1669,6 +1825,16 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "badge":
         _cmd_badge()
         return
+    # An UNKNOWN verb refuses loudly — it must never fall through to serving. Before this
+    # gate, `proximo <typo>` applied surfaces, printed the banner, wrote a session_start
+    # entry (principal on), and blocked on stdio — a hardening guide's own mistyped verify
+    # line would have started a server on the operator's terminal (found by the harden lens,
+    # 2026-08-26). Bare `proximo` stays the stdio serve contract; both MCP lanes and the
+    # container ENTRYPOINT launch it with no args.
+    if len(sys.argv) > 1:
+        print(f"proximo: unknown command: {sys.argv[1]!r}\n", file=sys.stderr)
+        _print_stdio_usage()
+        raise SystemExit(2)
     # Register as a live holder of this session's arm, if it has one. This is the entire liveness
     # signal `proximo reap` reads: the kernel drops this lock on exit, crash or kill, so a session
     # that ENDED while armed becomes visible without any heartbeat, TTL, or client-specific probe.
@@ -1680,6 +1846,7 @@ def main() -> None:
         print(f"proximo: holding the session arm lock ({_arm_lock})", file=sys.stderr)
     print(BANNER, file=sys.stderr)
     _record_session("session_start")
+    _reach_grant_check()
     try:
         mcp.run()
     finally:
@@ -2510,6 +2677,8 @@ from proximo.tools.pve_guest import (  # noqa: E402,F401
     pve_guest_power,
     pve_guest_status,
     pve_list_guests,
+    pve_node_diagnose,
+    pve_node_logs,
     pve_node_status,
     pve_rollback,
     pve_snapshot_create,

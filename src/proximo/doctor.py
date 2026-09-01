@@ -74,6 +74,34 @@ def _scope(paths: list[str]) -> str:
     return "everywhere (/)" if "/" in paths else ", ".join(sorted(set(paths)))
 
 
+def _reach_grant_block(cfg) -> dict:
+    """Resolved lanes + digest for the ONE config doctor is probing (the instance-wide,
+    multi-source snapshot is check_and_record's job at serve time — doctor reads one box).
+    The key is `lane_digest`, NOT `digest`: the ledger's reach_grant entries digest the whole
+    instance snapshot, and shipping two incomparable values under one name invites an operator
+    to compare them and read the guaranteed mismatch as an unrecorded change."""
+    from .reachgrant import grant_digest, resolved_lanes
+    lanes = resolved_lanes(cfg)
+    return {**lanes, "lane_digest": grant_digest(lanes), "mirror": _mirror_state()}
+
+
+def _mirror_state() -> dict:
+    """The reach mirror's live tri-state — the one config that decides whether the shell
+    channel obeys the served token's own PVE map. Sits BESIDE lane_digest, not inside it:
+    the serve-time snapshot already digests the privilege instance-wide; doctor is a live
+    read and must not mint a second incomparable digest meaning. `misconfigured` (set but
+    whitespace) is reported, never raised — an operator runs doctor precisely to learn WHY
+    every shell op is refusing."""
+    from .reachmirror import privilege
+    try:
+        p = privilege()
+    except ValueError as e:
+        return {"privilege": None, "state": "misconfigured", "error": str(e)}
+    if p is None:
+        return {"privilege": None, "state": "dormant"}
+    return {"privilege": p, "state": "enforcing"}
+
+
 def doctor_check(api) -> dict:
     """Read-only preflight. `api` is an ApiBackend (or a duck-type with version/access_permissions/
     config). Returns an advisory report with reachable, version, token can/cannot, config, flags."""
@@ -146,6 +174,11 @@ def doctor_check(api) -> dict:
             "ca_bundle": getattr(cfg, "ca_bundle", None),
             "ct_allowlist": ("none (exec deny-all)" if not allow
                              else "ALL (*)" if "*" in allow else f"{len(allow)} CTID(s)"),
+            # The reach grant, read back RESOLVED (brick 1 of the grant model): the actual
+            # ids, both lanes, plus a digest to compare across restarts/boxes. The summary
+            # key above stays for compat; this block is the observable perimeter. --receipt
+            # swaps the id lists for counts (reachgrant.receipt_view) before rendering.
+            "reach_grant": _reach_grant_block(cfg),
             # Whether exec/SQL bodies are fingerprinted or written whole into the PROVE ledger.
             # This block exists for exactly this class of signal, and it was the one posture fact
             # a stranger could not read off it — the one that decides whether a password on an

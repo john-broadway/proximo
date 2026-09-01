@@ -1,3 +1,19 @@
+proximo (0.39.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.39.0 (minor: the junction gets its law. The reach mirror keys
+    ct_exec/ct_psql on the served token's own PVE permission map, asked per guest path,
+    fail-closed, dormant until PROXIMO_REACH_PRIVILEGE is set; the reach grant is
+    witnessed in the PROVE ledger at serve start on every door, and while the mirror
+    enforces, the witness derives the PVE-side per-guest reach too, so a pveum grant or
+    revoke between starts lands as a delta; proximo reach-audit prints the privilege
+    decision evidence live, semantics beside aliasing; proximo harden prints the
+    operator recipe for every unerected pillar with --check teeth; pve_node_logs and
+    pve_node_diagnose open the host's read half behind their own opt-in and the mirror
+    at /nodes/<node>; an unknown CLI verb refuses instead of serving; docs/JUNCTION.md
+    carries the design argument. 908 tools, up from 906).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Mon, 31 Aug 2026 23:50:00 +0000
+
 proximo (0.38.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.38.0 (minor: new capability. A new armgate leg gates the ssh ->

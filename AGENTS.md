@@ -26,6 +26,19 @@ trusting:
   a real boundary when their state lives outside your own write reach. Inside a single
   trust domain they're a discipline, not a wall. The full honesty framing:
   [the two-deployment trust model](SECURITY.md#the-two-deployment-trust-model-read-this-first).
+- **The node shell battery is read-only and separately gated.** `pve_node_logs`/`pve_node_diagnose`
+  reach the PVE *host's* journal and service state, not a guest's — off unless
+  `PROXIMO_ENABLE_NODE_SHELL` is set (its own opt-in, not `enable_exec`), and, with the mirror
+  on, gated by the token's reach privilege at `/nodes/<node>`. There is no `node_exec`: the
+  host's mutation lane is deliberately undoored, so don't look for one to run upgrades or edits
+  — that stays a human's hand on the metal.
+- **A `blocked:mirror` refusal is a grant boundary, not an error to route around.** When
+  the reach mirror is on, container shell tools obey the served token's own PVE permission
+  map: `blocked:mirror` means the token holds no reach privilege at that guest's path, and
+  the fix is a human running `pveum` — not retrying, not another tool, not a different
+  CTID. `blocked:mirror_unavailable` means the API could not answer and the door failed
+  closed on purpose; `blocked:mirror_misconfigured` means the privilege env is set but
+  blank, and a human must fix the config. All three are working-as-designed refusals.
 - **The task list is not the whole truth.** Tasks are per-node and `pve_tasks_list`
   returns a windowed slice — one node, the `limit` most-recent. A task on another node or
   outside your window is absent without being dead. Never conclude a backup failed from

@@ -246,6 +246,47 @@ session is restored first, which stamps a fresh mtime, so its file becomes eligi
 a further full TTL of idleness. A garbled value disables unlinking rather than defaulting: a
 typo must not switch deletion on.
 
+### The reach mirror — shell reach from Proxmox's own permission map
+
+The CTID allowlist is a list in an env var; the mirror upgrades that perimeter to Proxmox's
+own vocabulary. With it on, the container shell tools work only where the served token holds
+a privilege *you* chose, at that guest's own ACL path — granted, moved, and revoked with
+`pveum`, resolved by PVE per check. Erect it in four steps, from your own shell:
+
+1. **Choose the privilege from evidence.** `proximo reach-audit` prints, per candidate, what
+   it means in stock PVE and which roles already carry it on *your* cluster (granting any of
+   those roles to the served token — or, privsep, its user — silently extends shell reach).
+   Check the name exists on your PVE first: `pveum role add` refuses unknown privilege
+   names, and older releases predate the granular guest-agent privileges — the audit reads
+   *your* cluster, so what it lists is what exists. To decouple AI reach from human role
+   grants, make a one-privilege custom role:
+   `pveum role add ProximoReach -privs VM.GuestAgent.Unrestricted`
+2. **Grant it where you mean the reach to be — to BOTH sides of a privsep token** (the same
+   intersection rule as Step 2 of this page: effective privileges = user ACL ∩ token ACL,
+   so a token-only grant leaves the mirror refusing):
+   `pveum acl modify /vms/<ctid> --tokens '<user>@<realm>!<token>' --roles ProximoReach`
+   `pveum acl modify /vms/<ctid> --users '<user>@<realm>' --roles ProximoReach`
+3. **Set `PROXIMO_REACH_PRIVILEGE=VM.GuestAgent.Unrestricted`** (the privilege name, not the
+   role name) in the server's env and restart. Unset = dormant, zero behavior change.
+   Set-but-blank refuses loudly rather than guessing.
+4. **Verify the refusal before trusting the grant:** pick an allowlisted guest you did *not*
+   grant — `ct_logs` there must return `blocked:mirror`. Then the granted guest serves.
+   `proximo doctor` shows the live state at `config.reach_grant.mirror.state`.
+
+The allowlist still applies first — the mirror only narrows. Once you trust the mirror
+alone, the allowlist can widen to `*`: the token's own map is then the whole boundary, and
+reach moves only by `pveum`, in PVE's own ACL table — readable back any time with
+`proximo reach-audit`. Be clear about what each record holds: the ledger witnesses the
+*env side* of the perimeter (allowlist, switches, the privilege itself) at serve start and
+every mirror refusal at the door — and while the mirror is enforcing, the serve-start
+snapshot also *derives* the served token's per-guest reach from PVE (a `*` allowlist
+enumerates the configured node's containers first), so a `pveum` grant or revoke lands as
+a witnessed `derived_ct` delta at the next serve start (enforcement sees it
+immediately; the witness sees it at start — that granularity is stated, not hidden).
+Fail-closed by design: if the API cannot answer, shell reach refuses;
+the break-glass is unsetting the privilege — on a `*`-allowlist estate a *widening* — and
+that flip is itself a witnessed `reach_grant` change.
+
 ---
 
 ## Fitting a smaller model — scoping the tool surface

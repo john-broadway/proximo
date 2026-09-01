@@ -133,6 +133,9 @@ class ProximoConfig:
     ca_bundle: str | None = None  # path to the internal/Caddy CA bundle; preferred over disabling TLS verify
     fingerprint: str | None = None  # PROXIMO_FINGERPRINT — WIRE-ENFORCED exact-cert SHA-256 pin (self-signed PVE)
     enable_exec: bool = False  # OFF by default (API-only, safe). True enables ssh->pct exec (root-grant tradeoff).
+    enable_node_shell: bool = False  # OFF by default. True enables the read-only NODE shell battery
+    # (node_logs/node_diagnose over the same ssh transport) — the host side of the junction. Fixed
+    # argv only; there is deliberately NO node_exec in this leg.
     audit_key_path: str | None = None  # opt-in: path to an HMAC key file → keyed (tamper-resistant) PROVE ledger
     audit_keyed: bool = True  # PROXIMO_AUDIT_KEYED — keyed (HMAC) PROVE by default; "off"/"0"/"false"/"no" disables
     redact_ledger: bool = True  # PROXIMO_LEDGER_REDACT — fingerprint ct_psql SQL / ct_exec argv
@@ -171,6 +174,8 @@ class ProximoConfig:
             fingerprint=os.environ.get("PROXIMO_FINGERPRINT") or None,
             enable_exec=os.environ.get("PROXIMO_ENABLE_EXEC", "false").lower() in ("1", "true", "yes", "on"),
             enable_agent=os.environ.get("PROXIMO_ENABLE_AGENT", "false").lower() in ("1", "true", "yes", "on"),
+            enable_node_shell=os.environ.get("PROXIMO_ENABLE_NODE_SHELL", "false").lower()
+            in ("1", "true", "yes", "on"),
             audit_key_path=os.environ.get("PROXIMO_AUDIT_KEY_PATH") or None,
             audit_keyed_raw=os.environ.get("PROXIMO_AUDIT_KEYED", "true"),
             redact_ledger=os.environ.get("PROXIMO_LEDGER_REDACT", "true").strip().lower() not in _FALSY,
@@ -252,6 +257,7 @@ class ProximoConfig:
             fingerprint=fields.get("fingerprint") or None,
             enable_exec=bool(fields.get("enable_exec", False)),
             enable_agent=bool(fields.get("enable_agent", False)),
+            enable_node_shell=bool(fields.get("enable_node_shell", False)),
             audit_key_path=fields.get("audit_key_path") or None,
             audit_keyed_raw=str(fields.get("audit_keyed", "true")),
             # Ledger redaction is consumed per-target (exec tools read cfg.redact_ledger), but it is
@@ -293,6 +299,7 @@ class ProximoConfig:
         fingerprint: str | None,
         enable_exec: bool,
         enable_agent: bool,
+        enable_node_shell: bool = False,
         audit_key_path: str | None,
         audit_keyed_raw: str,
         redact_ledger: bool,
@@ -484,6 +491,7 @@ class ProximoConfig:
             ca_bundle=ca_bundle,
             fingerprint=fingerprint,
             enable_exec=enable_exec,
+            enable_node_shell=enable_node_shell,
             audit_key_path=audit_key_path,
             audit_keyed=audit_keyed,
             redact_ledger=redact_ledger,

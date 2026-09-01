@@ -91,7 +91,7 @@ gh attestation verify oci://ghcr.io/john-broadway/proximo:latest --owner john-br
 // the attestation ties the image to the real repo + release workflow:
 "predicateType": "https://slsa.dev/provenance/v1"
 "sourceRepositoryURI": "https://github.com/john-broadway/proximo"
-"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.38.0"
+"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.39.0"
 ```
 
 The image also ships an **SPDX SBOM** (`release.yml`, `sbom: true`). Inspect it on any
@@ -105,7 +105,7 @@ in the release path to steal. Each artifact has an attached provenance attestati
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://pypi.org/integrity/proximo-proxmox/0.38.0/proximo_proxmox-0.38.0-py3-none-any.whl/provenance
+  https://pypi.org/integrity/proximo-proxmox/0.39.0/proximo_proxmox-0.39.0-py3-none-any.whl/provenance
 # => 200   (the signed provenance PyPI generated at publish time)
 ```
 
@@ -119,6 +119,50 @@ https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo
 ```
 
 We don't set that score; OpenSSF does. Read the failing checks, not just the number.
+
+---
+
+## 7. Disarmed means refused (ARM) — try the write, watch it refuse
+
+Unlike §1–6 this needs your own server and token (it proves *your* boundary, not our
+artifact). With the arm pattern configured (`PROXIMO_ARM_SOURCE`, `SECURITY.md` → "ARM";
+`PROXIMO_READONLY_SOURCE` improves the refusal message but never enforces), while
+**disarmed** any confirmed `ct_exec` refuses — ledger outcome `blocked:not_armed` — before
+anything reaches ssh. Run `proximo doctor` disarmed and read the served token's capability
+set: read-only. Arm from your shell (`proximo arm`), the same doctor read changes; disarm
+and it changes back. Honesty about what this proves: "the agent cannot arm itself" holds
+only in the two-deployment shape where the write token sits on ground the agent cannot
+read or write — on a single-uid co-located box, anyone who can run `proximo arm` can copy
+the source into place, and the gate is a discipline, not a wall (`SECURITY.md`'s ARM
+section says exactly this). The refusal-when-disarmed is what this section proves; the
+boundary strength is your deployment's. If a disarmed confirmed write ever executes,
+that's a report (see `SECURITY.md` → Reporting).
+
+## 8. The reach mirror fails closed — one env var, one refused read
+
+Also needs your server, with the exec edge on (`PROXIMO_ENABLE_EXEC=1` and the CT on the
+allowlist — otherwise the call refuses earlier, as `blocked:exec_disabled` or the
+allowlist refusal, and never reaches the mirror). Set the mirror in the **server's** env —
+it is the server process that reads it, so an export in your own shell changes nothing
+until the server restarts with it:
+
+```
+# in the server's env (e.g. /etc/proximo/proximo.env), then restart:
+PROXIMO_REACH_PRIVILEGE=VM.GuestAgent.Unrestricted   # or your chosen privilege —
+                                                     # one that exists on YOUR PVE
+# any allowlisted CT where the SERVED token holds no such grant:
+#   ct_logs -> blocked:mirror, naming the privilege and the path it asked PVE about
+```
+
+The refusal happens after exactly one `GET /access/permissions?path=/vms/<ctid>` — PVE's
+own resolution, before any ssh. `proximo doctor` reports the tri-state at
+`config.reach_grant.mirror.state` (`dormant` / `enforcing` / `misconfigured`). Unset the
+var (and restart) and the same call serves again — allowlist-only reach, and that flip is
+itself a witnessed `reach_grant` entry at the next serve start, because widening the
+break-glass back open is precisely the moment the ledger must see. Grant the privilege at
+one guest's path with `pveum` — both token and user, for a privsep token — and only that
+guest serves: the platform's own permission table now governs the channel it never
+modeled.
 
 ---
 

@@ -24,6 +24,7 @@ _EXPECTED_ADVERSARIAL = frozenset({
     # guest-influenced
     "ct_logs", "ct_exec", "ct_psql", "ct_diagnose",
     "pve_agent_exec", "pve_agent_info", "pve_agent_file_read",
+    "pve_node_logs", "pve_node_diagnose",
     # email/external
     "pmg_quarantine_spam", "pmg_quarantine_virus", "pmg_quarantine_attachment",
     "pmg_quarantine_spamstatus", "pmg_quarantine_virusstatus", "pmg_quarantine_spamusers",

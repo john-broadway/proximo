@@ -79,7 +79,7 @@ def test_identifying_KEYS_are_redacted_even_when_the_value_is_an_ordinary_word()
 
 
 def test_a_vmid_is_an_identifier_not_a_count():
-    out = redact_structure({"vmid": 1971, "guests_total": 42})
+    out = redact_structure({"vmid": 102, "guests_total": 42})
     assert out["vmid"] == "[redacted-id]"
     assert out["guests_total"] == 42, "counts are the diagnosis and must survive"
 

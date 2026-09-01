@@ -2,6 +2,219 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.39.0] — 2026-08-31
+
+**The junction gets its law.** A Proxmox server is two roots on two planes, the product and
+the metal, with no law spanning them. This release closes the span for guest reach: the shell
+channel PVE could never scope now obeys the platform's own permission table (the mirror), every
+change to reach on either side of the junction lands in the PROVE ledger (the witness, bricks 1
+and 3), the privilege choice gets a live evidence packet (`proximo reach-audit`), the host side
+opens read-only (the node battery), and the opt-in pillars become a checked posture
+(`proximo harden`). The design argument ships as `docs/JUNCTION.md`.
+
+**The host side of the junction: a read-only node shell battery.** Until now Proximo doored
+only the *guest* slice of the shell lane (`ct_exec` and friends); the PVE *host* shell — the
+residue lane JUNCTION.md names as the reason both lanes must exist (upgrades, cluster
+services, recovery) — passed through no door and landed in no ledger. Two new read-only tools
+close the read half: `pve_node_logs` (tail one host unit's journal) and `pve_node_diagnose` (the
+API-only node health PLUS a fixed shell battery over ssh: failed units, PVE service states,
+host journal errors, disk, memory, pveversion, cluster status). The battery is fixed argv by
+construction — the same DIAGNOSE law as the container probes, the caller names a key and never
+argv, so it cannot express a mutation; `pve_node_logs` takes a `unit` name in the value
+position of a fixed `journalctl -u` argv (shlex-quoted, the exact `ct_logs` rigor). What the
+API plane genuinely cannot give and this can: per-unit host journal filtering, the non-journal
+probes (pveversion, pvecm, service states), and any of it while the API is down. **There is
+deliberately NO `node_exec`:** the host's
+mutation lane stays undoored until its fail-posture is designed rather than defaulted
+(recovery is exactly when the API cannot answer, so a fail-closed node-mutation mirror would
+contradict its own purpose). Gated by its OWN opt-in `PROXIMO_ENABLE_NODE_SHELL` (host-journal
+breadth is a wider disclosure than one container's, so opting into guest exec must not open
+the host battery), and — the mirror extended one altitude up — by the served token holding
+the reach privilege at `/nodes/<node>`. One privilege governs the whole shell channel now;
+where the operator grants it (a guest path, a pool, the node) is the reach. Tool count
+906 → 908.
+
+**The gate that governs everything was itself ungoverned.** The CT/agent allowlists are the reach
+grant: the standing perimeter every PLAN, CONSENT and PROVE runs inside, and the perimeter for the
+one channel PVE's own ACL model cannot scope (`ssh -> pct exec` answers to no PVE privilege).
+Widening that grant is the most consequential mutation in the system — and it was the only one the
+PROVE ledger never saw: an env edit could take the reach from 3 guests to `*` between restarts with
+no durable trace. Brick 1 of the grant model closes exactly that, before any grouping syntax is
+allowed to grow the reach.
+
+- **New `reach_grant` PROVE entries at serve start, on every door.** Each serve entry point
+  (stdio, HTTP, A2A, MCP-over-HTTP — beside the same `session_start` seam, guarded by the face
+  contract) snapshots the RESOLVED grant across the env lane and every pve target in the registry,
+  compares it to a sidecar state file beside the ledger, and records any delta with exactly what
+  was added and removed, per lane, per source. An unchanged restart records nothing: the ledger
+  stays signal, not heartbeat. The snapshot carries the id lanes AND the switches that decide
+  whether the reach is live (`enable_exec`/`enable_agent`, `ssh_target`) — a digest that stays put
+  while exec flips on, or while the same CTIDs re-point at a different physical host, would be a
+  digest lying about behavior. The entry lands BEFORE the sidecar moves: with the opposite order a
+  crash between the two would persist the widened snapshot with no entry and every later start
+  would read `unchanged` — the permanent swallow (caught by the adversarial pass, reproduced).
+- **Failure honesty over plausibility.** A present-but-unreadable sidecar records
+  `state_unreadable`; a MISSING sidecar on a box whose chain already holds `reach_grant` history
+  records `state_missing` with the last recorded digest — deletion is the cheaper clobber, and
+  neither may pose as a first run. An unwritable state path records `state_write_failed` as a
+  second entry (the delta entry, if any, already landed) and keeps serving, loud on every start.
+  A missing env triple reports the env lane ABSENT; any OTHER env-config failure reports an
+  error — absent, empty and broken are three different facts, and conflating them would fake
+  grant-removal entries on transient failures. A registry target that fails to build is recorded
+  as an error under its name; a target vanishing from the registry is itself a grant change; and
+  targets are namespaced (`target:<name>`) so a target literally named `env` cannot shadow the
+  env lane (adversarial pass, reproduced). Monitor the `state_*` outcomes as loudly as
+  `changed` — a change landing while the sidecar is missing/unwritable is witnessed by digest
+  mismatch and counts, never by a per-lane delta (no readable baseline to diff).
+- **Honest limit, stated:** the check runs at serve START. The targets registry file is re-read
+  on mtime change while the server runs, so a registry edit changes real exec reach mid-run and
+  is only witnessed at the next serve start; reverted before that restart, it leaves no trace
+  here. (The env lane has no such window.) Closing it means checking at backend-build time —
+  deliberately out of brick 1's scope. Entries are `mutation=False` (the check changes nothing;
+  the edit happened outside Proximo), so read them via `action="reach_grant"`, not
+  `mutations_only`.
+- **`proximo doctor` reads the grant back resolved**: the actual ids, both lanes, the switches,
+  plus a `lane_digest` (named distinctly — the ledger's digest covers the whole instance
+  snapshot and the two are not comparable). The old `ct_allowlist` summary stays. `--receipt`
+  swaps the id lists for counts + digest before rendering — bare CTIDs match no redaction
+  pattern, and the roster is exactly the estate shape a receipt promises to remove. The
+  `pve_doctor` tool serves the resolved ids to authenticated callers by design: they can already
+  enumerate guests, and the operator reading their own perimeter is the feature.
+- Vocabulary: this surface names the allowlists what they are — the **reach grant**. Env vars are
+  unchanged (`PROXIMO_CT_ALLOWLIST` / `PROXIMO_AGENT_ALLOWLIST`); nothing existing breaks.
+
+**New `proximo harden` — the strong posture made the easy posture.** The pillars that bind the
+agent rather than trusting it (CONSENT, CONTAIN, the off-box PROVE anchor, the ARM pattern) are
+opt-in by necessity — a pillar Proximo raised for you would be a pillar the agent could lower —
+but opt-in security that goes unerected is prose. `proximo harden` reads which stations stand
+and prints the exact operator-shell recipe for each empty one (your terminal, never the
+agent's; state on ground outside the agent's write reach), each ending in a verify line.
+Print-only like `mint`: it creates nothing. Configured stations report *standing*, never
+*where* (doctor's disclosure rule). `--check` exits 1 while any core station is empty — cron
+teeth that keep "opt-in" from drifting into "forgotten".
+
+**Fixed: an unknown CLI verb no longer falls through to serving.** `proximo <typo>` used to
+pass every verb branch and land in the stdio serve path — surfaces applied, banner printed, a
+`session_start` ledger entry when the principal feature is on, and the process blocking on the
+operator's terminal. Found by the adversarial pass on `harden` itself, whose first-draft verify
+line named a nonexistent verb and would have demonstrated the trap verbatim. Unknown verbs now
+exit 2 with the usage block; bare `proximo` remains the stdio serve contract.
+
+**New `proximo reach-audit` — the reach-privilege decision packet for the mirror.** The next grant-model
+step derives shell reach from the served token's own Proxmox-side permission map, keyed on a
+REACH PRIVILEGE the operator chooses — and since PVE has custom roles but no custom
+privileges, whatever privilege carries the reach aliases with every existing and future grant of it. This verb prints
+that evidence live, per candidate: a SEMANTICS line stating what the privilege actually gates
+in stock PVE (the choice has two axes, and aliasing is only one — `VM.Console` gates a console
+ATTACH, a login prompt, not execution, so keying the mirror on it would grant more than PVE
+means by the grant; an audited privilege outside the swept set gets a check-it-yourself
+fallback, never a guessed claim), the roles carrying it (the standing hazard), today's grants
+of those roles (`/` flagged), and the served token's derived per-guest reach — asked of PVE
+per guest path, because the full permission map returns only ACL-anchored paths (a pool-member
+guest has no `/vms/<id>` key there; the explicit per-path query resolves propagation and
+deeper-NoAccess revocation server-side). Output names whose map was derived (token id, never
+the secret — and the id reader REFUSES a file that does not match the PVE token shape, since
+the estate's own PBS/PDM token files use a colon form one flag-slip away, and a splitter
+failing open would have printed the whole secret). Compares against the current allowlist as
++added/-removed (audited guests only, said so). Print-only, read-only, and the query-count
+header is printed and flushed BEFORE the sweep runs — the first lens round caught it merely
+leading the output while temporally following the flood it warned about.
+
+**New: the reach MIRROR's enforcement gate (dormant until configured).** With
+`PROXIMO_REACH_PRIVILEGE` set to a privilege name, `ct_exec`/`ct_psql` are permitted only where
+the SERVED token holds that privilege — asked of PVE per guest path
+(`/access/permissions?path=/vms/<id>`), whose answer resolves propagation and deeper-NoAccess
+revocation server-side; the full map cannot answer this (ACL-anchored paths only, probed
+live). One GET per check, PVE's own resolution, zero reimplementation: the shell channel now
+obeys the same map the API channel always obeyed. Semantics by design: INTERSECTION with the
+allowlist (checked first — the mirror only narrows; a mirror-driven estate sets the allowlist
+to `*`); FAIL-CLOSED on an unanswerable map (`blocked:mirror_unavailable` — the break-glass
+for an API outage is unsetting the reach privilege, itself a witnessed reach-grant change, since the
+privilege joins the grant snapshot); dormant-unset means zero behavior change. The served
+token's map governs, so disarmed = no reach privilege = no shell reach: the mirror composes with the
+arm for free. Choose the privilege from `proximo reach-audit`'s evidence — a custom role
+carrying one privilege decouples AI reach from human role grants (the privilege still
+aliases via built-in roles carrying it). The second lens round extended the
+gate to the read-only shell siblings `ct_logs`/`ct_diagnose` (reach is reach — journald from
+an unmarked guest is disclosure at allowlist breadth; they stay ARM-free per the diagnose
+ruling, authority and reach being different questions), made the reach privilege a SNAPSHOT-level
+witnessed source (a pure-targets box still enforces, so its flips must still move the digest
+and show in the delta), and refuses a whitespace-only privilege as `blocked:mirror_misconfigured`
+rather than silently falling open to allowlist-only reach. Honest limits stated in the module:
+tool-seam enforcement (the backend seam keeps allowlist+arm, no API client at that layer);
+keying drift in the per-path answer fails CLOSED, never open.
+
+**New `docs/JUNCTION.md`: the design argument, written down.** Every AI integration for
+Proxmox picks a lane — API wrapper (governed, incomplete) or root SSH (complete, ungoverned) —
+and the fork is forced by the architecture: a Proxmox server is two roots on two planes, the
+metal and the product, with no law spanning them. The page names what the API already governs
+(most of the estate), what structurally cannot leave the metal (applying upgrades, recovery,
+the OS floor, guest shell reach), and how Proximo governs the junction: the API lane inherits
+the product's law, the shell lane gets the arm/consent/PROVE discipline the product cannot
+extend to it, and the mirror makes the platform's own permission table govern guest reach.
+Linked from the README documentation table. An adversarial lens on the first cut returned 12
+findings, all in the page's absolutes rather than the mechanism, and the page was rewritten at
+each: witnessing claims now say exactly what the ledger records (the reach configuration at
+serve start, refusals at the door — not `pveum` grants, which land in no task log and produce
+no ledger entry), the break-glass is stated as the widening it is (unsetting the reach privilege falls
+back to the allowlist alone, the very reason the flip is witnessed), the arm and consent are
+named opt-in with the two-deployment caveat, shell plans are called advisory (no blast-radius
+engine on that lane), Ceph's install console concession is credited, and the token's RBAC is
+called the hard floor everywhere (THREAT_MODEL.md's one "hard ceiling" aligned to match
+SECURITY.md). reachmirror.py's own docstring shared the break-glass defect and was fixed with
+it. **The absorption then happened (same day): SECURITY.md gained the MIRROR section and
+controls-table row (beside the reach-grant witness section that already covered brick 1),
+THREAT_MODEL's exec-edge row now names the arm and the mirror, VERIFY.md gained §7–8 (the
+arm refusal and the mirror's fail-closed refusal, runnable on your own server — stated
+honestly as needing one, unlike §1–6), SETUP.md walks the four-step erection
+(reach-audit evidence → pveum role/grant → env → verify-the-refusal-first), the env
+example names `PROXIMO_REACH_PRIVILEGE`, and AGENTS.md teaches the three `blocked:mirror*`
+refusals as grant boundaries. JUNCTION.md's pointer sentence now points at pages that
+actually carry the content it promises. The absorption then took its own lens round
+(4 HIGH / 6 MED / 4 LOW, all in the fresh prose): the "empty aliasing table" claim was
+mechanically false everywhere it appeared (a custom role adds a row and removes none —
+it decouples AI reach from human role grants, and the built-in roles still carry the
+privilege), SETUP's walkthrough now grants BOTH sides of a privsep token (the page's own
+intersection rule — token-only left the mirror refusing), the aliasing hazard is scoped to
+grants landing on the served principal, VERIFY §7 states the co-located ARM caveat instead
+of asserting it away and quotes the exact `blocked:not_armed` outcome, VERIFY §8 puts the
+env var in the server's env and names the exec-edge prerequisites, the controls table
+gained the ARM row THREAT_MODEL was already selling, and pveum-grant witnessing claims say
+what the ledger actually records.** **And one lens finding got a code fix, not a doc
+retreat: `arm_source` joined the reach-grant snapshot as a switch** — unsetting
+`PROXIMO_ARM_SOURCE` between restarts silently removed the exec write gate, a serve-start
+widening of exactly this perimeter, with no entry; now the flip (and a re-pointed source
+path, the `ssh_target` precedent) moves the digest and lands in the ledger.
+
+**Brick 3: the witness sees the PVE side.** The honest limit written twice above — a
+`pveum` grant lands in no ledger — is retired at the cause instead of restated: while the
+mirror is enforcing, the serve-start reach-grant snapshot now DERIVES the served token's
+per-guest reach (reach-audit's per-path primitive, one query per allowlisted guest; a `*`
+allowlist first enumerates the configured node's live CONTAINERS — `type == "lxc"` only,
+since a QEMU vmid in a container-reach key would witness reach the mirror never grants —
+so guest creation/destruction moves the digest too: on an allow-all estate that IS a reach
+change). The first derive on an existing sidecar is annotated `derived_baseline` (a
+one-time upgrade shape, not a mass grant); a pure-targets box records `derived_absent`
+(absent, empty and broken stay three different facts); a non-numeric allowlist token is
+skipped and reported (`derived_skipped`) instead of poisoning the derive. A PVE-side grant or revoke between
+starts lands as a witnessed `mirror.derived_ct` delta: every change to reach, on either
+side of the junction, now reaches the ledger. Granularity stated plainly: enforcement is
+per-check and immediate, the witness is serve-start. Failure honesty follows the env-lane
+precedent — any derive failure records `derived_error` and omits the list, so churn in an
+entry carrying the error reads as unproven, never as revocation. No factory passed = no
+derive = byte-identical snapshots (zero digest churn for anything but the serve seam,
+which passes one built lazily and only while enforcing).
+
+**Also in this release:** the three standing pyright errors fixed at their causes (overloads
+for `httpx_verify`, the narrowed unix path passed as a parameter, `_PROBE_ARGV` annotated);
+real estate guest ids moved out of public fixtures, with the release leak-audit now refusing
+the class; the test suite can no longer write the dev box's real PROVE ledger (autouse tmp
+redirect, proven by planted control); an unknown CLI verb exits 2 with usage instead of
+falling through to serving; CI tokens ride scoped auth headers and `GIT_CONFIG_*`, never the
+clone URL or ARGV; `codeql-action` pinned to one dereferenced sha estate-wide; and the release
+recipe carries the rails pacioli earned (proven trees before public main moves, curated-twin
+tags, a release title that says something).
+
 ## [0.38.0] — 2026-08-24
 
 **The arm did not gate the one path it most needed to.** `arm`/`disarm` swap the PVE API token,

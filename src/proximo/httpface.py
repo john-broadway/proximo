@@ -205,6 +205,7 @@ def main() -> None:
     # a no-op unless the operator configured the principal feature (PROXIMO_PRINCIPAL /
     # PROXIMO_CALLER_KEYS_DIR), so byte-compat for every deployment that hasn't opted in.
     server._record_session("session_start")
+    server._reach_grant_check()
     try:
         uvicorn.run(app, host=host, port=port)
     finally:

@@ -1,15 +1,15 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.38.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.39.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
-**906 tools** across 7 surfaces.
+**908 tools** across 7 surfaces.
 
 ## Contents
 
 - [Proxmox VE — in-guest agent (opt-in)](#proxmox-ve--in-guest-agent-opt-in) — 6
-- [Proxmox VE (PVE)](#proxmox-ve-pve) — 303
+- [Proxmox VE (PVE)](#proxmox-ve-pve) — 305
 - [Proxmox Backup Server (PBS)](#proxmox-backup-server-pbs) — 257
 - [Proxmox Mail Gateway (PMG)](#proxmox-mail-gateway-pmg) — 295
 - [Proxmox Datacenter Manager (PDM)](#proxmox-datacenter-manager-pdm) — 34
@@ -2390,6 +2390,23 @@ certificate use pve_node_cert_upload; to remove one use pve_node_cert_delete.
 | --- | --- | --- | --- |
 | `node` | string (nullable) | no | PVE node name; defaults to the configured node (default: `null`) |
 
+#### `pve_node_diagnose`
+
+READ-ONLY: gather 'what's broken' evidence for the PVE HOST itself — the API-only node
+health (status, storage, failed tasks) PLUS a fixed read-only shell battery over ssh (failed
+units, PVE service states, host journal errors, disk, memory, pveversion, cluster status).
+
+The host side of the junction: this is the evidence you need precisely when the API plane is
+degraded. No mutation, no confirm. Operates on THIS instance's node — no node argument, so a
+CALLER cannot decouple the mirror gate from the ssh target (both resolve from config: the
+mirror gates /nodes/<PROXIMO_NODE>, the shell reaches PROXIMO_SSH_TARGET, which the operator
+is expected to point at the same box). The shell battery needs PROXIMO_ENABLE_NODE_SHELL and,
+with the mirror on, the reach privilege at /nodes/<node>; with the battery off it returns the
+API-only part and discloses the skipped battery. For a container use ct_diagnose; for token
+connectivity use pve_doctor.
+
+_No parameters._
+
 #### `pve_node_disk_initgpt`
 
 MUTATION: initialize a GPT partition table on a node disk.
@@ -2515,6 +2532,23 @@ use pve_node_syslog; for one service's current state use pve_node_service_status
 | `lastentries` | integer | no | Number of most-recent journal lines to return, max 5000 (values above are rejected) (default: `100`) |
 | `since` | string (nullable) | no | Only return entries at or after this timestamp (journalctl-compatible format) (default: `null`) |
 | `until` | string (nullable) | no | Only return entries at or before this timestamp (journalctl-compatible format) (default: `null`) |
+
+#### `pve_node_logs`
+
+READ-ONLY: tail journalctl for a systemd unit ON THE PVE HOST — the host side of the
+junction (upgrades, cluster services, recovery), the lane the API plane cannot see. Fixed
+read-only argv; there is deliberately NO node_exec. Gated by PROXIMO_ENABLE_NODE_SHELL (its
+OWN opt-in, separate from container exec) and, when the mirror is on, by the token holding
+the reach privilege at /nodes/<node>. Operates on THIS instance's node (the box `ssh_target`
+reaches); there is no node argument, because the shell cannot reach any other box and letting
+a caller name a node the mirror gates on while the ssh runs elsewhere would decouple the gate
+from the target. For a fixed host evidence battery use pve_node_diagnose; for a container's unit
+use ct_logs.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `unit` | string | yes | systemd unit to tail journalctl for ON THE HOST (e.g. `pveproxy.service`, `pve-cluster.service`). |
+| `lines` | integer | no | Number of most-recent log lines to return. (default: `50`) |
 
 #### `pve_node_migrateall`
 

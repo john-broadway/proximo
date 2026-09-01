@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -66,6 +67,36 @@ def _restore_the_shared_registry():
         # door OWNS the catalogs (A11 3a/3b): server.py no longer exposes them at all.
         _door.LEAN_CATALOG = lean_catalog
         _door.FULL_CATALOG = full_catalog
+
+
+@pytest.fixture(autouse=True)
+def _audit_log_in_tmp(tmp_path):
+    """The instance PROVE ledger's default path is the REAL one (``~/.local/state/proximo/
+    audit.log``) — and unlike ``_record_session`` (a no-op without the principal feature),
+    ``_reach_grant_check`` writes at every door serve-start unconditionally. Caught live
+    2026-08-26: the a2a door-main tests redirect ``server._svc`` but not ``_instance_ledger``,
+    so a suite run wrote an env-absent ``reach_grant`` entry into the dev box's real ledger
+    AND seeded the real sidecar with a test snapshot (which then misframed the estate's first
+    genuine serve-start as ``changed``). Same class and same cure as ``_memory_db_in_tmp``
+    below. The ``_instance_ledger`` lru_cache is cleared both sides so no test inherits
+    another test's tmp ledger, and cleared after so the SESSION never keeps a tmp one."""
+    prev = os.environ.get("PROXIMO_AUDIT_LOG")
+    os.environ["PROXIMO_AUDIT_LOG"] = str(tmp_path / "proximo-test-audit.log")
+
+    def _clear_cached_ledger():
+        srv = sys.modules.get("proximo.server")
+        if srv is not None:
+            srv._instance_ledger.cache_clear()
+
+    _clear_cached_ledger()
+    try:
+        yield
+    finally:
+        _clear_cached_ledger()
+        if prev is None:
+            os.environ.pop("PROXIMO_AUDIT_LOG", None)
+        else:
+            os.environ["PROXIMO_AUDIT_LOG"] = prev
 
 
 @pytest.fixture(autouse=True)

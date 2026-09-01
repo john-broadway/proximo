@@ -7,9 +7,12 @@ clean on its own. The documented strong guarantee is to pin the ledger ``head()`
 it back as ``expected_head`` (see ``AuditLedger.verify``). Today that pin is a manual copy-paste;
 this module automates it.
 
-An :class:`AnchorSink` publishes the current head to an off-box destination and fetches the last
-pinned head back, so on startup the live ledger is verified against the anchor with no operator
-action. Three sinks ship: :class:`FileSink` (write the head as JSON to a file — e.g. an NFS
+An :class:`AnchorSink` publishes the current head to an off-box destination and (for fetchable
+sinks) fetches the last pinned head back at CONFIG LOAD, seeding ``expected_head`` — the actual
+verification runs when ``audit_verify`` is called, and a CLEAN verify is what re-pins the head.
+(This sentence previously claimed startup itself verifies; the code never did — the 2026-08-26
+harden lens caught the overstatement here after harden.py inherited it.)
+Three sinks ship: :class:`FileSink` (write the head as JSON to a file — e.g. an NFS
 mount or object store that Proximo can write-but-not-rewrite; the first slice),
 :class:`HttpSink` (GET/PUT one pin resource on a remote receiver — a different HOST, which is
 where the trust model wants the anchor; added 2026-08-20), and :class:`SyslogSink` (the
@@ -424,11 +427,11 @@ class SyslogSink(AnchorSink):
             payload["entries"] = entries
         frame = self._frame(payload, ts, node)
         if self._unix is not None:
-            self._send_unix(frame)
+            self._send_unix(frame, self._unix)
         else:
             self._send_tcp(frame)
 
-    def _send_unix(self, frame: bytes) -> None:
+    def _send_unix(self, frame: bytes, unix: str) -> None:
         # /dev/log is SOCK_DGRAM on Linux; some syslogds listen SOCK_STREAM. Try datagram,
         # then stream — and if NEITHER connects, name both attempts: a quiet fallback that
         # then fails quietly would hide which transport was wrong.
@@ -437,13 +440,13 @@ class SyslogSink(AnchorSink):
             try:
                 with socket.socket(socket.AF_UNIX, kind) as sk:
                     sk.settimeout(self._TIMEOUT)
-                    sk.connect(self._unix)
+                    sk.connect(unix)
                     sk.sendall(frame)
                 return
             except OSError as e:
                 errors.append(f"{label}: {e}")
         raise AnchorError(
-            f"syslog anchor sink: cannot publish to unix socket {self._unix!r} "
+            f"syslog anchor sink: cannot publish to unix socket {unix!r} "
             f"({'; '.join(errors)})"
         )
 

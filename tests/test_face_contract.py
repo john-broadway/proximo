@@ -51,10 +51,13 @@ FORBIDDEN = (
     r"\b_audited\s*\(",               # calling the funnel directly = skipping name-based dispatch
 )
 
-# The ONLY server attributes a face may touch (the two sanctioned seams). `_apply_surfaces`
+# The ONLY server attributes a face may touch (the sanctioned seams). `_apply_surfaces`
 # left this set with the A11 3b retarget: scoping is door's, reached via webguard's helper —
 # a face touching server._apply_surfaces again would re-open the coupling 3b closed.
-ALLOWED_SERVER_ATTRS = {"_ledger", "_record_session"}
+# `_reach_grant_check` joined with the grant model's brick 1: like `_record_session` it is a
+# serve-start spine observation (any door, one spine — a grant change witnessed only on stdio
+# would be the gate greeting one door), not a dispatch path, so it cannot bypass governance.
+ALLOWED_SERVER_ATTRS = {"_ledger", "_record_session", "_reach_grant_check"}
 
 # Per-face EXTRA seams, granted individually so the global set stays tight. The MCP-HTTP face's
 # whole purpose is serving the FastMCP instance over the SDK's native transport — `server.mcp`

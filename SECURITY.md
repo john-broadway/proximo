@@ -360,6 +360,63 @@ When you're done, verify the boundary you built. `proximo doctor` reports which 
 stand and which sockets are empty, and it never echoes the configured paths back (a
 hijacked session shouldn't learn where you put your switch).
 
+### The reach grant is watched
+
+The CT/agent allowlists are the *reach grant* — the perimeter for the one channel PVE's own
+permission model cannot scope (`ssh -> pct exec`). At every serve start, on every door, Proximo
+snapshots the resolved grant (env lane plus every pve target), compares it to the
+`.proximo-reach-grant` sidecar beside the ledger, and records any delta as a `reach_grant`
+PROVE entry naming what was added and removed — so a widened allowlist can no longer pass
+between restarts unrecorded. Unchanged restarts record nothing. A missing or unreadable
+sidecar on a box with prior history records `state_missing`/`state_unreadable` rather than
+posing as a first run. Honest limits: a registry-file edit takes effect mid-run and is only
+witnessed at the next serve start; and like the taint marker, the sidecar is a real witness
+only when its directory sits outside the agent's write reach — though the entries already
+emitted are hash-chained, so erasing history means attacking the PROVE chain itself.
+`proximo doctor` reads the resolved grant back (ids + digest); `--receipt` reduces it to
+counts, since the roster is estate shape. The `pve_doctor` tool serves the same resolved ids
+to authenticated callers — deliberate: those callers can already enumerate guests, and the
+operator reading their own perimeter is the feature.
+
+### MIRROR: the shell channel obeys the token's own map
+
+The allowlist above is Proximo's own vocabulary — a list of ids in an env var. The mirror
+replaces vocabulary with symbiosis: with `PROXIMO_REACH_PRIVILEGE` set to a PVE privilege
+name, the container shell tools (`ct_exec`, `ct_psql`, and the read-only siblings `ct_logs`,
+`ct_diagnose` — reach is reach, and journald from an ungranted guest is disclosure) are
+permitted only where the **served token** holds that privilege at `/vms/<ctid>`. One
+`/access/permissions?path=` query per check; PVE's own permission engine resolves propagation
+and deeper-`NoAccess` revocation server-side. Semantics, deliberately: **dormant** unset
+(zero behavior change); **intersection** — the allowlist is checked first and the mirror only
+ever narrows (a mirror-driven estate sets the allowlist to `*` and lets the token's map be
+the whole boundary); **fail-closed** — no reachable map, no reach, and the break-glass is
+unsetting the privilege to fall back to the allowlist alone, which on a mirror-driven estate
+is a *widening* and is exactly why the flip is a witnessed `reach_grant` change; a
+set-but-blank value is a refused misconfiguration, never silent dormancy. Choose the
+privilege from `proximo reach-audit`'s evidence — it prints what each candidate aliases with
+on *your* cluster and what the privilege means in stock PVE — and prefer a one-privilege
+custom role (`pveum role add`) when you want AI reach granted separately from human role
+grants — the privilege itself still aliases wherever built-in roles carry it (Administrator
+at minimum), which is what `reach-audit`'s table exists to watch. Honest limits: enforcement runs at the tool seam in Proximo's
+own process (the same co-located caveat every Layer-2 gate carries — the Layer-1 token floor
+is the boundary that survives process compromise, and the *served token's* API authority is
+still PVE-enforced either way); and the privilege is env-lane only in this brick — a
+per-target field follows the `arm_source` precedent when multi-target estates need it.
+`proximo doctor` reports the live tri-state at `config.reach_grant.mirror.state`
+(dormant / enforcing / misconfigured), and `proximo harden` prints the erection recipe.
+While enforcing, the reach-grant witness (previous section) also *derives* the served
+token's per-guest reach at serve start — one query per allowlisted guest, a `*` allowlist
+first enumerating the configured node's live containers (`type == "lxc"` only) — so a
+PVE-side `pveum` grant or revoke lands as a witnessed `derived_ct` delta at the next start
+instead of living only in PVE's ACL table. Enforcement is per-check and immediate; the
+witness is serve-start — stated, not hidden. The first derive on an existing sidecar lands
+the whole map as `added` and the entry carries `derived_baseline: true` so a one-time
+upgrade baseline cannot be misread as an overnight mass grant. A derive failure records
+`derived_error` and omits the list — the delta will still show the list emptying beside
+the error, so monitors must key on `derived_error`'s presence, never on `removed` alone.
+A pure-targets box records `derived_absent` (by design, not broken), and a non-numeric
+allowlist token is skipped and reported rather than poisoning the derive.
+
 ## Supported versions
 
 Proximo is pre-1.0; security fixes land on the **latest release only**. There is no
@@ -392,8 +449,10 @@ the configured paths back — a hijacked session shouldn't learn where you put y
 | **DIAGNOSE** | Acting on a guest/node with no read-only evidence gathered first | **On**, always | n/a — read-only, always available |
 | **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS` for grant expiry) |
 | **CONTAIN** (kill-switch) | Needing to halt *every* mutation immediately, mid-incident, without a redeploy or restart | **Off** | `PROXIMO_CONTAIN_TRIP_PATH` |
+| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` improves the disarmed refusal message; it never enforces). Once set, fail-closed: a confirmed exec while disarmed refuses (`blocked:not_armed`); an exec-enabled registry target needs its *own* `arm_source`, never inherited. Arming is copying the write token into place (`proximo arm`, your shell) — a wall only when that source sits outside the agent's read/write reach; co-located it is a discipline (see "ARM" section above). |
 | **LEASE** (arm-TTL) | A write-armed token staying armed indefinitely after the operator meant to hand it back to read-only | **Off** | `PROXIMO_ARM_TTL` (also requires `PROXIMO_TOKEN_PATH` — an unresolvable path fails closed, never "assume fresh") |
 | **SCOPE / provenance** | An agent mutating a target outside the box(es) the operator authorized at arm-time | **Off** | `PROXIMO_SCOPE_PATH` — a present-but-unreadable/garbled/empty scope file fails **closed**; an **absent** file reads as no-scope (unrestricted) — the transitional armed-not-written window. NB this differs from LEASE, which fails closed on an absent token: set the scope file before relying on SCOPE. |
+| **MIRROR** (reach from the platform's own map) | Shell reach into a guest the operator never granted — the `ssh -> pct exec` channel that answers to no PVE privilege, now made to obey one | **Off** (dormant — allowlist-only reach, zero behavior change) | `PROXIMO_REACH_PRIVILEGE` = a PVE privilege name. Container shell tools (`ct_exec`/`ct_psql`/`ct_logs`/`ct_diagnose`) are then permitted only where the **served token** holds that privilege at `/vms/<ctid>` — one `/access/permissions` query per check, resolved by PVE itself (propagation and deeper-NoAccess included), **fail-closed** when the API cannot answer. Checked AFTER the allowlist: the mirror only ever narrows. Set-but-blank is a refused misconfiguration, never silent dormancy. Choose the privilege from `proximo reach-audit` evidence; a one-privilege custom role decouples AI reach from human role grants (the privilege still aliases via built-in roles carrying it). |
 | **ENVELOPE** (FORBID + RATE) | Blast radius under hijack — unlimited-speed mutation, or an explicitly forbidden action, from an agent that's been compromised or gone off-script | **Off** | `PROXIMO_FORBID` (global floor, always checked once set) + `PROXIMO_RATE_MAX` / `PROXIMO_RATE_WINDOW` (per-box budget) |
 | **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK` (mark + record a sticky taint on an adversarial read) then, once tainted, `PROXIMO_TAINT_FORBID` (actions refused outright — the primary, no consent escape) and/or `PROXIMO_TAINT_REQUIRE_CONSENT` (any mutation now needs an out-of-band grant). `PROXIMO_TAINT_FENCE` adds an advisory content-fence. |
 | **PRINCIPAL** (who-asked) | A PROVE ledger that records *what* happened but not *who asked* — attribution gaps across faces, and (with pins) network callers whose identity is unproven | **Off** | `PROXIMO_PRINCIPAL` stamps a declared name-tag on every entry (the operator's word, like the token). `PROXIMO_CALLER_KEYS_DIR` verifies signed ES256 caller badges against operator-pinned keys and, once set, **refuses an unverifiable caller on the network faces** (fail-closed). Identity, not authority — a verified name changes nothing about what a call may do; the token ACL remains the only authorization boundary. **Two honest limits.** *"Verified" is only as strong as the pin directory's isolation:* an agent that can write `PROXIMO_CALLER_KEYS_DIR` can pin a key it controls and be recorded `via:verified` — keep the pin dir outside the agent's own write reach, the same two-deployment caveat the gates above carry. *A badge is a long-lived bearer credential:* it does not expire unless minted with `--exp`, its only revocation is deleting the caller's pin file (which takes effect on that face's next protected request — the pin store is re-read whenever the directory changes, so revocation does not wait for a restart; rewriting an existing pin file in place is the one edit the directory stamp cannot see, and it requires ownership of that file), and it is not bound to a TLS session — so treat a leaked badge like a leaked bearer token (standing impersonation until unpinned), keep it off disk and out of logs, and rotate it. |

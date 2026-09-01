@@ -11,8 +11,13 @@ from __future__ import annotations
 import hashlib
 import re
 import ssl
+from typing import overload
 
 
+@overload
+def httpx_verify(value: bool) -> bool: ...
+@overload
+def httpx_verify(value: str) -> ssl.SSLContext: ...
 def httpx_verify(value: bool | str) -> bool | ssl.SSLContext:
     """Translate a verify setting into an httpx ``verify=`` value without the deprecated str form.
 

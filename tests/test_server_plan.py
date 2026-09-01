@@ -790,6 +790,7 @@ def test_ct_logs_exec_disabled_wins_over_allowlist(tmp_path, monkeypatch):
 # "a tool changed"; this catches "a dangerous tool is ungated".
 _READ_ONLY_TOOLS = frozenset({
     "audit_verify", "audit_entries", "ct_diagnose", "ct_logs",
+    "pve_node_logs", "pve_node_diagnose",  # host-shell battery, read-only by construction
     # proximo_call MUTATES NOTHING ITSELF — it is the by-name dispatcher, and the tool it
     # reaches keeps its own confirm gate. A `confirm` parameter here would be actively harmful:
     # it would be a second gate satisfiable without the inner tool ever seeing one, which is the

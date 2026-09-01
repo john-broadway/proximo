@@ -23,7 +23,7 @@ Run (example):
     PROXIMO_API_BASE_URL=https://<test-node>:8006/api2/json \
     PROXIMO_NODE=<source-node> PROXIMO_TOKEN_PATH=/path/to/rw-token \
     PROXIMO_FINGERPRINT=<sha256-pin> \
-    SMOKE_VMID=31399 SMOKE_STORE=labshared SMOKE_NFS_SERVER=<nfs-server-ip> \
+    SMOKE_VMID=90031 SMOKE_STORE=labshared SMOKE_NFS_SERVER=<nfs-server-ip> \
     SMOKE_NFS_EXPORT=/mnt/pve/lab SMOKE_TARGET=<target-node> \
     uv run python scripts/live-smoke/migrate-online-smoke.py
 """

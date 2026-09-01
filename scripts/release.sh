@@ -72,14 +72,32 @@ if [ "$RC" -eq 0 ]; then
 release: v$V set, gate GREEN.
 NEXT (Claude does the git; John's go for the public push):
   1. write the CHANGELOG [$V] entry (human prose)
-  2. commit, then: git tag v$V   (internal gitea: git push origin main --tags)
-  3. publish to github via the curated FF tree (strips .gitea/, refuses leaks):
+  2. commit, then: git tag v$V
+       internal gitea:  git push origin main && git push origin v$V
+       NEVER --tags. It pushes every local tag; one diverged old tag rejects the push forever
+       even after main already landed (the pacioli 0.39.0 publish hit exactly this).
+  3. build the curated public commit (strips .gitea/, refuses leaks):
        T=\$(uv run python scripts/release_leak_audit.py build-tree) || exit 1
        M=\$(uv run python scripts/public_commit_message.py $V) || exit 1   # the CHANGELOG entry IS the reason
        C=\$(printf '%s' "\$M" | git commit-tree "\$T" -p github/main -F -)
-       git push github "\$C:main"          # fast-forward, NEVER --force
-  4. gh release create v$V                 # fires the signed GHCR build
-  5. approve the gated PyPI publish job     (John's click — tokenless OIDC)
+  4. PROVE the tree BEFORE public main moves (stage 0b, guard.requireProvenTree — the curated
+     commit is minted fresh, so the push would be CI's first look; 2026-08-22 went red that way):
+       git push github "\$C:refs/heads/preflight-$V"
+       gh workflow run ci.yml -R john-broadway/proximo --ref preflight-$V     # the job that reds
+       gh workflow run trivy.yml -R john-broadway/proximo --ref preflight-$V  # the image gate
+       # both green, then record + delete the ref:
+       echo "\$(git rev-parse "\$C^{tree}")  <run url>" >> "\$(git rev-parse --git-dir)/proven-trees"
+       git push github ":refs/heads/preflight-$V"
+  5. git push github "\$C:main"          # fast-forward, NEVER --force
+  6. tag the PUBLIC line — the CURATED TWIN, never the local tag:
+       git push github "\$C:refs/tags/v$V"
+       The local tag points at the INTERNAL line; pushing it publishes every internal commit
+       (pacioli v0.24.0 exposed 592 commits exactly that way, 2026-08-09).
+  7. gh release create v$V --target "\$C" --title "v$V: <the one-line reason>" --notes-file <notes>
+       # fires the signed GHCR build. A bare version number is not a title (John, 2026-08-24:
+       # "released 38 with no doc or desc") — hardcoding --title "\$TAG" in a ship script is how
+       # three releases running shipped bare. End the notes with a "## Where to read more" block.
+  8. approve the gated PyPI publish job     (John's click — tokenless OIDC)
 release.sh never pushes.
 EOF
 else

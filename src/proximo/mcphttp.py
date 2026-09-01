@@ -151,6 +151,7 @@ def main() -> None:
     from . import server  # noqa: PLC0415
 
     server._record_session("session_start")
+    server._reach_grant_check()
     try:
         uvicorn.run(app, host=host, port=port)
     finally:

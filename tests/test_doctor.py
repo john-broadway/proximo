@@ -755,3 +755,65 @@ def test_enable_with_is_absent_for_a_plane_you_already_configured(monkeypatch):
     # ...and a plane that genuinely is not configured STILL gets its instruction.
     assert planes["pmg"]["configured"] is False
     assert "enable_with" in planes["pmg"]
+
+
+def test_reach_grant_block_reports_resolved_lanes():
+    # Brick 1 of the grant model: doctor reads back the RESOLVED reach grant — the actual
+    # CTIDs, both lanes, plus a digest an operator can compare across boxes/restarts.
+    from proximo import reachgrant
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"102", "101"}),
+                                              agent_allowlist=frozenset())))
+    rg = out["config"]["reach_grant"]
+    assert rg["ct"] == ["101", "102"]
+    assert rg["agent"] == []
+    # lane_digest, NOT digest: the ledger's reach_grant digest covers the whole instance
+    # snapshot; two incomparable values under one name would invite a false-alarm compare.
+    # `mirror` sits BESIDE the digest, not inside it — a live tri-state read, digested only
+    # by the serve-time instance snapshot.
+    lanes = {k: v for k, v in rg.items() if k not in ("lane_digest", "mirror")}
+    assert rg["lane_digest"] == reachgrant.grant_digest(lanes)
+
+
+def test_reach_grant_receipt_view_carries_counts_never_ids():
+    # --receipt strips estate shape; bare CTIDs match no redaction pattern, so the receipt
+    # view must swap the id lists for counts BEFORE render ever sees them.
+    from proximo import reachgrant
+    block = {"ct": ["101", "102", "103"], "agent": ["205"],
+             "lane_digest": "abcd1234abcd1234"}
+    safe = reachgrant.receipt_view(block)
+    assert safe == {"ct_count": 3, "agent_count": 1, "digest": "abcd1234abcd1234"}
+    assert "ct" not in safe and "agent" not in safe
+
+
+def test_reach_grant_star_reported_as_star():
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"*"}))))
+    assert out["config"]["reach_grant"]["ct"] == ["*"]
+    from proximo import reachgrant
+    assert reachgrant.receipt_view(out["config"]["reach_grant"])["ct_count"] == "*"
+
+
+def test_reach_grant_block_reports_mirror_tristate(monkeypatch):
+    # The mirror is the one config that decides whether the shell channel obeys the served
+    # token's own PVE map — doctor must answer "is the mirror on?" in one read. Misconfigured
+    # (set-but-whitespace, which REFUSES every shell op) is reported, never raised: an
+    # operator runs doctor precisely to learn why everything is refusing.
+    from proximo import doctor as doctor_mod
+    monkeypatch.delenv("PROXIMO_REACH_PRIVILEGE", raising=False)
+    assert doctor_mod._mirror_state() == {"privilege": None, "state": "dormant"}
+    monkeypatch.setenv("PROXIMO_REACH_PRIVILEGE", "ProximoReach")
+    assert doctor_mod._mirror_state() == {"privilege": "ProximoReach", "state": "enforcing"}
+    monkeypatch.setenv("PROXIMO_REACH_PRIVILEGE", "   ")
+    out = doctor_mod._mirror_state()
+    assert out["state"] == "misconfigured" and out["privilege"] is None and "blank" in out["error"]
+
+
+def test_reach_grant_receipt_carries_mirror_state(monkeypatch):
+    # A privilege NAME appears in every ACL entry PVE serves — it is not estate shape, so the
+    # receipt keeps the tri-state while still stripping the id rosters.
+    from proximo import reachgrant
+    monkeypatch.setenv("PROXIMO_REACH_PRIVILEGE", "ProximoReach")
+    block = {"ct": ["101", "102"], "agent": [], "lane_digest": "abcd",
+             "mirror": {"privilege": "ProximoReach", "state": "enforcing"}}
+    safe = reachgrant.receipt_view(block)
+    assert safe["ct_count"] == 2 and "101" not in str(safe.values())
+    assert safe["mirror"] == {"privilege": "ProximoReach", "state": "enforcing"}

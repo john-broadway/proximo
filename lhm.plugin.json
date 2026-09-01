@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -26608,6 +26608,35 @@
             ]
           }
         },
+        "type": "object"
+      }
+    },
+    {
+      "name": "pve_node_logs",
+      "description": "READ-ONLY: tail journalctl for a systemd unit ON THE PVE HOST — the host side of the\njunction (upgrades, cluster services, recovery), the lane the API plane cannot see. Fixed\nread-only argv; there is deliberately NO node_exec. Gated by PROXIMO_ENABLE_NODE_SHELL (its\nOWN opt-in, separate from container exec) and, when the mirror is on, by the token holding\nthe reach privilege at /nodes/<node>. Operates on THIS instance's node (the box `ssh_target`\nreaches); there is no node argument, because the shell cannot reach any other box and letting\na caller name a node the mirror gates on while the ssh runs elsewhere would decouple the gate\nfrom the target. For a fixed host evidence battery use pve_node_diagnose; for a container's unit\nuse ct_logs.",
+      "inputSchema": {
+        "properties": {
+          "unit": {
+            "description": "systemd unit to tail journalctl for ON THE HOST (e.g. `pveproxy.service`, `pve-cluster.service`).",
+            "type": "string"
+          },
+          "lines": {
+            "default": 50,
+            "description": "Number of most-recent log lines to return.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unit"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pve_node_diagnose",
+      "description": "READ-ONLY: gather 'what's broken' evidence for the PVE HOST itself — the API-only node\nhealth (status, storage, failed tasks) PLUS a fixed read-only shell battery over ssh (failed\nunits, PVE service states, host journal errors, disk, memory, pveversion, cluster status).\n\nThe host side of the junction: this is the evidence you need precisely when the API plane is\ndegraded. No mutation, no confirm. Operates on THIS instance's node — no node argument, so a\nCALLER cannot decouple the mirror gate from the ssh target (both resolve from config: the\nmirror gates /nodes/<PROXIMO_NODE>, the shell reaches PROXIMO_SSH_TARGET, which the operator\nis expected to point at the same box). The shell battery needs PROXIMO_ENABLE_NODE_SHELL and,\nwith the mirror on, the reach privilege at /nodes/<node>; with the battery off it returns the\nAPI-only part and discloses the skipped battery. For a container use ct_diagnose; for token\nconnectivity use pve_doctor.",
+      "inputSchema": {
+        "properties": {},
         "type": "object"
       }
     },

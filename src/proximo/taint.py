@@ -111,6 +111,9 @@ ADVERSARIAL_TOOLS: frozenset[str] = frozenset({
     # guest-influenced: exec-output / agent-info / in-guest file reads carry guest-controlled bytes
     "ct_logs", "ct_exec", "ct_psql", "ct_diagnose",
     "pve_agent_exec", "pve_agent_info", "pve_agent_file_read",
+    # host-shell journal/battery: free-text host log lines, service output — same channel class
+    # as ct_logs/ct_diagnose and pve_node_journal one altitude up (2026-08-26).
+    "pve_node_logs", "pve_node_diagnose",
     # email/external: quarantine content, mail tracker/statistics carry externally-authored bytes
     "pmg_quarantine_spam", "pmg_quarantine_virus", "pmg_quarantine_attachment",
     "pmg_quarantine_spamstatus", "pmg_quarantine_virusstatus", "pmg_quarantine_spamusers",

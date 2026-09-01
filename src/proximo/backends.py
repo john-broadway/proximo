@@ -758,7 +758,24 @@ CONTAINER_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("memory", ("free", "-m")),
     ("listening", ("ss", "-tlnp")),
 )
-_PROBE_ARGV = dict(CONTAINER_PROBES)
+_PROBE_ARGV: dict[str, tuple[str, ...]] = dict(CONTAINER_PROBES)
+
+# The NODE battery — the host side of the junction, read-only by construction. Same law as
+# CONTAINER_PROBES: the argv is fixed HERE, callers name a KEY, and there is deliberately NO
+# free-argv node_exec in this leg — the metal's mutation lane stays undoored until its
+# fail-posture (recovery is exactly when the API cannot answer) is designed, not defaulted.
+NODE_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("failed_units", ("systemctl", "--failed", "--no-legend", "--no-pager")),
+    ("pve_services", ("systemctl", "list-units", "--no-legend", "--no-pager",
+                      "pveproxy.service", "pvedaemon.service", "pve-cluster.service",
+                      "pvestatd.service", "pvescheduler.service")),
+    ("recent_errors", ("journalctl", "-p", "err", "-n", "40", "--no-pager")),
+    ("disk", ("df", "-h")),
+    ("memory", ("free", "-m")),
+    ("versions", ("pveversion", "-v")),
+    ("cluster", ("pvecm", "status")),
+)
+_NODE_PROBE_ARGV: dict[str, tuple[str, ...]] = dict(NODE_PROBES)
 
 
 class ExecBackend:
@@ -845,6 +862,47 @@ class ExecBackend:
         mutation. Reading logs is exactly what an operator needs while disarmed — often to
         decide whether to arm at all. `unit` still goes through the same quoting as any argv."""
         return self._run_unchecked(ctid, ["journalctl", "-u", unit, "-n", str(lines), "--no-pager"])
+
+    # --- The NODE shell battery (host side of the junction; read-only by construction) ---
+
+    def node_probe(self, key: str) -> ExecResult:
+        """One fixed NODE probe. NOT arm-gated — same DIAGNOSE reasoning as `probe`: the argv
+        is fixed in NODE_PROBES, the caller names a KEY, and you diagnose the metal precisely
+        when it is broken and you are not armed. Gated by `enable_node_shell` (its own opt-in,
+        NOT enable_exec: reaching the host's journal is a different disclosure grade than
+        reaching one container's) — enforced here at the backend, defense-in-depth with the
+        tool seam. An unknown key raises before anything runs."""
+        argv = _NODE_PROBE_ARGV.get(key)
+        if argv is None:
+            raise ProximoError(
+                f"unknown node probe {key!r} — the NODE battery is fixed; probes are "
+                f"{', '.join(k for k, _ in NODE_PROBES)}"
+            )
+        return self._run_node_unchecked(list(argv))
+
+    def node_logs(self, unit: str, *, lines: int = 50) -> ExecResult:
+        """Tail journalctl for one unit ON THE HOST. Same fixed-argv law as `logs`; same
+        `enable_node_shell` gate as `node_probe`."""
+        return self._run_node_unchecked(
+            ["journalctl", "-u", unit, "-n", str(lines), "--no-pager"])
+
+    def _run_node_unchecked(self, command: list[str], *, timeout: int = 60) -> ExecResult:
+        """The host exec itself. Only for argv this class fixes; never caller-supplied.
+        There is intentionally no arm check (read-only battery) and no allowlist (the node
+        is singular; its gate is the opt-in plus, at the tool seam, the node mirror)."""
+        if not self.config.enable_node_shell:
+            raise ProximoError(
+                "node shell is disabled (set PROXIMO_ENABLE_NODE_SHELL=1 to enable the "
+                "read-only node battery)")
+        if self.config.is_local:
+            argv = list(command)
+        else:
+            argv = ["ssh", self.config.ssh_target, shlex.join(command)]
+        # S603/S607: PATH-resolved ssh with non-shell argv, same posture as _run_unchecked.
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)  # noqa: S603, S607
+        target = "local" if self.config.is_local else self.config.ssh_target
+        return ExecResult(f"node:{target}", shlex.join(command), proc.returncode,
+                          proc.stdout, proc.stderr)
 
 
 class ApiBackend:

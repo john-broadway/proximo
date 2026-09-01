@@ -61,7 +61,7 @@ def test_range_vmid_permitted_inclusive():
 
 def test_vmid_outside_both_refused():
     al = safety.Allowlist(vmids=frozenset({100}), vmid_range=(90000, 90099), storages=frozenset())
-    assert al.permits_vmid(420) is False     # a prod CTID — refused, never named in source
+    assert al.permits_vmid(101) is False     # a prod CTID — refused, never named in source
 
 
 # --- assert_test_target (the guard the smokes/orchestrator call) --------------
@@ -75,10 +75,10 @@ def test_assert_allows_test_vmid_and_storage():
 def test_assert_refuses_prod_vmid_without_naming_others():
     al = safety.Allowlist(vmids=frozenset({100}), vmid_range=(90000, 90099), storages=frozenset({"test"}))
     with pytest.raises(safety.SmokeSafetyError) as ei:
-        safety.assert_test_target(al, vmid=1971)   # a prod CTID
+        safety.assert_test_target(al, vmid=102)   # a prod CTID
     msg = str(ei.value)
-    assert "1971" in msg                      # names the rejected target
-    assert "420" not in msg and "8007" not in msg   # does NOT leak other prod ids
+    assert "102" in msg                      # names the rejected target
+    assert "101" not in msg and "8007" not in msg   # does NOT leak other prod ids
 
 
 def test_assert_refuses_prod_storage():
@@ -92,7 +92,7 @@ def test_assert_normalizes_string_vmid():
     al = safety.Allowlist(vmids=frozenset({100}), vmid_range=None, storages=frozenset({"test"}))
     safety.assert_test_target(al, vmid="100")           # allowed, no raise
     with pytest.raises(safety.SmokeSafetyError):
-        safety.assert_test_target(al, vmid="420")
+        safety.assert_test_target(al, vmid="101")
 
 
 def test_assert_default_deny_empty_allowlist():

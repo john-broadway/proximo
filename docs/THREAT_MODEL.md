@@ -13,7 +13,7 @@ live in [`VERIFY.md`](./VERIFY.md). This page is the structure that ties them to
 | Asset | Why it matters |
 |---|---|
 | **The Proxmox cluster** | The actual prize — VMs, containers, storage, backups, mail flow, firewall. |
-| **The minted PVE/PBS/PMG/PDM token** | Its RBAC grants are the hard ceiling on everything Proximo can do. |
+| **The minted PVE/PBS/PMG/PDM token** | Its RBAC grants bound everything Proximo can do — the hard floor of the two-layer trust model ([`SECURITY.md`](../SECURITY.md)). |
 | **The audit ledger** | The record of what happened. An attacker who can edit it undetected erases their tracks. |
 | **The agent's context window** | If steered by injected text, the agent itself becomes the attacker's tool. |
 | **Secrets in the environment** | Token file, HMAC audit key, any credential on the host. |
@@ -47,7 +47,7 @@ single most important decision a deployer makes.
 | **Tamperer of history** | Edits, reorders, or truncates the audit ledger to hide activity | PROVE — keyed HMAC-SHA256 hash chain; `audit_verify(expected_head=…)` with an **off-box** head anchor catches tail truncation / full wipe. Proof: `VERIFY.md` §2. |
 | **Network attacker** (A2A, HTTP, and/or MCP-over-streamable-HTTP face enabled) | Hits any optional network face — all are full control planes; DNS-rebind; loopback-CSRF (a web page the operator loads forging a POST to `127.0.0.1`); header smuggling | One shared fail-closed perimeter (`proximo.webguard`) so the faces cannot drift apart: non-localhost binds refuse to start without a bearer token (`PROXIMO_A2A_TOKEN_FILE` / `PROXIMO_HTTP_TOKEN_FILE` / `PROXIMO_MCP_HTTP_TOKEN_FILE`, constant-time compare); Host allowlist against DNS-rebind (`PROXIMO_A2A_ALLOWED_HOSTS` / `PROXIMO_HTTP_ALLOWED_HOSTS` / `PROXIMO_MCP_HTTP_ALLOWED_HOSTS`); a cross-origin guard on every mutating POST (Sec-Fetch-Site + Origin + Content-Type checks). Every face lands on the same governed spine as stdio — the MCP-HTTP face serves it natively, A2A/HTTP adapt via `proximo.governed` — so PLAN/PROVE and the Layer-1 token floor apply identically; no second mutate path |
 | **Supply-chain attacker** | Ships a forged image or package | Sigstore build-provenance attestation + SBOM (image), PEP 740 provenance + tokenless OIDC publish (PyPI). Proofs: `VERIFY.md` §4–5. |
-| **Exec-edge abuser** | Reaches near-root `ssh → pct exec` | Off by default (`PROXIMO_ENABLE_EXEC`); fail-closed CTID allowlist when on |
+| **Exec-edge abuser** | Reaches near-root `ssh → pct exec` | Off by default (`PROXIMO_ENABLE_EXEC`); fail-closed CTID allowlist when on; opt-in ARM (write authority exists only while the operator's hand armed it — `SECURITY.md` → "ARM"); opt-in MIRROR (`PROXIMO_REACH_PRIVILEGE` — shell reach permitted only where the served token holds the operator's chosen privilege at `/vms/<ctid>`, resolved by PVE itself per check, fail-closed; `SECURITY.md` → "MIRROR"). Every serve-start change to this perimeter is a witnessed `reach_grant` PROVE entry |
 | **Secret-exfiltration** | Reads a token/key from logs or the ledger | Token taken by path/env, never a shell literal; never echoed into the ledger |
 
 ## Residual risks — stated plainly
