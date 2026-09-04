@@ -11,10 +11,15 @@ set -uo pipefail
 V="${1:-}"
 [ -n "$V" ] || { printf 'usage: release.sh X.Y.Z\n' >&2; exit 2; }
 
+# The version must LOOK like a version before anything else — the old guard's negated
+# class ([!0-9.a-z-]) passed any all-lowercase word straight through to version_tools,
+# which wrote it into four files (measured: "broker", 2026-09-01). Shape first:
+printf '%s' "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.-]*)?$' \
+  || { printf 'release: refusing "%s" — not an X.Y.Z version.\n' "$V" >&2; exit 1; }
 # Honest semver: pre-1.0 stays 0.x; a major>=1 must be intentional.
 case "$V" in
   0.*) : ;;
-  [1-9]*|*[!0-9.a-z-]*)
+  *)
     if [ "${PROXIMO_RELEASE_FORCE_MAJOR:-}" != "1" ]; then
       printf 'release: refusing "%s" — pre-1.0 discipline keeps it 0.x; set PROXIMO_RELEASE_FORCE_MAJOR=1 to override.\n' "$V" >&2
       exit 1
@@ -49,7 +54,22 @@ git diff --exit-code --stat lhm.plugin.json || { printf 'release: lhm.plugin.jso
 uv run python scripts/gen_tools_doc.py >/dev/null 2>&1 || { printf 'release: gen_tools_doc.py failed\n' >&2; RC=1; }
 git diff --exit-code --stat docs/TOOLS.md || { printf 'release: docs/TOOLS.md drifted — commit the regenerated file.\n' >&2; RC=1; }
 uv run ruff check . || RC=1   # full repo — match CI's `ruff check .` (src+tests+scripts), not a subset
-uv run python -m pytest tests/test_version_consistency.py -q || RC=1
+# Bare `pytest`, not `python -m pytest`: the latter puts the repo root on sys.path, so a
+# `from tests.foo import ...` passes here and fails on CI, which runs bare. CLAUDE.md names
+# this as a blind spot and this gate was using the blind form (mechanics lens, 2026-09-04).
+uv run pytest tests/test_version_consistency.py -q || RC=1
+# SAY WHAT THE NEXT GATE IS LOOKING AT. release_leak_audit reads git HEAD (git ls-tree /
+# git show <ref>:<path>), never the working tree. This script's FIRST action rewrites the
+# version files, so on the first pass the tree is always dirty and the audit below is always
+# judging a tree that predates the release: the entry you just wrote, and any fix you just
+# made, are invisible to it until committed. It cannot refuse on dirt (it made the dirt), so
+# it says so instead. A clean verdict over the wrong subject is the defect class this repo
+# keeps hitting (2026-09-03: "12,135 passed" over a HEAD without the new file).
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  printf 'release: NOTE — the leak audit below reads git HEAD; this tree has %s uncommitted path(s),\n' \
+    "$(git status --porcelain | wc -l | tr -d ' ')" >&2
+  printf 'release:        which it CANNOT see. Commit, then re-run this gate before believing it.\n' >&2
+fi
 uv run python scripts/release_leak_audit.py audit || RC=1   # model the public tree; refuse internal-infra leaks
 # Public CI also runs gitleaks (entropy rules our leak-audit doesn't model — a mixed-case test
 # sentinel failed CI on v0.13.0). Run the same scan over the modeled public tree when available.
@@ -77,27 +97,46 @@ NEXT (Claude does the git; John's go for the public push):
        NEVER --tags. It pushes every local tag; one diverged old tag rejects the push forever
        even after main already landed (the pacioli 0.39.0 publish hit exactly this).
   3. build the curated public commit (strips .gitea/, refuses leaks):
+       git fetch github            # the commit is parented on github/main; a STALE local ref
+                                   # mints a commit git will simply refuse to FF at step 6,
+                                   # costing a full re-mint. Cheap to avoid, annoying to hit.
        T=\$(uv run python scripts/release_leak_audit.py build-tree) || exit 1
        M=\$(uv run python scripts/public_commit_message.py $V) || exit 1   # the CHANGELOG entry IS the reason
        C=\$(printf '%s' "\$M" | git commit-tree "\$T" -p github/main -F -)
-  4. PROVE the tree BEFORE public main moves (stage 0b, guard.requireProvenTree — the curated
-     commit is minted fresh, so the push would be CI's first look; 2026-08-22 went red that way):
-       git push github "\$C:refs/heads/preflight-$V"
-       gh workflow run ci.yml -R john-broadway/proximo --ref preflight-$V     # the job that reds
-       gh workflow run trivy.yml -R john-broadway/proximo --ref preflight-$V  # the image gate
-       # both green, then record + delete the ref:
-       echo "\$(git rev-parse "\$C^{tree}")  <run url>" >> "\$(git rev-parse --git-dir)/proven-trees"
-       git push github ":refs/heads/preflight-$V"
-  5. git push github "\$C:main"          # fast-forward, NEVER --force
-  6. tag the PUBLIC line — the CURATED TWIN, never the local tag:
+  4. C-LANE (deployment rail 10c, ruled 2026-08-31; carried 0.39.0 on its first run):
+     required status checks STAY on public main — never lift protection, there is no
+     admin lane. The curated commit is minted fresh, so the required checks have never
+     seen its sha; a PR carries them onto that exact sha, then main fast-forwards on
+     their strength:
+       git push github "\$C:refs/heads/staging-v$V"
+       gh pr create -R john-broadway/proximo --base main --head staging-v$V \\
+         --title "release lane: green v$V on its own sha" \\
+         --body "C-lane staging PR: greens the curated sha; main FFs onto it; never merged via the button."
+     Read the LIVE required set (gh api repos/john-broadway/proximo/branches/main/protection/required_status_checks)
+     and wait until every context concludes success on \$C. A \`skipped\` conclusion also
+     satisfies a direct FF (observed in production on v0.39.0 — keepalive). On duplicate
+     check-runs the LATEST started is the verdict. A red here is the finding: fix on
+     canon, re-mint, start over — the tree is the identity, never force anything.
+  5. record the proven tree (the box pre-push guard, stage 0b guard.requireProvenTree,
+     refuses public main without it; 2026-08-22 went red skipping this proof):
+       echo "\$(git rev-parse "\$C^{tree}")  <PR url>" >> "\$(git rev-parse --git-dir)/proven-trees"
+  6. git push github "\$C:main"          # direct FF on the sha's own green checks, NEVER --force
+     If the FF is refused naming a context that never RAN (absent, not skipped):
+       gh workflow run ci.yml -R john-broadway/proximo --ref staging-v$V   # makes it run on this sha
+     Read the FF back before believing it (0.39.0's proven script did — the API, not a local ref):
+       gh api repos/john-broadway/proximo/git/ref/heads/main --jq .object.sha   # must answer \$C
+     then DELETE the staging ref (off-main-ref law; the PR auto-closes as merged):
+       git push github ":refs/heads/staging-v$V"
+  7. tag the PUBLIC line — the CURATED TWIN, never the local tag:
        git push github "\$C:refs/tags/v$V"
        The local tag points at the INTERNAL line; pushing it publishes every internal commit
        (pacioli v0.24.0 exposed 592 commits exactly that way, 2026-08-09).
-  7. gh release create v$V --target "\$C" --title "v$V: <the one-line reason>" --notes-file <notes>
-       # fires the signed GHCR build. A bare version number is not a title (John, 2026-08-24:
+  8. gh release create v$V --target "\$C" --title "v$V: <the one-line reason>" --notes-file <notes>
+       # fires the signed GHCR build (trivy scans on the push to main — no pull_request
+       # trigger there by design). A bare version number is not a title (John, 2026-08-24:
        # "released 38 with no doc or desc") — hardcoding --title "\$TAG" in a ship script is how
        # three releases running shipped bare. End the notes with a "## Where to read more" block.
-  8. approve the gated PyPI publish job     (John's click — tokenless OIDC)
+  9. approve the gated PyPI publish job     (John's click — tokenless OIDC)
 release.sh never pushes.
 EOF
 else

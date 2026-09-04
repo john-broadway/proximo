@@ -118,6 +118,15 @@ PROXIMO_VERIFY_TLS=true
 (Container exec is **off** by default — leave `PROXIMO_ENABLE_EXEC` unset. It grants root on the host,
 so it's strictly opt-in. You don't need it for normal use.)
 
+**Which store wins.** Step 5 puts the same variables in your MCP client's `env` block (a daemon
+gets them from its unit's `EnvironmentFile`). The server reads that first and fills in from
+`proximo.env` only the keys it does not set. A key present in both is fed by the process
+environment, and the file's copy of that key is never read. When the two values differ the
+server says so at start (`proximo: 1 key(s) in ... SHADOWED by the process environment`), an
+allowlist refusal names the store it read, and `proximo doctor` flags a shadowed key whose value
+differs. Every `PROXIMO_*` value is fixed when the server is launched: after editing either
+store, restart the server or reconnect the client.
+
 ---
 
 ## Step 4 — Verify YOUR boundary, before any AI sees it

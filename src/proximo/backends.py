@@ -22,7 +22,7 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from ._tls import fingerprint_pinned_context, httpx_verify
-from .config import ProximoConfig
+from .config import ProximoConfig, allowlist_remedy
 
 # NB: \Z (not $) — Python's $ matches before a trailing newline, so "valid\n" would slip through.
 _VALID_KINDS = frozenset({"lxc", "qemu"})
@@ -821,8 +821,9 @@ class ExecBackend:
         if not self.config.ct_permitted(ctid):
             raise ProximoError(
                 f"CTID {ctid} is not on the exec allowlist (fail-closed: an empty or "
-                "non-matching PROXIMO_CT_ALLOWLIST denies everything) — add it via "
-                "PROXIMO_CT_ALLOWLIST (comma-separated CTIDs, or '*' for all)"
+                "non-matching PROXIMO_CT_ALLOWLIST denies everything; comma-separated CTIDs, "
+                "or '*' for all). "
+                + allowlist_remedy("PROXIMO_CT_ALLOWLIST", self.config.ct_allowlist_source)
             )
         if self.config.is_local:
             # On the PVE host: call pct directly — no ssh, no quote layer.
@@ -1075,8 +1076,9 @@ class ApiBackend:
         if not self.config.agent_permitted(vmid):
             raise ProximoError(
                 f"VMID {vmid} is not on the agent allowlist (fail-closed: an empty or "
-                "non-matching PROXIMO_AGENT_ALLOWLIST denies everything) — add it via "
-                "PROXIMO_AGENT_ALLOWLIST (comma-separated VMIDs, or '*' for all)"
+                "non-matching PROXIMO_AGENT_ALLOWLIST denies everything; comma-separated VMIDs, "
+                "or '*' for all). "
+                + allowlist_remedy("PROXIMO_AGENT_ALLOWLIST", self.config.agent_allowlist_source)
             )
         return vmid, self._resolve_node(node)
 

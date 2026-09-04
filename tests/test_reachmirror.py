@@ -67,6 +67,7 @@ def _exec_svc(tmp_path, monkeypatch, api):
     cfg = SimpleNamespace(
         enable_exec=True, redact_ledger=False,
         ct_allowlist=frozenset({"102"}), agent_allowlist=frozenset(),
+        ct_allowlist_source="the server configuration",  # the refusal names its source (09-02)
         ct_permitted=lambda ctid: str(ctid) == "102",
         audit_log_path=str(tmp_path / "audit.log"), audit_key_path=None, audit_keyed=True,
     )

@@ -133,13 +133,19 @@ def test_cli_check_flag_exits_nonzero_when_empty(monkeypatch, capsys):
 
 def test_harden_verb_skips_surface_scoping(monkeypatch):
     # mint/arm/badge-class verbs skip _apply_surfaces (scoping noise would prefix their
-    # output); harden must be in that club — pinned on the source the same way the door
-    # sweep pins calls, because the verb list is a literal tuple in main().
+    # output); harden must be in that club. The verb tuple moved out of main() on
+    # 2026-09-03 (one tuple, _QUIET_STDERR_VERBS, now gates the scoping line AND the
+    # env-file loader's lines), so the membership is asserted on the tuple and the gate
+    # order on main()'s source.
     import inspect
+    assert "harden" in srv._QUIET_STDERR_VERBS, "harden missing from the quiet-verb tuple"
+    import re
     src = inspect.getsource(srv.main)
-    assert '"harden"' in src.split("_apply_surfaces")[0] or \
-        '"harden"' in src[:src.index("_apply_surfaces")], \
-        "harden missing from the no-scoping verb tuple in main()"
+    # The gate must be THE condition on the _apply_surfaces call, not merely a substring that
+    # appears somewhere earlier in main() (lens B: `if True:` in front of _apply_surfaces left
+    # the loader's own `announce=not _quiet_stderr_verb()` in place and a substring search green).
+    assert re.search(r"if not _quiet_stderr_verb\(\):\s*\n\s*try:\s*\n\s*_apply_surfaces\(\)", src), \
+        "main() must gate _apply_surfaces() on `if not _quiet_stderr_verb():` directly"
 
 
 def test_mirror_station_reported_never_check_gated(monkeypatch):

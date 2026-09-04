@@ -609,3 +609,63 @@ def test_consent_active_plus_redaction_warns_approver_to_read_cleartext(monkeypa
     monkeypatch.delenv("PROXIMO_LEDGER_REDACT", raising=False)  # default = redaction ON
     with pytest.warns(UserWarning, match="operator_cleartext"):
         ProximoConfig.from_env()
+
+
+# ---------------------------------------------------------------------------
+# The CT allowlist star warning is mirror-aware (2026-09-03). The 0.39.0 setup doc's own
+# recommended lane for a large estate is `*` + the reach mirror: the served token's ACL map
+# is then the whole boundary and least-privilege has MOVED to PVE's table, not been disabled.
+# A warning that says "least-privilege disabled" on that lane is false. The qemu-agent lane
+# is untouched: PVE path-scopes it natively, the mirror never gates it.
+# ---------------------------------------------------------------------------
+
+def test_ct_allowlist_star_warning_names_the_mirror_when_it_is_on(monkeypatch):
+    _base_env(monkeypatch, PROXIMO_CT_ALLOWLIST="*",
+              PROXIMO_REACH_PRIVILEGE="VM.GuestAgent.Unrestricted")
+    with pytest.warns(UserWarning, match="PROXIMO_CT_ALLOWLIST='\\*'") as rec:
+        ProximoConfig.from_env()
+    star = [str(w.message) for w in rec if "PROXIMO_CT_ALLOWLIST" in str(w.message)]
+    assert len(star) == 1, star
+    assert "mirror" in star[0] and "VM.GuestAgent.Unrestricted" in star[0], star[0]
+    assert "least-privilege disabled" not in star[0], star[0]
+
+
+def test_ct_allowlist_star_warning_says_least_privilege_disabled_when_mirror_off(monkeypatch):
+    """Control: with no reach privilege named, `*` really is allow-all and the old text stands."""
+    _base_env(monkeypatch, PROXIMO_CT_ALLOWLIST="*")
+    monkeypatch.delenv("PROXIMO_REACH_PRIVILEGE", raising=False)
+    with pytest.warns(UserWarning, match="least-privilege disabled") as rec:
+        ProximoConfig.from_env()
+    star = [str(w.message) for w in rec if "PROXIMO_CT_ALLOWLIST" in str(w.message)]
+    assert len(star) == 1 and "mirror" not in star[0], star
+
+
+def test_ct_allowlist_star_warning_with_blank_privilege_does_not_claim_the_mirror(monkeypatch):
+    """Set-but-blank is a refused misconfiguration at every check (the mirror answers
+    `misconfigured`, never `allowed`), so the warning must not credit a mirror that will not
+    admit anyone. The old allow-all text is the honest one here."""
+    _base_env(monkeypatch, PROXIMO_CT_ALLOWLIST="*", PROXIMO_REACH_PRIVILEGE="   ")
+    with pytest.warns(UserWarning, match="least-privilege disabled"):
+        ProximoConfig.from_env()
+
+
+def test_from_target_star_warning_names_the_mirror_when_it_is_on(monkeypatch):
+    """The reach privilege is process-global (env lane), and the mirror gates a registry target's
+    shell reach against THAT target's served token at /vms/<ctid> with the same privilege name;
+    so a target's `*` is bounded the same way and the warning may say so. Lens B: this path had
+    no coverage at all."""
+    monkeypatch.setenv("PROXIMO_REACH_PRIVILEGE", "VM.GuestAgent.Unrestricted")
+    fields = {"base_url": "https://y:8006/api2/json", "node": "pve", "token_path": "/run/y",
+              "ct_allowlist": "*"}
+    with pytest.warns(UserWarning, match="PROXIMO_CT_ALLOWLIST='\\*'") as rec:
+        ProximoConfig.from_target(fields)
+    star = [str(w.message) for w in rec if "PROXIMO_CT_ALLOWLIST" in str(w.message)]
+    assert len(star) == 1 and "mirror" in star[0] and "least-privilege disabled" not in star[0], star
+
+
+def test_from_target_star_warning_is_allow_all_when_mirror_off(monkeypatch):
+    monkeypatch.delenv("PROXIMO_REACH_PRIVILEGE", raising=False)
+    fields = {"base_url": "https://y:8006/api2/json", "node": "pve", "token_path": "/run/y",
+              "ct_allowlist": "*"}
+    with pytest.warns(UserWarning, match="least-privilege disabled"):
+        ProximoConfig.from_target(fields)

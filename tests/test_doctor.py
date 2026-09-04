@@ -817,3 +817,58 @@ def test_reach_grant_receipt_carries_mirror_state(monkeypatch):
     safe = reachgrant.receipt_view(block)
     assert safe["ct_count"] == 2 and "101" not in str(safe.values())
     assert safe["mirror"] == {"privilege": "ProximoReach", "state": "enforcing"}
+
+
+# ─── the allowlist's SOURCE (2026-09-02 incident: the refusal pointed at a shadowed file) ─────
+
+def test_doctor_reports_where_the_ct_allowlist_came_from():
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}),
+                                              ct_allowlist_source="the process environment (planted)")))
+    assert out["config"]["ct_allowlist_source"] == "the process environment (planted)"
+
+
+def test_doctor_flags_a_shadowed_key_whose_value_differs(monkeypatch):
+    """A file key the process environment shadows WITH A DIFFERENT VALUE is the 09-02 hazard: the
+    operator edits the file, nothing changes, the refusal repeats. That belongs in flags, not only
+    in a passive field. Same-value shadows are dead lines, not hazards: no flag (the control)."""
+    import proximo.config as config
+    state = config._fresh_env_file_state()
+    state["path"] = "/planted/proximo.env"
+    state["shadowed"] = {"PROXIMO_CT_ALLOWLIST": True, "PROXIMO_NODE": False}
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", state)
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}))))
+    hits = [f for f in out["flags"] if "PROXIMO_CT_ALLOWLIST" in f]
+    assert len(hits) == 1 and "shadowed" in hits[0].lower() and "restart" in hits[0], out["flags"]
+    assert not any("PROXIMO_NODE" in f for f in out["flags"])          # same value: no flag
+    assert out["complete"] is True                                       # advisory, never incomplete
+
+
+def test_doctor_has_no_shadow_flag_when_nothing_is_shadowed(monkeypatch):
+    import proximo.config as config
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", config._fresh_env_file_state())
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}))))
+    assert not any("shadow" in f.lower() for f in out["flags"])
+
+
+def test_doctor_shadow_flags_are_alphabetical_regardless_of_insertion_order(monkeypatch):
+    """Lens survivor 2: the flag loop must sort; the first test's dict happened to be alphabetical
+    already, so dropping sorted() went unseen. Reverse insertion order here."""
+    import proximo.config as config
+    state = config._fresh_env_file_state()
+    state["path"] = "/planted/proximo.env"
+    state["shadowed"] = {"PROXIMO_NODE": True, "PROXIMO_CT_ALLOWLIST": True}
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", state)
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}))))
+    shadow = [f for f in out["flags"] if "shadowed" in f.lower()]
+    assert [f.split(" ")[0] for f in shadow] == ["PROXIMO_CT_ALLOWLIST", "PROXIMO_NODE"], shadow
+
+
+def test_doctor_shadow_flag_names_both_launch_shapes(monkeypatch):
+    import proximo.config as config
+    state = config._fresh_env_file_state()
+    state["path"] = "/planted/proximo.env"
+    state["shadowed"] = {"PROXIMO_CT_ALLOWLIST": True}
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", state)
+    out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}))))
+    flag = next(f for f in out["flags"] if "PROXIMO_CT_ALLOWLIST" in f)
+    assert "mcpServers" in flag and "EnvironmentFile" in flag, flag

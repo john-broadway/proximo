@@ -2,6 +2,96 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.39.1] — 2026-09-04
+
+**An allowlist refusal names the store that fed it.**
+`ct_exec` and its siblings refused a CTID with "not in PROXIMO_CT_ALLOWLIST, add it there", and
+"there" was a variable, not a store. The variable lives in two stores, the MCP client's
+`mcpServers.<name>.env` block and `~/.config/proximo/proximo.env`, and the loader fills from the
+file only the keys the block has not set, so an operator who edits the file's copy of a key the
+block also holds edits a dead line (hit live on 2026-09-02, the refusal repeating verbatim after a
+reconnect). Now: the loader prints every file key the process environment shadows with a different
+value (keys, never values; a same-value shadow is the documented shell-export flow and stays
+silent); the config records where each allowlist came from (`ct_allowlist_source`,
+`agent_allowlist_source`, per constructor, a neutral phrase for a directly built config); every
+allowlist refusal at the server and backend layers names that source (both launch shapes named:
+the client's env block for a stdio server, the unit's `EnvironmentFile` for the daemon), says when
+the file's copy is shadowed, and says a restart or reconnect is required because the value is
+fixed at launch; and
+`proximo doctor` reports the source and flags a shadowed key whose value differs. Off-box safety
+kept: the messages name the default file unexpanded or by `PROXIMO_ENV_FILE`, never an expanded
+local path. Refusing to start on a disagreement was rejected as a downgrade for inline-config
+deployments. The CLI verbs whose stderr is a pinned contract (`badge`, `reach-audit` and the
+others the entry point already keeps quiet) no longer get the loader's lines in front of their
+own prefix; the server and daemon entries still announce. Proven by the incident's own shape as
+a test, by absence controls that pass only when nothing is shadowed, and by two adversarial
+rounds. The first round's three surviving mutants (a reset placed after a failed open, an unsorted
+flag loop, a diff taken before quote-stripping) each got the test that kills it. The second round
+found that `proximo --help` still printed the loader's lines before its usage text (help is quiet
+now, and pinned), that the two structural tests guarding the quiet-verb gate accepted any earlier
+mention of the gate's name as proof (they now assert the gate is the condition on the call), and
+that the mirror-aware `*` warning had no coverage on the registry-target constructor (it has,
+with the control).
+
+**The public commit subject carries the reason now.** The body-only fix left four
+releases (0.36.1 through 0.39.0) reading as bare `release: vX.Y.Z` in the one place GitHub
+shows text beside files, which is the first thing a visitor scans (caught by John on 0.39.0).
+The subject becomes `release: vX.Y.Z: <thesis>`, taken from the CHANGELOG entry's opening
+bold thesis. This line right here is the kind that carries it. A missing, empty, or
+subject-overflowing thesis refuses loudly at release time instead of shipping bare; proven
+by a bare-subject mutant that reds five tests, and by this very entry, whose first draft
+opened with a bullet and was refused by the gate it documents.
+
+**The base image moves to the tag head, and the reason is the fold law, not a red gate.**
+Dependabot PR #59 (2026-08-30) offered python:3.13-slim `7ce4b6d`; on a curated mirror a bump is
+folded on canon and the PR closed as superseded once it is published, never merely closed. The
+tag had already moved past the offer to `9d2e555` (2026-09-02), so the fold goes there. Measured
+with trivy 0.74.0 against the registry (amd64, CRITICAL and HIGH, unfixed ignored): the BASE
+digest 0.39.0 pins, `ffb752e`, carries 30 fixable HIGH findings in OS packages (util-linux 2.41-5
+across nine binary packages, CVE-2026-53612/53613/53614, DSA-6442-1 of 2026-08-14; openssl 3.5.6
+across three, CVE-2026-14456, DSA-6465-1 of 2026-08-25); #59's digest still carries the openssl
+one; the tag head carries none of them, only pip's vendored setuptools and msgpack, the class the
+runtime stage already uninstalls. None of that reaches the shipped image: the runtime stage runs
+`apt-get upgrade` at build time (since 0.21.1), so every built image has carried the fixed packages
+regardless of the pinned base, and the public trivy gate, which scans the BUILT image, reported
+zero findings on 2026-08-31 and 2026-09-01 for exactly that reason. A first draft of this entry
+called the shipped pin "a scheduled red"; it was not, and the draft's error was scanning the base
+where the gate scans the build. What the bump buys is a base that needs no build-time upgrade to
+be clean, which narrows how much of the image's content depends on Debian's mirror state at build
+time rather than on the pin. Both FROM lines move together; all three digests confirmed OCI index
+digests over the same eight platforms; the Dockerfile's digest verified byte for byte against the
+registry's tag digest by `scripts/base_image_digest_check.py`, whose four verdicts (MATCH,
+BEHIND, DISAGREE, UNKNOWN) are each provoked deliberately in `tests/test_base_image_digest_check.py`
+with the registry replaced, so the control runs offline; four planted mutants, each letting a bad
+pin through, turn that file red. `tests/test_dockerfile_pins.py` now refuses a Dockerfile whose two
+stages pin different bases, a partial bump no suite had ever caught.
+
+**The release gates learned what they were looking at.** An adversarial pass on this
+release's own machinery, not on the code it ships. The copy gate never inspected the README's
+install badge, the first line under "Install & run" and the one place a visitor looks to answer
+"what version is this": set to 0.31.0 on the 0.39.1 tree, the gate still answered "copy:
+consistent" and the suite stayed green. It is checked now, in the backticks and in the release
+tag URL both, and a deleted badge is itself a finding so removal is not the way to silence it.
+`public_commit_message.py` matched its opening thesis with a pattern that could not express
+"empty": a literal `****` skipped forward and captured an unrelated later bold span, which
+shipped as a subject when the runaway happened to stay under the length ceiling. The pattern now
+requires a real first character, so that input refuses in the check written for it rather than
+being caught sideways by a different one. `release.sh` ran the version test through
+`python -m pytest`, the form this repo's own notes call a blind spot because it puts the repo
+root on `sys.path` and CI does not; it runs bare now. And because the script's first action
+rewrites the version files, its working tree is always dirty by the time the leak audit runs, and
+that audit reads git HEAD: it now says so, naming how many uncommitted paths it could not see,
+because a clean verdict over the wrong subject is worth less than no verdict.
+
+**The `*` allowlist warning knows when the mirror is on.** The setup doc's own lane for a large
+estate is `PROXIMO_CT_ALLOWLIST=*` with the reach mirror, where the served token's ACL map is the
+whole boundary for container shell reach. The load-time warning still said "least-privilege
+disabled" there, which is false: least-privilege moved to PVE's table. With a reach privilege
+named, the warning now says so and names the privilege; with none, or with a set-but-blank
+value (a refused misconfiguration the mirror never admits anyone through), the plain allow-all
+text stands. The qemu-agent lane's warning is unchanged: PVE path-scopes that lane natively and
+the mirror never gates it. Proven by a control per branch.
+
 ## [0.39.0] — 2026-08-31
 
 **The junction gets its law.** A Proxmox server is two roots on two planes, the product and

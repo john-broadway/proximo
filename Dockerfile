@@ -8,7 +8,8 @@
 # NOTE for whoever reviews the next digest-bump PR: trivy.yml has no `pull_request` trigger
 # (by design, fork PRs cannot hold `security-events: write`), so a base-image bump PR showing
 # all-green has NOT been image-scanned. That green speaks for the tests, never for the gate
-# that governs this line. Scan a preflight branch before you believe it.
+# that governs this line. Dispatch the scan yourself (gh workflow run trivy.yml
+# --ref <the PR branch>) before you believe it.
 #
 # Two stages so the WHOLE dependency chain is hash-pinned (requirements/*.txt, exported
 # from uv.lock) and the final image carries neither the build tooling nor the source tree.
@@ -16,7 +17,7 @@
 # multi-stage removed the SOURCE tree but the runtime stage still installed with pip and left
 # it there. The strip at the end of the runtime RUN is what makes the sentence true.
 
-FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS build
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS build
 
 WORKDIR /app
 # Allow-list copy: only what the wheel build needs. The working tree is never copied
@@ -30,7 +31,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
  && python -m build --wheel --no-isolation
 
-FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.

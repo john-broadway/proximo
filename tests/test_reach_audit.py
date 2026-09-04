@@ -106,10 +106,18 @@ def test_cli_reach_audit_prints_and_never_serves(monkeypatch, capsys):
 
 
 def test_reach_audit_in_the_noise_skip_tuple():
+    """The quiet-verb tuple moved out of main() on 2026-09-03 (one tuple now gates BOTH the
+    surface-scoping line and the env-file loader's lines); the property is unchanged: reach-audit
+    is in it, and main() consults the gate before _apply_surfaces."""
     import inspect
+    assert "reach-audit" in srv._QUIET_STDERR_VERBS, "reach-audit missing from the quiet-verb tuple"
+    import re
     src = inspect.getsource(srv.main)
-    assert '"reach-audit"' in src[:src.index("_apply_surfaces")], \
-        "reach-audit missing from the no-scoping verb tuple in main()"
+    # The gate must be THE condition on the _apply_surfaces call, not merely a substring that
+    # appears somewhere earlier in main() (lens B: `if True:` in front of _apply_surfaces left
+    # the loader's own `announce=not _quiet_stderr_verb()` in place and a substring search green).
+    assert re.search(r"if not _quiet_stderr_verb\(\):\s*\n\s*try:\s*\n\s*_apply_surfaces\(\)", src), \
+        "main() must gate _apply_surfaces() on `if not _quiet_stderr_verb():` directly"
 
 
 def test_default_candidates_are_a_visible_tuple():

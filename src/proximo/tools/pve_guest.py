@@ -264,7 +264,7 @@ def ct_logs(
         return _exec_disabled("ct_logs", str(ctid), detail, mutation=False)
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
-        return _blocked_allowlist("ct_logs", str(ctid), detail, mutation=False)
+        return _blocked_allowlist("ct_logs", str(ctid), detail, cfg=cfg, mutation=False)
     # MIRROR: reach is reach — journald from a guest the token holds no reach privilege on is
     # disclosure at allowlist breadth. Deliberately mirror-gated while staying ARM-free:
     # authority (arm) and reach (mirror) are different questions, and the 08-24 diagnose
@@ -296,7 +296,7 @@ def ct_diagnose(
     ctid = _check_vmid(ctid)  # L07: validate CTID at server layer before the allowlist gate / ledger target
     target = f"{kind}/{ctid}"
     if cfg.enable_exec and not cfg.ct_permitted(ctid):
-        return _blocked_allowlist("ct_diagnose", str(ctid), mutation=False)
+        return _blocked_allowlist("ct_diagnose", str(ctid), cfg=cfg, mutation=False)
     # MIRROR: same precedent the allowlist set two lines up — with exec on, a guest outside
     # the token's reach map refuses the WHOLE tool (reach, not authority; stays arm-free).
     if cfg.enable_exec and (r := _blocked_mirror("ct_diagnose", ctid, api,

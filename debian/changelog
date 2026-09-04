@@ -1,3 +1,22 @@
+proximo (0.39.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.39.1 (patch: an allowlist refusal names the store that fed it.
+    ct_exec and its siblings refused a CTID by naming a variable rather than a store,
+    and that variable lives in two of them, the MCP client's env block and
+    proximo.env, where the loader fills only keys the block has not set. An operator
+    could edit a dead line and see the same refusal after a reconnect. Now the loader
+    names every file key the process environment shadows with a different value (keys,
+    never values), the config records where each allowlist came from, every refusal at
+    the server and backend layers names that source for both launch shapes and says a
+    restart or reconnect is required, and proximo doctor reports the source and flags a
+    differing shadow. Also in this release: the base image moves to the python:3.13-slim
+    tag head with both stages pinned together and a test that refuses a partial bump;
+    the allow-all warning knows when the reach mirror is on and names the privilege; and
+    the public release commit subject carries the changelog thesis instead of a bare
+    version string. 908 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Fri, 04 Sep 2026 03:36:00 +0000
+
 proximo (0.39.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.39.0 (minor: the junction gets its law. The reach mirror keys

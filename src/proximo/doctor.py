@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 
+from . import config as _config
+
 _DOCTOR_NOTE = (
     "DOCTOR is a read-only preflight: it checks API reachability + the token's effective permissions "
     "and reports what this token CAN/CANNOT do. Capability gaps list the privilege + a role to grant. "
@@ -174,6 +176,8 @@ def doctor_check(api) -> dict:
             "ca_bundle": getattr(cfg, "ca_bundle", None),
             "ct_allowlist": ("none (exec deny-all)" if not allow
                              else "ALL (*)" if "*" in allow else f"{len(allow)} CTID(s)"),
+            # Which store fed it (2026-09-02: a refusal pointed the operator at a shadowed file).
+            "ct_allowlist_source": getattr(cfg, "ct_allowlist_source", None),
             # The reach grant, read back RESOLVED (brick 1 of the grant model): the actual
             # ids, both lanes, plus a digest to compare across restarts/boxes. The summary
             # key above stays for compat; this block is the observable perimeter. --receipt
@@ -189,6 +193,17 @@ def doctor_check(api) -> dict:
             flags.append("TLS verification is OFF with no CA bundle — API traffic is not cert-validated.")
         if getattr(cfg, "enable_exec", False) and not allow:
             flags.append("exec is ENABLED but the CT allowlist is empty (deny-all) — no container is reachable.")
+        # A file key the process environment shadows WITH A DIFFERENT VALUE is the 09-02 hazard:
+        # the operator edits the file, nothing changes, the refusal repeats. Same-value shadows
+        # are dead lines, not hazards: recorded at load, printed nowhere, not flagged here.
+        for key, differs in sorted(_config.shadowed_keys().items()):
+            if differs:
+                flags.append(
+                    f"{key} is set in BOTH the process environment and {_config.env_file_display()} "
+                    "with DIFFERENT values. The file's copy is shadowed and never read; the server "
+                    f"runs on the process environment's value ({_config.LAUNCH_SHAPES}). Edit that and "
+                    "restart or reconnect, or delete the dead line from the file."
+                )
 
     # 4) The trust spine — four pillars standing, two sockets only the OPERATOR can fill.
     # Configured state is reported yes/no ONLY — never the paths: a doctor call from a

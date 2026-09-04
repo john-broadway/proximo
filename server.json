@@ -24,12 +24,12 @@
     "url": "https://github.com/john-broadway/proximo",
     "source": "github"
   },
-  "version": "0.39.0",
+  "version": "0.39.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "proximo-proxmox",
-      "version": "0.39.0",
+      "version": "0.39.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

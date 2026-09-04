@@ -210,18 +210,18 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.39.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.39.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.39.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.39.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.39.0 (the junction gets its law).** A Proxmox server is two roots on two planes,
-> the product and the metal, and the shell lane answered to no PVE privilege. Now it does:
-> with `PROXIMO_REACH_PRIVILEGE` set, `ct_exec`/`ct_psql` run only where the served token
-> holds that privilege, asked of PVE per guest path, fail-closed, dormant until configured.
-> `proximo reach-audit` prints the evidence for choosing the privilege, the PROVE ledger
-> witnesses every reach change on both sides of the junction, `proximo harden` turns the
-> opt-in pillars into a checked posture, and two read-only node tools open the host's read
-> half. [docs/JUNCTION.md](docs/JUNCTION.md) makes the design argument.
+> **New in 0.39.1 (an allowlist refusal names the store that fed it).** `ct_exec` and its
+> siblings refused a CTID by naming a variable rather than a store, and that variable can be
+> fed from two: the MCP client's env block and `proximo.env`, where the loader fills only the
+> keys the block has not set. Edit the file's copy of a key the block also holds and you have
+> edited a dead line. Now the loader names every file key the environment shadows with a
+> different value, every refusal names the store it actually read and says a restart or
+> reconnect is required, and `proximo doctor` reports that source and flags the difference.
+> The base image also moves to the `python:3.13-slim` tag head, both stages together.
 >
-> Recent: **0.38.0** made the arm gate the `ssh -> pct exec` path the PVE token never carried. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.39.0** gave the junction its law, putting the shell lane under the served token's own PVE permission map. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,11 +258,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.39.0**: **the junction gets its law.** The shell channel PVE could never scope now
-  obeys the served token's own permission map: the reach mirror, per-path, fail-closed,
-  dormant until configured. Every reach change on either side of the junction lands in the
-  PROVE ledger, `proximo harden` turns the opt-in pillars into a checked posture, and the
-  host's read half opens behind its own opt-in.
+- 🩸 **0.39.1**: **an allowlist refusal names the store that fed it.** The reach allowlists
+  can be fed from two stores and the loader merges them, so a refusal that named only the
+  variable sent operators to edit a line that was never read. Every refusal now names the
+  store behind it, the loader names each key the environment shadows with a different value,
+  and `proximo doctor` reports the source and flags the difference.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from ._secretfile import refuse_exposed_secret
 from .audit import looks_like_head
 from .audit_anchor import AnchorError, AnchorSink, build_anchor_sink
+from .reachmirror import privilege as _reach_privilege
 
 # Charset for PROXIMO_SSH_TARGET: hostname, SSH alias, or user@host.
 # Must start with alphanumeric to block option-injection (e.g. -oProxyCommand=...).
@@ -30,6 +31,58 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})  # generic bool-env values
 _FALSY = frozenset({"0", "false", "off", "no"})  # generic opt-OUT set (same words as audit_keyed)
 
 _DEFAULT_ENV_FILE = "~/.config/proximo/proximo.env"
+
+
+def _fresh_env_file_state() -> dict:
+    """The loader's per-process record: which file it read, which keys it loaded, and which
+    file keys the process environment SHADOWED (key -> True when the two values differ)."""
+    return {"path": None, "loaded": [], "shadowed": {}}
+
+
+_ENV_FILE_STATE: dict = _fresh_env_file_state()
+
+# Where an allowlist came from, in words a refusal can carry to ANY caller (MCP, A2A, HTTP):
+# never an expanded local path: the default file is named unexpanded, an override by the
+# variable that names it, and the client-side store by the shape README/SETUP document.
+_SOURCE_DEFAULT = "the server configuration"           # a directly-built config: true, claims nothing
+# The process environment has two launch shapes and a remedy must name both: a daemon operator
+# pointed only at an MCP client's file is sent to a store their deployment does not have (lens).
+LAUNCH_SHAPES = ("for a stdio MCP server the client's mcpServers.<name>.env block, for the daemon "
+                 "the unit's EnvironmentFile")
+_SOURCE_PROCESS_ENV = f"the process environment ({LAUNCH_SHAPES})"
+_SOURCE_TARGET = "this target's entry in the targets registry"
+
+
+def env_file_display() -> str:
+    """The env file by a name safe to send off-box: the unexpanded default, or the override var."""
+    return "the env file named by PROXIMO_ENV_FILE" if os.environ.get("PROXIMO_ENV_FILE") else _DEFAULT_ENV_FILE
+
+
+def shadowed_keys() -> dict[str, bool]:
+    """File keys the process environment shadowed at the last load_env_file() (key -> value differs)."""
+    return dict(_ENV_FILE_STATE["shadowed"])
+
+
+def env_source(key: str) -> str:
+    """Which store fed `key`, as of the last load_env_file(): the file, the process environment
+    (with the file's copy named as SHADOWED when it holds the key too), or nowhere."""
+    if key in _ENV_FILE_STATE["loaded"]:
+        return env_file_display()
+    if key in _ENV_FILE_STATE["shadowed"]:
+        return f"{_SOURCE_PROCESS_ENV}; the copy in {env_file_display()} is SHADOWED and never read"
+    if key in os.environ:
+        return _SOURCE_PROCESS_ENV
+    return "nowhere: it is unset, so the allowlist is empty (deny-all)"
+
+
+def allowlist_remedy(var: str, source: str) -> str:
+    """The one remedy sentence every allowlist refusal carries. It names the store that actually
+    fed the value (2026-09-02: the old text named the variable, and the operator edited the
+    store that was shadowed) and the restart, because the value is fixed when the server is
+    launched, so an edit alone repeats the refusal verbatim."""
+    return (f"{var} is fixed when the server is launched, and the effective value came from "
+            f"{source}. Add the id there, then restart the server (an MCP client: reconnect). "
+            "Editing another store, or editing without a restart, changes nothing.")
 
 
 def wants_help(argv: list[str]) -> bool:
@@ -64,7 +117,7 @@ def print_face_usage(command: str, face_prefix: str, default_port: int, extra: s
 _refuse_exposed_secret = refuse_exposed_secret
 
 
-def load_env_file() -> list[str]:
+def load_env_file(*, announce: bool = True) -> list[str]:
     """Source a ``proximo.env`` file into ``os.environ`` for the STDIO launch, then return the keys
     it set. Call this ONCE at process entry, before any ``ProximoConfig.from_env()``.
 
@@ -77,7 +130,18 @@ def load_env_file() -> list[str]:
     Non-breaking by construction: fills ONLY ``PROXIMO_*`` keys that are NOT already in ``os.environ``,
     so the real/inline env ALWAYS wins (an inline-config deployment is unaffected); only our namespace
     is touched (never PATH etc.); a missing file is a silent no-op (most deployments). What it DID load
-    is printed to stderr so activation is legible, never silent. Path override: ``PROXIMO_ENV_FILE``."""
+    is printed to stderr so activation is legible, never silent, and so is what it SKIPPED: every
+    file key the process environment already held WITH A DIFFERENT VALUE is named as SHADOWED
+    (keys, never values), because such a key is a line an operator can edit forever with no effect
+    (2026-09-02: an allowlist edit in the file, refused verbatim after a reconnect). A same-value
+    shadow is recorded but not printed: the documented flow exports the file into the shell first.
+    The record of what came from where is kept in ``_ENV_FILE_STATE`` for ``env_source()`` and
+    ``shadowed_keys()``.
+    Path override: ``PROXIMO_ENV_FILE``. ``announce=False`` keeps both stderr lines off for the CLI
+    verbs whose stderr is a pinned contract (badge, reach-audit, ...: server.main decides); the
+    record is still kept, so env_source()/shadowed_keys() answer the same either way."""
+    global _ENV_FILE_STATE
+    _ENV_FILE_STATE = _fresh_env_file_state()   # a fresh record per load: nothing lingers
     path = os.environ.get("PROXIMO_ENV_FILE") or os.path.expanduser(_DEFAULT_ENV_FILE)
     try:
         with open(path, encoding="utf-8") as f:
@@ -88,7 +152,9 @@ def load_env_file() -> list[str]:
         print(f"proximo: could not read env file {path!r}: {e}", file=sys.stderr)
         return []
 
-    loaded: list[str] = []
+    _ENV_FILE_STATE["path"] = path
+    loaded: list[str] = _ENV_FILE_STATE["loaded"]
+    shadowed: dict[str, bool] = _ENV_FILE_STATE["shadowed"]
     for raw in lines:
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -104,14 +170,52 @@ def load_env_file() -> list[str]:
         if not key.startswith("PROXIMO_"):
             continue          # only our namespace — never let the file inject PATH/LD_*/etc.
         if key in os.environ:
-            continue          # real/inline env always wins (no surprise for inline configs)
+            # real/inline env always wins (no surprise for inline configs), but SAY so: the
+            # file's copy of this key is dead, and an operator editing it gets nothing (09-02).
+            shadowed[key] = os.environ[key] != val
+            continue
         os.environ[key] = val
         loaded.append(key)
 
-    if loaded:
+    if loaded and announce:
         print(f"proximo: loaded {len(loaded)} setting(s) from {path}: {', '.join(sorted(loaded))}",
               file=sys.stderr)
+    # Print only the shadows whose VALUE differs: that is the hazard (the operator edited a dead
+    # line). A same-value shadow is the documented flow itself (`set -a; . proximo.env; set +a;
+    # proximo doctor` exports every key first) and stays recorded, not printed.
+    differing = sorted(k for k, differs in shadowed.items() if differs)
+    if differing and announce:
+        named = ", ".join(f"{k} (value differs)" for k in differing)
+        print(f"proximo: {len(differing)} key(s) in {path} SHADOWED by the process environment and "
+              f"NOT applied: {named}. The process environment wins ({LAUNCH_SHAPES}); edit that, "
+              "then restart the server or reconnect the client.",
+              file=sys.stderr)
     return loaded
+
+
+def _warn_ct_star() -> None:
+    """The `*` allowlist warning, mirror-aware (2026-09-03). The setup doc's own lane for a
+    large estate is `*` plus the reach mirror, where the served token's ACL map is the whole
+    boundary: least-privilege MOVED to PVE's table, and saying it was disabled would be false.
+    A set-but-blank privilege is a refused misconfiguration at every check (the mirror never
+    answers `allowed`), so it earns the plain allow-all text, not the mirror's. stacklevel=3:
+    past this helper and _build, at _build's caller, where the inline warning used to point."""
+    try:
+        mirror = _reach_privilege()
+    except ValueError:
+        mirror = None
+    if mirror:
+        warnings.warn(
+            f"PROXIMO_CT_ALLOWLIST='*' with the reach mirror on (PROXIMO_REACH_PRIVILEGE={mirror}): "
+            "container shell reach is bounded by the served token's own permission map, per check; "
+            "move reach with pveum, never here.",
+            stacklevel=3,
+        )
+    else:
+        warnings.warn(
+            "PROXIMO_CT_ALLOWLIST='*' — Proximo can reach ALL containers (least-privilege disabled).",
+            stacklevel=3,
+        )
 
 
 @dataclass(frozen=True)
@@ -128,6 +232,10 @@ class ProximoConfig:
     ct_allowlist: frozenset[str] = frozenset()  # empty=DENY all (fail-closed); "*"=allow all; else exact CTIDs
     enable_agent: bool = False  # OFF by default (API-only, safe). True enables qemu-agent ops on VMs.
     agent_allowlist: frozenset[str] = frozenset()  # empty=DENY all; "*"=allow all; else exact VMIDs
+    # Which store fed each allowlist, in off-box-safe words (env_source / _SOURCE_*): the refusal
+    # names it so an operator edits the store that is live, not a shadowed twin (2026-09-02).
+    ct_allowlist_source: str = _SOURCE_DEFAULT
+    agent_allowlist_source: str = _SOURCE_DEFAULT
     audit_log_path: str = os.path.expanduser("~/.local/state/proximo/audit.log")
     verify_tls: bool = True
     ca_bundle: str | None = None  # path to the internal/Caddy CA bundle; preferred over disabling TLS verify
@@ -169,6 +277,8 @@ class ProximoConfig:
             readonly_source=os.environ.get("PROXIMO_READONLY_SOURCE") or None,
             ct_allow_raw=os.environ.get("PROXIMO_CT_ALLOWLIST", ""),
             agent_allow_raw=os.environ.get("PROXIMO_AGENT_ALLOWLIST", ""),
+            ct_allow_source=env_source("PROXIMO_CT_ALLOWLIST"),
+            agent_allow_source=env_source("PROXIMO_AGENT_ALLOWLIST"),
             vtls_raw=os.environ.get("PROXIMO_VERIFY_TLS", "true"),
             ca_bundle=os.environ.get("PROXIMO_CA_BUNDLE") or None,
             fingerprint=os.environ.get("PROXIMO_FINGERPRINT") or None,
@@ -252,6 +362,8 @@ class ProximoConfig:
             readonly_source=fields.get("readonly_source") or None,
             ct_allow_raw=_csv("ct_allowlist"),
             agent_allow_raw=_csv("agent_allowlist"),
+            ct_allow_source=_SOURCE_TARGET,
+            agent_allow_source=_SOURCE_TARGET,
             vtls_raw=str(fields.get("verify_tls", "true")),
             ca_bundle=fields.get("ca_bundle") or None,
             fingerprint=fields.get("fingerprint") or None,
@@ -295,6 +407,8 @@ class ProximoConfig:
         ct_allow_raw: str,
         agent_allow_raw: str,
         vtls_raw: str,
+        ct_allow_source: str = _SOURCE_DEFAULT,
+        agent_allow_source: str = _SOURCE_DEFAULT,
         ca_bundle: str | None,
         fingerprint: str | None,
         enable_exec: bool,
@@ -353,10 +467,7 @@ class ProximoConfig:
 
         # Honest warnings (no phantom comments): least-privilege and TLS are load-bearing.
         if "*" in ct_allowlist:
-            warnings.warn(
-                "PROXIMO_CT_ALLOWLIST='*' — Proximo can reach ALL containers (least-privilege disabled).",
-                stacklevel=2,
-            )
+            _warn_ct_star()
         if _vtls_raw not in _VTLS_FALSY | _VTLS_TRUTHY:
             warnings.warn(
                 f"PROXIMO_VERIFY_TLS={_vtls_raw!r} is not a recognized boolean value; "
@@ -499,6 +610,8 @@ class ProximoConfig:
             anchor_sink=anchor_sink,
             enable_agent=enable_agent,
             agent_allowlist=agent_allowlist,
+            ct_allowlist_source=ct_allow_source,
+            agent_allowlist_source=agent_allow_source,
             arm_source=arm_source,
             readonly_source=readonly_source,
         )

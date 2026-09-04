@@ -38,7 +38,7 @@ from .armgate import enforce_arm
 from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger, read_entries
 from .audit_anchor import AnchorError
 from .backends import ApiBackend, ExecBackend, ProximoError, _check_vmid
-from .config import ProximoConfig, load_env_file
+from .config import ProximoConfig, allowlist_remedy, load_env_file
 from .consent import clear_pending_consent, consent_id_for, enforce_consent, set_pending_consent
 from .contain import enforce_containment
 from .envelope import (
@@ -753,12 +753,16 @@ def _blocked_node_mirror(action: str, node: str, api, detail: dict | None = None
 
 
 def _blocked_allowlist(action: str, target: str, detail: dict | None = None,
-                       *, mutation: bool = True) -> dict:
+                       *, cfg: ProximoConfig, mutation: bool = True) -> dict:
     """Refuse + audit a container op whose CTID isn't on the allowlist (fail-closed), as a clean dict
     — checked at the server layer BEFORE any snapshot/exec, so a forbidden CTID never gets touched.
-    `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
+    `cfg` is required, not optional: the message names the store that fed the allowlist
+    (cfg.ct_allowlist_source), and a call site that forgets it must fail loudly, not fall back
+    to a remedy that names no store (2026-09-02). `mutation` must reflect the GATED tool's true
+    class so blocked reads don't ledger as mutations."""
     return _blocked(action, target, "blocked:allowlist",
-                    f"CTID {target} is not in PROXIMO_CT_ALLOWLIST (fail-closed) — add it there to permit.",
+                    f"CTID {target} is not in PROXIMO_CT_ALLOWLIST (fail-closed). "
+                    + allowlist_remedy("PROXIMO_CT_ALLOWLIST", cfg.ct_allowlist_source),
                     detail, mutation=mutation)
 
 
@@ -795,11 +799,13 @@ def _agent_disabled(action: str, target: str, detail: dict | None = None,
 
 
 def _blocked_agent_allowlist(action: str, target: str, detail: dict | None = None,
-                              *, mutation: bool = True) -> dict:
-    """Refuse + audit a qemu-agent op whose VMID isn't on the allowlist (fail-closed).
+                              *, cfg: ProximoConfig, mutation: bool = True) -> dict:
+    """Refuse + audit a qemu-agent op whose VMID isn't on the allowlist (fail-closed). `cfg` is
+    required for the same reason as _blocked_allowlist's: the message names the live store.
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
     return _blocked(action, target, "blocked:allowlist",
-                    f"Guest {target} is not in PROXIMO_AGENT_ALLOWLIST (fail-closed) — add it there to permit.",
+                    f"Guest {target} is not in PROXIMO_AGENT_ALLOWLIST (fail-closed). "
+                    + allowlist_remedy("PROXIMO_AGENT_ALLOWLIST", cfg.agent_allowlist_source),
                     detail, mutation=mutation)
 
 
@@ -811,7 +817,7 @@ def _agent_gate(cfg, action: str, vmid: str, *, mutation: bool) -> dict | None:
     if not cfg.enable_agent:
         return _agent_disabled(action, f"qemu/{vmid}", mutation=mutation)
     if not cfg.agent_permitted(vmid):
-        return _blocked_agent_allowlist(action, f"qemu/{vmid}", mutation=mutation)
+        return _blocked_agent_allowlist(action, f"qemu/{vmid}", cfg=cfg, mutation=mutation)
     return None
 
 
@@ -849,7 +855,7 @@ def ct_exec(
         return _exec_disabled("ct_exec", str(ctid), detail)
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
-        return _blocked_allowlist("ct_exec", str(ctid), detail)
+        return _blocked_allowlist("ct_exec", str(ctid), detail, cfg=cfg)
     # MIRROR after the allowlist (intersection — it can only narrow), before any plan/snapshot.
     if (r := _blocked_mirror("ct_exec", ctid, api, detail)) is not None:
         return r
@@ -927,7 +933,7 @@ def ct_psql(
         return _exec_disabled("ct_psql", str(ctid), detail)
     ctid = _check_vmid(ctid)  # L07: validate CTID format at server layer before allowlist gate
     if not cfg.ct_permitted(ctid):
-        return _blocked_allowlist("ct_psql", str(ctid), detail)
+        return _blocked_allowlist("ct_psql", str(ctid), detail, cfg=cfg)
     # MIRROR after the allowlist (intersection — it can only narrow), before any plan/snapshot.
     if (r := _blocked_mirror("ct_psql", ctid, api, detail)) is not None:
         return r
@@ -1631,11 +1637,25 @@ def _cmd_badge() -> None:
         raise SystemExit(1) from None
 
 
+# CLI verbs whose stderr is a pinned contract (`proximo badge: ...`, `proximo reach-audit:` ...,
+# test_badge_cli / test_reach_audit): neither the surface-scoping line nor the env-file loader's
+# lines may precede their own prefix. One tuple, both gates (the loader's was the gap the lens
+# reproduced: a shell PROXIMO_* export differing from the file printed SHADOWED first).
+_QUIET_STDERR_VERBS = ("mint", "arm", "disarm", "reap", "hello", "badge", "harden", "reach-audit")
+
+
+def _quiet_stderr_verb() -> bool:
+    """True for the verbs above and for `-h`/`--help`: help is a clean-stdout verb too, and the
+    loader ran before the help check, so a loaded or shadowed key printed in front of the usage
+    text (lens B, 2026-09-03; unpinned until then)."""
+    return len(sys.argv) > 1 and (sys.argv[1] in _QUIET_STDERR_VERBS or sys.argv[1] in ("-h", "--help"))
+
+
 def main() -> None:
     # Source ~/.config/proximo/proximo.env FIRST (before doctor or any from_env) so a PROXIMO_* var
     # set in the documented file actually reaches the stdio server — otherwise it is silently ignored,
     # which is fail-dangerous for a security gate like PROXIMO_CONSENT_DIR. Real/inline env still wins.
-    load_env_file()
+    load_env_file(announce=not _quiet_stderr_verb())
     # `proximo --help` / `proximo -h` (help as the FIRST arg) prints usage and exits — never starts
     # the stdio server and never applies surfaces. A subcommand's own --help (e.g. `proximo doctor
     # --help`) is left to that subcommand and not intercepted here. (Single-branch form — no boolean
@@ -1648,8 +1668,7 @@ def main() -> None:
     # since the 0.30 flip the DEFAULT path announces itself (the lean-mode line on stderr), which
     # would prefix every `proximo badge`/`mint` error with scoping noise (pinned by
     # test_badge_cli's err.startswith contracts).
-    if not (len(sys.argv) > 1 and sys.argv[1] in ("mint", "arm", "disarm", "reap", "hello",
-                                                  "badge", "harden", "reach-audit")):
+    if not _quiet_stderr_verb():
         try:
             _apply_surfaces()
         except ValueError as e:

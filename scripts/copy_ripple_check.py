@@ -54,6 +54,9 @@ _EXAMPLE_MARKERS = ("PROXIMO_SURFACES", "pair =")
 # ("127.0.0.1") is an address, not a version — the lookarounds keep both out.
 VERSION_LITERAL_DOCS = ("VERIFY.md", "SECURITY.md", "docs/THREAT_MODEL.md")
 _SEMVER_LITERAL_RE = re.compile(r"(?<![\w.])v?(\d+\.\d+\.\d+)(?!\.\d)")
+# The install badge: "> 📦 **`0.39.1`**: on [PyPI](...), [GitHub](.../tag/v0.39.1), ...".
+# Matched as a whole LINE so every version literal on it is checked, backticks and tag URL both.
+_INSTALL_BADGE_RE = re.compile(r"(?m)^> 📦 \*\*`\d+\.\d+\.\d+[^`]*`\*\*.*$")
 
 
 def check_new_in(text: str, current: str) -> list[str]:
@@ -71,6 +74,36 @@ def check_new_in(text: str, current: str) -> list[str]:
             f'README "New in {hits[0]}" does not match current version {current}.'
         )
     return problems
+
+
+def check_install_badge(text: str, current: str) -> list[str]:
+    """The README's install badge names the current version, in every literal on the line.
+
+    The badge is the first line under "Install & run": the one place a visitor looks to
+    answer "what version is this". It carried the version twice, once in backticks and once
+    inside the GitHub release-tag URL, and NOTHING checked either. A mechanics lens set it
+    to 0.31.0 on the 0.39.1 tree and this gate still answered "copy: consistent", exit 0,
+    with the whole suite green (2026-09-04).
+
+    Scoped to the badge LINE on purpose. The README's prose legitimately cites older
+    versions ("0.27.0 closed a path..."), so widening VERSION_LITERAL_DOCS to the whole
+    README would fire on history rather than on the claim.
+    """
+    m = _INSTALL_BADGE_RE.search(text)
+    if not m:
+        return [
+            'README has no "📦 **`<version>`**:" install badge — the ripple cannot check it; '
+            "if the badge moved, move this rule with it."
+        ]
+    line = m.group(0)
+    stale = sorted({v for v in _SEMVER_LITERAL_RE.findall(line) if v != current})
+    if stale:
+        return [
+            f"README install badge names {', '.join(stale)} but the current version is "
+            f"{current} — the badge carries the version in the backticks AND in the release "
+            f"tag URL; both move."
+        ]
+    return []
 
 
 def check_status(text: str, current: str) -> list[str]:
@@ -151,6 +184,7 @@ def check_repo(root: Path) -> list[str]:
     readme = (root / "README.md").read_text(encoding="utf-8")
 
     problems = check_new_in(readme, current)
+    problems += check_install_badge(readme, current)
     problems += check_status(readme, current)
 
     readme_lines = readme.count("\n") + 1

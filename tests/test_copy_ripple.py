@@ -34,6 +34,38 @@ def test_new_in_block_must_not_stack_releases():
     assert any("exactly one" in p for p in problems)
 
 
+_BADGE = (
+    "> 📦 **`{v}`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), "
+    "[GitHub](https://github.com/john-broadway/proximo/releases/tag/v{t}), and "
+    "[GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed image)."
+)
+
+
+def test_install_badge_must_name_the_current_version():
+    # 2026-09-04: a mechanics lens set this badge to 0.31.0 on the 0.39.1 tree and the whole
+    # gate still answered "copy: consistent", exit 0. It is the first line under "Install &
+    # run" — the one place a visitor looks to answer "what version is this".
+    stale = _BADGE.format(v="0.31.0", t="0.31.0")
+    problems = copy_ripple_check.check_install_badge(stale, "0.39.1")
+    assert any("0.31.0" in p for p in problems), problems
+
+    ok = _BADGE.format(v="0.39.1", t="0.39.1")
+    assert copy_ripple_check.check_install_badge(ok, "0.39.1") == []
+
+
+def test_install_badge_checks_the_release_tag_url_too():
+    """The badge carries the version twice; a half-done ripple moves only the backticks."""
+    half = _BADGE.format(v="0.39.1", t="0.39.0")
+    problems = copy_ripple_check.check_install_badge(half, "0.39.1")
+    assert any("0.39.0" in p for p in problems), problems
+
+
+def test_a_missing_install_badge_is_itself_a_finding():
+    """Deleting the line must not be the way to silence the rule."""
+    problems = copy_ripple_check.check_install_badge("no badge here", "0.39.1")
+    assert any("no" in p and "badge" in p for p in problems), problems
+
+
 def test_status_carries_only_the_current_release():
     # 2026-07-16 law: exactly ONE 🩸 bullet — history lives in CHANGELOG.md.
     stacked = "- 🩸 **0.9.0** — thing\n- 🩸 **0.8.0** — thing"
