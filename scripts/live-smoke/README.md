@@ -104,6 +104,7 @@ Set these before running any smoke. **No infra literal is hardcoded** — the sc
 | `SMOKE_POOL` | No | `proximo-smoke-throwaway` | Pool to create throwaway VMs in |
 | `SMOKE_VMID` | No | `9900` | Base VMID; three consecutive IDs are used (base, base+1, base+2). Choose IDs well above your highest production VMID. |
 | `PROXIMO_CT_ALLOWLIST` | No | matches `SMOKE_VMID` range | Proximo's container allowlist; defaults to the three throwaway VMIDs |
+| `PROXIMO_SSH_TARGET` | **Yes, for a run from a box that also runs Proximo against production** | `pve` (the product default) | `ct_exec` does NOT travel over the API: it runs `ssh <PROXIMO_SSH_TARGET> pct exec` scoped by the allowlist above. A run whose base URL points at the test host but whose ssh target is left to default (or inherited from `~/.config/proximo/proximo.env`, which `load_env_file` reads unless the variable is already set) lands exec on a DIFFERENT machine than the API reads. `proximo doctor` flags this as `SPLIT TARGET` and reports `exec_lands_on`; run it from the smoke's env first. An IP is a valid target. |
 
 ### `netplane-smoke.sh` additional variables
 

@@ -2,6 +2,197 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.40.0] — 2026-09-05
+
+**Doctor says where near-root exec lands.**
+`ct_exec` and the node shell do not travel over the API. They ride `ssh <target> pct exec`, or run
+`pct` on the box Proximo runs on, so the machine the API reads and the machine a near-root command
+lands on can differ, and until now nothing said so. `proximo doctor` now reports `exec_lands_on`
+whenever a shell feature is on, resolves the ssh target through ssh's own config, counts every name
+and address this machine goes by as one host, and flags SPLIT TARGET when the two are not the same
+machine, naming both and a remedy an operator can follow as written. The check was found by
+live-proving against the lab and cut four times, twice after it fired on our own deployment; the
+detail is below. Also in this release: the shadow-key flag compares every set-valued key the way
+its gate reads it, so a reordered allowlist or a differently cased toolset is no longer reported as
+a change while a mode keyword stays a single token, and the TLS warning counts a pinned fingerprint
+as verification. 908 tools, unchanged. No breaking change.
+
+**An allowlist shadow compares grants, not bytes.**
+0.39.1 taught the loader to name every file key the process environment shadows with a differing
+value. Dogfooded on our own box within an hour of that ship, it flagged `PROXIMO_CT_ALLOWLIST`
+when both stores held the SAME 22 CTIDs, differing only in the position of one id. The compare was
+`os.environ[key] != val`, raw bytes, so a reordered list of identical ids read as a changed value.
+An operator following that remedy diffs the two lines, finds the same containers, and has nothing
+to fix: a flag true in its bytes and misleading in its substance. 0.39.1's own stated intent is
+that a same-value shadow stays silent, and by the semantics of the value it should have.
+Now: `parse_allowlist` is the one allowlist parser, `effective_grant` reduces a parsed allowlist
+the way the gate reads it, and `values_differ` compares through both. The allowlists
+(`PROXIMO_CT_ALLOWLIST`, `PROXIMO_AGENT_ALLOWLIST`) compare as grants: order, spacing and
+repetition carry no meaning, and `*` alongside explicit ids is the same grant as a bare `*`,
+because `ct_permitted` and `agent_permitted` both short-circuit on `*`. Only a change of
+membership is reported. That ruling drew the line at the allowlists; the same day's residual,
+closed 2026-09-05 on "fix as you find, own as you go", moves it to every key whose gate builds a
+set: `PROXIMO_TOOLS`, `PROXIMO_TOOLSETS` and `PROXIMO_SURFACES` (`door.tool_keep` /
+`toolset_keep` / `surface_keep`, the last two lowercasing every token, so `PVE.Storage,pve.guests`
+is the same registry as `pve.guests,pve.storage`) and every face's `PROXIMO_<face>_ALLOWED_HOSTS`
+(`webguard.read_face_env` feeds a membership check). `PROXIMO_SURFACES` was found by sweeping the
+class after the first three, not by the ruling: fix one site, sweep its twins. A second lens then
+broke the widening itself: `dynamic` alone is the mode keyword `_apply_surfaces` matches
+whole-string and STARTS the facade, while `dynamic,dynamic` misses that match, reaches
+`toolset_keep` and REFUSES to start; the lowercased-set view called them the same value, i.e. told
+an operator debugging a startup crash that the file and the environment agree. A mode keyword
+(`dynamic`/`catalog`/`all` for toolsets, `all` for surfaces) is now a distinguished single token,
+never a set, and the keyword sets are pinned to `door`'s own constants. Every other key keeps string semantics, deliberately: a path or a node
+name that differs by one byte IS a different value, commas included (`/a,/b` is not `/b,/a`).
+Precedence is untouched and the process environment still wins.
+The comparison is pinned to the gate rather than asserted to match it: a parametrized test runs
+the real `ct_permitted` and `agent_permitted` over a probe set for nine value pairs, on both
+lanes, and requires `values_differ` to answer exactly when the two grants enforce differently.
+That test is what caught the `*` case, which the first cut of this fix got wrong.
+`reach_audit._current_allowlist` had its own private re-split of `PROXIMO_CT_ALLOWLIST`. It was
+byte-equivalent to `parse_allowlist`, which is luck rather than a design, and it now routes
+through it. The drift guard that pins `SET_VALUED_KEYS` against the source's own reads was blind
+to `os.getenv`, to subscripting, to single quotes and to every module except `config.py`; it now
+scans every module under `src/proximo` for any of those spellings, and carries a control per
+spelling. A guard that sees one spelling in one file is a coincidence, not a control.
+Proven by the incident's own shape, by controls that must fail (an id added, `*` against an
+explicit list, a scalar key whose commas are reordered, a toolset added, `*` against one host),
+and by planted mutants. Each widened key is pinned against its gate's own function
+(`door.tool_keep`, `door.toolset_keep`, `webguard.read_face_env`) over value pairs, the way the
+allowlists are pinned against `ct_permitted`, never against a second copy of the split; the drift
+guard now runs both ways (a set-valued read the source makes must be in `SET_VALUED_KEYS`, and a
+name there nothing reads is a dead entry) and derives the faces from the `read_face_env` call sites.
+Measured on the loader's and config's test files: restoring the byte compare fails 24 tests,
+dropping the toolset lowercasing fails 4, dropping the faces fails 4; blinding either branch of
+`values_differ` is caught by the controls above plus the pre-existing shadow tests; planting an
+allowlist read in another module in the blind spelling fails the drift guard.
+**Live-proving against the lab found two things mocks cannot reach.**
+The live tier had not passed since 2026-06-24, 47 releases ago, so the read/plan smokes were run
+by hand against a real PVE 9.2.2 in the lab with a read-only token and a pinned fingerprint. Four
+of five passed; the fifth skipped because the lab holds no resource pool. The run itself then
+produced two defects, both of the same family: a claim the code makes about itself that is not
+true when a second real target is involved.
+`PROXIMO_VERIFY_TLS=false` with a fingerprint warned that "the backend will refuse to start
+(fail-closed)", and then the backend started and read the node. The guard was
+`not verify_tls and not ca_bundle` and never counted the fingerprint, while `ApiBackend` returns
+on the fingerprint branch BEFORE the fail-closed check. A pinned fingerprint is the option the
+refusal message itself recommends first for a self-signed PVE, so this warned an operator away
+from the safe configuration. `PbsBackend` had the guard right on both of its sites; only the PVE
+path was wrong. Now it counts all three ways of verifying the channel and names the fingerprint
+first, and the control still fires for the genuinely unverified case.
+**SPLIT TARGET, the more serious one.** `doctor` truthfully reported `api_base_url` pointing at
+the lab, `node` at `pve-test1`, `ssh_target` at `pve` and twenty-two PRODUCTION CTIDs, all in one
+config. `ct_exec` does not travel over the API: `ExecBackend` runs `ssh <ssh_target> pct exec`
+scoped by the CT allowlist, so the two halves described different deployments. The documented lab
+pattern sets a lab base URL, token, pin and audit log by script env and says nothing about
+`PROXIMO_SSH_TARGET` or the allowlist, so both fell back to the shared prod file. A session that
+believed it was in the lab and called `ct_exec` would have landed in a production container.
+**The first cut of this check was aimed at the wrong subject and a lens caught it.** It compared
+which config STORE fed the api url and the allowlist, and never read `PROXIMO_SSH_TARGET` at all,
+so it went silent whenever one store fed both while ssh_target pointed elsewhere. That includes
+the remedy its own message recommended: put the api url and the allowlist in the same store, leave
+ssh_target in the file, and exec still lands on production with the flag quiet. It also false-fired
+on pure-targets and directly-built configs, where one registry entry feeds one machine, and its
+message could name the same store on both sides while asserting they differed. It now compares the
+HOSTS. **A second lens (2026-09-05) broke that rebuild in seven places, three of them surviving
+mutants.** On-host mode (`ssh_target` empty or `local`) was exempted entirely, though local `pct`
+runs on the box Proximo runs on while the API may read another machine; the ssh user and the case
+were part of the compare, so `svc@Prod-PVE` against `prod-pve` fired forever and the remedy told the
+operator to drop the service account; a hostless API url made the compare impossible and the check
+went quiet with exec armed; a deny-all allowlist reported nothing about where exec would land; and
+the node shell (`node_probe`/`node_logs` under `enable_node_shell`, no allowlist at all) rides the
+same ssh target and sat outside the check. Live-proved the same night against the lab with the
+shared prod file feeding exec: the flag fired and named `pve`; the remedy, followed by hostname,
+kept it firing because the API is addressed by IP. Now every ssh-riding feature is covered and
+named in the flag; the compare strips `user@` and lowercases both sides; on-host mode compares the
+API host against this machine's names (loopback and the kernel hostname, no DNS); a hostless API
+url says it cannot be checked; `exec_lands_on` is reported whenever any shell feature is on and is
+pinned in every shape (deleting it fails ten tests; each of the other five mutants planted alone
+fails only the test written for it, three parametrized cases for the on-host pair). Then the
+rebuilt check was run from the dogfood venv against this box's own production config and fired:
+the API by IP, the ssh target the alias `pve`, and `ssh -G pve` resolving to that very IP. The
+"honest limit" had become a permanent flag on the flagship deployment, and the same lens found
+`localhost` against `127.0.0.1` firing with a remedy that named an `is_local` sentinel. Third
+cut: the ssh target is resolved through ssh's OWN config (`ssh -G -- <target>`: local, no
+connection, no DNS, three-second cap, literal host on any failure or no ssh binary), and every
+name for this host (loopback, the kernel hostname) counts as one host on both sides; when the
+API is this host the remedy says `local`. The remedy is followable literally: an IP is a valid
+ssh target. A registry target that omits `ssh_target` inherits the `pve` default and is flagged
+unless `pve` resolves to the API host; that is the 09-04 hazard's own shape, reported, not a
+false fire. Honest limit, still stated in the flag: DNS is not consulted, so a remote name and
+its address still read as different. A fourth cut the next session, the third's sibling: that
+this-host set was loopback and the kernel hostname, so Proximo running ON the PVE node with the
+API at the node's own LAN address (`https://<node-ip>:8006`), or at the FQDN PVE writes into
+`/etc/hosts` beside the short name, fired forever in the on-host branch. Now the set carries every
+address bound to an interface, read from procfs (`/proc/net/fib_trie`'s `host LOCAL` leaves and
+`/proc/net/if_inet6`; no binary, since the shipped image has no iproute2) and every `/etc/hosts`
+name for one of those addresses, and an IP literal compares by address, not spelling (`::1`
+against `0:0::1`). Both readers are seams the suite stubs to empty, so the runner's own addresses
+never enter a test, and each also runs for real over captured kernel shapes. A fourth lens then
+planted `break` for `pass` in both readers' parse handlers and stayed green, because the bad-line
+sample was too short to reach the handler; it also found the v6 length guard and the ssh side's
+canonicalization each unpinned. Three tests close those, each failing with its mutant re-planted.
+The remaining limit is the one the flag states: DNS is not consulted.
+`doctor` also carried the same fail-closed TLS claim this entry fixes in `config.py`, forty lines
+above the new code, in the file the change edited: a pinned deployment was told its API traffic was
+not cert-validated. Fixed, and `fingerprint` now appears in doctor's config block, because a reader
+seeing `tls_verify=False` and `ca_bundle=None` could not otherwise tell the channel is wire-pinned.
+The PBS, PMG and PDM warning TEXTS omitted the fingerprint as a remedy too (their guards were
+already correct); all now name all three ways to verify the channel.
+A claim withdrawn: an earlier draft said neither defect was reachable by any of the tests because
+nothing mocked runs against two real deployments at once. That is false for the TLS one, which a
+plain unit test kills. It did not need a second deployment, only a test nobody had written.
+
+**live-smoke: a run that ran nothing is not a pass.**
+`live-smoke` had been red for 65 consecutive nightly runs, last green at run #106, and nobody had
+read the log. Two causes, neither a product defect. The six PVE smokes fail because `2ff59b1`
+(2026-06-24 22:29Z, about seventeen hours after run #106 went green on `0a496db`, an ancestor of
+it) made the backend fail-closed when `PROXIMO_VERIFY_TLS=false` carries no fingerprint and no CA.
+That is a fixable misconfiguration and it stays loudly red until `vars.PROXIMO_FINGERPRINT` is set;
+the workflow now passes that variable through and documents it. The five PBS smokes fail because
+the test PBS lives on the lab bridge, which is off unless someone is testing, and the workflow's
+precheck bails when it is unreachable while its own comment says the tier "must SKIP cleanly ...
+not red". That bail is a bare `exit 0`, which ends only that STEP, so the smoke step ran the tier
+anyway. It now DECLARES the skip by clearing `PROXIMO_PBS_BASE_URL`, which is the mechanism the
+workflow's documented contract already described.
+The orchestrator side is a class, swept: `BASE_FILES` holds every base var that names a FILE, both
+CA bundles and both token paths, and a var that is set while naming no file reports
+`(set, but names no file)` instead of reading as a ready tier. The token paths had the identical
+defect twenty lines away in the same YAML, where the Materialize step announces a SKIP and then
+does not write the token. `isfile` and not `exists`, because httpx takes a cafile only and a
+directory of certs raises at connect time.
+**The exit code is the part that matters, and the first cut of this got it backwards.**
+`cmd_run` ended `return 1 if failed else 0` with `ran` computed and never used, so a night where
+the lab is off and every smoke skips exited 0 and CI read GREEN on zero evidence. Making the tier
+skip cleanly without touching that would have traded a true red for a false green, which is the
+one outcome this workflow's header forbids. An adversarial lens caught it in the commit that
+introduced the skip. `_verdict` is now pure and tested: any failure exits 1, `ran == 0` exits 2
+with `REFUSED: this run ran nothing`, and a PARTIAL run still passes, because a nightly that
+proves the PVE tier while the lab is off is a real pass for what it ran and the skips stay named
+in the summary. Verified end to end: the all-skip run that exited 0 now exits 2.
+An honest note on the backstop: for PBS a missing CA bundle is evidence the precheck did not
+finish, NOT proof the tier cannot connect. `PbsBackend` returns inside `if config.fingerprint:`
+before it reads `ca_bundle`, so with a fingerprint pinned the bundle is unused. The declaration in
+the workflow is the real mechanism; the file check catches a path that goes missing another way.
+Test isolation came with it: the tier check reads env vars naming files, and this box's own
+`pbs-ci.env` exports one, so an autouse fixture now clears them and each test sets what it means
+to test.
+
+One honest limit, measured and left open on purpose: the false-positive class is closed for the
+allowlists, not everywhere. `PROXIMO_TOOLS` and `PROXIMO_TOOLSETS` are set-valued in enforcement
+too (`door.tool_keep` and `toolset_keep` build sets, the latter case-insensitively), and
+`PROXIMO_*_ALLOWED_HOSTS` is called a "comma-separated Host allowlist" in the product's own help
+text. All three still report a reordered value as a differing one. This change was scoped to the
+allowlists the permission gates read, and widening it to the tool-scoping and host keys is a
+separate call, so the scope-boundary test now records that residual instead of implying those keys
+are order-sensitive.
+
+Also fixed, found by this work: the 2026-09-02 incident test asserted that the allowlist values
+were absent from ALL of stderr, and stderr legitimately carries the env file's path. Pytest's run
+counter reached `pytest-3001`, the path contained "300", and the test failed on the path rather
+than on a leak. The assertion now strips the path before looking, and the env file is written under
+a directory named `run-300` so the collision is permanent and the flake cannot return as luck.
+
 ## [0.39.1] — 2026-09-04
 
 **An allowlist refusal names the store that fed it.**

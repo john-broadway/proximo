@@ -124,8 +124,12 @@ gets them from its unit's `EnvironmentFile`). The server reads that first and fi
 environment, and the file's copy of that key is never read. When the two values differ the
 server says so at start (`proximo: 1 key(s) in ... SHADOWED by the process environment`), an
 allowlist refusal names the store it read, and `proximo doctor` flags a shadowed key whose value
-differs. Every `PROXIMO_*` value is fixed when the server is launched: after editing either
-store, restart the server or reconnect the client.
+differs. The allowlists (`PROXIMO_CT_ALLOWLIST`, `PROXIMO_AGENT_ALLOWLIST`) are compared as SETS,
+so the same ids in a different order, spacing or with a repeat are the same grant and stay silent.
+Only a change of membership is reported, and `*` alongside explicit ids is the same grant as a
+bare `*`, because that is what the gate enforces. Every other key is compared as text. Every
+`PROXIMO_*` value is fixed when the server is launched: after editing either store, restart the
+server or reconnect the client.
 
 ---
 

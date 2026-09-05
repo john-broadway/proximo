@@ -19,6 +19,16 @@ sys.modules[_spec.name] = run_all
 _spec.loader.exec_module(run_all)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_file_env(monkeypatch):
+    """The tier check reads env vars that name FILES, so an operator env leaking in (this box's
+    own pbs-ci.env exports PROXIMO_PBS_CA_BUNDLE) would decide tests that are not about it.
+    Clear them; each test sets exactly what it means to test."""
+    for v in ("PROXIMO_CA_BUNDLE", "PROXIMO_PBS_CA_BUNDLE",
+              "PROXIMO_TOKEN_PATH", "PROXIMO_TOKEN_FILE", "PROXIMO_PBS_TOKEN_PATH"):
+        monkeypatch.delenv(v, raising=False)
+
+
 def test_registry_self_validates():
     # phases valid, names unique, every referenced script file actually exists on disk
     assert run_all._validate_registry() == []
@@ -105,10 +115,12 @@ def test_every_smoke_has_a_known_base():
     assert {s.base for s in run_all.REGISTRY} <= {"pve", "pbs"}
 
 
-def test_base_env_ready_pve_tier(monkeypatch):
+def test_base_env_ready_pve_tier(monkeypatch, tmp_path):
+    tok = tmp_path / "pve.token"
+    tok.write_text("t")
     for v in ("PROXIMO_API_BASE_URL", "PROXIMO_NODE"):
         monkeypatch.setenv(v, "x")
-    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/x")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(tok))
     assert run_all._base_env_ready("pve") == []
 
 
@@ -166,9 +178,124 @@ def test_coverage_blast_registered_in_plan_phase():
         assert v in cb.needs
 
 
-def test_skip_reason_empty_when_fully_configured(monkeypatch):
+def test_skip_reason_empty_when_fully_configured(monkeypatch, tmp_path):
+    tok = tmp_path / "pbs.token"
+    tok.write_text("t")
     monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://h:8007/api2/json")
-    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", "/x")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", str(tok))
     monkeypatch.setenv("PROXIMO_SMOKE_PBS_HOSTS", "pbs-test")
     ns = next(s for s in run_all.REGISTRY if s.name == "pbs-namespace")
     assert run_all._skip_reason(ns) == []
+
+
+# --- a CA bundle that names no file (2026-09-04) -------------------------------
+# Diagnosed from 65 straight nightly reds: the workflow's PBS precheck bails BEFORE writing
+# ${RUNNER_TEMP}/pbs-ca.pem when the test box is down, and its own comment says the tier "must
+# SKIP cleanly ... not red". But the bail is a bare `exit 0` in that step, so the smoke step still
+# ran with PROXIMO_PBS_CA_BUNDLE pointing at a file that was never created, and all five PBS
+# smokes FAILED where they should have skipped. The tier readiness check counted the VARIABLE as
+# present and never asked whether the FILE was there.
+
+def test_pbs_tier_is_not_ready_when_its_ca_bundle_names_no_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example:8007/api2/json")
+    tok = tmp_path / "pbs.token"
+    tok.write_text("t")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", str(tok))
+    monkeypatch.setenv("PROXIMO_PBS_CA_BUNDLE", str(tmp_path / "never-written.pem"))
+    missing = run_all._base_env_ready("pbs")
+    assert missing, "a CA bundle that names no file must not read as a ready tier"
+    assert any("PROXIMO_PBS_CA_BUNDLE" in m for m in missing), missing
+
+
+def test_pbs_tier_is_ready_when_its_ca_bundle_exists(monkeypatch, tmp_path):
+    """CONTROL: the check must pass on a real file, or it is just a tier that never runs."""
+    ca = tmp_path / "pbs-ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n")
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example:8007/api2/json")
+    tok = tmp_path / "pbs.token"
+    tok.write_text("t")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", str(tok))
+    monkeypatch.setenv("PROXIMO_PBS_CA_BUNDLE", str(ca))
+    assert run_all._base_env_ready("pbs") == []
+
+
+def test_pbs_tier_is_ready_when_no_ca_bundle_is_configured(monkeypatch, tmp_path):
+    """CONTROL: an UNSET bundle is a deployment that verifies another way (fingerprint, system
+    CAs). Only a bundle that is set and names nothing is the broken shape."""
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example:8007/api2/json")
+    tok = tmp_path / "pbs.token"
+    tok.write_text("t")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", str(tok))
+    monkeypatch.delenv("PROXIMO_PBS_CA_BUNDLE", raising=False)
+    assert run_all._base_env_ready("pbs") == []
+
+
+def test_pve_tier_ca_bundle_gets_the_same_check(monkeypatch, tmp_path):
+    """The class, not the instance: the PVE tier takes a CA bundle too."""
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    tok = tmp_path / "pve.token"
+    tok.write_text("t")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(tok))
+    monkeypatch.setenv("PROXIMO_CA_BUNDLE", str(tmp_path / "never-written.pem"))
+    missing = run_all._base_env_ready("pve")
+    assert any("PROXIMO_CA_BUNDLE" in m for m in missing), missing
+
+
+# --- the verdict: a run that ran nothing is not a pass (2026-09-04) -------------
+# Found by an adversarial lens on the CA-bundle skip fix above. That fix was correct about
+# readiness and WRONG about consequence: `cmd_run` ended `return 1 if failed else 0`, so a night
+# where the lab is off and every smoke skips exited 0 and CI read GREEN. It converted a true red
+# into a false green, which is the one outcome this workflow's own header forbids. `ran` was
+# computed and never used.
+
+def test_a_run_that_ran_nothing_is_not_a_pass():
+    results = [(f"pbs-{n}", "SKIP", 0.0) for n in ("namespace", "prune", "gc")]
+    rc, note = run_all._verdict(results)
+    assert rc != 0, "0 run must never exit 0 — nothing was proven"
+    assert "ran nothing" in note.lower() or "0 run" in note, note
+
+
+def test_a_failure_still_exits_one():
+    results = [("backup", "PASS", 1.0), ("prove", "FAIL(rc=1)", 1.0)]
+    rc, _ = run_all._verdict(results)
+    assert rc == 1
+
+
+def test_a_partial_run_with_no_failures_passes():
+    """CONTROL: the lab being off is NORMAL, not a nightly red. What ran, passed, and the skips
+    stay visible in the summary. Only a run that proved NOTHING is refused."""
+    results = [("backup", "PASS", 1.0), ("pbs-gc", "SKIP", 0.0)]
+    rc, _ = run_all._verdict(results)
+    assert rc == 0
+
+
+def test_an_all_pass_run_passes():
+    rc, _ = run_all._verdict([("backup", "PASS", 1.0)])
+    assert rc == 0
+
+
+def test_a_token_path_that_names_no_file_is_not_a_ready_tier(monkeypatch, tmp_path):
+    """THE CLASS SWEEP the first cut missed. The workflow's Materialize step says
+    "PROXIMO_CI_TOKEN unset — PVE (mutate) smokes will SKIP" and then does not write the token
+    file, while the smoke step sets PROXIMO_TOKEN_PATH unconditionally. Same shape as the CA
+    bundle, twenty lines away in the same YAML, and it was FAIL where the text says SKIP."""
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://pve.example:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(tmp_path / "never-written.token"))
+    missing = run_all._base_env_ready("pve")
+    assert any("PROXIMO_TOKEN_PATH" in m for m in missing), missing
+
+
+def test_a_directory_is_not_an_acceptable_bundle(monkeypatch, tmp_path):
+    """`isfile`, not `exists`: httpx takes a cafile only, so a DIRECTORY of certs raises at
+    connect time. Swapping isfile->exists survived the first test set — this closes that."""
+    tok = tmp_path / "pbs.token"
+    tok.write_text("t")
+    d = tmp_path / "certs-dir"
+    d.mkdir()
+    monkeypatch.setenv("PROXIMO_PBS_BASE_URL", "https://pbs.example:8007/api2/json")
+    monkeypatch.setenv("PROXIMO_PBS_TOKEN_PATH", str(tok))
+    monkeypatch.setenv("PROXIMO_PBS_CA_BUNDLE", str(d))
+    missing = run_all._base_env_ready("pbs")
+    assert any("PROXIMO_PBS_CA_BUNDLE" in m for m in missing), missing

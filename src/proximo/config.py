@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ._secretfile import refuse_exposed_secret
@@ -56,6 +57,85 @@ _SOURCE_TARGET = "this target's entry in the targets registry"
 def env_file_display() -> str:
     """The env file by a name safe to send off-box: the unexpanded default, or the override var."""
     return "the env file named by PROXIMO_ENV_FILE" if os.environ.get("PROXIMO_ENV_FILE") else _DEFAULT_ENV_FILE
+
+
+# The set-valued keys: their value is a SET, so order, spacing and repetition carry no meaning
+# and only a change of MEMBERSHIP is a hazard worth an operator's attention. Dogfooded
+# 2026-09-04 on our own box: the process env and the file held the SAME 22 CTIDs in a different
+# order, the byte compare called that "value differs", and an operator following that remedy
+# diffs the two lines, finds the same containers, and has nothing to fix. That ruling drew the
+# line at the allowlists; 2026-09-05 moved it ("fix as you find, own as you go") to every key
+# whose gate builds a set: the scoping specs (door.tool_keep, toolset_keep and surface_keep, the
+# last two lowercasing) and the faces' Host allowlists (webguard.read_face_env, any face prefix). Every
+# OTHER key keeps string semantics — a path or a node name that differs by one byte IS a
+# different value. Pinned against the source's own reads by
+# test_set_valued_keys_are_exactly_the_ones_the_source_reads and against each gate's own
+# function by the test_values_differ_agrees_with_* tests.
+SET_VALUED_KEYS = frozenset({"PROXIMO_CT_ALLOWLIST", "PROXIMO_AGENT_ALLOWLIST",
+                             "PROXIMO_TOOLS", "PROXIMO_TOOLSETS", "PROXIMO_SURFACES"})
+_HOST_ALLOWLIST_KEY = re.compile(r"^PROXIMO_[A-Z0-9_]+_ALLOWED_HOSTS$")  # f"PROXIMO_{face}_ALLOWED_HOSTS"
+# door._apply_surfaces matches the WHOLE spec, stripped and lowercased, against these before any
+# toolset/surface lookup: `dynamic` alone starts the facade, `dynamic,dynamic` reaches toolset_keep
+# and refuses to start. So a mode is a distinguished single token, never a set (lens, 2026-09-05).
+# Pinned to door's own constants by test_the_mode_keywords_are_the_doors_own.
+TOOLSET_MODES = frozenset({"dynamic", "catalog", "all"})
+SURFACE_MODES = frozenset({"all"})
+
+
+def parse_allowlist(raw: str) -> frozenset[str]:
+    """The ONE allowlist parser: ids split on commas, stripped, empties dropped. `_build` resolves
+    every allowlist through this and the shadow check compares through it, so the comparison can
+    never drift from the value the permission gates actually enforce."""
+    return frozenset(c.strip() for c in raw.strip().split(",") if c.strip())
+
+
+def effective_grant(raw: str) -> frozenset[str]:
+    """One allowlist as the GATE reads it. `ct_permitted` and `agent_permitted` both short-circuit
+    on `*`, so `*` alongside explicit ids grants exactly what a bare `*` grants; canonicalizing to
+    `{"*"}` here is the same reduction `reachgrant._ids` applies for the same reason. Comparing raw
+    sets instead flags `*` against `*,100` as a difference the gate does not make (claims lens,
+    2026-09-04)."""
+    ids = parse_allowlist(raw)
+    return frozenset({"*"}) if "*" in ids else ids
+
+
+def _scoping_view(modes: frozenset[str]) -> Callable[[str], frozenset[str] | str]:
+    """A scoping spec as door reads it: a whole-string mode keyword, else a lowercased token set."""
+    def view(raw: str) -> frozenset[str] | str:
+        whole = raw.strip().lower()
+        return whole if whole in modes else frozenset(t.lower() for t in parse_allowlist(raw))
+    return view
+
+
+def _set_view(key: str) -> Callable[[str], frozenset[str] | str] | None:
+    """The value of `key` as its GATE enforces it, or None for a key whose value is text."""
+    if key.endswith("ALLOWLIST") and key in SET_VALUED_KEYS:
+        return effective_grant
+    if key == "PROXIMO_TOOLSETS":
+        return _scoping_view(TOOLSET_MODES)
+    if key == "PROXIMO_SURFACES":
+        return _scoping_view(SURFACE_MODES)
+    if key == "PROXIMO_TOOLS" or _HOST_ALLOWLIST_KEY.match(key):
+        return parse_allowlist
+    return None
+
+
+def is_set_valued(key: str) -> bool:
+    return _set_view(key) is not None
+
+
+def values_differ(key: str, env_value: str, file_value: str) -> bool:
+    """Whether the process environment's value for `key` really differs from the file's copy.
+    A set-valued key compares as the value its gate would enforce (a reordered allowlist is the
+    same grant, a reordered tool spec the same registry, and reporting either as a difference
+    sends the operator to look for a change that is not there); everything else compares as
+    text. Pinned against `ct_permitted`/`agent_permitted`, `door.tool_keep`/`toolset_keep`/
+    `surface_keep` and `webguard.read_face_env` themselves by the test_values_differ_agrees_with_*
+    tests."""
+    view = _set_view(key)
+    if view is None:
+        return env_value != file_value
+    return view(env_value) != view(file_value)
 
 
 def shadowed_keys() -> dict[str, bool]:
@@ -172,7 +252,7 @@ def load_env_file(*, announce: bool = True) -> list[str]:
         if key in os.environ:
             # real/inline env always wins (no surprise for inline configs), but SAY so: the
             # file's copy of this key is dead, and an operator editing it gets nothing (09-02).
-            shadowed[key] = os.environ[key] != val
+            shadowed[key] = values_differ(key, os.environ[key], val)
             continue
         os.environ[key] = val
         loaded.append(key)
@@ -434,8 +514,8 @@ class ProximoConfig:
         Both heads extract their required fields, then converge here so an env-configured box
         and a registry target get IDENTICAL fail-closed treatment.
         """
-        ct_allowlist = frozenset(c.strip() for c in ct_allow_raw.strip().split(",") if c.strip())
-        agent_allowlist = frozenset(c.strip() for c in agent_allow_raw.strip().split(",") if c.strip())
+        ct_allowlist = parse_allowlist(ct_allow_raw)
+        agent_allowlist = parse_allowlist(agent_allow_raw)
 
         _vtls_raw = vtls_raw.strip().lower()
         verify_tls = _vtls_raw not in _VTLS_FALSY
@@ -474,13 +554,18 @@ class ProximoConfig:
                 "TLS verification stays ON. Use 'false', '0', 'no', or 'off' to disable.",
                 stacklevel=2,
             )
-        if not verify_tls and not ca_bundle:
-            # ApiBackend refuses to construct when verify_tls=False and no ca_bundle is set —
-            # this warning fires immediately before that hard failure so operators can act.
+        if not verify_tls and not ca_bundle and not fingerprint:
+            # ApiBackend refuses to construct when the channel is verified by NOTHING. The
+            # fingerprint is the third way to verify it and must be counted here: ApiBackend
+            # returns on the fingerprint branch BEFORE the fail-closed check, so warning that it
+            # "will refuse to start" on a PINNED config is a false claim that sends an operator
+            # to fix what is not broken. Found live-proving against the lab, 2026-09-04: the
+            # warning printed and the backend then connected and read the node fine.
             warnings.warn(
-                "PROXIMO_VERIFY_TLS=false with no CA bundle — the backend will refuse to "
-                "start (fail-closed). Set PROXIMO_CA_BUNDLE to a PEM CA file or use "
-                "PROXIMO_VERIFY_TLS=true.",
+                "PROXIMO_VERIFY_TLS=false with no CA bundle and no fingerprint — the backend "
+                "will refuse to start (fail-closed). Set PROXIMO_FINGERPRINT to the node cert's "
+                "SHA-256 (strongest for a self-signed PVE), PROXIMO_CA_BUNDLE to a PEM CA file, "
+                "or use PROXIMO_VERIFY_TLS=true.",
                 stacklevel=2,
             )
         if enable_exec:

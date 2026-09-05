@@ -1,3 +1,18 @@
+proximo (0.40.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.40.0 (minor: doctor says where near-root exec lands.
+    ct_exec and the node shell ride an ssh target or run on the box itself, never the
+    API, so the machine the API reads and the machine a near-root command lands on can
+    differ, and nothing said so. proximo doctor now reports exec_lands_on whenever a
+    shell feature is on, resolves the ssh target through ssh's own config, counts every
+    name and address this machine goes by as one host, and flags SPLIT TARGET with a
+    remedy an operator can follow as written. Also in this release: the shadow-key flag
+    compares every set-valued key the way its gate reads it, so a reordered allowlist is
+    no longer a change while a mode keyword stays a single token; the TLS warning counts
+    a pinned fingerprint as verification. 908 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Fri, 05 Sep 2026 04:10:00 +0000
+
 proximo (0.39.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.39.1 (patch: an allowlist refusal names the store that fed it.

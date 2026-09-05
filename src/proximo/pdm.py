@@ -300,7 +300,7 @@ class PdmConfig:
         (e.g. "PROXIMO_PDM_VERIFY_TLS=false" or "PDM target verify_tls=false").
         """
         warnings.warn(
-            f"{source} with no CA bundle — "
+            f"{source} with no CA bundle and no fingerprint — "
             "talking to the PDM API without cert validation.",
             stacklevel=3,
         )

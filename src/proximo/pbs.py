@@ -335,7 +335,7 @@ class PbsConfig:
 
         if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
-                "PROXIMO_PBS_VERIFY_TLS=false with no CA bundle — "
+                "PROXIMO_PBS_VERIFY_TLS=false with no CA bundle and no fingerprint — "
                 "talking to the PBS API without cert validation.",
                 stacklevel=2,
             )
@@ -364,7 +364,7 @@ class PbsConfig:
         fingerprint = fields.get("fingerprint") or None
         if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
-                "PBS target verify_tls=false with no CA bundle — "
+                "PBS target verify_tls=false with no CA bundle and no fingerprint — "
                 "talking to the PBS API without cert validation.",
                 stacklevel=2,
             )

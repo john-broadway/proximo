@@ -30,6 +30,7 @@ import os
 from typing import Any
 
 from .access import access_acl_list, access_roles_list
+from .config import parse_allowlist
 
 # Plausible reach privileges, swept when no --priv is given. Deliberately a visible tuple, not magic —
 # edit here as candidates emerge. The custom-role lane (a dedicated role carrying one of
@@ -136,8 +137,10 @@ def render_header(ctids: list[str], privs: list[str], token_id: str) -> str:
 
 
 def _current_allowlist() -> set[str]:
-    raw = os.environ.get("PROXIMO_CT_ALLOWLIST", "")
-    return {c.strip() for c in raw.split(",") if c.strip()}
+    # Through config's parser, not a second copy of it: this read is the allowlist the gates
+    # enforce, and a private re-split here is exactly the drift the one-parser rule exists to
+    # prevent (claims lens, 2026-09-04 — it was byte-equivalent, and that is luck, not a design).
+    return set(parse_allowlist(os.environ.get("PROXIMO_CT_ALLOWLIST", "")))
 
 
 def render(api: Any, ctids: list[str], privs: list[str], *, token_id: str) -> str:

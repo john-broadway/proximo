@@ -10,7 +10,12 @@ mutation, no exec. Routed through the PROVE ledger as a read by the server layer
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import shutil
+import socket
+import subprocess
+from urllib.parse import urlsplit
 
 from . import config as _config
 
@@ -104,6 +109,120 @@ def _mirror_state() -> dict:
     return {"privilege": p, "state": "enforcing"}
 
 
+_PROC_FIB_TRIE = "/proc/net/fib_trie"   # the kernel's IPv4 trie: a leaf marked `/32 host LOCAL` is bound here
+_PROC_IF_INET6 = "/proc/net/if_inet6"   # one line per IPv6 address bound here, 32 hex digits first
+_HOSTS_FILE = "/etc/hosts"
+
+
+def _canonical_host(name: str) -> str:
+    """A host as the compare sees it: lowercased, and an IP literal in its canonical text, so
+    `::1` and `0:0::1` (or a bracketed url literal urlsplit already stripped) compare by address."""
+    name = name.strip().lower()
+    try:
+        return str(ipaddress.ip_address(name))
+    except ValueError:
+        return name
+
+
+def _interface_addresses() -> frozenset[str]:
+    """Every address bound to this machine, read from procfs: no binary (the shipped image has no
+    iproute2), no subprocess, no DNS. IPv4 from the `/32 host LOCAL` leaves of the routing trie
+    (the `/8 host LOCAL` under 127.0.0.0 is the loopback NET, and `link UNICAST`/`BROADCAST`
+    leaves are a subnet and its broadcast, not this machine); IPv6 from if_inet6, canonical text.
+    Off Linux, or on any unreadable file or line, the answer is what could be read (empty at
+    worst) and the check degrades to hostname-only. Never raises: doctor is what an operator runs
+    to learn why something ELSE is failing."""
+    found: set[str] = set()
+    try:
+        with open(_PROC_FIB_TRIE, encoding="ascii", errors="replace") as fh:
+            leaf = None
+            for line in fh:
+                s = line.strip()
+                if s.startswith("|--"):
+                    leaf = s[3:].strip()
+                elif s.startswith("+--"):
+                    leaf = None
+                elif leaf and s.startswith("/32 host LOCAL"):
+                    try:
+                        found.add(str(ipaddress.IPv4Address(leaf)))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    try:
+        with open(_PROC_IF_INET6, encoding="ascii", errors="replace") as fh:
+            for line in fh:
+                head = line.split(None, 1)[0] if line.strip() else ""
+                if len(head) != 32:     # `int("00", 16)` is a valid integer and would mint `::`
+                    continue
+                try:
+                    found.add(str(ipaddress.IPv6Address(int(head, 16))))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return frozenset(found)
+
+
+def _hosts_file_names(own: frozenset[str]) -> frozenset[str]:
+    """The names /etc/hosts gives this machine: every name on a line whose address is loopback or
+    one of `own` (this machine's interface addresses). PVE requires `<ip> <fqdn> <short>` there
+    for the node and addresses the API by that FQDN, while the kernel hostname is the short name.
+    A local file, so still no DNS; absent or unreadable means no names."""
+    names: set[str] = set()
+    try:
+        with open(_HOSTS_FILE, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                fields = line.split("#", 1)[0].split()
+                if len(fields) < 2:
+                    continue
+                try:
+                    addr = ipaddress.ip_address(fields[0])
+                except ValueError:
+                    continue
+                if addr.is_loopback or str(addr) in own:
+                    names.update(f.lower() for f in fields[1:])
+    except OSError:
+        pass
+    return frozenset(names)
+
+
+def _this_host_names() -> frozenset[str]:
+    """Every name this machine goes by in an API url or an ssh target, without DNS: loopback, the
+    kernel hostname, every address bound to an interface, and every name /etc/hosts gives one of
+    those addresses (the FQDN PVE writes there). A preflight must not hang on a resolver."""
+    own = _interface_addresses()
+    return frozenset(map(_canonical_host,
+                         {"localhost", "127.0.0.1", "::1", socket.gethostname()} | own | _hosts_file_names(own)))
+
+
+def _hostname_from_ssh_g(out: str) -> str | None:
+    """The `hostname` line of `ssh -G` output, lowercased; None when absent."""
+    for line in out.splitlines():
+        if line.startswith("hostname "):
+            return line.split(None, 1)[1].strip().lower()
+    return None
+
+
+def _ssh_config_host(target: str) -> str:
+    """The host `ssh <target>` would connect to, as ssh's OWN config resolves it (`ssh -G`: local
+    config only, no connection, no DNS): an alias's HostName, else the literal host, lowercased,
+    user stripped. Any failure, or no ssh binary, falls back to the literal host. The target's
+    charset is validated by config (no leading dash), and `--` ends the options anyway."""
+    host = target.rpartition("@")[2].lower()
+    ssh = shutil.which("ssh")
+    if not host or not ssh:
+        return host
+    try:
+        # `target` is config-validated (_SSH_TARGET_RE: leading alnum, no shell metachars), argv is
+        # a list, `--` ends ssh's options, and -G never connects: it prints the resolved config.
+        out = subprocess.run([ssh, "-G", "--", target], capture_output=True, text=True,  # noqa: S603
+                             timeout=3, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return host
+    return _hostname_from_ssh_g(out) or host
+
+
 def doctor_check(api) -> dict:
     """Read-only preflight. `api` is an ApiBackend (or a duck-type with version/access_permissions/
     config). Returns an advisory report with reachable, version, token can/cannot, config, flags."""
@@ -174,6 +293,9 @@ def doctor_check(api) -> dict:
             "exec_enabled": bool(getattr(cfg, "enable_exec", False)),
             "tls_verify": bool(getattr(cfg, "verify_tls", True)),
             "ca_bundle": getattr(cfg, "ca_bundle", None),
+            # Shown because the TLS flags depend on it: without this a reader sees tls_verify=False
+            # and ca_bundle=None and cannot tell the channel is wire-pinned.
+            "fingerprint": getattr(cfg, "fingerprint", None),
             "ct_allowlist": ("none (exec deny-all)" if not allow
                              else "ALL (*)" if "*" in allow else f"{len(allow)} CTID(s)"),
             # Which store fed it (2026-09-02: a refusal pointed the operator at a shadowed file).
@@ -189,10 +311,70 @@ def doctor_check(api) -> dict:
             # argv lands in a durable file.
             "ledger_redaction": bool(getattr(cfg, "redact_ledger", True)),
         }
-        if not getattr(cfg, "verify_tls", True) and not getattr(cfg, "ca_bundle", None):
-            flags.append("TLS verification is OFF with no CA bundle — API traffic is not cert-validated.")
+        if (not getattr(cfg, "verify_tls", True) and not getattr(cfg, "ca_bundle", None)
+                and not getattr(cfg, "fingerprint", None)):
+            flags.append("TLS verification is OFF with no CA bundle and no fingerprint — "
+                         "API traffic is not cert-validated.")
         if getattr(cfg, "enable_exec", False) and not allow:
             flags.append("exec is ENABLED but the CT allowlist is empty (deny-all) — no container is reachable.")
+        # SPLIT TARGET (found live-proving against the lab, 2026-09-04; rebuilt after a lens, and
+        # again after a second lens, 2026-09-05). ct_exec does NOT travel over the API: ExecBackend
+        # runs `ssh <ssh_target> pct exec` (or local `pct`) scoped by the CT allowlist, and the node
+        # shell (node_probe/node_logs under enable_node_shell) rides the same ssh target with no
+        # allowlist at all. So near-root exec can land on a different machine than the API reads.
+        # The FIRST cut compared which config STORE fed the api url and the allowlist, which is not
+        # the hazard: it stayed silent whenever ONE store fed both while ssh_target pointed elsewhere.
+        # The SECOND cut compared hosts but exempted on-host mode (where exec lands on THIS box while
+        # the API may read another), compared the ssh user and the case (svc@Prod-PVE vs prod-pve
+        # fired forever, and its remedy told the operator to drop the service account), went quiet on
+        # a hostless API url, and said nothing for a deny-all allowlist or for the node shell.
+        # Compare the HOSTS, for every ssh-riding feature, and always say where the shell lands.
+        # THIRD cut (lens, and running the second from the dogfood venv against this box's own
+        # config): the API by IP against the ssh ALIAS for that same machine fired forever, and
+        # `localhost` against `127.0.0.1` fired with a remedy naming an is_local sentinel. Now the
+        # ssh target is resolved through ssh's own config (`ssh -G`, no network) and every name
+        # for this host counts as one host on both sides.
+        # FOURTH cut (the third's sibling, filed the same night): the this-host set was loopback plus
+        # the kernel hostname, so Proximo ON the PVE node with the API at the node's own LAN address,
+        # or at the FQDN PVE writes into /etc/hosts, fired forever in the `local` branch. Now the set
+        # carries every address bound to an interface (procfs, no binary: the shipped image has no
+        # iproute2) and every /etc/hosts name for one of those addresses, and both sides compare an
+        # IP literal by address, not spelling. HONEST LIMIT, unchanged: DNS is not consulted, so a
+        # REMOTE name and its address still read as different.
+        shell_features = [name for name, on in (
+            ("ct_exec", getattr(cfg, "enable_exec", False)),
+            ("node_probe/node_logs", getattr(cfg, "enable_node_shell", False)),
+        ) if on]
+        if shell_features:
+            what = " and ".join(shell_features)
+            api_host = _canonical_host(urlsplit(getattr(cfg, "api_base_url", "") or "").hostname or "")
+            ssh_to = getattr(cfg, "ssh_target", None) or ""
+            ssh_host = _canonical_host(_ssh_config_host(ssh_to)) if ssh_to else ""   # alias -> HostName, user stripped
+            local = bool(getattr(cfg, "is_local", False))
+            this = _this_host_names()
+            same_host = api_host == ssh_host or (api_host in this and ssh_host in this)
+            report["config"]["exec_lands_on"] = "this host (local, no ssh hop)" if local else ssh_to
+            if not api_host:
+                flags.append(
+                    f"the API url names no host, so where {what} lands "
+                    f"({'this host' if local else repr(ssh_to)}) cannot be checked against it."
+                )
+            elif local and api_host not in this:
+                flags.append(
+                    f"SPLIT TARGET: {what} runs ON THIS HOST (local, no ssh hop) while the API reads "
+                    f"{api_host!r}. Confirm this host IS that machine, or point PROXIMO_API_BASE_URL "
+                    "at this host. (This host's names and interface addresses are compared; DNS is "
+                    "not consulted.)"
+                )
+            elif not local and not same_host:
+                remedy = "'local' (this host, no ssh hop)" if api_host in this else repr(api_host)
+                flags.append(
+                    f"SPLIT TARGET: the API reads {api_host!r} but {what} does NOT use the API — it "
+                    f"runs `ssh {ssh_to} ...`, so near-root exec lands on {ssh_host!r}. Confirm those "
+                    f"are the same machine, or set PROXIMO_SSH_TARGET (or the target's ssh_target) to "
+                    f"{remedy}; an IP is a valid ssh target. (ssh config aliases are resolved; DNS is "
+                    f"not, so a remote name and its address still read as different.)"
+                )
         # A file key the process environment shadows WITH A DIFFERENT VALUE is the 09-02 hazard:
         # the operator edits the file, nothing changes, the refusal repeats. Same-value shadows
         # are dead lines, not hazards: recorded at load, printed nowhere, not flagged here.

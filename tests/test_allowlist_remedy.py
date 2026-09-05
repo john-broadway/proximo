@@ -23,12 +23,17 @@ Three layers, each with a control that must fail:
 from __future__ import annotations
 
 import os
+import pathlib
+import re
+import types
 import warnings
 
 import pytest
 
 import proximo.config as config
+import proximo.door as door
 import proximo.server as server
+import proximo.webguard as webguard
 from proximo.audit import AuditLedger
 from proximo.backends import ApiBackend, ExecBackend, ProximoError
 from proximo.config import ProximoConfig
@@ -81,11 +86,21 @@ def test_incident_2026_09_02_refusal_names_the_shadowed_file_and_the_restart(tmp
     _core_env(monkeypatch, tmp_path)
     monkeypatch.setenv("PROXIMO_ENABLE_EXEC", "1")
     monkeypatch.setenv("PROXIMO_CT_ALLOWLIST", "100,200")               # the MCP client's block
-    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_CT_ALLOWLIST=100,200,300\n"))
+    # The env file sits under a directory whose NAME contains one of the ids. Not contrived: on
+    # 2026-09-04 pytest's own run counter reached `pytest-3001` and the value-leak assertion below
+    # failed on the PATH, not on a leak. Pinning the collision keeps that flake from coming back
+    # as luck, and makes this test its own control.
+    d = tmp_path / "run-300"
+    d.mkdir()
+    env_path = _write_env(d, "PROXIMO_CT_ALLOWLIST=100,200,300\n")
+    monkeypatch.setenv(FILE_BY_VAR, env_path)
     config.load_env_file()
     err = capsys.readouterr().err
     assert "SHADOWED" in err and "PROXIMO_CT_ALLOWLIST (value differs)" in err, err
-    assert "300" not in err and "100" not in err                        # keys, never values
+    # The subject is the MESSAGE, not the file path the line legitimately names: strip the path
+    # first, or this asserts "no id-shaped substring anywhere", which the path can satisfy.
+    said = err.replace(env_path, "<file>")
+    assert "300" not in said and "100" not in said, err              # keys, never values
 
     cfg = _from_env()
     ledger = AuditLedger(cfg.audit_log_path)
@@ -404,3 +419,313 @@ def test_help_prints_no_loader_lines(tmp_path, monkeypatch, capsys):
     out, err = capsys.readouterr()
     assert "MCP stdio server" in out
     assert err == "", err
+
+
+# ─── set semantics for allowlists (2026-09-04, John's ruling) ─────────────────────────────────
+# Dogfooded on our own box within an hour of the 0.39.1 ship: the process env and the file held
+# the SAME 22 CTIDs in a different order, and the loader called that a differing value. An
+# operator following that remedy diffs the two lines, finds the same containers, and has nothing
+# to fix. An allowlist is a SET; its order and spacing carry no meaning, so only a change to the
+# membership is a hazard. Non-allowlist keys keep string semantics: a path or a node name that
+# differs by one byte IS a different value.
+
+def test_reordered_ct_allowlist_is_a_same_value_shadow(tmp_path, monkeypatch, capsys):
+    """The incident's own shape, reduced: same ids, different order."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_CT_ALLOWLIST=1972,1975,1986,1993\n"))
+    monkeypatch.setenv("PROXIMO_CT_ALLOWLIST", "1993,1972,1975,1986")
+    config.load_env_file()
+    err = capsys.readouterr().err
+    assert "SHADOWED" not in err, err
+    assert config.shadowed_keys() == {"PROXIMO_CT_ALLOWLIST": False}
+
+
+def test_a_ct_allowlist_that_gained_an_id_still_differs(tmp_path, monkeypatch, capsys):
+    """THE CONTROL for the test above: set semantics must not blind the check. One id added is a
+    real membership change and must still reach the operator."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_CT_ALLOWLIST=1972,1975\n"))
+    monkeypatch.setenv("PROXIMO_CT_ALLOWLIST", "1972,1975,31337")
+    config.load_env_file()
+    err = capsys.readouterr().err
+    assert "PROXIMO_CT_ALLOWLIST (value differs)" in err, err
+    assert config.shadowed_keys() == {"PROXIMO_CT_ALLOWLIST": True}
+
+
+def test_allowlist_whitespace_and_duplicates_are_the_same_set(tmp_path, monkeypatch, capsys):
+    """The parser strips and drops empties, so spacing, a trailing comma and a repeated id are all
+    the same grant. The comparison must agree with the parser the gates enforce from."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_CT_ALLOWLIST=420, 443 ,420,\n"))
+    monkeypatch.setenv("PROXIMO_CT_ALLOWLIST", "443,420")
+    config.load_env_file()
+    assert "SHADOWED" not in capsys.readouterr().err
+    assert config.shadowed_keys() == {"PROXIMO_CT_ALLOWLIST": False}
+
+
+def test_reordered_agent_allowlist_is_a_same_value_shadow(tmp_path, monkeypatch, capsys):
+    """Both allowlists, not just the one the incident happened to hit."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_AGENT_ALLOWLIST=101,102\n"))
+    monkeypatch.setenv("PROXIMO_AGENT_ALLOWLIST", "102,101")
+    config.load_env_file()
+    assert "SHADOWED" not in capsys.readouterr().err
+    assert config.shadowed_keys() == {"PROXIMO_AGENT_ALLOWLIST": False}
+
+
+def test_a_scalar_key_with_a_comma_keeps_string_semantics(tmp_path, monkeypatch, capsys):
+    """THE SCOPE BOUNDARY: set semantics belong to the keys whose GATE builds a set (the
+    allowlists, the tool-scoping specs, the faces' Host allowlists). A path is text, commas and
+    all — reordering it IS a different value. 2026-09-04 drew the line at the allowlists and
+    pinned it here; 2026-09-05 moved it, on purpose, on "fix as you find, own as you go"."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_TOKEN_PATH=/a,/b\n"))
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/b,/a")
+    config.load_env_file()
+    assert "PROXIMO_TOKEN_PATH (value differs)" in capsys.readouterr().err
+    assert config.shadowed_keys() == {"PROXIMO_TOKEN_PATH": True}
+
+
+@pytest.mark.parametrize("key,file_value,env_value", [
+    ("PROXIMO_TOOLS", "pve_doctor,ct_exec", "ct_exec, pve_doctor,"),
+    ("PROXIMO_TOOLSETS", "pve.guests,pve.storage", "PVE.Storage ,pve.guests"),
+    ("PROXIMO_TOOLSETS", "dynamic", "Dynamic"),
+    ("PROXIMO_SURFACES", "pve,pbs", "PBS, pve"),
+    ("PROXIMO_HTTP_ALLOWED_HOSTS", "a.example,b.example", "b.example, a.example"),
+    ("PROXIMO_MCP_HTTP_ALLOWED_HOSTS", "a.example,b.example", "b.example,a.example"),
+])
+def test_a_reordered_set_valued_key_is_a_same_value_shadow(tmp_path, monkeypatch, capsys,
+                                                            key, file_value, env_value):
+    """The same false positive the allowlists had: `door.tool_keep` and `door.toolset_keep`
+    build sets (the latter lowercasing), `webguard.read_face_env` feeds a membership check, so
+    order, spacing, repetition and (for toolsets) case carry no meaning."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, f"{key}={file_value}\n"))
+    monkeypatch.setenv(key, env_value)
+    config.load_env_file()
+    assert "SHADOWED" not in capsys.readouterr().err
+    assert config.shadowed_keys() == {key: False}
+
+
+@pytest.mark.parametrize("key,file_value,env_value", [
+    ("PROXIMO_TOOLS", "pve_doctor", "pve_doctor,ct_exec"),
+    ("PROXIMO_TOOLSETS", "pve.guests", "pve.storage"),
+    ("PROXIMO_TOOLSETS", "dynamic", "catalog"),
+    ("PROXIMO_SURFACES", "pve", "pve,pbs"),
+    ("PROXIMO_HTTP_ALLOWED_HOSTS", "a.example", "*"),
+])
+def test_a_membership_change_in_a_set_valued_key_still_differs(tmp_path, monkeypatch, capsys,
+                                                                key, file_value, env_value):
+    """Set semantics must not swallow a real change: a different set is a different value."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, f"{key}={file_value}\n"))
+    monkeypatch.setenv(key, env_value)
+    config.load_env_file()
+    assert f"{key} (value differs)" in capsys.readouterr().err
+    assert config.shadowed_keys() == {key: True}
+
+
+_TOOL_PROBE = ("pve_doctor", "ct_exec", "pve_list_guests", "audit_verify")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("pve_doctor,ct_exec", "ct_exec,pve_doctor"),
+    ("pve_doctor, ct_exec ,pve_doctor,", "ct_exec,pve_doctor"),
+    ("pve_doctor", "pve_doctor,ct_exec"),
+    ("", "pve_doctor"),
+    ("", ""),
+])
+def test_values_differ_agrees_with_tool_keep(a, b):
+    """Same promise as for the allowlists: measured against door.tool_keep itself over a probe
+    registry, never against a second copy of its split."""
+    def keep(spec: str) -> set[str]:
+        return door.tool_keep(_TOOL_PROBE, spec)
+    assert config.values_differ("PROXIMO_TOOLS", a, b) == (keep(a) != keep(b)), (a, b)
+
+
+_TOOLSET_PROBE = ("pve_guest_status", "pve_storage_list", "pbs_datastore_list", "audit_verify")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("pve.guests,pve.storage", "PVE.Storage , pve.guests"),
+    ("pve.guests,pve.guests", "pve.guests"),
+    ("pve.guests", "pve.storage"),
+    ("", "pve.guests"),
+    ("", ""),
+])
+def test_values_differ_agrees_with_toolset_keep(a, b):
+    """Measured against door.toolset_keep, which lowercases every token before it looks it up."""
+    def keep(spec: str) -> set[str]:
+        return door.toolset_keep(_TOOLSET_PROBE, spec)
+    assert config.values_differ("PROXIMO_TOOLSETS", a, b) == (keep(a) != keep(b)), (a, b)
+
+
+_SURFACE_PROBE = ("pve_guest_status", "pbs_datastore_list", "ct_exec", "audit_verify")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("pve,pbs", "PBS , pve"),
+    ("pve,pve", "pve"),
+    ("pve", "pbs"),
+    ("", "pve"),
+    ("", ""),
+])
+def test_values_differ_agrees_with_surface_keep(a, b):
+    """The class swept: PROXIMO_SURFACES is the coarsest scoping layer and door.surface_keep
+    lowercases its tokens exactly as toolset_keep does."""
+    def keep(spec: str) -> set[str]:
+        return door.surface_keep(_SURFACE_PROBE, spec)
+    assert config.values_differ("PROXIMO_SURFACES", a, b) == (keep(a) != keep(b)), (a, b)
+
+
+def test_values_differ_reads_toolset_mode_keywords_as_the_door_does():
+    """`_apply_surfaces` matches the WHOLE spec, stripped and lowercased, against the mode
+    keywords before any toolset lookup; the compare must see `Dynamic` as `dynamic` and never
+    confuse one mode with another."""
+    assert not config.values_differ("PROXIMO_TOOLSETS", " Dynamic ", door.LEAN_KEYWORD)
+    assert config.values_differ("PROXIMO_TOOLSETS", door.LEAN_KEYWORD, door.CATALOG_KEYWORD)
+    assert config.values_differ("PROXIMO_TOOLSETS", "all", door.CATALOG_KEYWORD)
+
+
+@pytest.mark.parametrize("key,mode,as_list", [
+    ("PROXIMO_TOOLSETS", door.LEAN_KEYWORD, f"{door.LEAN_KEYWORD},{door.LEAN_KEYWORD}"),
+    ("PROXIMO_TOOLSETS", door.CATALOG_KEYWORD, f"{door.CATALOG_KEYWORD}, {door.CATALOG_KEYWORD}"),
+    ("PROXIMO_TOOLSETS", "all", "all,all"),
+    ("PROXIMO_SURFACES", "all", "all,all"),
+])
+def test_a_mode_keyword_is_not_the_same_value_as_a_list_containing_it(key, mode, as_list):
+    """LENS ROUND 2, CONFIRMED: `dynamic` alone is the mode keyword (whole-string match in
+    `_apply_surfaces`) and STARTS the server; `dynamic,dynamic` misses that match, reaches
+    toolset_keep and REFUSES to start ("unknown toolset"). The first cut's lowercased-set view
+    called them the same value, i.e. told an operator debugging a startup crash that the file
+    and the environment agree. A mode is a distinguished single token, not a set."""
+    assert config.values_differ(key, as_list, mode), (key, mode, as_list)
+    assert not config.values_differ(key, f" {mode.upper()} ", mode)
+
+
+def test_a_toolset_mode_word_is_only_a_token_for_surfaces():
+    """SURFACE_MODES is narrower than TOOLSET_MODES on purpose: `dynamic` is not a surface mode,
+    so for PROXIMO_SURFACES it is an ordinary (lowercased) token and a list of it is the same set."""
+    assert not config.values_differ("PROXIMO_SURFACES", "dynamic", "DYNAMIC")
+    assert not config.values_differ("PROXIMO_SURFACES", "dynamic,dynamic", "dynamic")
+    assert config.values_differ("PROXIMO_TOOLSETS", "dynamic,dynamic", "dynamic")
+
+
+def test_the_mode_keywords_are_the_doors_own():
+    """The compare's keyword sets are pinned to the constants `_apply_surfaces` dispatches on;
+    `all` is a literal there and is pinned as one here."""
+    assert config.TOOLSET_MODES == frozenset({door.LEAN_KEYWORD, door.CATALOG_KEYWORD, "all"})
+    assert config.SURFACE_MODES == frozenset({"all"})
+
+
+@pytest.mark.parametrize("a,b", [
+    ("a.example,b.example", "b.example, a.example"),
+    ("a.example", "a.example,b.example"),
+    ("*", "a.example"),
+    ("", ""),
+])
+def test_values_differ_agrees_with_read_face_env(monkeypatch, a, b):
+    """Measured against webguard.read_face_env, the one reader every face goes through; the
+    Host guard it feeds is a membership check, so the list's order carries nothing."""
+    def hosts(spec: str) -> set[str]:
+        monkeypatch.setenv("PROXIMO_HTTP_ALLOWED_HOSTS", spec)
+        return set(webguard.read_face_env("HTTP", default_port=1)[3] or [])
+    assert config.values_differ("PROXIMO_HTTP_ALLOWED_HOSTS", a, b) == (hosts(a) != hosts(b)), (a, b)
+
+
+_FACE_READ = re.compile(r"""read_face_env\(\s*["']([A-Z0-9_]+)["']""")
+
+
+def test_every_face_host_allowlist_is_set_valued():
+    """DRIFT GUARD for the faces: their key is built as f"PROXIMO_{prefix}_ALLOWED_HOSTS", so no
+    literal read exists to scan for. Derive the prefixes from the read_face_env call sites and
+    require each face's key to be set-valued; a neighbouring scalar of the same face is not."""
+    root = pathlib.Path(config.__file__).parent
+    faces = {m for py in sorted(root.rglob("*.py")) for m in _FACE_READ.findall(py.read_text(encoding="utf-8"))}
+    assert faces, "found no read_face_env call sites — the guard's own subject is missing"
+    for face in sorted(faces):
+        assert config.is_set_valued(f"PROXIMO_{face}_ALLOWED_HOSTS"), face
+        assert not config.is_set_valued(f"PROXIMO_{face}_HOST"), face
+
+
+# Any way the source can read a set-valued key out of the environment. The first version of this
+# guard matched only `os.environ.get("...")` in config.py, and a claims lens showed it blind to
+# `os.getenv`, to subscripting, to single quotes, and to every module except config.py. A guard
+# that sees one spelling in one file is a coincidence, not a control.
+_SET_KEY_ENV_READ = re.compile(
+    r"""os\.(?:environ\.get|getenv)\(\s*["'](PROXIMO_(?:\w*ALLOWLIST|TOOLS|TOOLSETS|SURFACES))["']"""
+    r"""|os\.environ\[\s*["'](PROXIMO_(?:\w*ALLOWLIST|TOOLS|TOOLSETS|SURFACES))["']"""
+)
+
+
+def _set_key_env_reads() -> set[str]:
+    """Every exact-name set-valued key the shipped source reads from the environment, any
+    spelling, anywhere under src/proximo."""
+    root = pathlib.Path(config.__file__).parent
+    found: set[str] = set()
+    for py in sorted(root.rglob("*.py")):
+        for a, b in _SET_KEY_ENV_READ.findall(py.read_text(encoding="utf-8")):
+            found.add(a or b)
+    return found
+
+
+def test_set_valued_keys_are_exactly_the_ones_the_source_reads():
+    """DRIFT GUARD, both directions: a new allowlist read anywhere in the package, in any
+    spelling, without being added to SET_VALUED_KEYS would silently keep byte semantics; and a
+    name in SET_VALUED_KEYS nothing reads is a dead entry (a renamed key would leave one)."""
+    reads = _set_key_env_reads()
+    assert reads, "found no set-valued env reads at all — the guard's own subject is missing"
+    assert config.SET_VALUED_KEYS == reads, (config.SET_VALUED_KEYS, reads)
+
+
+@pytest.mark.parametrize("spelling", [
+    'os.environ.get("PROXIMO_NODE_ALLOWLIST", "")',
+    "os.environ.get('PROXIMO_NODE_ALLOWLIST', '')",
+    'os.getenv("PROXIMO_NODE_ALLOWLIST", "")',
+    'os.environ["PROXIMO_NODE_ALLOWLIST"]',
+    'os.environ.get("PROXIMO_TOOLS")',
+    "os.environ['PROXIMO_TOOLSETS']",
+    'os.environ.get("PROXIMO_SURFACES")',
+])
+def test_the_drift_guard_sees_every_spelling_of_a_set_valued_read(tmp_path, monkeypatch, spelling):
+    """THE GUARD'S OWN CONTROL: each spelling must be SEEN. Without this, three of the four slip
+    past and the guard reports a clean sheet it never looked for."""
+    assert _SET_KEY_ENV_READ.findall(spelling), spelling
+
+
+def test_the_drift_guard_does_not_read_a_scalar_as_set_valued():
+    """The control's control: a plain key of the same family shape must NOT match."""
+    assert not _SET_KEY_ENV_READ.findall('os.environ.get("PROXIMO_TOOLS_DIR")')
+    assert not _SET_KEY_ENV_READ.findall('os.environ.get("PROXIMO_NODE", "pve")')
+
+
+def test_a_star_allowlist_differs_from_an_explicit_one(tmp_path, monkeypatch, capsys):
+    """`*` means allow-all and an id list does not. Sets make that a difference, as it must be."""
+    monkeypatch.setenv(FILE_BY_VAR, _write_env(tmp_path, "PROXIMO_CT_ALLOWLIST=420\n"))
+    monkeypatch.setenv("PROXIMO_CT_ALLOWLIST", "*")
+    config.load_env_file()
+    assert "PROXIMO_CT_ALLOWLIST (value differs)" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("key,lane,gate", [
+    ("PROXIMO_CT_ALLOWLIST", "ct_allowlist", ProximoConfig.ct_permitted),
+    ("PROXIMO_AGENT_ALLOWLIST", "agent_allowlist", ProximoConfig.agent_permitted),
+])
+@pytest.mark.parametrize("env_value,file_value", [
+    ("*", "*,100"),          # both allow-all: ct_permitted short-circuits on '*'
+    ("*,100", "*"),
+    ("*,*", "*"),
+    ("100,200", "200,100"),  # the incident's shape
+    ("100, 200 ,100,", "200,100"),
+    ("", ""),                # both deny-all
+    ("100", "100,200"),      # a real membership change
+    ("*", "100"),            # allow-all vs one id
+    ("", "100"),             # deny-all vs one id
+])
+def test_values_differ_agrees_with_the_gate_it_speaks_for(env_value, file_value, key, lane, gate):
+    """The promise this comparison makes is that it cannot disagree with what the permission gate
+    enforces. That holds only if it shares the gate's OWN semantics, `*` short-circuiting to
+    allow-all included. Measured by running the REAL ct_permitted over a probe set, never by a
+    second copy of its rules."""
+    probe = ("100", "200", "999")
+
+    def enforced(raw: str) -> tuple[bool, ...]:
+        stand_in = types.SimpleNamespace(**{lane: config.parse_allowlist(raw)})
+        return tuple(gate(stand_in, c) for c in probe)
+
+    assert config.values_differ(key, env_value, file_value) == (
+        enforced(env_value) != enforced(file_value)
+    ), (key, env_value, file_value, enforced(env_value), enforced(file_value))

@@ -295,7 +295,7 @@ class PmgConfig:
 
         if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
-                "PROXIMO_PMG_VERIFY_TLS=false with no CA bundle — "
+                "PROXIMO_PMG_VERIFY_TLS=false with no CA bundle and no fingerprint — "
                 "talking to the PMG API without cert validation.",
                 stacklevel=2,
             )
@@ -328,7 +328,7 @@ class PmgConfig:
         fingerprint = fields.get("fingerprint") or None
         if not verify_tls and not ca_bundle and not fingerprint:
             warnings.warn(
-                "PMG target verify_tls=false with no CA bundle — "
+                "PMG target verify_tls=false with no CA bundle and no fingerprint — "
                 "talking to the PMG API without cert validation.",
                 stacklevel=2,
             )

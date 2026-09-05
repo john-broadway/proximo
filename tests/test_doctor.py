@@ -7,6 +7,7 @@ never-overclaim posture as DIAGNOSE; routes through the ledger (mutation=False) 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -872,3 +873,580 @@ def test_doctor_shadow_flag_names_both_launch_shapes(monkeypatch):
     out = doctor_check(_DoctorApi(config=_cfg(ct_allowlist=frozenset({"101"}))))
     flag = next(f for f in out["flags"] if "PROXIMO_CT_ALLOWLIST" in f)
     assert "mcpServers" in flag and "EnvironmentFile" in flag, flag
+
+
+# --- the split target: API here, exec there (found live-proving, 2026-09-04) ---------------
+# The documented lab pattern sets a lab base_url/token/pin/audit-log by script env and says
+# nothing about PROXIMO_SSH_TARGET or the allowlist. Both then fall back to the shared env file,
+# so `proximo doctor` truthfully reported api_base_url=lab, node=pve-test1, ssh_target=pve and 22
+# PRODUCTION CTIDs in one config. A session that believes it is in the lab and calls ct_exec would
+# land in a production container. Mocks cannot see this; it needs a real second target.
+
+@pytest.fixture(autouse=True)
+def _no_env_leak():
+    """`load_env_file()` writes the file's keys straight into os.environ, BYPASSING monkeypatch —
+    `test_allowlist_remedy.py` carries the same fixture and says so in its docstring. Without it
+    the helpers below leak PROXIMO_* into every test that runs after them, which is a whole-suite
+    ordering bug that passes file-by-file. Strip only what the test added."""
+    before = {k: v for k, v in os.environ.items() if k.startswith("PROXIMO_")}
+    yield
+    for k in [k for k in os.environ if k.startswith("PROXIMO_")]:
+        if k not in before:
+            os.environ.pop(k, None)
+        elif os.environ[k] != before[k]:
+            os.environ[k] = before[k]
+
+
+@pytest.fixture(autouse=True)
+def _ssh_config_is_not_consulted(monkeypatch):
+    """This box's own ~/.ssh/config resolves `pve` to an address, so the split-target tests would
+    flip on the machine they run on. The resolver is a seam: default it to the literal host here;
+    the tests that exercise resolution set their own mapping."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_ssh_config_host", lambda target: target.rpartition("@")[2].lower())
+
+
+import proximo.doctor as _doctor_mod  # noqa: E402  (the seam's REAL function, captured before any fixture patches it)
+
+_REAL_SSH_CONFIG_HOST = getattr(_doctor_mod, "_ssh_config_host", None)
+
+
+def _doctor_with(monkeypatch, **env):
+    import proximo.config as config
+    import proximo.doctor as doctor
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", config._fresh_env_file_state())
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    config.load_env_file(announce=False)   # the real entry point does this before from_env()
+
+    cfg = config.ProximoConfig.from_env()
+
+    class _Api:
+        def __init__(self, c):
+            self.config = c
+        def version(self):
+            return {"version": "9.2.2"}
+        def access_permissions(self):
+            return {}
+    return doctor.doctor_check(_Api(cfg))
+
+
+def _exec_cfg(monkeypatch, tmp_path, *, api_host, ssh_target, allow="420,1494", **extra):
+    envfile = tmp_path / "proximo.env"
+    envfile.write_text("# empty\n")
+    monkeypatch.setenv("PROXIMO_ENV_FILE", str(envfile))
+    env = dict(
+        PROXIMO_API_BASE_URL=f"https://{api_host}:8006/api2/json",
+        PROXIMO_NODE="n1",
+        PROXIMO_TOKEN_PATH="/run/x",
+        PROXIMO_FINGERPRINT="aa" * 32,
+        PROXIMO_VERIFY_TLS="false",
+        PROXIMO_ENABLE_EXEC="1",
+        PROXIMO_CT_ALLOWLIST=allow,
+        PROXIMO_SSH_TARGET=ssh_target,
+    )
+    env.update(extra)
+    return _doctor_with(monkeypatch, **env)
+
+
+def test_split_target_fires_when_exec_lands_on_a_different_host(monkeypatch, tmp_path):
+    """The incident: the API was pointed at the lab while ct_exec still went to production.
+
+    The FIRST cut of this check compared which config STORE fed each value, which is not the
+    hazard. A lens showed it stayed silent on the remedy the message itself recommends: put the
+    api url and the allowlist in the same store, leave PROXIMO_SSH_TARGET in the file, and exec
+    still lands on prod with the flag quiet. Compare the HOSTS."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="lab-node", ssh_target="prod-pve")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said, said
+    assert "lab-node" in said and "prod-pve" in said, said
+    assert rep["config"]["exec_lands_on"] == "prod-pve"
+
+
+def test_split_target_fires_even_when_one_store_feeds_everything(monkeypatch, tmp_path):
+    """THE CASE THE STORE-COMPARISON MISSED. One store, two hosts, still a split."""
+    envfile = tmp_path / "proximo.env"
+    envfile.write_text(
+        "PROXIMO_API_BASE_URL=https://lab-node:8006/api2/json\n"
+        "PROXIMO_NODE=n1\nPROXIMO_TOKEN_PATH=/run/x\nPROXIMO_ENABLE_EXEC=1\n"
+        "PROXIMO_CT_ALLOWLIST=420\nPROXIMO_SSH_TARGET=prod-pve\nPROXIMO_FINGERPRINT=" + "aa" * 32 + "\n"
+    )
+    monkeypatch.setenv("PROXIMO_ENV_FILE", str(envfile))
+    rep = _doctor_with(monkeypatch)
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said, said
+
+
+def test_split_target_is_quiet_when_the_api_host_is_the_exec_host(monkeypatch, tmp_path):
+    """CONTROL: the ordinary single-machine deployment must stay quiet."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="pve", ssh_target="pve")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" not in said, said
+    assert rep["config"]["exec_lands_on"] == "pve"
+
+
+# --- lens round 2 on the rebuilt check (2026-09-05): seven findings, three surviving mutants ---
+
+def test_split_target_ignores_the_ssh_user(monkeypatch, tmp_path):
+    """`user@host` is a documented ssh_target form. The compare must read the HOST; the remedy
+    of the first rebuild ("set PROXIMO_SSH_TARGET to match the API host") told an operator to
+    drop the scoped service account."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="prod-pve", ssh_target="svc-exec@prod-pve")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" not in said, said
+    assert rep["config"]["exec_lands_on"] == "svc-exec@prod-pve"
+
+
+def test_split_target_compares_hosts_case_insensitively(monkeypatch, tmp_path):
+    """urlsplit lowercases the API host; ssh_target is stored verbatim. Same machine, one case."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="Prod-PVE", ssh_target="Prod-PVE")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+
+
+def test_the_remedy_is_followable_with_an_ip_host(monkeypatch, tmp_path):
+    """Live-proved 2026-09-05: with the API by IP, setting ssh_target to the lab's HOSTNAME kept
+    the flag firing. The remedy must work when followed literally: the charset admits an IP.
+    (RFC 5737 documentation address: the first draft carried the lab's real IP and the leak
+    audit refused it, the 09-04 trap walked into again.)"""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="192.0.2.51", ssh_target="192.0.2.51")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+
+
+def test_split_target_fires_for_on_host_exec_with_a_remote_api(monkeypatch, tmp_path):
+    """FINDING 1, the one that mattered: is_local exempted the hazard entirely. On-host mode runs
+    `pct` on the box Proximo runs on; if the API reads another machine, that IS a split, and a
+    lens deleted the is_local guard with 60 tests staying green."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="lab-node", ssh_target="")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said and "lab-node" in said, said
+    assert rep["config"]["exec_lands_on"].startswith("this host")
+
+
+@pytest.mark.parametrize("api_host", ["localhost", "127.0.0.1", "this-box"])
+def test_on_host_exec_is_quiet_when_the_api_is_this_host(monkeypatch, tmp_path, api_host):
+    """CONTROL for finding 1: an on-host deployment that points the API at itself stays quiet."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor.socket, "gethostname", lambda: "This-Box")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host=api_host, ssh_target="local")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+    assert rep["config"]["exec_lands_on"].startswith("this host")
+
+
+def test_split_target_reports_where_exec_lands_even_with_a_deny_all_allowlist(monkeypatch, tmp_path):
+    """Mutant m3 (drop `and allow`) survived: the deny-all path reported nothing about where exec
+    would land, one allowlist edit away from live exec on the wrong host."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="lab-node", ssh_target="prod-pve", allow="")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said, said
+    assert rep["config"]["exec_lands_on"] == "prod-pve"
+
+
+def test_split_target_cannot_compare_a_hostless_api_url_and_says_so(monkeypatch, tmp_path):
+    """FINDING 6: an empty API host made the compare impossible and the check went quiet, with
+    exec fully armed. Say what could not be checked instead of nothing."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="", ssh_target="prod-pve")
+    said = " ".join(rep.get("flags", []))
+    assert "names no host" in said and "prod-pve" in said, said
+    assert rep["config"]["exec_lands_on"] == "prod-pve"
+
+
+def test_split_target_covers_the_node_shell_too(monkeypatch, tmp_path):
+    """FINDING 7: node_probe/node_logs run `ssh <ssh_target>` under enable_node_shell, with no
+    allowlist at all, and sat outside the check."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="lab-node", ssh_target="prod-pve", allow="",
+                    PROXIMO_ENABLE_EXEC="0", PROXIMO_ENABLE_NODE_SHELL="true")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said and "node_probe" in said, said
+    assert rep["config"]["exec_lands_on"] == "prod-pve"
+
+
+def test_split_target_resolves_an_ssh_alias_through_ssh_config(monkeypatch, tmp_path):
+    """Run from the refreshed venv against this box's own production config, the flag fired
+    forever: the API by IP, the ssh target the alias `pve`, and `ssh -G pve` resolving to that
+    very IP. An alias is not a different machine; ssh's own config says where it goes."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_ssh_config_host",
+                        lambda target: {"svc@pve-alias": "192.0.2.10"}[target])
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="192.0.2.10", ssh_target="svc@pve-alias")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+    assert rep["config"]["exec_lands_on"] == "svc@pve-alias"
+
+
+def test_split_target_names_the_resolved_host_when_it_still_differs(monkeypatch, tmp_path):
+    """CONTROL: an alias that resolves elsewhere is a split, and the flag names where."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_ssh_config_host", lambda target: "192.0.2.99")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="192.0.2.10", ssh_target="pve-alias")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said and "192.0.2.99" in said, said
+
+
+def test_hostname_from_ssh_g_output_reads_the_hostname_line_only():
+    """The parser over ssh -G's real output shape: many `key value` lines, one `hostname`."""
+    import proximo.doctor as doctor
+    out = "user root\nhostname 192.0.2.10\nport 22\naddressfamily any\n"
+    assert doctor._hostname_from_ssh_g(out) == "192.0.2.10"
+    assert doctor._hostname_from_ssh_g("user root\nport 22\n") is None
+    assert doctor._hostname_from_ssh_g("hostnamex y\nhostname Prod-PVE\n") == "prod-pve"
+
+
+def test_ssh_config_host_falls_back_to_the_literal_host_without_ssh(monkeypatch):
+    """No ssh binary (a CI runner, a container): the literal host, lowercased, user stripped."""
+    import proximo.doctor as doctor
+    real = _REAL_SSH_CONFIG_HOST
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    assert real("svc@Prod-PVE") == "prod-pve"
+
+
+def test_split_target_treats_every_name_for_this_host_as_one_host(monkeypatch, tmp_path):
+    """Lens round 2: api `localhost` against ssh_target `127.0.0.1` fired, and the remedy told the
+    operator to set ssh_target to `localhost`, which is an is_local SENTINEL and silently changes
+    the code path. Both names are this host; compare them as one."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="localhost", ssh_target="127.0.0.1")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+    assert rep["config"]["exec_lands_on"] == "127.0.0.1"
+
+
+def _fake_ssh(tmp_path, body: str):
+    """A stand-in `ssh` binary: records its argv to a file and prints `body`. Lets the REAL
+    resolver run end to end without this box's ssh config, which the brief forbids consulting."""
+    argv_file = tmp_path / "argv.txt"
+    exe = tmp_path / "ssh"
+    exe.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FAKE_SSH_ARGV\"\n" + body)
+    exe.chmod(0o755)
+    return exe, argv_file
+
+
+def test_the_real_resolver_returns_the_alias_hostname_from_ssh_g(monkeypatch, tmp_path):
+    """LENS ROUND 3, mutant b2 survived: the resolver's success path (run `ssh -G`, parse, return
+    the HostName) had never executed under test. Every doctor test stubs the seam and the one
+    real-function test forces `which("ssh")` to None. A fake ssh binary runs the real path."""
+    exe, argv_file = _fake_ssh(tmp_path, "printf 'user root\\nhostname 192.0.2.77\\nport 22\\n'\n")
+    monkeypatch.setenv("FAKE_SSH_ARGV", str(argv_file))
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: str(exe))
+    assert _REAL_SSH_CONFIG_HOST("svc@lab-alias") == "192.0.2.77"
+    argv = argv_file.read_text().split("\n")
+    assert argv[:2] == ["-G", "--"], argv          # mutant b5: `--` ends ssh's options
+    assert argv[2] == "svc@lab-alias", argv         # the whole target, user included, goes to ssh
+
+
+def test_the_real_resolver_falls_back_to_the_literal_host_when_ssh_says_nothing(monkeypatch, tmp_path):
+    """CONTROL: an ssh that prints no hostname line (or fails) leaves the literal host."""
+    exe, argv_file = _fake_ssh(tmp_path, "exit 255\n")
+    monkeypatch.setenv("FAKE_SSH_ARGV", str(argv_file))
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: str(exe))
+    assert _REAL_SSH_CONFIG_HOST("svc@Lab-Alias") == "lab-alias"
+
+
+def test_the_remedy_names_local_when_the_api_is_this_host(monkeypatch, tmp_path):
+    """LENS ROUND 3, mutant b4 survived: the branch that stops the remedy from naming a value
+    that is itself an is_local sentinel had no test. API at this host, exec resolving elsewhere:
+    the remedy must say `local`, not `'127.0.0.1'`."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_ssh_config_host", lambda target: "192.0.2.99")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="127.0.0.1", ssh_target="far-alias")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said and "'local'" in said, said
+    assert "'127.0.0.1';" not in said, said
+
+
+def test_the_resolver_seam_is_actually_stubbed_for_this_file():
+    """THE FIXTURE'S OWN CONTROL: the autouse stub is the only thing keeping these tests off this
+    box's real ssh config (where `pve` resolves to an address). Prove it is wired, not merely
+    registered by name."""
+    import proximo.doctor as doctor
+    assert _REAL_SSH_CONFIG_HOST is not None and callable(_REAL_SSH_CONFIG_HOST)
+    assert doctor._ssh_config_host is not _REAL_SSH_CONFIG_HOST
+    assert doctor._ssh_config_host("svc@Prod-PVE") == "prod-pve"
+
+
+def test_no_shell_feature_means_no_landing_host_and_no_split_flag(monkeypatch, tmp_path):
+    """CONTROL: with neither exec nor the node shell enabled nothing ssh-es anywhere, so there is
+    no landing host to report and no split to flag, whatever ssh_target says."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="lab-node", ssh_target="prod-pve",
+                    PROXIMO_ENABLE_EXEC="0")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+    assert "exec_lands_on" not in rep["config"]
+
+
+def test_split_target_is_quiet_on_a_pure_targets_config(monkeypatch, tmp_path):
+    """CONTROL for the false positive the store-comparison had: a from_target config, one machine,
+    every value from the same registry entry, and PROXIMO_API_BASE_URL unset in the environment."""
+    import proximo.config as config
+    import proximo.doctor as doctor
+    monkeypatch.setattr(config, "_ENV_FILE_STATE", config._fresh_env_file_state())
+    for v in ("PROXIMO_API_BASE_URL", "PROXIMO_SSH_TARGET", "PROXIMO_CT_ALLOWLIST"):
+        monkeypatch.delenv(v, raising=False)
+    cfg = config.ProximoConfig.from_target({
+        "base_url": "https://pve:8006/api2/json", "node": "n1", "token_path": "/run/x",
+        "ct_allowlist": ["420"], "enable_exec": True, "ssh_target": "pve",
+        "fingerprint": "aa" * 32, "verify_tls": False,
+    })
+
+    class _Api:
+        def __init__(self, c): self.config = c
+        def version(self): return {"version": "9.2.2"}
+        def access_permissions(self): return {}
+    said = " ".join(doctor.doctor_check(_Api(cfg)).get("flags", []))
+    assert "SPLIT TARGET" not in said, said
+
+
+def test_doctor_tls_flag_counts_the_fingerprint_too(monkeypatch, tmp_path):
+    """The sibling of the config.py fix, 40 lines above the new code IN THE FILE I EDITED and
+    missed on the first pass: doctor is the 'run this FIRST' preflight, and it still told a
+    pinned deployment its API traffic was not cert-validated."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="pve", ssh_target="pve")
+    said = " ".join(rep.get("flags", []))
+    assert "not cert-validated" not in said, said
+    assert rep["config"].get("fingerprint"), "doctor must SHOW the pin, or a reader cannot see it"
+
+
+# ── this host's own addresses and names: the FOURTH cut of the split-target check (2026-09-05) ──
+# The third cut resolved the ssh alias and treated loopback plus the kernel hostname as this host.
+# Its sibling, filed the same night: Proximo ON the PVE node with the API at the node's own LAN
+# address, or at the FQDN PVE writes into /etc/hosts, still read as another machine.
+
+_REAL_INTERFACE_ADDRESSES = getattr(_doctor_mod, "_interface_addresses", None)
+_REAL_HOSTS_FILE_NAMES = getattr(_doctor_mod, "_hosts_file_names", None)
+
+
+@pytest.fixture(autouse=True)
+def _this_box_is_not_consulted(monkeypatch):
+    """The runner's own interfaces and /etc/hosts would put THAT machine's addresses into the
+    this-host set, so a test's documentation address could read as local on one box and remote on
+    another. Both readers are seams: default them to empty here (hostname-only, the third cut's
+    set); the tests that exercise them set their own answers. `raising=False` so a renamed seam is
+    reported by the pin test below, by name, instead of erroring every test in this file."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_interface_addresses", lambda: frozenset(), raising=False)
+    monkeypatch.setattr(doctor, "_hosts_file_names", lambda addrs: frozenset(), raising=False)
+
+
+def test_the_address_seams_are_actually_stubbed_for_this_file():
+    """THE FIXTURE'S OWN CONTROL, the resolver pin's twin: both readers exist, both are replaced,
+    and the loopback names are still there without them."""
+    import proximo.doctor as doctor
+    assert callable(_REAL_INTERFACE_ADDRESSES) and callable(_REAL_HOSTS_FILE_NAMES)
+    assert doctor._interface_addresses is not _REAL_INTERFACE_ADDRESSES
+    assert doctor._hosts_file_names is not _REAL_HOSTS_FILE_NAMES
+    assert doctor._this_host_names() >= {"localhost", "127.0.0.1", "::1"}
+
+
+def _own_addresses(monkeypatch, *addrs):
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_interface_addresses", lambda: frozenset(addrs), raising=False)
+
+
+def test_on_host_exec_is_quiet_when_the_api_is_this_hosts_own_address(monkeypatch, tmp_path):
+    """THE ALIAS FIRE'S SIBLING: the this-host set was loopback plus the kernel hostname, so
+    Proximo ON the PVE node with the API at the node's own LAN address (`https://<node-ip>:8006`,
+    the common on-host shape) fired SPLIT TARGET forever. An address bound to this machine's own
+    interfaces is this host."""
+    _own_addresses(monkeypatch, "192.0.2.10")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="192.0.2.10", ssh_target="local")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+    assert rep["config"]["exec_lands_on"].startswith("this host")
+
+
+def test_on_host_exec_still_fires_when_the_api_is_an_address_this_host_does_not_own(monkeypatch, tmp_path):
+    """DIRECTION B, the control for the test above: an address NOT bound here is still another
+    machine. Without this, `this host = every address` passes the quiet test."""
+    _own_addresses(monkeypatch, "192.0.2.10")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="192.0.2.99", ssh_target="local")
+    said = " ".join(rep.get("flags", []))
+    assert "SPLIT TARGET" in said and "192.0.2.99" in said, said
+
+
+def test_split_target_treats_this_hosts_own_address_as_this_host_on_the_ssh_side(monkeypatch, tmp_path):
+    """One set serves both sides: API at loopback, ssh target this machine's own LAN address (a
+    container on the node under host networking, its ssh hop pointed back at the node)."""
+    _own_addresses(monkeypatch, "192.0.2.10")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="localhost", ssh_target="192.0.2.10")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+
+
+def test_on_host_exec_is_quiet_when_the_api_is_this_hosts_fqdn_from_etc_hosts(monkeypatch, tmp_path):
+    """PVE requires `/etc/hosts` to carry `<ip> <fqdn> <short>` for the node and addresses the API
+    by that FQDN, while `socket.gethostname()` is the SHORT name. The names /etc/hosts gives one
+    of this machine's own addresses are this host's names; that file is local, so still no DNS.
+    The reader is handed the interface set (a reader handed an empty set finds no such line)."""
+    import proximo.doctor as doctor
+    _own_addresses(monkeypatch, "192.0.2.10")
+    monkeypatch.setattr(
+        doctor, "_hosts_file_names",
+        lambda addrs: frozenset({"pve1.example", "pve1"}) if "192.0.2.10" in addrs else frozenset(),
+        raising=False)
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="pve1.example", ssh_target="local")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+
+
+@pytest.mark.parametrize("api_host", ["[0:0:0:0:0:0:0:1]", "[0::1]"])
+def test_an_ip_literal_compares_by_address_not_by_spelling(monkeypatch, tmp_path, api_host):
+    """`::1` has many spellings. urlsplit strips the brackets; the compare canonicalizes any
+    parseable literal on both sides, so a spelling difference is not a split."""
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host=api_host, ssh_target="local")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))
+
+
+def test_canonical_host_compares_ip_literals_by_address_and_names_by_lowercase():
+    import proximo.doctor as doctor
+    assert doctor._canonical_host("0:0::1") == "::1"
+    assert doctor._canonical_host("Prod-PVE") == "prod-pve"
+    assert doctor._canonical_host(" 192.0.2.10 ") == "192.0.2.10"
+    assert doctor._canonical_host("") == ""
+
+
+# Captured from a Linux kernel's own files, addresses moved to documentation ranges.
+_FIB_TRIE_SAMPLE = """\
+Main:
+  +-- 0.0.0.0/0 3 0 5
+     +-- 0.0.0.0/4 2 0 2
+        |-- 0.0.0.0
+           /0 universe UNICAST
+        +-- 192.0.2.0/24 2 0 1
+           |-- 192.0.2.0
+              /24 link UNICAST
+           |-- 192.0.2.71
+              /32 host LOCAL
+           |-- 192.0.2.255
+              /32 link BROADCAST
+     +-- 127.0.0.0/8 2 0 2
+        +-- 127.0.0.0/31 1 0 0
+           |-- 127.0.0.0
+              /8 host LOCAL
+           |-- 127.0.0.1
+              /32 host LOCAL
+        |-- 127.255.255.255
+           /32 link BROADCAST
+Local:
+  +-- 0.0.0.0/0 3 0 5
+     +-- 198.51.100.0/24 2 0 1
+        |-- 198.51.100.0
+           /24 link UNICAST
+        |-- 198.51.100.71
+           /32 host LOCAL
+        |-- 198.51.100.255
+           /32 link BROADCAST
+"""
+
+_IF_INET6_SAMPLE = (
+    "fe800000000000000000000000000001 02 40 20 80     eth0\n"
+    "00000000000000000000000000000001 01 80 10 80       lo\n"
+    "20010db8000000000000000000000071 02 40 00 80     eth0\n"
+)
+
+_HOSTS_SAMPLE = """\
+127.0.0.1\tlocalhost
+::1\t\tlocalhost ip6-localhost ip6-loopback
+ff02::1\t\tip6-allnodes
+ff02::2\t\tip6-allrouters
+# --- BEGIN PVE ---
+192.0.2.71 pve1.example pve1
+# --- END PVE ---
+192.0.2.210 pbs-test   # a neighbour, not this machine
+127.0.1.1 Debian-Short
+"""
+
+
+def _proc_files(monkeypatch, tmp_path, fib=_FIB_TRIE_SAMPLE, inet6=_IF_INET6_SAMPLE, hosts=_HOSTS_SAMPLE):
+    """Point the three readers at tmp copies; `None` for a file that does not exist."""
+    import proximo.doctor as doctor
+    for name, body in (("_PROC_FIB_TRIE", fib), ("_PROC_IF_INET6", inet6), ("_HOSTS_FILE", hosts)):
+        path = tmp_path / name
+        if body is not None:
+            path.write_text(body)
+        monkeypatch.setattr(doctor, name, str(path), raising=False)
+
+
+def test_the_real_address_reader_takes_local_leaves_from_fib_trie_and_every_if_inet6_line(monkeypatch, tmp_path):
+    """The real readers over the kernel's own shapes. IPv4: only a leaf followed by `/32 host
+    LOCAL` is this machine; the network, the broadcast and the `/8 host LOCAL` loopback net are
+    not. IPv6: every line, in canonical compressed text."""
+    _proc_files(monkeypatch, tmp_path)
+    assert _REAL_INTERFACE_ADDRESSES() == frozenset({
+        "192.0.2.71", "198.51.100.71", "127.0.0.1",
+        "fe80::1", "::1", "2001:db8::71",
+    })
+
+
+@pytest.mark.parametrize("fib, inet6", [
+    (None, None),                                            # off Linux: neither file exists
+    ("", ""),                                                # empty files
+    ("not a trie\n|-- nonsense\n   /32 host LOCAL\n", "zz 00 00 00 00 lo\n"),   # unparseable
+])
+def test_the_real_address_reader_is_empty_on_any_failure(monkeypatch, tmp_path, fib, inet6):
+    """CONTROL: no file, or a file the parser cannot read, yields the empty set and the check
+    degrades to hostname-only. It never raises: doctor is what an operator runs to learn why
+    something ELSE is failing."""
+    _proc_files(monkeypatch, tmp_path, fib=fib, inet6=inet6)
+    assert _REAL_INTERFACE_ADDRESSES() == frozenset()
+
+
+def test_the_real_address_reader_keeps_the_good_lines_around_a_bad_one(monkeypatch, tmp_path):
+    """One unreadable if_inet6 line does not lose the rest of the file."""
+    _proc_files(monkeypatch, tmp_path, fib="", inet6="zz 00 00 00 00 lo\n" + _IF_INET6_SAMPLE)
+    assert _REAL_INTERFACE_ADDRESSES() == frozenset({"fe80::1", "::1", "2001:db8::71"})
+
+
+def test_the_real_hosts_reader_takes_names_only_from_loopback_and_own_address_lines(monkeypatch, tmp_path):
+    """The PVE-written line names this node by FQDN and short name; a neighbour's line does not
+    name this host, a multicast line does not either, comments are dropped, names are lowercased,
+    and Debian's `127.0.1.1 <name>` convention is loopback."""
+    _proc_files(monkeypatch, tmp_path)
+    own = frozenset({"192.0.2.71"})
+    assert _REAL_HOSTS_FILE_NAMES(own) == frozenset({
+        "localhost", "ip6-localhost", "ip6-loopback", "pve1.example", "pve1", "debian-short"})
+    assert _REAL_HOSTS_FILE_NAMES(frozenset()) == frozenset({
+        "localhost", "ip6-localhost", "ip6-loopback", "debian-short"})
+
+
+def test_the_real_hosts_reader_is_empty_without_a_hosts_file(monkeypatch, tmp_path):
+    _proc_files(monkeypatch, tmp_path, hosts=None)
+    assert _REAL_HOSTS_FILE_NAMES(frozenset({"192.0.2.71"})) == frozenset()
+
+
+def test_this_host_names_assembles_loopback_hostname_addresses_and_hosts_names(monkeypatch, tmp_path):
+    """The set the check compares against, end to end through the REAL readers over the samples."""
+    import proximo.doctor as doctor
+    _proc_files(monkeypatch, tmp_path)
+    monkeypatch.setattr(doctor, "_interface_addresses", _REAL_INTERFACE_ADDRESSES, raising=False)
+    monkeypatch.setattr(doctor, "_hosts_file_names", _REAL_HOSTS_FILE_NAMES, raising=False)
+    monkeypatch.setattr(doctor.socket, "gethostname", lambda: "PVE1")
+    names = doctor._this_host_names()
+    assert {"localhost", "127.0.0.1", "::1", "pve1", "192.0.2.71", "198.51.100.71",
+            "2001:db8::71", "pve1.example"} <= names, names
+    assert not {"pbs-test", "192.0.2.210", "192.0.2.255", "127.0.0.0"} & names, names
+
+
+# ── lens round 4 (2026-09-05): three survivors, all gaps in the tests above, none in the code ──
+
+def test_the_real_address_reader_keeps_the_good_lines_after_an_unparseable_one(monkeypatch, tmp_path):
+    """LENS ROUND 4, survivor 1: the "bad line" sample above is two characters, so it takes the
+    length `continue` and never reaches the parse handler; `except ValueError: break` in EITHER
+    reader stayed green. A head that is the right length but not hex, and a leaf that is not an
+    address, each cost only that line, never the addresses after it."""
+    _proc_files(monkeypatch, tmp_path,
+                fib="|-- nonsense\n   /32 host LOCAL\n|-- 192.0.2.71\n   /32 host LOCAL\n",
+                inet6="zz" * 16 + " 01 80 10 80 lo\n" + "00000000000000000000000000000001 01 80 10 80 lo\n")
+    assert _REAL_INTERFACE_ADDRESSES() == frozenset({"192.0.2.71", "::1"})
+
+
+def test_the_real_address_reader_does_not_mint_an_address_from_a_short_hex_head(monkeypatch, tmp_path):
+    """LENS ROUND 4, survivor 2: the 32-digit guard had no test that could fail without it. A head
+    that is valid hex but the wrong length (`deadbeef`) is an integer, and without the guard it
+    mints `::dead:beef` into this host's names."""
+    _proc_files(monkeypatch, tmp_path, fib="",
+                inet6="deadbeef 02 40 20 80 eth0\n" + "00000000000000000000000000000001 01 80 10 80 lo\n")
+    assert _REAL_INTERFACE_ADDRESSES() == frozenset({"::1"})
+
+
+def test_the_ssh_side_of_the_compare_is_canonical_too(monkeypatch, tmp_path):
+    """LENS ROUND 4, survivor 3: only the API side's canonicalization was pinned. `ssh -G` prints
+    HostName as the operator's config spells it, so a differently spelled IPv6 literal for this
+    host must still read as this host on the ssh side."""
+    import proximo.doctor as doctor
+    monkeypatch.setattr(doctor, "_ssh_config_host", lambda target: "0:0:0:0:0:0:0:1")
+    rep = _exec_cfg(monkeypatch, tmp_path, api_host="[::1]", ssh_target="lab-alias")
+    assert "SPLIT TARGET" not in " ".join(rep.get("flags", []))

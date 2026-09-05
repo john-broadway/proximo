@@ -44,6 +44,28 @@ BASE_ENV = {
             "any": ()},
 }
 
+# A CA bundle names a FILE, and the variable being set says nothing about the file being there.
+# The live-smoke workflow's PBS precheck bails with a bare `exit 0` BEFORE writing pbs-ca.pem when
+# the test box is down — its own comment says the tier "must SKIP cleanly ... not red" — but the
+# bail ends only that STEP, so the smoke step still ran with the path set and the file absent and
+# all five PBS smokes FAILED. Diagnosed 2026-09-04 from 65 straight nightly reds. A tier whose
+# bundle is set but names nothing cannot connect, so it is NOT ready: skip it, with the reason.
+# An UNSET bundle stays ready — that is a deployment verifying by fingerprint or system CAs.
+# Env vars that name a FILE. The variable being set says nothing about the file being there, and
+# the live-smoke workflow sets all four unconditionally while writing them only on a success path:
+# a bailed precheck leaves the path set and the file absent, the tier read as READY, and the
+# smokes FAILED where the workflow's own comment says they SKIP. Diagnosed 2026-09-04 from 65
+# straight nightly reds. An UNSET var stays ready — that is a deployment configured another way.
+# NOTE, honestly: for PBS a missing CA bundle is evidence the precheck did not finish, NOT proof
+# the tier cannot connect. PbsBackend returns inside `if config.fingerprint:` before it ever reads
+# ca_bundle (src/proximo/pbs.py), so with a fingerprint pinned the bundle is unused. The workflow
+# now also DECLARES the skip by clearing PROXIMO_PBS_BASE_URL, which is the real mechanism; this
+# check is the backstop for a path that goes missing some other way.
+BASE_FILES = {
+    "pve": ("PROXIMO_CA_BUNDLE", "PROXIMO_TOKEN_PATH"),
+    "pbs": ("PROXIMO_PBS_CA_BUNDLE", "PROXIMO_PBS_TOKEN_PATH"),
+}
+
 
 @dataclass(frozen=True)
 class Smoke:
@@ -150,6 +172,9 @@ def _base_env_ready(base: str) -> list[str]:
     missing = [v for v in tier["all"] if not os.environ.get(v)]
     if tier["any"] and not any(os.environ.get(v) for v in tier["any"]):
         missing.append("(" + " | ".join(tier["any"]) + ")")
+    for var in BASE_FILES.get(base, ()):
+        if (path := os.environ.get(var)) and not os.path.isfile(path):
+            missing.append(f"{var} (set, but names no file)")
     return missing
 
 
@@ -200,6 +225,29 @@ def cmd_dry_run(phase_arg: str) -> int:
     return 0
 
 
+def _verdict(results: list[tuple[str, str, float]]) -> tuple[int, str]:
+    """The run's exit code and its summary line. Pure, so it is testable without live infra.
+
+    `ran == 0` is REFUSED (rc 2). A run that proved nothing is not a pass, and before this the
+    exit was `1 if failed else 0` with `ran` computed and never used: a night with the lab off
+    skipped every smoke and exited 0, so CI read GREEN on zero evidence. An adversarial lens
+    caught it in the commit that introduced the skip, which had traded a true red for a false
+    green — the one outcome this workflow's header forbids.
+
+    A PARTIAL run still passes. The lab is off unless someone is testing, so a nightly that
+    proves the PVE tier and skips the lab tier is a real pass for what it ran; the skips stay
+    named in the summary above. Only proving NOTHING is refused.
+    """
+    failed = sum(1 for _, state, _ in results if state.startswith("FAIL"))
+    ran = sum(1 for _, state, _ in results if state != "SKIP")
+    line = f"{failed} failed / {ran} run / {len(results) - ran} skipped / {len(results)} total"
+    if failed:
+        return 1, line
+    if ran == 0:
+        return 2, line + "\n  REFUSED: this run ran nothing — 0 run is not a pass, it is no evidence."
+    return 0, line
+
+
 def cmd_run(phase_arg: str) -> int:
     selected = _selected(phase_arg)
     # Per-tier readiness banner: a tier with no env makes its smokes SKIP, so an unconfigured runner
@@ -222,15 +270,11 @@ def cmd_run(phase_arg: str) -> int:
         results.append((s.name, "PASS" if rc == 0 else f"FAIL(rc={rc})", dt))
 
     print("\n" + "=" * 56 + "\nSUMMARY")
-    failed = ran = 0
     for name, state, dt in results:
         print(f"  {state:12} {name:18} {dt:6.1f}s")
-        if state.startswith("FAIL"):
-            failed += 1
-        if state != "SKIP":
-            ran += 1
-    print(f"{failed} failed / {ran} run / {len(results) - ran} skipped / {len(results)} total")
-    return 1 if failed else 0
+    rc, note = _verdict(results)
+    print(note)
+    return rc
 
 
 def main() -> int:

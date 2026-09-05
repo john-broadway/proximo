@@ -210,18 +210,18 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.39.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.39.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.40.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.40.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.39.1 (an allowlist refusal names the store that fed it).** `ct_exec` and its
-> siblings refused a CTID by naming a variable rather than a store, and that variable can be
-> fed from two: the MCP client's env block and `proximo.env`, where the loader fills only the
-> keys the block has not set. Edit the file's copy of a key the block also holds and you have
-> edited a dead line. Now the loader names every file key the environment shadows with a
-> different value, every refusal names the store it actually read and says a restart or
-> reconnect is required, and `proximo doctor` reports that source and flags the difference.
-> The base image also moves to the `python:3.13-slim` tag head, both stages together.
+> **New in 0.40.0 (doctor says where near-root exec lands).** `ct_exec` and the node shell
+> ride an ssh target or run on the box itself, never the API, so the machine the API reads and
+> the machine a near-root command lands on can differ, and nothing said so. `proximo doctor`
+> now reports where exec lands, resolves the ssh target through ssh's own config, counts every
+> name and address this machine goes by as one host, and flags a split target with a remedy
+> you can follow as written. The shadow-key flag also compares every set-valued key the way
+> its gate reads it, so a reordered allowlist is no longer a change, and the TLS warning
+> counts a pinned fingerprint as verification.
 >
-> Recent: **0.39.0** gave the junction its law, putting the shell lane under the served token's own PVE permission map. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.39.1** made every allowlist refusal name the store that fed it. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,11 +258,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.39.1**: **an allowlist refusal names the store that fed it.** The reach allowlists
-  can be fed from two stores and the loader merges them, so a refusal that named only the
-  variable sent operators to edit a line that was never read. Every refusal now names the
-  store behind it, the loader names each key the environment shadows with a different value,
-  and `proximo doctor` reports the source and flags the difference.
+- 🩸 **0.40.0**: **doctor says where near-root exec lands.** The shell lane rides an ssh
+  target or the box itself, never the API, so the two halves of one config can name different
+  machines and nothing said so. Doctor now reports the landing host and flags a split target
+  with a remedy you can follow as written; shadow flags compare every set-valued key the way
+  its gate reads it, so a reordered allowlist is no longer a change.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

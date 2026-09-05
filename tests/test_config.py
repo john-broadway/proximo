@@ -1,5 +1,7 @@
 """Config tests — Proximo ships with tests from day one (the 'solid' principle)."""
 
+import warnings
+
 import pytest
 
 from proximo.config import ProximoConfig
@@ -669,3 +671,35 @@ def test_from_target_star_warning_is_allow_all_when_mirror_off(monkeypatch):
               "ct_allowlist": "*"}
     with pytest.warns(UserWarning, match="least-privilege disabled"):
         ProximoConfig.from_target(fields)
+
+
+def test_verify_tls_false_with_a_fingerprint_does_not_claim_a_refusal(monkeypatch):
+    """Found by live-proving against the lab 2026-09-04: the warning says "the backend will refuse
+    to start (fail-closed)" and then the backend starts fine, because ApiBackend returns on the
+    fingerprint branch BEFORE the fail-closed check. A pinned fingerprint is the documented
+    strongest option for a self-signed PVE (the refusal message recommends it first), so this is
+    the SAFE config, and warning that it will fail sends an operator to fix what is not broken."""
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://x:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/run/x")
+    monkeypatch.setenv("PROXIMO_VERIFY_TLS", "false")
+    monkeypatch.delenv("PROXIMO_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("PROXIMO_FINGERPRINT", "aa" * 32)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = ProximoConfig.from_env()
+    said = " ".join(str(w.message) for w in caught)
+    assert "refuse to start" not in said, said
+    assert cfg.verify_tls is False and cfg.fingerprint
+
+
+def test_verify_tls_false_with_no_pin_at_all_still_warns(monkeypatch):
+    """CONTROL: the warning must survive for the genuinely unverified case it was written for."""
+    monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://x:8006/api2/json")
+    monkeypatch.setenv("PROXIMO_NODE", "pve")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", "/run/x")
+    monkeypatch.setenv("PROXIMO_VERIFY_TLS", "false")
+    monkeypatch.delenv("PROXIMO_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("PROXIMO_FINGERPRINT", raising=False)
+    with pytest.warns(UserWarning, match="(?i)fail.closed|refuse to start"):
+        ProximoConfig.from_env()
