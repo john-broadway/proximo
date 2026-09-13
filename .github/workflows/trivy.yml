@@ -37,6 +37,7 @@ jobs:
           context: .
           load: true
           tags: proximo:scan
+          build-args: APT_SECURITY_EPOCH=${{ github.run_id }}-${{ github.run_attempt }}   # re-runs the apt security layer; see Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

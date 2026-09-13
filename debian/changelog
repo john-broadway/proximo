@@ -1,3 +1,19 @@
+proximo (0.41.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.41.1 (patch: the security patch layer only ran on a digest bump. The
+    Dockerfile has applied Debian's security patches at build time since 2026-07-12, but every
+    image build passes cache-from: type=gha and the RUN line never changes, so BuildKit replayed
+    the layer. It re-ran only when the pinned base digest moved, never because a fix was
+    published. Read from the published images' OCI configs: 0.41.0 was built 2026-09-13 and
+    shipped the 2026-09-04 apt layer, byte-identical to 0.40.0's, so both scan at 3 CRITICAL and
+    9 HIGH Debian CVEs in perl-base, libpcre2-8-0, libsqlite3-0 and gzip. Debian 13.7 published
+    those fixes on 2026-09-12, and the pinned base was already the newest python:3.13-slim, so no
+    digest bump was pending to carry them. APT_SECURITY_EPOCH now carries the run id at all three
+    build sites and the layer rebuilds every run; a test holds the ARG, its stage, and the
+    build-arg at every call site. No tool or API change).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 13 Sep 2026 18:30:00 +0000
+
 proximo (0.41.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.41.0 (minor: one line puts it on the host. packaging/lxc/ installs

@@ -2,6 +2,20 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.41.1] — 2026-09-13
+
+**The security patch layer only ran on a digest bump.**
+The Dockerfile has applied Debian's security patches at build time since `cb4674e` (2026-07-12), so that a newly-disclosed base CVE with a released fix would clear on the next build rather than wait for a base-image digest bump. Every image build passes `cache-from: type=gha` and that `RUN` line never changes, so BuildKit replayed the layer. It did still run, but only ever incidentally: when the pinned digest moved and invalidated everything after it, or when the cache entry aged out. Its last two executions were 2026-08-31 and 2026-09-04, the second forced by the digest bump in `be15230`. Never once because a fix was published.
+
+Read from the published images' own OCI configs: 0.41.0 was built 2026-09-13 and shipped the 2026-09-04 apt layer, byte-identical to 0.40.0's, which is why the two scan identically at 3 CRITICAL and 9 HIGH Debian CVEs across `perl-base`, `libpcre2-8-0`, `libsqlite3-0` and `gzip`. Debian 13.7 published every one of those fixes on 2026-09-12. So the image went out one day behind the archive, and would have stayed behind: the pinned base is already the newest `python:3.13-slim`, so no digest bump is pending to carry them, and the digest bump was the only thing that ever did.
+
+`APT_SECURITY_EPOCH` now carries the run id at all three build sites, so the layer rebuilds every run, and it is declared in the runtime stage because `ARG` scope is per-stage. The added cost is the apt step alone: the hash-pinned pip install downstream already rebuilt every release, since the wheel changes each time. Measured `image` job durations say rebuilding is not the slower path (3m47s for the run that rebuilt the chain, against 4m25s and 4m20s for two that replayed it). `tests/test_dockerfile_pins.py` holds the ARG, its stage, and the build-arg at every call site including a raw `docker build` and a `.yaml` workflow. One seam opens on purpose: the scanned layer and the shipped layer are no longer byte-identical, the release one always being fresher.
+
+The Trivy gate that found this was working correctly throughout. It went red when its database and the Debian archive caught up, not when the defect appeared, which is why a green scan last week said nothing about the image last week.
+
+**Correction to the 0.41.0 note below.**
+It said the one contact that came through the removed HELLO door "arrived by email". Nothing supports that, and it should not have shipped. The line now reads that nothing ever came through it.
+
 ## [0.41.0] — 2026-09-13
 
 **An LXC on the Proxmox host, one line.**
@@ -14,12 +28,11 @@ All notable changes to Proximo. Format loosely follows Keep a Changelog; version
 `proximo hello`, `src/proximo/hello.py` and the anonymous feedback page at
 `john-broadway.github.io/hello/` are gone, and `AGENTS.md` is rewritten flat — every
 operational fact kept (the sharp edges, the verification steps, the no-telemetry
-statement), the greeting and the invitation removed. The form was never used; the single
-contact that ever came through the open door arrived by email, and an anonymous path was
-what it asked for. CHANGELOG entries from 0.19.0 and earlier still name that URL: they are
-the historical record, and it stops resolving once the page comes down. `proximo hello`
-now exits 2 as an unrecognised verb, like any other. The contact address is no longer
-carried in the shipped docs.
+statement), the greeting and the invitation removed. Nothing ever came through it.
+CHANGELOG entries from 0.19.0 and earlier still name that URL and the contact address:
+they are the historical record, and the page stops resolving once it comes down. Outside
+that history, neither is carried in the shipped docs any more. `proximo hello` now exits 2
+as an unrecognised verb, like any other.
 
 ## [0.40.0] — 2026-09-05
 

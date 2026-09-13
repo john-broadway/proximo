@@ -4,6 +4,8 @@
 # Dependabot's `docker` ecosystem bumps the digest weekly and Trivy re-scans the base
 # on every push to main + weekly; the build layer also applies Debian's current security
 # patches (apt-get upgrade below), so fixes land at build time, not only on the digest bump.
+# That last clause holds ONLY while every build site passes APT_SECURITY_EPOCH — see the long
+# note above that RUN for the period when the cache tied it back to the digest bump.
 #
 # NOTE for whoever reviews the next digest-bump PR: trivy.yml has no `pull_request` trigger
 # (by design, fork PRs cannot hold `security-events: write`), so a base-image bump PR showing
@@ -38,7 +40,45 @@ FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb
 # `apt-get upgrade` applies Debian's current security patches at build time, so a newly-disclosed
 # base CVE that already has a fix (e.g. liblzma5 CVE-2026-34743 -> 5.8.1-1+deb13u1) is remediated
 # on the next build instead of waiting for the weekly Dependabot digest bump to carry it.
-RUN apt-get update \
+#
+# The "not only on the digest bump" half of that was false until 2026-09-13, and the cache is why.
+# Every build site passes `cache-from: type=gha` and this RUN line never changes, so BuildKit
+# replayed the layer (`#14 [stage-1 2/6] RUN apt-get update ... #14 CACHED`). The layer DID run,
+# but only ever incidentally: when the pinned digest below moved (invalidating everything after
+# it), or when the GHA cache entry aged out. Its last two executions were 2026-08-31 and
+# 2026-09-04, the second forced by the digest bump in be15230. Never once because a security fix
+# was published. So the control was pinned to exactly the cadence it was written to escape.
+#
+# What that cost, measured from the published images' own OCI configs: 0.41.0 was built
+# 2026-09-13 and shipped the 2026-09-04 apt layer, byte-identical to 0.40.0's (same diff_id), so
+# the two scan identically at 3 CRITICAL + 9 HIGH Debian CVEs. Debian 13.7 published every one of
+# those fixes on 2026-09-12. The image was one day behind the archive at release, and would have
+# stayed behind indefinitely: the pin below is ALREADY the newest python:3.13-slim, so there is no
+# digest bump pending to carry them, and the digest bump was the only thing that ever did.
+#
+# APT_SECURITY_EPOCH decouples the two for real. CI passes the run id, so the value differs per
+# run and this layer is rebuilt. It is REFERENCED inside the RUN rather than only declared,
+# because Docker documents the cache miss on an ARG's first USE, and it is declared in THIS stage
+# because ARG scope is per-stage: from the build stage or above the first FROM it would expand
+# empty here and cache forever. run_attempt rides along with run_id so a "re-run all jobs" on a
+# failed release gets a fresh epoch too, rather than replaying the one that failed.
+# The `=0` default is deliberate: a plain local `docker build` with no --build-arg caches this
+# layer with no signal. CI is the path that ships, and CI always passes a value.
+# Cost: the apt step itself. The hash-pinned pip install below is
+# downstream, but it already rebuilt on every release anyway, because the wheel changes each time.
+# Measured `image` job durations: the run that rebuilt this whole chain (v0.39.1) took 3m47s, the
+# two that replayed it took 4m25s and 4m20s. Rebuilding was not the slower path.
+# tests/test_dockerfile_pins.py holds BOTH halves, the ARG here and the build-arg at every call
+# site, including a raw `docker build` and a .yaml workflow, so a fourth image build added later
+# cannot quietly go back to shipping stale packages.
+#
+# One seam this opens, on purpose: trivy.yml and release.yml now build with different epochs, so
+# the scanned apt layer is no longer the byte-identical one the release ships. It was, until now
+# (that is what the shared diff_id above means). The release layer is always the fresher of the
+# two, so the drift runs safe, but the gate no longer speaks for the exact bytes.
+ARG APT_SECURITY_EPOCH=0
+RUN echo "apt security epoch: ${APT_SECURITY_EPOCH}" \
+ && apt-get update \
  && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends openssh-client \
  && rm -rf /var/lib/apt/lists/*

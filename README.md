@@ -210,18 +210,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.41.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.41.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.41.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.41.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.41.0 (one line puts it on the host).** `packaging/lxc/` installs Proximo as its
-> own Debian 13 container on a Proxmox host in a single line, on the community-scripts engine
-> pointed at Proximo's own tree: a dedicated service user, a minted bearer, a hardened unit,
-> and the PROVE ledger on disk. The engine's telemetry is off, and the script refuses to run
-> if the pinned engine stops defining what it overrides. Create plans now name the bridge a
-> NIC attaches to, and `proximo doctor` probes `SDN.Use` and `Datastore.AllocateSpace`, so a
-> token that can create guests is no longer reported able when the create would answer 403.
-> The `proximo hello` front door is removed.
+> **New in 0.41.1 (the security patch layer only ran on a digest bump).** The Dockerfile has
+> patched at build time since July, so fixes would land without waiting on a base-image bump.
+> Every build passes `cache-from: type=gha` and that `RUN` never changes, so BuildKit replayed
+> it: 0.41.0 shipped 0.40.0's 2026-09-04 layer, and both scan at 3 CRITICAL and 9 HIGH base-OS
+> CVEs, which Debian 13.7 fixed on 2026-09-12. It rebuilds every run now.
 >
-> Recent: **0.40.0** made the doctor say where near-root exec lands. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.41.0** put Proximo on the host in one line, with `packaging/lxc/` building it its
+> own Debian 13 container, and removed the `proximo hello` front door. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -258,11 +256,13 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.41.0**: **one line puts it on the host.** `packaging/lxc/` builds Proximo its own
-  Debian 13 container with a dedicated user, a hardened unit and the PROVE ledger on disk,
-  and refuses to run if its pinned engine stops defining what the script overrides. Create
-  plans name the bridge a NIC attaches to and the doctor probes `SDN.Use`, so a token that
-  can create guests is not reported able when the create would answer 403.
+- 🩸 **0.41.1**: **the security patch layer only ran on a digest bump.** The image has applied
+  Debian's patches at build time since July, but every build passed `cache-from: type=gha` and
+  that `RUN` never changed, so BuildKit replayed the layer. It re-ran only when the pinned base
+  digest moved, never because a fix shipped. 0.41.0 carried the 2026-09-04 layer, byte-identical
+  to 0.40.0's, so both scan at 3 CRITICAL and 9 HIGH base-OS CVEs that Debian 13.7 fixed on
+  2026-09-12; the pinned base was already the newest `python:3.13-slim`, so nothing was pending.
+  The layer rebuilds every run now, held by a test at every build site.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

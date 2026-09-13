@@ -106,6 +106,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: proximo:smoke
+          build-args: APT_SECURITY_EPOCH=${{ github.run_id }}-${{ github.run_attempt }}   # re-runs the apt security layer; see Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: The entrypoint must actually run
@@ -154,6 +155,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: APT_SECURITY_EPOCH=${{ github.run_id }}-${{ github.run_attempt }}   # re-runs the apt security layer; see Dockerfile
           sbom: true            # ship an SPDX SBOM alongside the image
           provenance: false     # provenance comes from the signed attestation below (avoid duplicating it)
           cache-from: type=gha
