@@ -562,6 +562,16 @@ POSTs with plain JSON instead of SSE for clients that prefer it. Put a reverse p
 TLS, and prefer reaching it over a VPN to exposing it publicly; `GET /healthz` is open for health
 checks. Keep the Proxmox token **read-only** (Step 2) until you've verified the perimeter.
 
+#### As an LXC on the Proxmox host
+
+One line on the PVE node builds a Debian 13 container running exactly this face, on the community-scripts engine (MIT) pointed at Proximo's own tree:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/john-broadway/proximo/main/packaging/lxc/ct/proximo.sh)"
+```
+
+The install creates a `proximo` system user, mints `/etc/proximo/mcp-bearer.token` (owned by it, mode 600), writes `/etc/proximo/proximo.env` with `PROXIMO_MCP_HTTP_HOST=0.0.0.0`, the token file, the PROVE ledger at `/var/log/proximo/audit.log`, and a Host allowlist carrying the container's own address and name, and enables `proximo-mcp-http.service`, which runs as that user under `ProtectSystem=strict`. The service starts with no Proxmox connection and answers `tools/list`; uncomment `PROXIMO_API_BASE_URL`, `PROXIMO_NODE` and `PROXIMO_TOKEN_PATH` in that file (Step 2's read-only token first), then `systemctl restart proximo-mcp-http`. Updating is the same line run inside the container. Nothing in this path is listed by community-scripts, and the script turns their telemetry off: no prompt, nothing posted, no status or advisory lookups. As in every container the engine builds, root's console password is left empty (auto-login on the Proxmox console; ssh stays key-only): set one with `passwd` if that console is shared. Files: `packaging/lxc/`.
+
 **Verify the perimeter before you wire any client** — a request with no bearer must be refused:
 
 ```bash
@@ -633,7 +643,7 @@ The moment the token is gone, Proximo can do nothing at all.
 | **Connection refused / timeout** | Wrong host or port (the Proxmox API is `:8006`), or a firewall in the way. |
 | **`ct_exec` refused** | Exec is off by default (grants host root). It's opt-in via `PROXIMO_ENABLE_EXEC=1` + a CTID allowlist — only if you truly need it. |
 | **A remote MCP client can't connect** | The default `proximo` command serves stdio only — a networked MCP client needs `proximo-mcp-http` (see **Remote / multi-client**). The HTTP face speaks REST, not MCP. Check the bearer header and that `PROXIMO_MCP_HTTP_ALLOWED_HOSTS` includes the Host you're connecting through. |
-| **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. `proximo --help` and `proximo --version` don't print a usage screen either — any argument that isn't `doctor`/`mint`/`arm`/`disarm`/`reap`/`hello` falls through to the same banner-then-wait. Wire it into an MCP client (Step 5) instead of running it directly. |
+| **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. Only the bare, argument-less invocation waits: `proximo --help` prints the usage screen and exits 0, and `proximo --version` or any unrecognised verb prints the usage screen and exits 2 rather than serving. The usage screen itself is the authoritative verb list. Wire it into an MCP client (Step 5) instead of running it directly. |
 
 ---
 

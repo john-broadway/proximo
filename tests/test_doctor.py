@@ -99,6 +99,22 @@ def test_capability_cannot_has_needs_and_hint():
     assert power[0]["hint"] and "pveum acl modify" in power[0]["hint"]
 
 
+def test_capability_create_with_a_nic_needs_sdn_use_and_disk_space_separately():
+    # VM.Allocate everywhere is not enough to create a guest carrying a NIC or a disk: PVE 8+ checks
+    # SDN.Use on the bridge and Datastore.AllocateSpace on the storage on their own (live 403, 2026-09-08).
+    out = doctor_check(_DoctorApi(perms={"/": {"VM.Audit": 1, "VM.Allocate": 1}}))
+    can = " ".join(c["capability"] for c in out["token"]["can"])
+    cannot = {c["capability"]: c for c in out["token"]["cannot"]}
+    assert "Create / clone / destroy guests" in can
+    sdn = [c for k, c in cannot.items() if "SDN.Use" in k]
+    disk = [c for k, c in cannot.items() if "Allocate disk" in k]
+    assert sdn and sdn[0]["needs"] == ["SDN.Use"] and "PVESDNUser" in sdn[0]["hint"]
+    assert disk and disk[0]["needs"] == ["Datastore.AllocateSpace"] and "PVEDatastoreUser" in disk[0]["hint"]
+    held = doctor_check(_DoctorApi(perms={"/": {"VM.Allocate": 1, "SDN.Use": 1, "Datastore.AllocateSpace": 1}}))
+    can2 = " ".join(c["capability"] for c in held["token"]["can"])
+    assert "SDN.Use" in can2 and "Allocate disk" in can2
+
+
 def test_scoped_grant_is_noted_not_root():
     # snapshot only granted on a pool path, not at root — doctor must say it's scoped there.
     out = doctor_check(_DoctorApi(perms={"/": {"VM.Audit": 1}, "/pool/proximo-test": {"VM.Snapshot": 1}}))

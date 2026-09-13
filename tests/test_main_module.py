@@ -61,47 +61,6 @@ def test_main_mint_json_emits_structured_recipe(monkeypatch, capsys):
     assert [s["key"] for s in recipe["steps"]] == ["create", "write", "grant", "wire", "verify"]
 
 
-def test_main_hello_subcommand_prints_greeting_and_skips_server(monkeypatch, capsys):
-    # `proximo hello` prints the print-only agent front door and exits — no API call,
-    # no network, and it must NOT start the server.
-    import proximo.server as srv
-
-    ran = {}
-    monkeypatch.setattr(srv.sys, "argv", ["proximo", "hello"])
-    monkeypatch.setattr(srv.mcp, "run", lambda *a, **k: ran.__setitem__("server", True))
-    srv.main()
-    out = capsys.readouterr().out
-    assert out.startswith("proximo hello — ")
-    assert "[1/6] " in out
-    assert "server" not in ran
-
-
-def test_main_hello_json_emits_stable_section_keys(monkeypatch, capsys):
-    import json
-
-    import proximo.server as srv
-
-    monkeypatch.setattr(srv.sys, "argv", ["proximo", "hello", "--json"])
-    monkeypatch.setattr(srv.mcp, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
-    srv.main()
-    greeting = json.loads(capsys.readouterr().out)   # stdout must be ONLY the JSON
-    assert [s["key"] for s in greeting["sections"]] == [
-        "greeting", "sharp_edges", "verify", "never", "why", "say_hi"]
-
-
-def test_main_hello_sign_flag_is_retired(monkeypatch, capsys):
-    # --sign printed the guestbook posting command; the guestbook came down 2026-07-14
-    # and the flag went with it. An unknown flag must exit 2, not silently greet.
-    import pytest
-
-    import proximo.server as srv
-
-    monkeypatch.setattr(srv.sys, "argv", ["proximo", "hello", "--sign", "note"])
-    with pytest.raises(SystemExit) as exc:
-        srv.main()
-    assert exc.value.code == 2
-
-
 def test_main_mint_unknown_product_exits_2_with_valid_set(monkeypatch, capsys):
     import pytest
 

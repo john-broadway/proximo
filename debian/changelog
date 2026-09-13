@@ -1,3 +1,18 @@
+proximo (0.41.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.41.0 (minor: one line puts it on the host. packaging/lxc/ installs
+    Proximo as its own Debian 13 container on a Proxmox host in a single line, on the
+    community-scripts engine pointed at Proximo's own tree, with a dedicated service user,
+    a minted bearer, a hardened unit and the PROVE ledger at /var/log/proximo; the engine's
+    telemetry is off and the script refuses to run if the pinned engine stops defining what
+    it overrides. Create plans carrying a netN option now name the bridge and the SDN.Use
+    requirement PVE 8+ checks apart from VM.Allocate, and proximo doctor probes SDN.Use and
+    Datastore.AllocateSpace, so a token that can create guests is no longer reported able
+    when the create would answer 403. Removed: the proximo hello front door, its module and
+    its tests, and the anonymous feedback page it pointed at. 908 tools unchanged).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 13 Sep 2026 18:30:00 +0000
+
 proximo (0.40.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.40.0 (minor: doctor says where near-root exec lands.

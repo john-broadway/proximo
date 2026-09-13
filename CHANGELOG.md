@@ -2,6 +2,25 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.41.0] — 2026-09-13
+
+**An LXC on the Proxmox host, one line.**
+`packaging/lxc/` carries a container script, an install script and a card in the community-scripts shape, run on their MIT engine pointed at Proximo's own tree: a Debian 13 container with Proximo from PyPI, a minted bearer, `/etc/proximo/proximo.env`, and `proximo-mcp-http.service` bound on 41243 with the container's own address in the Host allowlist, running as a dedicated `proximo` user under a hardened unit with the PROVE ledger at `/var/log/proximo/audit.log`. The same line inside the container updates it through the engine's release check. The script turns the engine's telemetry off: no prompt, nothing posted to community-scripts, no status or advisory lookups. The engine is pinned to a commit, and the script refuses to run if that engine stops defining what it overrides. Not listed by community-scripts; the files are in their shape. README and SETUP carry the line.
+
+**Create plans disclose the bridge, and the doctor probes it.**
+`pve_create_container` with a `netN` option now names the bridge(s) and the `SDN.Use` requirement PVE 8+ checks apart from `VM.Allocate`; the clone plan has said this since June, the create plan never looked at its own net options. `pve_doctor` gained two rows, `SDN.Use` on the bridge and `Datastore.AllocateSpace` on the storage, so a token that can create guests is no longer reported able when the create would answer 403. Found live: a create through the operator token, refused on `/sdn/zones/localnetwork/vmbr0`. Tool-description examples moved from Debian 12 to Debian 13.
+
+**Removed: the HELLO front door.**
+`proximo hello`, `src/proximo/hello.py` and the anonymous feedback page at
+`john-broadway.github.io/hello/` are gone, and `AGENTS.md` is rewritten flat — every
+operational fact kept (the sharp edges, the verification steps, the no-telemetry
+statement), the greeting and the invitation removed. The form was never used; the single
+contact that ever came through the open door arrived by email, and an anonymous path was
+what it asked for. CHANGELOG entries from 0.19.0 and earlier still name that URL: they are
+the historical record, and it stops resolving once the page comes down. `proximo hello`
+now exits 2 as an unrecognised verb, like any other. The contact address is no longer
+carried in the shipped docs.
+
 ## [0.40.0] — 2026-09-05
 
 **Doctor says where near-root exec lands.**

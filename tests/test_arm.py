@@ -540,8 +540,10 @@ def test_arm_reports_no_lease_when_unset(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("verb", ["arm", "disarm"])
 def test_main_dispatches_the_subcommand(tmp_path, monkeypatch, capsys, verb):
-    """The dispatch block sits between `mint` and `hello` in main(); a reorder or a bad merge
-    could drop it silently, leaving `proximo arm` to fall through and start the stdio server.
+    """The dispatch block sits between `mint` and `reap` in main(); a reorder or a bad merge
+    could drop it silently. Since the 2026-08-26 unknown-verb gate that would exit 2 rather
+    than serve, so the symptom is a refusal, not a stray server — this pins that `arm` and
+    `disarm` still REACH their handler and do the work, which the gate alone cannot prove.
     PROXIMO_ENV_FILE is pointed at nothing so main()'s load_env_file cannot pull real config in.
     """
     import proximo.server as server

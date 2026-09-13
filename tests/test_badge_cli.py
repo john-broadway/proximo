@@ -1,6 +1,6 @@
 """`proximo badge mint/inspect` — the operator-usable mint path (spec 2026-07-16).
 
-Drives server.main() the same way tests/test_main_module.py drives doctor/mint/hello:
+Drives server.main() the same way tests/test_main_module.py drives doctor/mint:
 monkeypatch sys.argv + capsys, assert stdout/stderr/SystemExit. `mint` is verified as a
 real round-trip against the JWK it writes — never a string check.
 """

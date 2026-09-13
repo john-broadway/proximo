@@ -70,12 +70,13 @@ literal in the shipped source:
 grep -rEoh 'https?://[a-zA-Z0-9._~:/?#@!$&*+,;=-]+' src/proximo --include='*.py' | sort -u
 ```
 
-Everything it prints is one of: an **`example.*` placeholder or `localhost` doc example**
-in a docstring or config sample, a **loopback bind default** (`127.0.0.1`) for the
-optional A2A, HTTP, and MCP-over-streamable-HTTP network faces, or the **print-only**
-`hello` links. Those are
-never fetched — `hello.py` builds URLs as *strings it prints*, and says so in its own
-docstring ("print-only; sends nothing"). Nothing here calls out to us.
+Everything it prints is one of: a **placeholder** in a docstring or config sample
+(`example.*`, `localhost`, or a URL-shape stand-in like `http://user:pass@host:port`), a
+**loopback literal** (`127.0.0.1`, `::1`) used as a bind default for the optional A2A,
+HTTP, and MCP-over-streamable-HTTP faces or as a parsing counter-example, an **upstream
+Proxmox documentation citation** in a docstring recording where an API shape was checked,
+or the **print-only** receipt link (`receipt.py`), a string constant Proximo prints for
+you to open yourself. None of them is ever fetched. Nothing here calls out to us.
 
 ## 4. The container image is signed at the source (SLSA provenance)
 
@@ -91,7 +92,7 @@ gh attestation verify oci://ghcr.io/john-broadway/proximo:latest --owner john-br
 // the attestation ties the image to the real repo + release workflow:
 "predicateType": "https://slsa.dev/provenance/v1"
 "sourceRepositoryURI": "https://github.com/john-broadway/proximo"
-"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.40.0"
+"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.41.0"
 ```
 
 The image also ships an **SPDX SBOM** (`release.yml`, `sbom: true`). Inspect it on any
@@ -105,7 +106,7 @@ in the release path to steal. Each artifact has an attached provenance attestati
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://pypi.org/integrity/proximo-proxmox/0.40.0/proximo_proxmox-0.40.0-py3-none-any.whl/provenance
+  https://pypi.org/integrity/proximo-proxmox/0.41.0/proximo_proxmox-0.41.0-py3-none-any.whl/provenance
 # => 200   (the signed provenance PyPI generated at publish time)
 ```
 

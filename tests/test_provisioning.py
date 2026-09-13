@@ -423,6 +423,23 @@ def test_plan_create_unprivileged_lxc_is_medium():
     assert p.risk == RISK_MEDIUM
 
 
+def test_plan_create_discloses_sdn_use_for_each_bridge():
+    # PVE 8+ refuses a create carrying a NIC unless the token holds SDN.Use on the bridge;
+    # VM.Allocate alone answers HTTP 403 (hit live on 2026-09-08, CT 31396 on vmbr0).
+    api = _ListApi([])
+    p = plan_create(api, "500", "lxc", None, {
+        "unprivileged": 1, "net0": "name=eth0,bridge=vmbr0,ip=dhcp", "net1": "name=eth1,bridge=vmbr1"})
+    hit = [b for b in p.blast_radius if "SDN.Use" in b]
+    assert len(hit) == 1 and "vmbr0, vmbr1" in hit[0] and "/sdn/zones/localnetwork/" in hit[0]
+
+
+def test_plan_create_without_a_nic_says_nothing_about_sdn():
+    # CONTROL: the disclosure keys on the bridge, so a NIC-less create must not carry it.
+    api = _ListApi([])
+    p = plan_create(api, "500", "lxc", None, {"unprivileged": 1, "cores": 2})
+    assert not any("SDN.Use" in b for b in p.blast_radius)
+
+
 def test_plan_create_qemu_is_medium():
     # QEMU has no privileged/unprivileged notion — never escalated on that axis.
     api = _ListApi([])

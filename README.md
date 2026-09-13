@@ -210,18 +210,18 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.40.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.40.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.41.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.41.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.40.0 (doctor says where near-root exec lands).** `ct_exec` and the node shell
-> ride an ssh target or run on the box itself, never the API, so the machine the API reads and
-> the machine a near-root command lands on can differ, and nothing said so. `proximo doctor`
-> now reports where exec lands, resolves the ssh target through ssh's own config, counts every
-> name and address this machine goes by as one host, and flags a split target with a remedy
-> you can follow as written. The shadow-key flag also compares every set-valued key the way
-> its gate reads it, so a reordered allowlist is no longer a change, and the TLS warning
-> counts a pinned fingerprint as verification.
+> **New in 0.41.0 (one line puts it on the host).** `packaging/lxc/` installs Proximo as its
+> own Debian 13 container on a Proxmox host in a single line, on the community-scripts engine
+> pointed at Proximo's own tree: a dedicated service user, a minted bearer, a hardened unit,
+> and the PROVE ledger on disk. The engine's telemetry is off, and the script refuses to run
+> if the pinned engine stops defining what it overrides. Create plans now name the bridge a
+> NIC attaches to, and `proximo doctor` probes `SDN.Use` and `Datastore.AllocateSpace`, so a
+> token that can create guests is no longer reported able when the create would answer 403.
+> The `proximo hello` front door is removed.
 >
-> Recent: **0.39.1** made every allowlist refusal name the store that fed it. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.40.0** made the doctor say where near-root exec lands. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -242,7 +242,7 @@ Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env 
 >
 > **Smallest footprint by design:** you don't have to load the whole estate: what a box *serves* is autoscoped to what it configures. A PBS-only box gets that plane's tools plus the always-on audit trail; `PROXIMO_SURFACES=pve,exec` scopes the searchable catalog to that pair (318 tools); a typo'd surface refuses startup rather than serving a surprise. Surfaces choose *which planes are searchable*, never *how many schemas load*; the doorway stays the default unless you name another with `PROXIMO_TOOLSETS`. Scoping is context hygiene, not an authorization control: it changes what is advertised, never what a token is allowed to do. The default doorway (dynamic mode) keeps four search-and-call tools resident (`proximo_read` runs read-only tools with an enforced `readOnlyHint`; `proximo_call` runs anything) plus the two ledger tools (`audit_verify` proves the chain, `audit_entries` reads who did what) and `proximo_recall` while estate memory is on (the default; `PROXIMO_MEMORY=0` opts out), with the full catalog reachable by name. That narrowing is guarded at every entry point (0.27.0 closed a path where an opt-in flag could silently cut the registry to 5 tools), and the gates don't shrink with the doorway: PLAN and PROVE apply however small the visible surface gets.
 
-**The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's.
+**The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's. **LXC on your Proxmox host, one line:** on the PVE node as root, `bash -c "$(curl -fsSL https://raw.githubusercontent.com/john-broadway/proximo/main/packaging/lxc/ct/proximo.sh)"` builds a Debian 13 container running `proximo-mcp-http` with Proximo from PyPI, its own service user, and a minted bearer on port 41243. Community-scripts engine (MIT) pointed at Proximo's own tree, their telemetry off; the same line inside the container updates it. Details: [docs/SETUP.md](docs/SETUP.md#as-an-lxc-on-the-proxmox-host), files: [`packaging/lxc/`](packaging/lxc/).
 
 All three serve the full surface through the **same spine** as MCP. No second code path; trust spine and token scope inherited. Fail-closed perimeter: loopback, bearer-token required off-localhost, DNS-rebind and CSRF defended. Details: [SECURITY.md](SECURITY.md).
 
@@ -258,11 +258,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.40.0**: **doctor says where near-root exec lands.** The shell lane rides an ssh
-  target or the box itself, never the API, so the two halves of one config can name different
-  machines and nothing said so. Doctor now reports the landing host and flags a split target
-  with a remedy you can follow as written; shadow flags compare every set-valued key the way
-  its gate reads it, so a reordered allowlist is no longer a change.
+- 🩸 **0.41.0**: **one line puts it on the host.** `packaging/lxc/` builds Proximo its own
+  Debian 13 container with a dedicated user, a hardened unit and the PROVE ledger on disk,
+  and refuses to run if its pinned engine stops defining what the script overrides. Create
+  plans name the bridge a NIC attaches to and the doctor probes `SDN.Use`, so a token that
+  can create guests is not reported able when the create would answer 403.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

@@ -1525,8 +1525,7 @@ def _print_stdio_usage() -> None:
         "derived per-guest reach)\n"
         "  proximo badge ...      mint / inspect a caller badge\n"
         "  proximo arm | disarm   operator arm-lease control\n"
-        "  proximo reap           drop an expired arm lease\n"
-        "  proximo hello          connectivity smoke\n\n"
+        "  proximo reap           drop an expired arm lease\n\n"
         "Network faces are separate console scripts: proximo-http, proximo-mcp-http, proximo-a2a\n"
         "(each --help too). Configuration is via PROXIMO_* env — see packaging/proximo.env.example."
     )
@@ -1641,7 +1640,7 @@ def _cmd_badge() -> None:
 # test_badge_cli / test_reach_audit): neither the surface-scoping line nor the env-file loader's
 # lines may precede their own prefix. One tuple, both gates (the loader's was the gap the lens
 # reproduced: a shell PROXIMO_* export differing from the file printed SHADOWED first).
-_QUIET_STDERR_VERBS = ("mint", "arm", "disarm", "reap", "hello", "badge", "harden", "reach-audit")
+_QUIET_STDERR_VERBS = ("mint", "arm", "disarm", "reap", "badge", "harden", "reach-audit")
 
 
 def _quiet_stderr_verb() -> bool:
@@ -1820,22 +1819,6 @@ def main() -> None:
         decisions = reap_stale_arms(dry_run=args.dry_run)
         print(json.dumps(reap_as_dict(decisions, dry_run=args.dry_run), indent=2) if args.json
               else render_reap(decisions, dry_run=args.dry_run))
-        return
-    # `proximo hello` — the print-only agent front door: the six-move welcome, sharp
-    # edges first, the ask last. Makes NO API call, sends nothing, never starts the
-    # server.
-    if len(sys.argv) > 1 and sys.argv[1] == "hello":
-        import argparse
-        import json
-
-        from proximo.hello import build_greeting
-        from proximo.hello import render_text as render_hello
-        parser = argparse.ArgumentParser(prog="proximo hello")
-        parser.add_argument("--json", action="store_true",
-                            help="emit the greeting as structured JSON (mirrors doctor/mint)")
-        args = parser.parse_args(sys.argv[2:])
-        greeting = build_greeting()
-        print(json.dumps(greeting, indent=2) if args.json else render_hello(greeting))
         return
     # `proximo badge` — offline caller-badge mint (signs with an operator-held EC P-256
     # private key, never touches the network) and a NEVER-VERIFYING inspect for debugging a

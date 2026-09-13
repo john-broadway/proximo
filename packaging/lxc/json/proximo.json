@@ -1,0 +1,55 @@
+{
+  "name": "Proximo",
+  "slug": "proximo",
+  "categories": [
+    20
+  ],
+  "date_created": "2026-09-08",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 41243,
+  "documentation": "https://github.com/john-broadway/proximo/blob/main/docs/SETUP.md",
+  "website": "https://john-broadway.github.io/proximo/",
+  "repository": "https://github.com/john-broadway/proximo",
+  "architectures": [
+    "amd64"
+  ],
+  "platforms": [
+    "pve"
+  ],
+  "logo": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-avatar-256.png",
+  "description": "Proximo is the Proxmox MCP you can hand the keys. One governed control plane for all four Proxmox products (PVE, PBS, PMG, PDM), served as MCP over Streamable HTTP to Claude Code, Claude Desktop, Cursor and any MCP client on your network. Every action crosses the same trust spine: plan, consent, prove, undo, diagnose, contain.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/proximo.sh",
+      "config_path": "/etc/proximo/proximo.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 1024,
+        "hdd": 6,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "The service starts with no Proxmox connection and answers tools/list. To manage your hosts, fill in PROXIMO_API_BASE_URL, PROXIMO_NODE and PROXIMO_TOKEN_PATH in /etc/proximo/proximo.env (an API token file owned by the proximo user, mode 600; start with a read-only token), then: systemctl restart proximo-mcp-http.",
+      "type": "info"
+    },
+    {
+      "text": "The MCP endpoint is http://<IP>:41243/mcp and every request needs the bearer in /etc/proximo/mcp-bearer.token. Claude Code: claude mcp add --scope user --transport http proximo http://<IP>:41243/mcp --header \"Authorization: Bearer <token>\".",
+      "type": "info"
+    },
+    {
+      "text": "Reach it over your LAN or a VPN. Before exposing it further, put a TLS reverse proxy in front and add that hostname to PROXIMO_MCP_HTTP_ALLOWED_HOSTS.",
+      "type": "warning"
+    }
+  ]
+}

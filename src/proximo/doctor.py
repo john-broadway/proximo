@@ -46,6 +46,13 @@ _CAPABILITIES: list[tuple[str, list[str], str, str]] = [
      "PVEVMAdmin", "partial"),
     ("Create / clone / destroy guests",
      ["VM.Allocate"], "PVEVMAdmin", "all"),
+    # PVE 8+ checks these two SEPARATELY from VM.Allocate: a token that "can create guests" per the
+    # row above is still refused (HTTP 403) the moment the create carries a NIC or a disk.
+    ("Attach guest NICs to a bridge (SDN.Use on /sdn/zones/localnetwork/<bridge>): create / clone / "
+     "restore carrying a NIC",
+     ["SDN.Use"], "PVESDNUser", "all"),
+    ("Allocate disk on a storage: create / clone / restore rootfs and disks",
+     ["Datastore.AllocateSpace"], "PVEDatastoreUser", "all"),
     ("Back up guests",
      ["VM.Backup"], "PVEVMAdmin", "all"),
     ("Define / remove storage",

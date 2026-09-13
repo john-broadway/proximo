@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.40.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.41.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -1391,7 +1391,7 @@ use pve_clone.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric CTID to assign to the new LXC container. |
-| `ostemplate` | string | yes | Storage volume ID of the OS template to install, e.g. `local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst`. |
+| `ostemplate` | string | yes | Storage volume ID of the OS template to install, e.g. `local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst`. |
 | `storage` | string | yes | Storage backend name to place the container's root filesystem on. |
 | `node` | string (nullable) | no | PVE node to create the container on. Omit to use the configured default node. (default: `null`) |
 | `options` | object (nullable) | no | Extra Proxmox create params (e.g. cores, memory, net0, rootfs, password) merged into the request. (default: `null`) |
@@ -4482,7 +4482,7 @@ find a volid first.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `storage` | string | yes | Storage backend name the content volume lives on. |
-| `volid` | string | yes | Volume ID of the content to delete (ISO, template, or backup), e.g. `local:vztmpl/debian-12.tar.zst`. |
+| `volid` | string | yes | Volume ID of the content to delete (ISO, template, or backup), e.g. `local:vztmpl/debian-13.tar.zst`. |
 | `node` | string (nullable) | no | PVE node hosting the storage. Omit to use the configured default node. (default: `null`) |
 | `confirm` | boolean | no | Leave `false` (default) to get a dry-run PLAN — HIGH risk for a backup volume; set `true` to execute the deletion. (default: `false`) |
 

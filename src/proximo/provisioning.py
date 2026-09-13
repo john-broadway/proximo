@@ -254,6 +254,15 @@ def plan_create(
     opt_display = {k: ("[redacted]" if k == "password" else v) for k, v in options.items()}
     if opt_display:
         blast = blast + [f"create options: {opt_display}"]
+    # PVE 8+ checks SDN.Use on the bridge separately from VM.Allocate; the clone plan has disclosed
+    # this since 2026-06-20, the create plan never looked at its own net options until 2026-09-08.
+    bridges = _nic_bridges(options)
+    if bridges:
+        blast = blast + [
+            f"attaches NIC(s) to bridge(s) {', '.join(bridges)}: PVE 8+ requires SDN.Use on "
+            "/sdn/zones/localnetwork/<bridge> (role PVESDNUser) to create a guest carrying a NIC; "
+            "VM.Allocate alone is refused with HTTP 403"
+        ]
     if privileged:
         blast = blast + [
             "PRIVILEGED container (unprivileged=0 — the PVE create default): shares host UID 0, "
@@ -271,6 +280,17 @@ def plan_create(
     )
 
 
+def _nic_bridges(cfg: dict) -> list[str]:
+    """Bridges named by the netN entries of a guest config or a create-options dict."""
+    return sorted({
+        part.strip()[len("bridge="):]
+        for key, val in cfg.items()
+        if str(key).startswith("net") and str(key)[3:].isdigit() and isinstance(val, str)
+        for part in val.split(",")
+        if part.strip().startswith("bridge=")
+    })
+
+
 def _source_nic_bridges(api, kind: str, vmid: str, node: str | None) -> list[str]:
     """Bridges the source guest's NIC(s) attach to (for the SDN.Use disclosure). Best-effort: returns
     [] if the source config can't be read — disclosure must never break the plan."""
@@ -278,13 +298,7 @@ def _source_nic_bridges(api, kind: str, vmid: str, node: str | None) -> list[str
         cfg = api._get(f"/nodes/{node or api.config.node}/{kind}/{vmid}/config") or {}
     except Exception:
         return []
-    return sorted({
-        part.strip()[len("bridge="):]
-        for key, val in cfg.items()
-        if key.startswith("net") and key[3:].isdigit() and isinstance(val, str)
-        for part in val.split(",")
-        if part.strip().startswith("bridge=")
-    })
+    return _nic_bridges(cfg)
 
 
 def plan_clone(

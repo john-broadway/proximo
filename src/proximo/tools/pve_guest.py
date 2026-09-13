@@ -419,7 +419,7 @@ def pve_doctor() -> dict:
 @tool()
 def pve_create_container(
     vmid: Annotated[str, Field(description="Numeric CTID to assign to the new LXC container.")],
-    ostemplate: Annotated[str, Field(description="Storage volume ID of the OS template to install, e.g. `local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst`.")],
+    ostemplate: Annotated[str, Field(description="Storage volume ID of the OS template to install, e.g. `local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst`.")],
     storage: Annotated[str, Field(description="Storage backend name to place the container's root filesystem on.")],
     node: Annotated[str | None, Field(description="PVE node to create the container on. Omit to use the configured default node.")] = None,
     options: Annotated[dict | None, Field(description="Extra Proxmox create params (e.g. cores, memory, net0, rootfs, password) merged into the request.")] = None,
@@ -567,7 +567,7 @@ def pve_storage_download(
 @tool()
 def pve_storage_content_delete(
     storage: Annotated[str, Field(description="Storage backend name the content volume lives on.")],
-    volid: Annotated[str, Field(description="Volume ID of the content to delete (ISO, template, or backup), e.g. `local:vztmpl/debian-12.tar.zst`.")],
+    volid: Annotated[str, Field(description="Volume ID of the content to delete (ISO, template, or backup), e.g. `local:vztmpl/debian-13.tar.zst`.")],
     node: Annotated[str | None, Field(description="PVE node hosting the storage. Omit to use the configured default node.")] = None,
     confirm: Annotated[bool, Field(description="Leave `false` (default) to get a dry-run PLAN — HIGH risk for a backup volume; set `true` to execute the deletion.")] = False,
 ) -> dict:
