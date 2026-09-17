@@ -1,3 +1,22 @@
+proximo (0.42.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.42.0 (minor: one file out of a backup, and a blind listing that says so.
+    Four new tools pull a single file out of a PBS-backed backup without restoring the guest:
+    pve_file_restore_list and pve_file_restore_download through PVE's file-restore API, and
+    pbs_catalog_list and pbs_file_download directly on the backup server, host backups
+    included. The download is a governed mutation whose PLAN names source, remote path,
+    destination and cap; the bytes land in a fresh private subdirectory under
+    PROXIMO_RESTORE_DIR, capped by PROXIMO_RESTORE_MAX_BYTES, and the result carries path,
+    byte count and sha256, never the bytes. pve_backup_list, pbs_snapshots_list and pbs_groups_list
+    now refuse an empty listing from a token that provably cannot see and name the grant to
+    make, where they used to answer an empty list on a storage full of archives. The
+    permission collector shared with pve_doctor follows PVE's contract: a privilege is held
+    where its key is defined and the value is the propagate flag. docs/SETUP.md gains "Seeing
+    backups, and restoring one". The internal nightly pins its own certificate fingerprint.
+    Tool count 908 to 912).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Thu, 17 Sep 2026 06:00:00 +0000
+
 proximo (0.41.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.41.1 (patch: the security patch layer only ran on a digest bump. The

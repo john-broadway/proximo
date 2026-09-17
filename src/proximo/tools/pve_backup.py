@@ -13,7 +13,7 @@ from pydantic import Field
 import proximo.server as _proximo_server
 from proximo.backup import (
     backup_delete,
-    backup_list,
+    backup_list_sighted,
     plan_backup,
     plan_backup_delete,
     plan_restore,
@@ -88,10 +88,13 @@ def pve_backup_list(
     """READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —
     a backup missing from a pve_tasks_list slice (other node, or outside its limit window)
     still shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only
-    the newest N — a capped slice is never evidence a backup is absent; omit it to verify one."""
+    the newest N — a capped slice is never evidence a backup is absent; omit it to verify one.
+    An EMPTY result from a token that cannot see backup volumes (PVE hides them without
+    Datastore.AllocateSpace on the storage + VM.Backup on the guest) is REFUSED with the grant
+    to make, never returned as "no backups"; the default read-only token is such a token."""
     _, api, _, _ = _proximo_server._svc()
     return _audited("pve_backup_list", storage,
-                    lambda: cap_newest(backup_list(api, storage, node), limit, "ctime"))
+                    lambda: cap_newest(backup_list_sighted(api, storage, node), limit, "ctime"))
 
 
 @tool()

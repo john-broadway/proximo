@@ -679,3 +679,103 @@ def test_plan_backup_delete_list_read_failure_is_incomplete():
     p = plan_backup_delete(api, "local", _VALID_VOLID)
     assert p.complete is False
     assert p.risk == RISK_HIGH
+
+
+# --- backup_list_sighted: an empty listing from a BLIND token is not evidence -----------------
+# Live-found 2026-07-09 (freshness fence) and re-found 2026-09-16: PVE filters backup volumes OUT
+# of the content listing per volume. A PVEAuditor token gets 200 + [] on a storage full of
+# archives. The plain listing said "no backups" to an adopter whose token could never have seen one.
+
+def _perm_api(monkeypatch, listing, perms):
+    api = ApiBackend(_cfg())
+    monkeypatch.setattr(api, "_get", lambda path: listing)
+    monkeypatch.setattr(api, "access_permissions", lambda path=None: perms)
+    return api
+
+
+def test_sighted_returns_archives_untouched_when_listing_is_non_empty(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    # Even a blind-looking permission map cannot hide what PVE already returned; no perms read.
+    api = _perm_api(monkeypatch, [{"volid": "pbs:backup/ct/443/2026-09-16T02:00:00Z"}], None)
+    def _never(path=None):
+        raise AssertionError("must not be called")
+    monkeypatch.setattr(api, "access_permissions", _never)
+    assert backup_list_sighted(api, "pbs")[0]["volid"].startswith("pbs:backup/ct/443/")
+
+
+def test_sighted_empty_listing_from_auditor_token_refuses_with_the_grant(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/": {"Datastore.Audit": 1, "VM.Audit": 1}})
+    with pytest.raises(ProximoError) as ei:
+        backup_list_sighted(api, "pbs")
+    msg = str(ei.value)
+    assert "Datastore.AllocateSpace" in msg and "VM.Backup" in msg and "/storage/pbs" in msg
+    assert "cannot see" in msg
+
+
+def test_sighted_empty_listing_with_allocatespace_but_no_vm_backup_anywhere_refuses(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/storage/pbs": {"Datastore.AllocateSpace": 1}, "/": {"VM.Audit": 1}})
+    with pytest.raises(ProximoError, match="VM.Backup"):
+        backup_list_sighted(api, "pbs")
+
+
+def test_sighted_empty_listing_with_datastore_allocate_is_a_real_empty(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/storage/pbs": {"Datastore.Allocate": 1}})
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_empty_listing_with_allocatespace_and_vm_backup_is_a_real_empty(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/storage": {"Datastore.AllocateSpace": 1}, "/vms": {"VM.Backup": 1}})
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_empty_listing_with_unreadable_permissions_returns_empty(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = ApiBackend(_cfg())
+    monkeypatch.setattr(api, "_get", lambda path: [])
+    monkeypatch.setattr(api, "access_permissions", lambda path=None: (_ for _ in ()).throw(RuntimeError("403")))
+    # Sight is unprovable either way; a secondary failure must not turn a read into an error.
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_empty_listing_with_empty_permission_map_returns_empty(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    # A token holding nothing gets 403 on the content read, never 200 + []; an empty map here is
+    # a stub or a malformed read and must not be read as proof of blindness.
+    api = _perm_api(monkeypatch, [], {})
+    assert backup_list_sighted(api, "pbs") == []
+    api = _perm_api(monkeypatch, [], [])
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_propagate_zero_on_the_leaf_is_held(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    # PVE: the value is the PROPAGATE flag; a privilege is held iff DEFINED. `--propagate 0`
+    # directly on the leaf is a real grant there (lens finding 2026-09-16: was read as blind).
+    api = _perm_api(monkeypatch, [], {"/storage/pbs": {"Datastore.AllocateSpace": 0}, "/vms/100": {"VM.Backup": 0}})
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_propagate_zero_on_an_ancestor_does_not_reach_the_leaf(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/storage": {"Datastore.AllocateSpace": 0}, "/": {"VM.Backup": 1}})
+    with pytest.raises(ProximoError, match="Datastore.AllocateSpace"):
+        backup_list_sighted(api, "pbs")
+
+
+def test_sighted_root_grant_of_datastore_allocate_is_sight(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    api = _perm_api(monkeypatch, [], {"/": {"Datastore.Allocate": 1}})
+    assert backup_list_sighted(api, "pbs") == []
+
+
+def test_sighted_vm_backup_on_one_guest_is_scoped_sight_not_blindness(monkeypatch):
+    from proximo.backup import backup_list_sighted
+    # Decision, pinned: a token granted VM.Backup on /vms/999 alone sees only 999's archives, so
+    # [] truthfully means "none for the guests you were granted"; that scope is the admin's, and
+    # docs/SETUP.md says so. Blindness is reserved for a token that can see NO guest's archives.
+    api = _perm_api(monkeypatch, [], {"/storage/pbs": {"Datastore.AllocateSpace": 1}, "/vms/999": {"VM.Backup": 1}})
+    assert backup_list_sighted(api, "pbs") == []

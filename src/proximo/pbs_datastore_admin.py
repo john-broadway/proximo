@@ -299,6 +299,19 @@ def groups_list(api: PbsBackend, store: str, ns: str | None = None) -> list[dict
     return api._get(f"/admin/datastore/{store}/groups", params=params) or []
 
 
+def groups_list_sighted(api: PbsBackend, store: str, ns: str | None = None) -> list[dict]:
+    """`groups_list`, refusing an EMPTY view from an owner-filtered token (see
+    pbs.datastore_blind_reason); non-empty returns as-is, sighted-empty returns []."""
+    from .pbs import datastore_blind_reason
+    groups = groups_list(api, store, ns)
+    if groups:
+        return groups
+    reason = datastore_blind_reason(api, store, ns)
+    if reason:
+        raise ProximoError(reason)
+    return []
+
+
 def group_notes_get(
     api: PbsBackend, store: str, backup_type: str, backup_id: str, ns: str | None = None,
 ) -> str:

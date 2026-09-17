@@ -1,7 +1,8 @@
-"""LEAN mode — a searchable catalog instead of 906 resident tool schemas. THE DEFAULT since
+"""LEAN mode — a searchable catalog instead of every resident tool schema (912 at 0.42.0). THE DEFAULT since
 the 0.30 flip.
 
-WHY THIS EXISTS. Proximo's tools/list payload is ~290k tokens across 906 tools (~101k for one
+WHY THIS EXISTS. Proximo's tools/list payload is ~290k tokens across 906 tools (measured
+2026-08-01; the registry is 912 at 0.42.0) (~101k for one
 auto-scoped plane). A local model with an 8k-32k window cannot connect at all: the catalog
 arrives before the first question and exhausts the context. That was reported from the outside,
 with a measurement, and it is correct. Byte-trimming already took ~21% off and cannot close a
@@ -15,7 +16,7 @@ What closes it is making the catalog NON-RESIDENT. Lean mode serves four small t
     proximo_call(tool, arguments)  dispatch, anything
 
 ~1,740 tokens resident by default (seven entries, `proximo_recall` and the audit pair included;
-~1,166 with PROXIMO_MEMORY=0) instead of ~289,839 (measured on the wire). The ~906 tools still
+~1,166 with PROXIMO_MEMORY=0) instead of ~289,839 (measured on the wire). The full registry still
 exist and still work; they stop
 being sent to every client on every connection. This is the same pattern the agent harnesses
 themselves use at this scale — deferred schemas fetched on demand — and it is the only approach

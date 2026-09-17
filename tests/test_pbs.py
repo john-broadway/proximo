@@ -1266,3 +1266,103 @@ def test_pbsbackend_ca_bundle_path_no_httpx_deprecation():
         warnings.simplefilter("error", DeprecationWarning)
         backend = PbsBackend(_cfg(verify_tls=False, ca_bundle="/etc/ssl/certs/ca-certificates.crt"))
     assert backend._client is not None
+
+
+# --- sighted listings: an EMPTY answer from an owner-filtered token is not evidence ---------------
+# Live-found in the lab 2026-09-16: a token holding only Datastore.Backup on /datastore/test-ds
+# got 0 groups and 0 snapshots while the datastore held one group owned by another auth-id.
+# PBS shows a Backup-only caller its OWN groups; Datastore.Audit / Read / Modify show them all.
+
+def _sight_api(listing, perms):
+    seen: dict = {}
+
+    def fake_get(path, params=None):
+        seen["path"] = path
+        if path == "/access/permissions":
+            return perms
+        return listing
+
+    return SimpleNamespace(_get=fake_get, seen=seen)
+
+
+class TestSightedListings:
+    def test_non_empty_listing_returns_as_is_without_a_permissions_read(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([{"backup-id": "101", "owner": "x@pbs"}], None)
+        assert snapshots_list_sighted(api, "ds")[0]["backup-id"] == "101"
+        assert api.seen["path"] != "/access/permissions"
+
+    def test_empty_with_backup_only_refuses_and_names_the_grant(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True}})
+        with pytest.raises(ProximoError) as ei:
+            snapshots_list_sighted(api, "ds")
+        msg = str(ei.value)
+        assert "own" in msg and "Datastore.Audit" in msg and "/datastore/ds" in msg
+        assert "may exist" in msg
+
+    def test_empty_with_backup_only_on_a_namespace_path_refuses_for_that_namespace(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds/team/prod": {"Datastore.Backup": True}})
+        with pytest.raises(ProximoError, match="/datastore/ds/team/prod"):
+            snapshots_list_sighted(api, "ds", ns="team/prod")
+
+    def test_empty_with_audit_is_a_real_empty(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True, "Datastore.Audit": True}})
+        assert snapshots_list_sighted(api, "ds") == []
+
+    @pytest.mark.parametrize("priv", ["Datastore.Read", "Datastore.Modify"])
+    def test_read_or_modify_without_audit_is_not_sight(self, priv):
+        # PBS's listing gate consults Audit (all) and Backup (owned) only; Read/Modify never.
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True, priv: True}})
+        with pytest.raises(ProximoError):
+            snapshots_list_sighted(api, "ds")
+
+    def test_empty_with_backup_on_the_store_and_audit_on_a_propagating_ancestor_is_sight(self):
+        # The realistic shape: an org-wide auditor grant above a per-store backup-client grant.
+        # Backup IS held on the exact path, so only ancestor propagation can make this pass
+        # (the first draft's version of this test had no Backup and passed via the 403 guard).
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True}, "/datastore": {"Datastore.Audit": True}})
+        assert snapshots_list_sighted(api, "ds", ns="team") == []
+
+    def test_no_backup_and_no_audit_claims_nothing(self):
+        # PBS answers 403 in that state, never an empty list; an empty list here means the
+        # permission map is stale or partial, and a stale map must not become a refusal.
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/other": {"Datastore.Backup": True}})
+        assert snapshots_list_sighted(api, "ds") == []
+
+    def test_filtered_empty_from_backup_only_names_the_filter_and_the_ambiguity(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True}})
+        with pytest.raises(ProximoError) as ei:
+            snapshots_list_sighted(api, "ds", backup_type="vm", backup_id="999")
+        msg = str(ei.value)
+        assert "999" in msg and "not yours" in msg and "may exist" not in msg
+
+    def test_empty_with_audit_on_a_non_propagating_ancestor_refuses(self):
+        from proximo.pbs import snapshots_list_sighted
+        api = _sight_api([], {"/datastore": {"Datastore.Audit": False}, "/datastore/ds": {"Datastore.Backup": True}})
+        with pytest.raises(ProximoError):
+            snapshots_list_sighted(api, "ds")
+
+    def test_empty_with_unreadable_or_empty_permissions_returns_empty(self):
+        from proximo.pbs import snapshots_list_sighted
+        assert snapshots_list_sighted(_sight_api([], {}), "ds") == []
+        assert snapshots_list_sighted(_sight_api([], []), "ds") == []
+
+        def boom(path, params=None):
+            if path == "/access/permissions":
+                raise RuntimeError("403")
+            return []
+        assert snapshots_list_sighted(SimpleNamespace(_get=boom), "ds") == []
+
+    def test_groups_listing_shares_the_predicate(self):
+        from proximo.pbs_datastore_admin import groups_list_sighted
+        api = _sight_api([], {"/datastore/ds": {"Datastore.Backup": True}})
+        with pytest.raises(ProximoError, match="own"):
+            groups_list_sighted(api, "ds")
+        assert groups_list_sighted(_sight_api([], {"/datastore/ds": {"Datastore.Audit": True}}), "ds") == []

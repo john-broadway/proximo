@@ -33,7 +33,9 @@ from pathlib import Path
 import proximo.door as door
 import proximo.server as server
 
-EXPECTED_TOOL_COUNT = 908  # +2 (pve_node_logs / pve_node_diagnose, 2026-08-26): the read half of
+EXPECTED_TOOL_COUNT = 912  # +4 (file-level restore, 2026-09-17): pve_file_restore_list/download
+# + pbs_catalog_list/pbs_file_download. Before that 908:
+# +2 (pve_node_logs / pve_node_diagnose, 2026-08-26): the read half of
 # the host side of the junction. +1 before (audit_entries, 2026-08-01): the READ side of PROVE. 0.29.0
 # recorded the principal on every ledger entry and nothing could read one back, so "who changed
 # this guest" was unanswerable through Proximo while the answer sat on disk — a shipped claim

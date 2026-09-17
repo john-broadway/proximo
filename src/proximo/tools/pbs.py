@@ -88,7 +88,7 @@ from proximo.pbs import (
     snapshot_delete as pbs_snapshot_delete_op,
 )
 from proximo.pbs import (
-    snapshots_list as pbs_snapshots_list_op,
+    snapshots_list_sighted as pbs_snapshots_list_op,
 )
 from proximo.pbs import (
     tasks_list as pbs_tasks_list_op,
@@ -236,7 +236,9 @@ def pbs_snapshots_list(
     status; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only
     the newest N — a capped slice is never evidence a snapshot is absent; omit it to verify
     one. To delete one use pbs_snapshot_delete; to change its protected flag or notes use
-    pbs_snapshot_protected_set or pbs_snapshot_notes_set."""
+    pbs_snapshot_protected_set or pbs_snapshot_notes_set. An EMPTY result from a token that
+    holds only Datastore.Backup (PBS then shows it its OWN groups alone) is REFUSED with the
+    grant to make (Datastore.Audit / Read / Modify), never returned as "no snapshots"."""
     _, pbs = _proximo_server._pbs()
     return _audited("pbs_snapshots_list", f"pbs/{store}",
                     lambda: cap_newest(

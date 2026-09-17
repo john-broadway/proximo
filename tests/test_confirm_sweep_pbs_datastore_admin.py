@@ -331,7 +331,9 @@ def test_group_move_dry_run_never_posts(tmp_path, monkeypatch):
 def test_groups_list_read_reaches_pbs(tmp_path, monkeypatch):
     _, pbs, _, _ = _wire(tmp_path, monkeypatch, get_return=[])
     server.pbs_groups_list(store="ds1", ns="a")
-    assert pbs.gets[-1] == ("/admin/datastore/ds1/groups", {"ns": "a"})
+    # An EMPTY listing is followed by ONE permissions read (62878a6: an owner-filtered token's
+    # empty view is refused, not repeated); this fake's [] there proves nothing, so [] returns.
+    assert pbs.gets == [("/admin/datastore/ds1/groups", {"ns": "a"}), ("/access/permissions", None)]
 
 
 def test_group_notes_get_read_reaches_pbs(tmp_path, monkeypatch):

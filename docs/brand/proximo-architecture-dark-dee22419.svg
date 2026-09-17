@@ -1,50 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 688" role="img" aria-label="Proximo architecture: MCP (stdio and Streamable HTTP), A2A, and API clients over one governed spine, the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), the token floor, four Proxmox products">
   <style>
-    .t  { font: 600 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #1f2328; }
-    .s  { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #57606a; }
-    .m  { font: 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #57606a; }
-    .h  { font: 700 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #8a5716; letter-spacing: .4px; }
-    .p  { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #8a5716; }
-    .po { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #8a5716; opacity: .62; }
-    .pd { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #1f2328; }
-    .cap{ font: 600 13px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #57606a; }
+    .t  { font: 600 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #e6edf3; }
+    .s  { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #9198a1; }
+    .m  { font: 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #9198a1; }
+    .h  { font: 700 15px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #cf9142; letter-spacing: .4px; }
+    .p  { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #cf9142; }
+    .po { font: 600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill: #cf9142; opacity: .62; }
+    .pd { font: 12px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #e6edf3; }
+    .cap{ font: 600 13px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif; fill: #9198a1; }
   </style>
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 z" fill="#8a5716"/>
+      <path d="M0 0 L10 5 L0 10 z" fill="#cf9142"/>
     </marker>
   </defs>
 
   <!-- clients -->
-  <rect x="20"  y="20" width="176" height="64" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="20"  y="20" width="176" height="64" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="108" y="46" text-anchor="middle" class="t">MCP · stdio</text>
   <text x="108" y="66" text-anchor="middle" class="s">Claude Code · Cursor</text>
 
-  <rect x="208" y="20" width="226" height="64" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="208" y="20" width="226" height="64" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="321" y="46" text-anchor="middle" class="t">MCP · Streamable HTTP</text>
   <text x="321" y="66" text-anchor="middle" class="s">remote MCP clients · bearer</text>
 
-  <rect x="446" y="20" width="176" height="64" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="446" y="20" width="176" height="64" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="534" y="46" text-anchor="middle" class="t">A2A agent</text>
   <text x="534" y="66" text-anchor="middle" class="s">Agent2Agent · bearer</text>
 
-  <rect x="634" y="20" width="206" height="64" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="634" y="20" width="206" height="64" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="737" y="46" text-anchor="middle" class="t">HTTP / OpenAPI</text>
   <text x="737" y="66" text-anchor="middle" class="s">Open WebUI · dashboards · curl</text>
 
   <!-- join -->
-  <path d="M108 84 V104 M321 84 V104 M534 84 V104 M737 84 V104 M108 104 H737" fill="none" stroke="#8a5716" stroke-width="1.5"/>
-  <path d="M430 104 V128" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M108 84 V104 M321 84 V104 M534 84 V104 M737 84 V104 M108 104 H737" fill="none" stroke="#cf9142" stroke-width="1.5"/>
+  <path d="M430 104 V128" fill="none" stroke="#cf9142" stroke-width="1.5" marker-end="url(#a)"/>
 
   <!-- dispatch -->
-  <rect x="110" y="136" width="640" height="56" rx="8" fill="#8a571614" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="110" y="136" width="640" height="56" rx="8" fill="#cf914214" stroke="#cf9142" stroke-width="1.5"/>
   <text x="430" y="159" text-anchor="middle" class="h">ONE GOVERNED SPINE</text>
   <text x="430" y="179" text-anchor="middle" class="m">MCP faces serve it natively · A2A + HTTP adapt via proximo.governed · no second path</text>
 
-  <path d="M430 192 V216" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M430 192 V216" fill="none" stroke="#cf9142" stroke-width="1.5" marker-end="url(#a)"/>
 
   <!-- trust spine -->
-  <rect x="110" y="224" width="640" height="226" rx="8" fill="#8a571614" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="110" y="224" width="640" height="226" rx="8" fill="#cf914214" stroke="#cf9142" stroke-width="1.5"/>
   <text x="430" y="250" text-anchor="middle" class="h">THE TRUST SPINE — SIX PILLARS</text>
   <text x="140" y="278" class="p">PLAN</text>     <text x="255" y="278" class="pd">dry-run preview + blast radius before any mutation runs</text>
   <text x="140" y="302" class="p">PROVE</text>    <text x="255" y="302" class="pd">keyed, hash-chained, tamper-evident audit ledger</text>
@@ -54,33 +54,33 @@
   <text x="140" y="398" class="po">CONTAIN</text>  <text x="255" y="398" class="pd">yours to raise — one trip file halts every mutation, mid-incident</text>
   <text x="430" y="432" text-anchor="middle" class="s">also opt-in: LEASE · SCOPE · ENVELOPE · TAINT · PRINCIPAL</text>
 
-  <path d="M430 450 V474" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M430 450 V474" fill="none" stroke="#cf9142" stroke-width="1.5" marker-end="url(#a)"/>
 
   <!-- token floor -->
-  <rect x="110" y="482" width="640" height="56" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="110" y="482" width="640" height="56" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="430" y="505" text-anchor="middle" class="t">THE TOKEN FLOOR — enforced by Proxmox itself, not by Proximo</text>
   <text x="430" y="525" text-anchor="middle" class="s">your scoped RBAC token bounds everything above — it holds even if Proximo is fully compromised</text>
 
-  <path d="M430 538 V562" fill="none" stroke="#8a5716" stroke-width="1.5" marker-end="url(#a)"/>
-  <path d="M184 562 H676" fill="none" stroke="#8a5716" stroke-width="1"/>
-  <path d="M184 562 V568 M348 562 V568 M512 562 V568 M676 562 V568" fill="none" stroke="#8a5716" stroke-width="1"/>
+  <path d="M430 538 V562" fill="none" stroke="#cf9142" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M184 562 H676" fill="none" stroke="#cf9142" stroke-width="1"/>
+  <path d="M184 562 V568 M348 562 V568 M512 562 V568 M676 562 V568" fill="none" stroke="#cf9142" stroke-width="1"/>
 
   <!-- products -->
-  <rect x="110" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="110" y="570" width="148" height="66" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="184" y="596" text-anchor="middle" class="t">Proxmox VE</text>
   <text x="184" y="615" text-anchor="middle" class="s">guests · storage · HA</text>
 
-  <rect x="274" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="274" y="570" width="148" height="66" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="348" y="596" text-anchor="middle" class="t">Backup Server</text>
   <text x="348" y="615" text-anchor="middle" class="s">datastores · verify</text>
 
-  <rect x="438" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="438" y="570" width="148" height="66" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="512" y="596" text-anchor="middle" class="t">Mail Gateway</text>
   <text x="512" y="615" text-anchor="middle" class="s">mail flow · quarantine</text>
 
-  <rect x="602" y="570" width="148" height="66" rx="8" fill="#ffffff" stroke="#8a5716" stroke-width="1.5"/>
+  <rect x="602" y="570" width="148" height="66" rx="8" fill="#0d1117" stroke="#cf9142" stroke-width="1.5"/>
   <text x="676" y="596" text-anchor="middle" class="t">Datacenter Mgr</text>
   <text x="676" y="615" text-anchor="middle" class="s">federated fleet</text>
 
-  <text x="430" y="670" text-anchor="middle" class="cap">908 tools · one audited control plane · every mutation planned, proven, undoable where the platform allows</text>
+  <text x="430" y="670" text-anchor="middle" class="cap">912 tools · one audited control plane · every mutation planned, proven, undoable where the platform allows</text>
 </svg>

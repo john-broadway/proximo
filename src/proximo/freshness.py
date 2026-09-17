@@ -19,7 +19,7 @@ import re
 import time
 
 from .backup import backup_list
-from .doctor import _collect_privs
+from .doctor import collect_priv_flags, holds
 
 _FENCE_NOTE = (
     "BACKUP-FRESHNESS FENCE — read-only: walks actual backup archives per guest and compares "
@@ -205,7 +205,7 @@ def _walk_archives(api, storages: list[str],
     return newest, unreadable, nodes, node_sight_ok
 
 
-def _sight_privs(api, flags: list[str]) -> dict[str, list[str]] | None:
+def _sight_privs(api, flags: list[str]) -> dict[str, dict[str, bool]] | None:
     """The token's {priv: [paths]} map, or None when unreadable (flagged — unprovable sight).
 
     Why this exists (live-found 2026-07-09): PVE filters backup volumes OUT of the content
@@ -215,7 +215,7 @@ def _sight_privs(api, flags: list[str]) -> dict[str, list[str]] | None:
     a healthy PBS storage and read 25 guests as "never backed up". Absence verdicts are only
     trustworthy when the token could have SEEN an archive if one existed."""
     try:
-        return _collect_privs(api.access_permissions())
+        return collect_priv_flags(api.access_permissions())
     except Exception as e:
         flags.append(
             f"token permission map unreadable ({type(e).__name__}) — cannot prove the token "
@@ -224,20 +224,13 @@ def _sight_privs(api, flags: list[str]) -> dict[str, list[str]] | None:
         return None
 
 
-def _holds(privs: dict[str, list[str]] | None, priv: str, path: str) -> bool:
-    """True iff `priv` is granted on `path` or a propagating ancestor of it."""
-    if privs is None:
-        return False
-    return any(p == "/" or path == p or path.startswith(p + "/") for p in privs.get(priv, ()))
-
-
-def _sighted(privs: dict[str, list[str]] | None, storage: str, vmid: str) -> bool:
+def _sighted(privs: dict[str, dict[str, bool]] | None, storage: str, vmid: str) -> bool:
     """Can this token see backup volumes for `vmid` on `storage`? (PVE check_volume_access)"""
     spath = f"/storage/{storage}"
-    if _holds(privs, "Datastore.Allocate", spath):
+    if holds(privs, "Datastore.Allocate", spath):
         return True
-    return (_holds(privs, "Datastore.AllocateSpace", spath)
-            and _holds(privs, "VM.Backup", f"/vms/{vmid}"))
+    return (holds(privs, "Datastore.AllocateSpace", spath)
+            and holds(privs, "VM.Backup", f"/vms/{vmid}"))
 
 
 def _coverage_verdict(g: dict, cov: list, pve_uncovered: set[str] | None,

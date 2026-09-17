@@ -56,6 +56,9 @@ _EXPECTED_ADVERSARIAL = frozenset({
     "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
     "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",
     "pdm_pve_qemu_list", "pdm_pve_lxc_list", "pdm_pve_resources", "pbs_snapshots_list",
+    # file-level restore (2026-09-17): guest-authored file names in the listings; the download
+    # result echoes the caller's remote path and the guest-named local file.
+    "pve_file_restore_list", "pve_file_restore_download", "pbs_catalog_list", "pbs_file_download",
     # upstream/package-maintainer-authored free text — added Wave 1a (2026-07-15 full-surface
     # campaign), postdating the 2026-07-02 design doc snapshot above; see taint.py's own comment
     # on this entry for the reasoning.

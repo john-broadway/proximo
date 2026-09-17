@@ -16,6 +16,7 @@ import re
 from urllib.parse import quote
 
 from .backends import ProximoError, _check_kind, _check_node, _check_vmid
+from .doctor import collect_priv_flags, holds
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 from .storage import _check_storage  # reuse: same regex/rule, no duplication
 
@@ -104,6 +105,67 @@ def backup_list(api, storage: str, node: str | None = None) -> list[dict]:
     _check_node(node)
     n = node or api.config.node
     return api._get(f"/nodes/{n}/storage/{storage}/content?content=backup") or []
+
+
+def storage_blind_reason(api, storage: str) -> str | None:
+    """Why this token could NOT have seen a backup volume on `storage`, or None if it could.
+
+    PVE filters backup volumes OUT of the content listing per volume (check_volume_access):
+    seeing one needs Datastore.AllocateSpace on the storage AND VM.Backup on the owner guest,
+    or Datastore.Allocate on the storage as a bypass. A token without them gets 200 + [] on a
+    storage full of archives (live-found 2026-07-09 by the freshness fence; the plain listing
+    kept saying "no backups" until 2026-09-16). Only PROVABLE blindness is reported: no
+    Datastore.Allocate on the storage and (no AllocateSpace on it, or VM.Backup held on no path
+    at all). An unreadable or EMPTY permission map proves nothing and returns None.
+    """
+    try:
+        raw = api.access_permissions()
+    except Exception:
+        return None
+    # A map with no entries is not a map to reason from: a token holding NOTHING could not have
+    # listed the storage's content in the first place (403, never 200 + []), so reaching here
+    # with {} means a malformed or stubbed read. Proves nothing; say nothing.
+    if not isinstance(raw, dict) or not raw:
+        return None
+    flags = collect_priv_flags(raw)
+    spath = f"/storage/{storage}"
+    if holds(flags, "Datastore.Allocate", spath):
+        return None
+    has_space = holds(flags, "Datastore.AllocateSpace", spath)
+    # VM.Backup held ANYWHERE counts as sight. PVE's filter is per volume (the owner guest), so a
+    # token granted on /vms/999 alone sees only guest 999's archives and [] then truthfully means
+    # "none for the guests you were granted" — that scope is the admin's decision, and SETUP.md
+    # says so. Only a token that can see NO guest's archives is blind for the listing.
+    if has_space and flags.get("VM.Backup"):
+        return None
+    missing = ("VM.Backup on the guests" if has_space
+               else f"Datastore.AllocateSpace on {spath} and VM.Backup on the guests")
+    return (
+        f"no backup archives visible on '{storage}', and this token cannot see backup volumes "
+        f"there: PVE hides them from the content listing (200 + empty) unless the token holds "
+        f"Datastore.AllocateSpace on {spath} AND VM.Backup on the owner guest (or "
+        f"Datastore.Allocate on {spath}). Missing: {missing}. The archives may exist. Grant a "
+        f"sighted role to the token AND its user, e.g. "
+        f"pveum role add ProximoBackupSight -privs 'Datastore.Audit,Datastore.AllocateSpace,"
+        f"VM.Audit,VM.Backup' then pveum acl modify {spath} --tokens '<user@realm!token>' "
+        f"--roles ProximoBackupSight and the same on /vms (or /vms/<id>), then list again."
+    )
+
+
+def backup_list_sighted(api, storage: str, node: str | None = None) -> list[dict]:
+    """`backup_list`, refusing to report an EMPTY storage the token could not have seen into.
+
+    Non-empty listings return as-is (no permissions read: PVE already showed the volumes).
+    Empty + provably blind raises ProximoError carrying the grant recipe; empty + sighted (or
+    unprovable) returns []. A read tool that answers "nothing" while blind is lying.
+    """
+    archives = backup_list(api, storage, node)
+    if archives:
+        return archives
+    reason = storage_blind_reason(api, storage)
+    if reason:
+        raise ProximoError(reason)
+    return []
 
 
 def backup_delete(api, storage: str, volid: str, node: str | None = None):

@@ -98,7 +98,8 @@ class _FakeApi:
     def _record(self, name: str, *a: Any, **kw: Any) -> None:
         self.calls.append((name, a, kw))
 
-    def _get(self, path: str, params: dict | None = None) -> list:
+    def _get(self, path: str, params: dict | None = None, *, timeout=None) -> list:
+        # `timeout` mirrors ApiBackend._get's opt-in per-call override (file-restore listing).
         self._record("_get", path, params=params)
         return []  # falsy -> every caller's `or {}` / `or []` fallback kicks in safely
 
@@ -317,6 +318,7 @@ def wired(tmp_path, monkeypatch):
 SENTINELS: dict[str, Any] = {
     "vmid": "100",
     "newid": "101",
+    "filepath": "/",  # file-level restore: a '/'-rooted path inside a backup
     # projection.project_rows: 'all' | comma list of fields actually present in the response —
     # 'all' is the one value valid against any backend payload
     "fields": "all",

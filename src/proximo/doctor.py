@@ -66,22 +66,46 @@ _CAPABILITIES: list[tuple[str, list[str], str, str]] = [
 ]
 
 
-def _collect_privs(perms: object) -> dict[str, list[str]]:
-    """Flatten the PVE /access/permissions map ({path: {priv: 1}}) to {priv: [paths it's held on]}.
-    Tolerant of either the full map or a single-path dict; ignores falsy/zero grants."""
-    out: dict[str, list[str]] = {}
+def collect_priv_flags(perms: object) -> dict[str, dict[str, bool]]:
+    """The PVE /access/permissions map as {priv: {path: propagate}}.
+
+    PVE's contract (RPCEnvironment.pm, `permissions`): the value is the PROPAGATE flag and is
+    "informational only"; a privilege is HELD at a path iff its key is DEFINED there. Until
+    2026-09-16 this collector tested truthiness, so a `--propagate 0` grant placed directly on a
+    leaf (`/storage/<id>`, `/vms/<id>`) — held there per PVE, value 0 — was dropped, and the
+    freshness fence read a sighted token as blind (an adversarial pass caught it once the
+    backup listing started REFUSING on that verdict). Tolerant of the full map or a single-path
+    dict; a None value is not a grant."""
+    out: dict[str, dict[str, bool]] = {}
     if not isinstance(perms, dict):
         return out
-    # Single-path shape ({priv: 1}) vs full map ({path: {priv: 1}}): detect nested dict values.
     nested = any(isinstance(v, dict) for v in perms.values())
     items = perms.items() if nested else [("/", perms)]
     for path, pmap in items:
         if not isinstance(pmap, dict):
             continue
         for priv, val in pmap.items():
-            if val:
-                out.setdefault(priv, []).append(str(path))
+            if val is not None:
+                out.setdefault(priv, {})[str(path)] = bool(val)
     return out
+
+
+def _collect_privs(perms: object) -> dict[str, list[str]]:
+    """{priv: [paths it's held on]} — definedness, not truthiness (see collect_priv_flags)."""
+    return {priv: sorted(paths) for priv, paths in collect_priv_flags(perms).items()}
+
+
+def holds(flags: dict[str, dict[str, bool]] | None, priv: str, path: str) -> bool:
+    """True iff `priv` is held at `path`: granted there directly (propagate irrelevant at the
+    exact path — PVE applies a leaf grant regardless), or granted on an ancestor WITH propagate."""
+    if not flags:
+        return False
+    for p, propagate in flags.get(priv, {}).items():
+        if p == path:
+            return True
+        if propagate and (p == "/" or path.startswith(p + "/")):
+            return True
+    return False
 
 
 def _scope(paths: list[str]) -> str:

@@ -1,16 +1,16 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.41.1**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.42.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
-**908 tools** across 7 surfaces.
+**912 tools** across 7 surfaces.
 
 ## Contents
 
 - [Proxmox VE — in-guest agent (opt-in)](#proxmox-ve--in-guest-agent-opt-in) — 6
-- [Proxmox VE (PVE)](#proxmox-ve-pve) — 305
-- [Proxmox Backup Server (PBS)](#proxmox-backup-server-pbs) — 257
+- [Proxmox VE (PVE)](#proxmox-ve-pve) — 307
+- [Proxmox Backup Server (PBS)](#proxmox-backup-server-pbs) — 259
 - [Proxmox Mail Gateway (PMG)](#proxmox-mail-gateway-pmg) — 295
 - [Proxmox Datacenter Manager (PDM)](#proxmox-datacenter-manager-pdm) — 34
 - [Container exec (opt-in)](#container-exec-opt-in) — 4
@@ -545,6 +545,9 @@ READ-ONLY: list backup archives in a storage. Ground truth for whether a backup 
 a backup missing from a pve_tasks_list slice (other node, or outside its limit window)
 still shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only
 the newest N — a capped slice is never evidence a backup is absent; omit it to verify one.
+An EMPTY result from a token that cannot see backup volumes (PVE hides them without
+Datastore.AllocateSpace on the storage + VM.Backup on the guest) is REFUSED with the grant
+to make, never returned as "no backups"; the default read-only token is such a token.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1481,6 +1484,41 @@ this FIRST after install to verify your config/token before wiring Proximo into 
 Returns a dict with reachable/version, the can/cannot capability map, config, and advisory flags.
 
 _No parameters._
+
+#### `pve_file_restore_download`
+
+MUTATION (MEDIUM): pull ONE file or directory out of a guest's backup onto THIS host, without
+restoring the guest. Bytes land under PROXIMO_RESTORE_DIR (default ~/.local/state/proximo/restores)
+in a fresh private subdirectory, capped by PROXIMO_RESTORE_MAX_BYTES (default 256 MiB); the
+result carries the local path, byte count and sha256, NEVER the bytes. Dry-run by default: the PLAN
+pre-reads the entry's size and says so if it is over the cap. confirm=True to execute. The
+backup itself is never changed. Find the volid with pve_backup_list and the path with
+pve_file_restore_list first.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `storage` | string | yes | PBS-backed storage ID holding the backup. |
+| `volid` | string | yes | Backup archive volume ID, as pve_backup_list returns it. |
+| `filepath` | string | yes | Path INSIDE the backup to pull out, starting with '/'; a directory downloads as an archive. |
+| `tar` | boolean | no | For a directory: True downloads tar.zst, False (default) a zip. (default: `false`) |
+| `node` | string (nullable) | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN naming source, path, destination and cap; True performs the download. (default: `false`) |
+
+#### `pve_file_restore_list`
+
+READ-ONLY: list the files and directories at `filepath` INSIDE a guest's backup, without
+restoring the guest. Entries carry `path` (decoded), text, type (f/d), leaf, size, mtime.
+ADVERSARIAL: names are guest-authored free text. Needs the sighted grant (Datastore.AllocateSpace
+on the storage + VM.Backup on the guest, or Datastore.Allocate on the storage); a VM-image
+backup additionally needs proxmox-backup-file-restore on the node (it boots a restore VM, so
+the first call is slow). Then pve_file_restore_download pulls one entry out.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `storage` | string | yes | PBS-backed storage ID holding the backup (file restore works on PBS snapshots only). |
+| `volid` | string | yes | Backup archive volume ID, as pve_backup_list returns it, e.g. pbs:backup/ct/101/2026-09-16T02:00:00Z. |
+| `filepath` | string | no | Path INSIDE the backup, starting with '/'. '/' lists the archive layer (e.g. data.pxar.didx or the container's root archive); then '/<archive>/etc/hosts'. (default: `"/"`) |
+| `node` | string (nullable) | no | Proxmox node hosting the storage; defaults to the configured node if omitted. (default: `null`) |
 
 #### `pve_firewall_alias_create`
 
@@ -5239,6 +5277,23 @@ visibility only. Needs PROXIMO_PBS_* config.
 | --- | --- | --- | --- |
 | `node` | string | no | PBS node name; defaults to 'localhost' (standard single-node PBS name). (default: `"localhost"`) |
 
+#### `pbs_catalog_list`
+
+READ-ONLY: list the files and directories at `filepath` INSIDE one PBS snapshot (its catalog),
+directly on the backup server — works for host backups too, which PVE never sees. Entries carry
+`path` (decoded), text, type (f/d), leaf, size, mtime. ADVERSARIAL: names are guest-authored
+free text. Needs Datastore.Read on the datastore/namespace, or Datastore.Backup as the group's
+owner. Then pbs_file_download pulls one entry out.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `store` | string | yes | PBS datastore name. |
+| `backup_type` | string | yes | Backup type of the snapshot: 'vm', 'ct', or 'host'. |
+| `backup_id` | string | yes | Backup group ID (VMID/CTID or host name). |
+| `backup_time` | integer | yes | Snapshot timestamp as a Unix epoch integer (from pbs_snapshots_list). |
+| `filepath` | string | no | Path INSIDE the backup, starting with '/'. '/' lists the archive layer (e.g. data.pxar.didx or the container's root archive); then '/<archive>/etc/hosts'. (default: `"/"`) |
+| `ns` | string (nullable) | no | Namespace the snapshot lives in; omit for the root namespace. (default: `null`) |
+
 #### `pbs_datastore_active_operations`
 
 READ-ONLY: in-flight operation counts for a datastore (expected read/write counters —
@@ -5503,6 +5558,26 @@ PROXIMO_PBS_* config.
 | `digest` | string (nullable) | no | Optimistic-lock: 64-char lowercase hex SHA-256 of the config PBS last returned. (default: `null`) |
 | `confirm` | boolean | no | False (default) returns a dry-run PLAN only; True executes the toggle. (default: `false`) |
 
+#### `pbs_file_download`
+
+MUTATION (MEDIUM): pull ONE file or directory out of a PBS snapshot onto THIS host. Bytes land
+under PROXIMO_RESTORE_DIR (default ~/.local/state/proximo/restores) in a fresh private
+subdirectory, capped by PROXIMO_RESTORE_MAX_BYTES (default 256 MiB); the result carries the local
+path, byte count and sha256, NEVER the bytes. Dry-run by default: the PLAN pre-reads the entry's size
+and says so if it is over the cap. confirm=True to execute. The snapshot is never changed. Find
+the snapshot with pbs_snapshots_list and the path with pbs_catalog_list first.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `store` | string | yes | PBS datastore name. |
+| `backup_type` | string | yes | Backup type of the snapshot: 'vm', 'ct', or 'host'. |
+| `backup_id` | string | yes | Backup group ID (VMID/CTID or host name). |
+| `backup_time` | integer | yes | Snapshot timestamp as a Unix epoch integer (from pbs_snapshots_list). |
+| `filepath` | string | yes | Path INSIDE the snapshot to pull out, starting with '/'; a directory downloads as an archive. |
+| `ns` | string (nullable) | no | Namespace the snapshot lives in; omit for the root namespace. (default: `null`) |
+| `tar` | boolean | no | For a directory: True downloads tar.zst, False (default) a zip. (default: `false`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN naming source, path, destination and cap; True performs the download. (default: `false`) |
+
 #### `pbs_gc_start`
 
 MUTATION (HIGH): start garbage collection on a PBS datastore. Dry-run by default — GC
@@ -5628,8 +5703,9 @@ PROXIMO_PBS_* config.
 READ-ONLY: list backup groups in a PBS datastore (backup-type/backup-id, snapshot count,
 last-backup time, owner, files, comment). ADVERSARIAL: backup ids and the notes-derived
 comment are guest/operator-influenced free text (pbs_snapshots_list precedent). Group-level
-view — pbs_snapshots_list shows the individual snapshots inside a group. Needs
-PROXIMO_PBS_* config.
+view — pbs_snapshots_list shows the individual snapshots inside a group. An EMPTY result
+from a token holding only Datastore.Backup (PBS shows it its OWN groups alone) is REFUSED
+with the grant to make, never returned as "no groups". Needs PROXIMO_PBS_* config.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -7479,7 +7555,9 @@ snapshot metadata including backup type, ID, timestamp, size, owner, and protect
 status; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only
 the newest N — a capped slice is never evidence a snapshot is absent; omit it to verify
 one. To delete one use pbs_snapshot_delete; to change its protected flag or notes use
-pbs_snapshot_protected_set or pbs_snapshot_notes_set.
+pbs_snapshot_protected_set or pbs_snapshot_notes_set. An EMPTY result from a token that
+holds only Datastore.Backup (PBS then shows it its OWN groups alone) is REFUSED with the
+grant to make (Datastore.Audit / Read / Modify), never returned as "no snapshots".
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

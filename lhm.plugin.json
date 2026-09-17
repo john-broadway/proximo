@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.41.1",
+  "version": "0.42.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -206,6 +206,182 @@
       }
     },
     {
+      "name": "pve_file_restore_list",
+      "description": "READ-ONLY: list the files and directories at `filepath` INSIDE a guest's backup, without\nrestoring the guest. Entries carry `path` (decoded), text, type (f/d), leaf, size, mtime.\nADVERSARIAL: names are guest-authored free text. Needs the sighted grant (Datastore.AllocateSpace\non the storage + VM.Backup on the guest, or Datastore.Allocate on the storage); a VM-image\nbackup additionally needs proxmox-backup-file-restore on the node (it boots a restore VM, so\nthe first call is slow). Then pve_file_restore_download pulls one entry out.",
+      "inputSchema": {
+        "properties": {
+          "storage": {
+            "description": "PBS-backed storage ID holding the backup (file restore works on PBS snapshots only).",
+            "type": "string"
+          },
+          "volid": {
+            "description": "Backup archive volume ID, as pve_backup_list returns it, e.g. pbs:backup/ct/101/2026-09-16T02:00:00Z.",
+            "type": "string"
+          },
+          "filepath": {
+            "default": "/",
+            "description": "Path INSIDE the backup, starting with '/'. '/' lists the archive layer (e.g. data.pxar.didx or the container's root archive); then '/<archive>/etc/hosts'.",
+            "type": "string"
+          },
+          "node": {
+            "default": null,
+            "description": "Proxmox node hosting the storage; defaults to the configured node if omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "storage",
+          "volid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pve_file_restore_download",
+      "description": "MUTATION (MEDIUM): pull ONE file or directory out of a guest's backup onto THIS host, without\nrestoring the guest. Bytes land under PROXIMO_RESTORE_DIR (default ~/.local/state/proximo/restores)\nin a fresh private subdirectory, capped by PROXIMO_RESTORE_MAX_BYTES (default 256 MiB); the\nresult carries the local path, byte count and sha256, NEVER the bytes. Dry-run by default: the PLAN\npre-reads the entry's size and says so if it is over the cap. confirm=True to execute. The\nbackup itself is never changed. Find the volid with pve_backup_list and the path with\npve_file_restore_list first.",
+      "inputSchema": {
+        "properties": {
+          "storage": {
+            "description": "PBS-backed storage ID holding the backup.",
+            "type": "string"
+          },
+          "volid": {
+            "description": "Backup archive volume ID, as pve_backup_list returns it.",
+            "type": "string"
+          },
+          "filepath": {
+            "description": "Path INSIDE the backup to pull out, starting with '/'; a directory downloads as an archive.",
+            "type": "string"
+          },
+          "tar": {
+            "default": false,
+            "description": "For a directory: True downloads tar.zst, False (default) a zip.",
+            "type": "boolean"
+          },
+          "node": {
+            "default": null,
+            "description": "Proxmox node hosting the storage; defaults to the configured node if omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN naming source, path, destination and cap; True performs the download.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "storage",
+          "volid",
+          "filepath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pbs_catalog_list",
+      "description": "READ-ONLY: list the files and directories at `filepath` INSIDE one PBS snapshot (its catalog),\ndirectly on the backup server — works for host backups too, which PVE never sees. Entries carry\n`path` (decoded), text, type (f/d), leaf, size, mtime. ADVERSARIAL: names are guest-authored\nfree text. Needs Datastore.Read on the datastore/namespace, or Datastore.Backup as the group's\nowner. Then pbs_file_download pulls one entry out.",
+      "inputSchema": {
+        "properties": {
+          "store": {
+            "description": "PBS datastore name.",
+            "type": "string"
+          },
+          "backup_type": {
+            "description": "Backup type of the snapshot: 'vm', 'ct', or 'host'.",
+            "type": "string"
+          },
+          "backup_id": {
+            "description": "Backup group ID (VMID/CTID or host name).",
+            "type": "string"
+          },
+          "backup_time": {
+            "description": "Snapshot timestamp as a Unix epoch integer (from pbs_snapshots_list).",
+            "type": "integer"
+          },
+          "filepath": {
+            "default": "/",
+            "description": "Path INSIDE the backup, starting with '/'. '/' lists the archive layer (e.g. data.pxar.didx or the container's root archive); then '/<archive>/etc/hosts'.",
+            "type": "string"
+          },
+          "ns": {
+            "default": null,
+            "description": "Namespace the snapshot lives in; omit for the root namespace.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "store",
+          "backup_type",
+          "backup_id",
+          "backup_time"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pbs_file_download",
+      "description": "MUTATION (MEDIUM): pull ONE file or directory out of a PBS snapshot onto THIS host. Bytes land\nunder PROXIMO_RESTORE_DIR (default ~/.local/state/proximo/restores) in a fresh private\nsubdirectory, capped by PROXIMO_RESTORE_MAX_BYTES (default 256 MiB); the result carries the local\npath, byte count and sha256, NEVER the bytes. Dry-run by default: the PLAN pre-reads the entry's size\nand says so if it is over the cap. confirm=True to execute. The snapshot is never changed. Find\nthe snapshot with pbs_snapshots_list and the path with pbs_catalog_list first.",
+      "inputSchema": {
+        "properties": {
+          "store": {
+            "description": "PBS datastore name.",
+            "type": "string"
+          },
+          "backup_type": {
+            "description": "Backup type of the snapshot: 'vm', 'ct', or 'host'.",
+            "type": "string"
+          },
+          "backup_id": {
+            "description": "Backup group ID (VMID/CTID or host name).",
+            "type": "string"
+          },
+          "backup_time": {
+            "description": "Snapshot timestamp as a Unix epoch integer (from pbs_snapshots_list).",
+            "type": "integer"
+          },
+          "filepath": {
+            "description": "Path INSIDE the snapshot to pull out, starting with '/'; a directory downloads as an archive.",
+            "type": "string"
+          },
+          "ns": {
+            "default": null,
+            "description": "Namespace the snapshot lives in; omit for the root namespace.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tar": {
+            "default": false,
+            "description": "For a directory: True downloads tar.zst, False (default) a zip.",
+            "type": "boolean"
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN naming source, path, destination and cap; True performs the download.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "store",
+          "backup_type",
+          "backup_id",
+          "backup_time",
+          "filepath"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "proximo_recall",
       "description": "READ-ONLY: the estate map from local Tier-1 memory — NOT a live PVE read. Returns\ntotal/by_kind/by_status/guest_summary counts (trust guest_summary for guest-count questions;\nall counting is server-side) plus lean entity rows, stamped {source:'memory', as_of,\nage_seconds}: the data is as old as the stamp says. With `since`, also diffs: appeared,\nstatus_changed, and not_seen_since (last observed before the window — a fact, not a claim\nthe entity is gone). journal=N adds the newest N diagnosis digests (\"when did this last\nhappen\") — findings summaries only, never raw diagnostic output. Memory is on by default\n(PROXIMO_MEMORY=0 opts out), fed opportunistically by list reads and diagnose/doctor runs,\nderived and rebuildable. For live state use pve_list_guests / pve_cluster_resources.",
       "inputSchema": {
@@ -321,7 +497,7 @@
     },
     {
       "name": "pbs_snapshots_list",
-      "description": "READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns\nsnapshot metadata including backup type, ID, timestamp, size, owner, and protection\nstatus; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only\nthe newest N — a capped slice is never evidence a snapshot is absent; omit it to verify\none. To delete one use pbs_snapshot_delete; to change its protected flag or notes use\npbs_snapshot_protected_set or pbs_snapshot_notes_set.",
+      "description": "READ-ONLY: list backup snapshots in a PBS datastore with optional filters. Returns\nsnapshot metadata including backup type, ID, timestamp, size, owner, and protection\nstatus; filter by namespace, backup_type (vm/ct/host), or backup_id. `limit` returns only\nthe newest N — a capped slice is never evidence a snapshot is absent; omit it to verify\none. To delete one use pbs_snapshot_delete; to change its protected flag or notes use\npbs_snapshot_protected_set or pbs_snapshot_notes_set. An EMPTY result from a token that\nholds only Datastore.Backup (PBS then shows it its OWN groups alone) is REFUSED with the\ngrant to make (Datastore.Audit / Read / Modify), never returned as \"no snapshots\".",
       "inputSchema": {
         "properties": {
           "store": {
@@ -4506,7 +4682,7 @@
     },
     {
       "name": "pbs_groups_list",
-      "description": "READ-ONLY: list backup groups in a PBS datastore (backup-type/backup-id, snapshot count,\nlast-backup time, owner, files, comment). ADVERSARIAL: backup ids and the notes-derived\ncomment are guest/operator-influenced free text (pbs_snapshots_list precedent). Group-level\nview — pbs_snapshots_list shows the individual snapshots inside a group. Needs\nPROXIMO_PBS_* config.",
+      "description": "READ-ONLY: list backup groups in a PBS datastore (backup-type/backup-id, snapshot count,\nlast-backup time, owner, files, comment). ADVERSARIAL: backup ids and the notes-derived\ncomment are guest/operator-influenced free text (pbs_snapshots_list precedent). Group-level\nview — pbs_snapshots_list shows the individual snapshots inside a group. An EMPTY result\nfrom a token holding only Datastore.Backup (PBS shows it its OWN groups alone) is REFUSED\nwith the grant to make, never returned as \"no groups\". Needs PROXIMO_PBS_* config.",
       "inputSchema": {
         "properties": {
           "store": {
@@ -21866,7 +22042,7 @@
     },
     {
       "name": "pve_backup_list",
-      "description": "READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —\na backup missing from a pve_tasks_list slice (other node, or outside its limit window)\nstill shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only\nthe newest N — a capped slice is never evidence a backup is absent; omit it to verify one.",
+      "description": "READ-ONLY: list backup archives in a storage. Ground truth for whether a backup exists —\na backup missing from a pve_tasks_list slice (other node, or outside its limit window)\nstill shows here. Returns a list of dicts (volid, size, ctime, …). `limit` returns only\nthe newest N — a capped slice is never evidence a backup is absent; omit it to verify one.\nAn EMPTY result from a token that cannot see backup volumes (PVE hides them without\nDatastore.AllocateSpace on the storage + VM.Backup on the guest) is REFUSED with the grant\nto make, never returned as \"no backups\"; the default read-only token is such a token.",
       "inputSchema": {
         "properties": {
           "storage": {

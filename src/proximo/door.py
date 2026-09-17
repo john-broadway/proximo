@@ -74,7 +74,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
                         "pve_create_container", "pve_delete_guest"),
     "pve.cluster":     ("pve_cluster", "pve_node", "pve_ha", "pve_task", "pve_hardware",
                         "pve_mapping", "pve_diagnose", "pve_doctor"),
-    "pve.storage":     ("pve_storage", "pve_backup", "pve_restore", "pve_replication"),
+    "pve.storage":     ("pve_storage", "pve_backup", "pve_restore", "pve_file_restore", "pve_replication"),
     # SDN is split out deliberately: 83 of the 87 network tools are SDN, and most operators
     # never configure it. Folding them together made "I want network tools" cost 27k tokens.
     "pve.network":     ("pve_network",),
@@ -86,6 +86,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "pve.maintenance": ("pve_apt", "pve_acme", "pve_notification", "pve_metrics"),
     # --- Proxmox Backup Server ---
     "pbs.datastores":  ("pbs_datastore", "pbs_gc", "pbs_prune", "pbs_snapshot", "pbs_backup",
+                        "pbs_catalog", "pbs_file_download",
                         "pbs_verify", "pbs_sync", "pbs_admin", "pbs_s3", "pbs_remote", "pbs_key",
                         "pbs_encryption_key", "pbs_namespace", "pbs_pull", "pbs_push"),
     "pbs.tape":        ("pbs_tape",),
@@ -576,7 +577,7 @@ def apply_lean(server_mcp=None) -> dict:
         server_mcp = _default_mcp()
     global LEAN_CATALOG
     # Idempotence guard (redteam, 2026-08-01): a second pass would snapshot the FACADE itself
-    # as the searchable catalog — 906 searchable silently becomes 6. Once the facade is the
+    # as the searchable catalog — the whole searchable catalog silently becomes 6. Once the facade is the
     # registry, there is nothing left to lean.
     if "proximo_find_tools" in server_mcp._tool_manager._tools:
         return LEAN_CATALOG
@@ -624,7 +625,7 @@ def apply_lean(server_mcp=None) -> dict:
         )
 
     # The facade IS the default door, so an unannotated facade swallows every readOnlyHint the
-    # plane tools carry — a client sees three bare tools whichever of 906 rides through them.
+    # plane tools carry — a client sees three bare tools whichever of the 900-odd rides through them.
     # These two only read the local catalog: readOnlyHint=True. proximo_call (server.py) is
     # False — it can dispatch a mutation, and a hint cannot vary per call (annotations ride
     # tools/list, which is static; nothing in a tools/call result carries them).

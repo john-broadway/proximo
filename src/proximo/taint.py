@@ -169,6 +169,9 @@ ADVERSARIAL_TOOLS: frozenset[str] = frozenset({
     "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
     "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",
     "pdm_pve_qemu_list", "pdm_pve_lxc_list", "pdm_pve_resources", "pbs_snapshots_list",
+    # file-level restore (2026-09-17): the entries are the guest's OWN file names and the
+    # download result echoes the remote path the caller chose and the guest-named local file.
+    "pve_file_restore_list", "pve_file_restore_download", "pbs_catalog_list", "pbs_file_download",
     # upstream/package-maintainer-authored free text (Wave 1a, 2026-07-15): unlike the other six
     # pve_apt_* tools (structured, Proxmox-authored config/status), the changelog body is authored
     # by whoever maintains the package in the configured repo — an attacker who compromises a

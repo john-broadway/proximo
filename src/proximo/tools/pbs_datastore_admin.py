@@ -23,7 +23,7 @@ from proximo.pbs_datastore_admin import (
     group_move,
     group_notes_get,
     group_notes_set,
-    groups_list,
+    groups_list_sighted,
     namespace_move,
     plan_datastore_mount,
     plan_datastore_prune,
@@ -62,11 +62,12 @@ def pbs_groups_list(
     """READ-ONLY: list backup groups in a PBS datastore (backup-type/backup-id, snapshot count,
     last-backup time, owner, files, comment). ADVERSARIAL: backup ids and the notes-derived
     comment are guest/operator-influenced free text (pbs_snapshots_list precedent). Group-level
-    view — pbs_snapshots_list shows the individual snapshots inside a group. Needs
-    PROXIMO_PBS_* config."""
+    view — pbs_snapshots_list shows the individual snapshots inside a group. An EMPTY result
+    from a token holding only Datastore.Backup (PBS shows it its OWN groups alone) is REFUSED
+    with the grant to make, never returned as "no groups". Needs PROXIMO_PBS_* config."""
     _, pbs = _proximo_server._pbs()
     tgt = f"pbs/datastore/{store}/groups" + (f"/{ns}" if ns else "")
-    return _audited("pbs_groups_list", tgt, lambda: groups_list(pbs, store, ns))
+    return _audited("pbs_groups_list", tgt, lambda: groups_list_sighted(pbs, store, ns))
 
 
 @tool()

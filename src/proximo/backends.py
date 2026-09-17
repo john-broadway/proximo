@@ -948,8 +948,11 @@ class ApiBackend:
         _check_node(node)
         return node or self.config.node
 
-    def _get(self, path: str):
-        r = self._client.get(path, headers=self._auth_header())
+    def _get(self, path: str, *, timeout: httpx.Timeout | None = None):
+        # `timeout` is opt-in per call for the rare slow read (file-restore of a VM image boots a
+        # restore VM on the node); every other caller keeps the client's 30s.
+        r = self._client.get(path, headers=self._auth_header(),
+                             timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT)
         r.raise_for_status()
         return r.json().get("data")
 

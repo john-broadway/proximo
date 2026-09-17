@@ -2,6 +2,17 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.42.0] — 2026-09-17
+
+**One file out of a backup, without restoring the guest.**
+Four tools, two planes, one landing spot. `pve_file_restore_list` / `pve_file_restore_download` walk a guest's PBS-backed backup through PVE's file-restore API (the same sighted grant, `proxmox-backup-file-restore` on the node for VM images); `pbs_catalog_list` / `pbs_file_download` walk any snapshot's catalog directly on the backup server, host backups included. The wire grammar was walked in the lab before the module existed: base64 paths, no length header on downloads, zip or tar.zst for a directory. The download is a governed mutation: the PLAN names source, remote path, destination and cap and pre-reads the entry's size; `confirm=True` streams the bytes into a fresh private subdirectory under `PROXIMO_RESTORE_DIR`, capped by `PROXIMO_RESTORE_MAX_BYTES` from the length header when present and while streaming when not, removing the partial on any refusal. The result carries path, byte count and sha256, never the bytes. Tool count 908 → 912.
+
+**A blind token's empty backup listing is refused.**
+PVE hides backup volumes from a storage's content listing unless the token holds `Datastore.AllocateSpace` on the storage and `VM.Backup` on the owner guest (or `Datastore.Allocate` on the storage). The default read-only token from the setup guide holds neither, so `pve_backup_list` answered `[]` on a storage full of archives, and `pve_restore` had no volid to take. The freshness fence has said so since 0.19; the plain listing now does too: an empty result from a provably blind token raises with the exact grant to make (a narrow `ProximoBackupSight` role on the storage and the guests, to the token and its user). A non-empty listing never triggers the permissions read, and an unreadable permission map proves nothing and still returns `[]`. The PBS plane gets the same fence: a token holding only `Datastore.Backup` (the role PBS's own ACL example gives a backup client) is shown its own groups alone, so `pbs_snapshots_list` and `pbs_groups_list` answered `[]` for every other owner's guest (reproduced in the lab with a Backup-only token against a datastore holding another owner's group); both now refuse in that state and name `DatastoreAudit`. The permission collector behind this (shared with `pve_doctor` and the freshness fence) now follows PVE's own contract: a privilege is held where its key is *defined*, and the value is the propagate flag; a `--propagate 0` grant on a leaf path was previously dropped as if absent, and a grant on an ancestor now reaches the leaf only when it propagates. `docs/SETUP.md` gains "Seeing backups, and restoring one", which also names what stays outside Proximo: restoring a PBS `host`-type backup as a whole. Whole-guest restore from a PBS-backed storage goes through `pve_restore`, as it has since 0.19.1.
+
+**The internal nightly pins its own fingerprint.**
+`live-smoke.yml` (gitea only) failed closed every night from 2026-06-24 because the PVE node's certificate fingerprint lived in a repo variable nobody set. The pin now ships in the workflow as a default the variable overrides; a rotated certificate fails closed with a mismatch, which is the correct red. The workflow's PBS precheck also stops calling an unreachable test box "down" when the runner simply has no route to it.
+
 ## [0.41.1] — 2026-09-13
 
 **The security patch layer only ran on a digest bump.**

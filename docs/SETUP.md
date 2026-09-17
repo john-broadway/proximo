@@ -209,6 +209,68 @@ token still says so. Grant only what you mean to, only where you mean it.
 
 *(The token is named `readonly` — that's just a label. Its real power is whatever roles you grant it.)*
 
+### Seeing backups, and restoring one
+
+The Step 2 token sees **zero** backup archives on every storage, and that is Proxmox, not Proximo:
+PVE hides backup volumes from the content listing unless the token holds `Datastore.AllocateSpace`
+on the storage **and** `VM.Backup` on the guest that owns the archive (or `Datastore.Allocate` on the
+storage). A `PVEAuditor` token gets `200` and an empty list on a storage full of backups.
+`pve_backup_list` now refuses in that state and names the grant, instead of answering "no backups".
+
+To let the AI see (and later restore) backups for your guests, grant a narrow sight role on the
+backup storage and on the guests, to the token **and** its user (Step 2's intersection rule):
+
+```bash
+pveum role add ProximoBackupSight -privs "Datastore.Audit,Datastore.AllocateSpace,VM.Audit,VM.Backup"
+pveum acl modify /storage/pbs --tokens 'proximo@pve!readonly' --roles ProximoBackupSight
+pveum acl modify /storage/pbs --users  'proximo@pve'          --roles ProximoBackupSight
+pveum acl modify /vms/100     --tokens 'proximo@pve!readonly' --roles ProximoBackupSight   # or /vms for all
+pveum acl modify /vms/100     --users  'proximo@pve'          --roles ProximoBackupSight
+```
+
+Now `pve_backup_list storage=pbs` returns the archives (a PBS-backed storage's volids look like
+`pbs:backup/ct/100/2026-09-16T02:00:00Z`), `pve_backup_freshness` gives real fresh/stale verdicts
+instead of `unknown`, and `pve_restore` can take one of those volids. A grant on `/vms/100` shows
+that guest's archives only; an empty list then means none for the guests you granted, not none on
+the storage. Restoring needs `Datastore.AllocateSpace` on the storage the guest's disks land on,
+plus `VM.Backup` on the guest when the VMID already exists (an overwrite) or `VM.Allocate` when it
+does not (a create); restoring a *privileged* container also needs `Sys.Modify` on `/`.
+`pve_restore` plans first and says which of the two it is.
+
+The PBS plane has the same trap one level down. A PBS token holding only `Datastore.Backup` (the
+`DatastoreBackup` role PBS's own ACL example gives a backup client) is shown **its own** backup groups and no
+one else's, so `pbs_snapshots_list` and `pbs_groups_list` answer an empty list for every other
+guest. Both now refuse in that state and name the grant: `DatastoreAudit` on `/datastore/<store>`
+(or the namespace path) lets the token list every group without reading the data.
+
+### Restoring one file, not the guest
+
+Two pairs of tools walk INTO a backup and pull a single file or directory out, without restoring
+the guest:
+
+- **PVE side** (a guest's backup on a PBS-backed storage): `pve_file_restore_list storage=pbs
+  volid=pbs:backup/ct/101/2026-09-16T02:00:00Z filepath=/` lists the archive layer; then
+  `filepath=/root.pxar.didx/etc/hosts` walks down. `pve_file_restore_download` with the same
+  arguments returns a PLAN first (source, remote path, destination, size, cap) and pulls the file on
+  `confirm=True`. The same `ProximoBackupSight` grant above is what PVE checks. A VM-image backup
+  needs `proxmox-backup-file-restore` on the node (it boots a small restore VM; the first listing is
+  slow). Container and host archives are read directly.
+- **PBS side** (any snapshot, host backups included): `pbs_catalog_list store=… backup_type=host
+  backup_id=… backup_time=… filepath=/` and `pbs_file_download`. Needs `Datastore.Read`, or
+  `Datastore.Backup` as the group's owner (`DatastoreReader` sees every group's files without
+  being able to change anything).
+
+Where the bytes land: `PROXIMO_RESTORE_DIR` (default `~/.local/state/proximo/restores`), one fresh
+private subdirectory per pull, files `0600`, never overwritten. `PROXIMO_RESTORE_MAX_BYTES` (default
+256 MiB) caps a pull; the PLAN says beforehand when the listed size is over it, and an overrun while
+streaming is refused with the partial removed. A directory arrives as a `.zip`, or `.tar.zst` with
+`tar=True`. The tool result carries the local path, the byte count and the sha256, never the bytes:
+a backup holds guest secrets, and your chat transcript is not where they belong.
+
+What stays outside Proximo today: restoring PBS `host`-type backups as a whole (PBS has no
+"restore host" call; pull files with `pbs_file_download`). Whole-guest restore from PBS goes
+through PVE, as above.
+
 ### Turning write on and off — `proximo arm` / `proximo disarm`
 
 The grant above is permanent until you revoke it. If you'd rather keep write authority *off*
@@ -304,14 +366,16 @@ that flip is itself a witnessed `reach_grant` change.
 
 ## Fitting a smaller model — scoping the tool surface
 
-Proximo governs 906 operations, and **the default door is small**: with nothing configured,
+Proximo governs 912 operations, and **the default door is small**: with nothing configured,
 the server serves the dynamic facade — search, schema, read, call, recall and the audit
 trail (~1,740 tokens) — with everything this box serves still callable through it. That is the 0.30
 flip, and the reason is measured: the catalog doors below cost your model context at
 connection time, before you ask anything, and the full surface is ~290k tokens of schema —
 ~35x over the 8,192-token default window of a stock local model, which means dead on connect.
 The catalog doors are explicit choices now. Four layers, most specific wins. Every figure
-below was measured against the full 906-tool registry:
+below was measured on 2026-08-01, at the 0.30 flip, against that day's registry (906 tools; the note
+under the table records the method). The registry is 912 at 0.42.0, so the per-row tool counts read a
+few higher today; the token costs are the measurement:
 
 | Set this | Serves | Real cost |
 |---|---|---|

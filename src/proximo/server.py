@@ -1861,6 +1861,12 @@ def main() -> None:
 # and (b) the existing `server.<tool_name>` surface (direct-call tests, CLI, introspection
 # sweeps that do `getattr(server, name)`) keeps working unchanged. ---
 from proximo import prompts as _prompts  # noqa: E402,F401  # safe-runbook MCP prompts (registration side effect)
+from proximo.tools.file_restore import (  # noqa: E402,F401
+    pbs_catalog_list,
+    pbs_file_download,
+    pve_file_restore_download,
+    pve_file_restore_list,
+)
 from proximo.tools.memory_tools import (  # noqa: E402,F401
     proximo_baseline,
     proximo_recall,

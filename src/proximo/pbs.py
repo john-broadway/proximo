@@ -567,6 +567,77 @@ def snapshots_list(
     return api._get(f"/admin/datastore/{store}/snapshots", params=params) or []
 
 
+# PBS gates group/snapshot listing with check_ns_privs_full(store, ns, auth_id,
+# PRIV_DATASTORE_AUDIT, PRIV_DATASTORE_BACKUP) (src/api2/admin/datastore.rs list_groups /
+# list_snapshots_blocking; src/backup/hierarchy.rs): Audit = every group, Backup = OWNED groups
+# only, neither = 403. Read and Modify are never consulted by that gate (built-in roles that carry
+# them carry Audit too), so they are deliberately NOT sight here. Cited from the source, not the
+# role prose, after an adversarial pass 2026-09-16.
+_SEEING_PRIVS = ("Datastore.Audit",)
+
+
+def datastore_blind_reason(
+    api: PbsBackend, store: str, ns: str | None = None, filters: dict | None = None,
+) -> str | None:
+    """Why this token could NOT have seen another owner's groups under `store`[/`ns`], or None.
+
+    PBS shows a caller holding only Datastore.Backup (role DatastoreBackup: "can backup and
+    restore OWNED backups") its OWN backup groups; Datastore.Audit on the datastore or namespace
+    path (or a propagating ancestor) shows them all. `filters` (backup-type / backup-id the
+    caller sent) are named in the reason: an empty FILTERED answer from an owner-filtered token
+    cannot distinguish "no such group" from "that group is someone else's". Live-found in the lab
+    2026-09-16: a Backup-only token read 0 groups / 0 snapshots on a datastore holding one group
+    owned by another auth-id — 200 + [], the same shape the PVE listing had (see
+    backup.storage_blind_reason). Only PROVABLE blindness is reported: Backup held on the path
+    and none of the seeing privileges there or on a propagating ancestor. An unreadable or empty
+    permission map proves nothing and returns None.
+    """
+    from .doctor import collect_priv_flags, holds
+    try:
+        raw = api._get("/access/permissions")
+    except Exception:
+        return None
+    if not isinstance(raw, dict) or not raw:
+        return None
+    flags = collect_priv_flags(raw)
+    path = f"/datastore/{store}" + (f"/{ns}" if ns else "")
+    if any(holds(flags, priv, path) for priv in _SEEING_PRIVS):
+        return None
+    if not holds(flags, "Datastore.Backup", path):
+        return None  # no Backup either: PBS would have answered 403, not an empty list
+    flt = {k: v for k, v in (filters or {}).items() if v}
+    what = (f"nothing matching {flt} visible under '{path}'" if flt
+            else f"no snapshots or groups visible under '{path}'")
+    hidden = (f"a group matching {flt} owned by another auth-id would be hidden from this token, "
+              f"so this empty answer cannot tell 'no such group' from 'not yours'" if flt
+              else "other owners' backups may exist")
+    return (
+        f"{what}, and this token can only see backup groups it OWNS: it holds Datastore.Backup "
+        f"there and not Datastore.Audit (on the path or a propagating ancestor); {hidden}. "
+        f"Grant a seeing role to the token, e.g. "
+        f"pbs_acl_update path={path} role=DatastoreAudit auth_id='<user@realm!token>' "
+        f"(proxmox-backup-manager acl update {path} DatastoreAudit --auth-id '<user@realm!token>'), "
+        f"then list again."
+    )
+
+
+def snapshots_list_sighted(
+    api: PbsBackend, store: str, ns: str | None = None,
+    backup_type: str | None = None, backup_id: str | None = None,
+) -> list[dict]:
+    """`snapshots_list`, refusing to report an EMPTY view the token could only have of its own
+    groups. Non-empty returns as-is (no permissions read); empty + provably owner-filtered raises
+    ProximoError with the grant; empty + sighted (or unprovable) returns []."""
+    snaps = snapshots_list(api, store, ns, backup_type, backup_id)
+    if snaps:
+        return snaps
+    reason = datastore_blind_reason(
+        api, store, ns, {"backup-type": backup_type, "backup-id": backup_id})
+    if reason:
+        raise ProximoError(reason)
+    return []
+
+
 def namespace_list(
     api: PbsBackend,
     store: str,
