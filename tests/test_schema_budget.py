@@ -19,6 +19,7 @@ payload so ordinary work never trips them, and a careless surface addition does.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import pathlib
 
@@ -377,3 +378,63 @@ def test_target_param_dropped_when_no_registry_but_kept_when_configured():
     drop_unusable_target_param(configured, registry_configured=True)
     assert "proximo_target" in configured["properties"], (
         "a multi-target deployment lost the parameter it needs")
+
+
+# --- the interpreter must not change the payload ----------------------------------------
+#
+# Descriptions originate in `fn.__doc__`. CPython 3.13 strips each docstring's common leading
+# whitespace at compile time; 3.12 does not. Unnormalized, the SAME surface serves 1,202,345 B
+# on 3.12 and 1,185,831 B on 3.13 — a 16,514 B difference that is entirely source indentation,
+# billed to every 3.12 adopter on every connection. `door.dedent_description` (run for every
+# tool in `_slim_registry_schemas`) collapses that to one number on both: 1,185,057 B.
+#
+# This mattered because a budget measured on ONE interpreter says nothing about the other: the
+# 3.12 legs of CI went red on the 0.43.0 staging sha while this box, on 3.13, was green.
+
+def test_dedent_description_strips_source_indentation():
+    """The MECHANISM, built from a string so no compiler can pre-dedent it.
+
+    The registry-wide invariant below is interpreter-sensitive in WHAT it catches (see its
+    docstring); this one is not. It is the same red on 3.12 and 3.13.
+    """
+    class _Probe:
+        description = "first line\n    second line\n    third line"
+
+    probe = _Probe()
+    door.dedent_description(probe)
+    assert probe.description == "first line\nsecond line\nthird line"
+
+
+def test_dedent_description_leaves_clean_text_alone():
+    """Idempotence, and the control for the test above: already-clean text must not move.
+
+    Without this, a `dedent_description` that mangled every description equally would still
+    satisfy the strip test.
+    """
+    class _Probe:
+        description = "first line\nsecond line"
+
+    probe = _Probe()
+    door.dedent_description(probe)
+    assert probe.description == "first line\nsecond line"
+
+
+def test_every_registered_description_is_dedented():
+    """Totality: no tool may escape the one-pass normalization, whatever its registration path.
+
+    ⚠️ Interpreter-sensitive in MAGNITUDE, stated rather than implied. It goes red on both
+    3.12 and 3.13 when the normalization is removed (mutation-proven), but not for the same
+    reason or the same weight: 3.13's compiler already strips the common indentation, so what
+    is left there is the residual `cleandoc` also handles — trailing whitespace before the
+    closing quotes, 774 B across the surface. The 16,514 B of real indentation freight is
+    visible only on 3.12. A green run here on 3.13 is therefore NOT evidence that a 3.12
+    adopter is served the same payload; only measuring on 3.12 is.
+    """
+    offenders = sorted(
+        name for name, tool in REGISTRY.items()
+        if (tool.description or "") and inspect.cleandoc(tool.description) != tool.description
+    )
+    assert not offenders, (
+        f"{len(offenders)} tool description(s) still carry source indentation onto the wire "
+        f"(registered after _slim_registry_schemas ran?): {offenders[:5]}"
+    )

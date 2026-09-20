@@ -1,10 +1,10 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.42.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.43.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
-**912 tools** across 7 surfaces.
+**924 tools** across 7 surfaces.
 
 ## Contents
 
@@ -12,9 +12,9 @@ The complete external interface of Proximo **v0.42.0**: every MCP tool it expose
 - [Proxmox VE (PVE)](#proxmox-ve-pve) — 307
 - [Proxmox Backup Server (PBS)](#proxmox-backup-server-pbs) — 259
 - [Proxmox Mail Gateway (PMG)](#proxmox-mail-gateway-pmg) — 295
-- [Proxmox Datacenter Manager (PDM)](#proxmox-datacenter-manager-pdm) — 34
+- [Proxmox Datacenter Manager (PDM)](#proxmox-datacenter-manager-pdm) — 45
 - [Container exec (opt-in)](#container-exec-opt-in) — 4
-- [Core / trust spine](#core--trust-spine) — 7
+- [Core / trust spine](#core--trust-spine) — 8
 
 ## Proxmox VE — in-guest agent (opt-in)
 
@@ -8553,11 +8553,13 @@ dict; synchronous, no UPID. Needs PROXIMO_PBS_* config.
 
 MUTATION (MEDIUM): create an API token for a PBS user.
 
-Dry-run by default. PBS has NO privsep concept (unlike PVE) — the new token has NO
+Dry-run by default. PBS has NO privsep toggle (unlike PVE) — the new token has NO
 privileges until an ACL entry grants it some (pbs_acl_update with
-auth_id='{userid}!{token_name}'). confirm=True executes and returns a dict whose result
-carries the token secret (value) ONCE — it is never written to the audit ledger and cannot
-be retrieved again (only regenerated via pbs_token_update, which invalidates it).
+auth_id='{userid}!{token_name}'), and never more than its owning user holds on that path
+(grant the user first, or the token resolves to nothing). confirm=True executes and
+returns a dict whose result carries the token secret (value) ONCE — it is never written to
+the audit ledger and cannot be retrieved again (only regenerated via pbs_token_update,
+which invalidates it).
 Synchronous. Use pbs_user_tokens_list to see a user's existing tokens, or pbs_token_delete to
 remove one. Needs PROXIMO_PBS_* config.
 
@@ -13324,6 +13326,25 @@ pve_acl_list. Needs PROXIMO_PDM_* config.
 | `path` | string (nullable) | no | Optional ACL path filter, e.g. '/'; omit to list all entries. (default: `null`) |
 | `exact` | boolean | no | If true, match the given path exactly rather than including sub-paths. (default: `false`) |
 
+#### `pdm_acl_update`
+
+MUTATION (HIGH): grant or revoke a PDM ACL entry (PUT /access/acl). Every ACL change
+grants or revokes authority, so it is HIGH unconditionally. Dry-run by default (reads the
+entries at this exact path for context). Exactly one of auth_id/group. Revert with a second
+call (grant<->revoke). Use pdm_acl_list to see entries, pdm_roles_list for the roles. Needs
+PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | ACL path the entry applies to, e.g. '/resource/lab' or '/'. |
+| `role` | string | yes | A single PDM role id to grant or revoke, e.g. 'Auditor'. |
+| `auth_id` | string (nullable) | no | User or token principal ('user@realm' or 'user@realm!token-name'). Exactly one of auth_id/group is required. (default: `null`) |
+| `group` | string (nullable) | no | Group principal. Exactly one of auth_id/group is required. (default: `null`) |
+| `propagate` | boolean (nullable) | no | Whether the grant propagates below `path`; omit for PDM's default (true). (default: `null`) |
+| `delete` | boolean | no | False to grant the role, True to revoke it. (default: `false`) |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
 #### `pdm_node_status`
 
 READ-ONLY: get resource stats for the PDM appliance's own node (not a managed remote's node).
@@ -13376,6 +13397,17 @@ directly without PDM, use pbs_snapshots_list. Needs PROXIMO_PDM_* config.
 | `datastore` | string | yes | PBS datastore name on the remote to list snapshots from. |
 | `ns` | string (nullable) | no | Optional PBS namespace filter; omit to use the default namespace. (default: `null`) |
 | `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N snapshots by backup-time. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
+
+#### `pdm_permissions_get`
+
+READ-ONLY: resolved effective privileges for a PDM user/token (path -> privilege ->
+propagate bit), the inherited plus direct view that pdm_acl_list's raw entries resolve to.
+Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `auth_id` | string (nullable) | no | User or token to resolve ('user@realm' or 'user@realm!token-name'); omit for the calling credential. (default: `null`) |
+| `path` | string (nullable) | no | ACL path to scope the result to; omit for every path. (default: `null`) |
 
 #### `pdm_ping`
 
@@ -13788,6 +13820,134 @@ pve_tasks_list.
 | `limit` | integer (nullable) | no | Optional cap: return only the NEWEST N tasks by starttime. A limited listing is NOT evidence of absence — omit for the complete list. Zero/negative is rejected. (default: `null`) |
 | `fields` | string (nullable) | no | Response fields: omit for the lean default (upid/node/worker_type/worker_id/user/status/starttime/endtime), `all` for the full payload, or a comma-separated field list. (default: `null`) |
 
+#### `pdm_token_create`
+
+MUTATION (MEDIUM): create an API token for a PDM user. Dry-run by default. The new token
+has no privileges until pdm_acl_update grants it some (auth_id='user@realm!token_name'), and
+never more than its owning user holds on that path (grant the user first).
+confirm=True returns the token secret ONCE in the result; it is never written to the ledger
+and cannot be retrieved again (only regenerated). Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | Owning PDM user, format 'user@realm'. |
+| `token_name` | string | yes | Name for the new API token, unique per user. |
+| `comment` | string (nullable) | no | Optional free-text comment describing the token's purpose. (default: `null`) |
+| `enable` | boolean (nullable) | no | Whether the token is usable immediately; None defers to PDM's default (enabled). (default: `null`) |
+| `expire` | integer (nullable) | no | Optional token expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
+#### `pdm_token_delete`
+
+MUTATION (MEDIUM, IRREVERSIBLE): permanently revoke a PDM API token; any integration using
+it loses access at once. Dry-run by default. Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | Owning PDM user, format 'user@realm'. |
+| `token_name` | string | yes | Name of the API token to revoke. |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
+#### `pdm_token_update`
+
+MUTATION: update a PDM API token's metadata; regenerate=True is HIGH (a new secret, the
+old one invalid at once, returned ONCE and never ledgered). Dry-run by default. Needs
+PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | Owning PDM user, format 'user@realm'. |
+| `token_name` | string | yes | Name of the API token to update. |
+| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `enable` | boolean (nullable) | no | Whether the token is usable; False disables it immediately. Omit to leave unchanged. (default: `null`) |
+| `expire` | integer (nullable) | no | Token expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `regenerate` | boolean | no | If True, issue a BRAND-NEW secret and invalidate the old one immediately (HIGH). (default: `false`) |
+| `delete_props` | array<string> (nullable) | no | Property names to clear ('comment'). (default: `null`) |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
+#### `pdm_user_create`
+
+MUTATION (MEDIUM): create a PDM user. Dry-run by default. `password` is optional and,
+when supplied, unconditionally redacted from the plan, detail and ledger. confirm=True
+executes and returns a dict; synchronous. Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | New PDM user id, format 'user@realm'. |
+| `comment` | string (nullable) | no | Optional free-text comment. (default: `null`) |
+| `email` | string (nullable) | no | Optional email address. (default: `null`) |
+| `enable` | boolean (nullable) | no | Whether the account can log in; None defers to PDM's default (enabled). (default: `null`) |
+| `expire` | integer (nullable) | no | Optional account expiry as a Unix timestamp; None/0 means no expiry. (default: `null`) |
+| `firstname` | string (nullable) | no | Optional first name. (default: `null`) |
+| `lastname` | string (nullable) | no | Optional last name. (default: `null`) |
+| `password` | string (nullable) | no | Optional initial password; redacted from all plans/logs/ledger. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
+#### `pdm_user_delete`
+
+MUTATION (MEDIUM): delete a PDM user. Dry-run by default; the PLAN reads the user's config
+and tokens to show what vanishes (permanent, no undo: the user's tokens go with it and ACL
+entries naming it are orphaned). To stop login without deleting, use pdm_user_update
+(enable=False). confirm=True executes and returns a dict. Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | PDM user id to delete, format 'user@realm'. |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
+#### `pdm_user_get`
+
+READ-ONLY: get a PDM user's config (userid, enabled flag, expiry, email, comment,
+firstname/lastname; no tokens, no secrets). Use pdm_user_tokens_list for the user's API
+tokens, or pdm_user_create/update/delete to manage the user. Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | PDM user id to look up, format 'user@realm'. |
+
+#### `pdm_user_token_get`
+
+READ-ONLY: one PDM API token's metadata (comment, expiry, enabled flag, token-name,
+tokenid; never the secret). Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | Owning PDM user, format 'user@realm'. |
+| `token_name` | string | yes | Token name (the part after '!' in the full tokenid). |
+
+#### `pdm_user_tokens_list`
+
+READ-ONLY: list a PDM user's API tokens (token-name, tokenid, comment, expiry, enabled
+flag; never the secret). Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | Owning PDM user, format 'user@realm'. |
+
+#### `pdm_user_update`
+
+MUTATION (MEDIUM): update a PDM user (enable=False stops login immediately). Dry-run by
+default; the PLAN reads the current config first. No password parameter: the user
+endpoint's password field is not the way to set one. confirm=True executes and returns a
+dict; synchronous. Needs PROXIMO_PDM_* config.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `userid` | string | yes | PDM user id to update, format 'user@realm'. |
+| `comment` | string (nullable) | no | Optional free-text comment; omit to leave unchanged. (default: `null`) |
+| `email` | string (nullable) | no | Optional email address; omit to leave unchanged. (default: `null`) |
+| `enable` | boolean (nullable) | no | Whether the account can log in; False stops login. Omit to leave unchanged. (default: `null`) |
+| `expire` | integer (nullable) | no | Account expiry as a Unix timestamp; omit to leave unchanged. (default: `null`) |
+| `firstname` | string (nullable) | no | Optional first name; omit to leave unchanged. (default: `null`) |
+| `lastname` | string (nullable) | no | Optional last name; omit to leave unchanged. (default: `null`) |
+| `delete_props` | array<string> (nullable) | no | Property names to clear: any of 'comment', 'firstname', 'lastname', 'email'. (default: `null`) |
+| `digest` | string (nullable) | no | Optional SHA256 config digest to prevent concurrent modifications. (default: `null`) |
+| `confirm` | boolean | no | False (default) returns a dry-run PLAN preview; True executes the mutation. (default: `false`) |
+
 #### `pdm_users_list`
 
 READ-ONLY: list PDM's own user accounts (not a managed remote's users).
@@ -13924,6 +14084,23 @@ alone can't see those. Falls back to PROXIMO_AUDIT_EXPECTED_HEAD when omitted.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `expected_head` | string (nullable) | no | 64-char hex head() value pinned off-box; verifying against it also catches tail truncation, a forged tail-append, or a full ledger replacement. Omit to fall back to PROXIMO_AUDIT_EXPECTED_HEAD. (default: `null`) |
+
+#### `proximo_api_get`
+
+READ-ONLY: run any GET the plane publishes, by path, and return the vendor's data
+labelled raw.
+
+The floor under the curated tools: when no tool covers a read, this does, with the same
+ledger entry every read gets. The path must match a GET in the vendored API tree (write
+paths, tunnels and unknown paths are refused with the nearest published reads named), and
+reads a curated tool already gates (qemu-agent, byte streams) are refused with that tool
+named. Bodies over PROXIMO_RAW_MAX_BYTES come back labelled truncated with their size.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `plane` | string | yes | Which API tree: 'pve', 'pbs', 'pmg' or 'pdm'. |
+| `path` | string | yes | Absolute API path with real values in it, e.g. the guest status path for one VMID. No query string. |
+| `params` | object (nullable) | no | Flat query parameters (string/number/bool values). (default: `null`) |
 
 #### `proximo_baseline`
 

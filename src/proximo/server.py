@@ -33,7 +33,8 @@ from pydantic import Field
 
 from . import __version__
 from . import audit as audit_mod
-from ._mcpcompat import MCP_MAJOR, make_server, tool_annotations_kwargs
+from ._mcpcompat import MCP_MAJOR, ToolError, make_server, tool_annotations_kwargs
+from ._secretfile import redact, register_secret
 from .armgate import enforce_arm
 from .audit import AuditLedger, find_rotation_archive, looks_like_head, open_ledger, read_entries
 from .audit_anchor import AnchorError
@@ -82,10 +83,7 @@ from .targets import (
     target_aware,
 )
 
-BANNER = (
-    "Proximo — the ethical Proxmox MCP\n"
-    '  "Win the crowd and you will win your freedom."  ·  Strength and honor.\n'
-)
+BANNER = 'Proximo — the ethical Proxmox MCP\n  "Win the crowd and you will win your freedom."  ·  Strength and honor.\n'
 
 # Per-major construction (1.x FastMCP / 2.x MCPServer subclass), advertising Proximo's OWN
 # version in the `initialize` handshake — the per-major mechanics live in _mcpcompat.
@@ -121,6 +119,7 @@ def tool(*d_args: Any, **d_kwargs: Any):
     _annotations_from_doc), unless the caller passed `annotations=` explicitly. Deferred into
     `deco` because the marker lives in fn.__doc__, which isn't in scope until fn arrives.
     """
+
     def deco(fn):
         kwargs = dict(d_kwargs)
         if not _MCP_TOOL_SUPPORTS_ANNOTATIONS:
@@ -329,13 +328,13 @@ def intent_id(action: str, target: str) -> str:
 # httpx.Client the same way, so this one hint table covers all of them from the one shared seam.
 _UNREACHABLE_ENV_HINT: dict[str, str] = {
     "pve_": "PROXIMO_API_BASE_URL, the token file at PROXIMO_TOKEN_PATH, and TLS/CA "
-            "(PROXIMO_CA_BUNDLE / PROXIMO_VERIFY_TLS)",
+    "(PROXIMO_CA_BUNDLE / PROXIMO_VERIFY_TLS)",
     "pbs_": "PROXIMO_PBS_BASE_URL, the token file at PROXIMO_PBS_TOKEN_PATH, and TLS/CA "
-            "(PROXIMO_PBS_CA_BUNDLE / PROXIMO_PBS_VERIFY_TLS)",
+    "(PROXIMO_PBS_CA_BUNDLE / PROXIMO_PBS_VERIFY_TLS)",
     "pmg_": "PROXIMO_PMG_BASE_URL, the password file at PROXIMO_PMG_PASSWORD_PATH, and TLS/CA "
-            "(PROXIMO_PMG_CA_BUNDLE / PROXIMO_PMG_VERIFY_TLS)",
+    "(PROXIMO_PMG_CA_BUNDLE / PROXIMO_PMG_VERIFY_TLS)",
     "pdm_": "PROXIMO_PDM_BASE_URL, the token file at PROXIMO_PDM_TOKEN_PATH, and TLS/CA "
-            "(PROXIMO_PDM_CA_BUNDLE / PROXIMO_PDM_VERIFY_TLS)",
+    "(PROXIMO_PDM_CA_BUNDLE / PROXIMO_PDM_VERIFY_TLS)",
 }
 
 
@@ -360,9 +359,15 @@ def _end_mutation_gates() -> None:
     end_operation()
 
 
-def _audited(action: str, target: str, fn: Callable[[], Any], *,
-             mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
-             detail: dict | None = None) -> Any:
+def _audited(
+    action: str,
+    target: str,
+    fn: Callable[[], Any],
+    *,
+    mutation: bool = False,
+    outcome: str | Callable[[Any], str] = "ok",
+    detail: dict | None = None,
+) -> Any:
     """Public mutation/read funnel. Delegates to _audited_run, then ALWAYS clears the per-operation
     CONSENT/ENVELOPE de-dup markers when a mutation ends (A10) — including when a gate refuses after
     an earlier gate already consumed (e.g. rate-refused after consent-consumed), so no marker leaks
@@ -374,9 +379,15 @@ def _audited(action: str, target: str, fn: Callable[[], Any], *,
             _end_mutation_gates()
 
 
-def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
-                 mutation: bool = False, outcome: str | Callable[[Any], str] = "ok",
-                 detail: dict | None = None) -> Any:
+def _audited_run(
+    action: str,
+    target: str,
+    fn: Callable[[], Any],
+    *,
+    mutation: bool = False,
+    outcome: str | Callable[[Any], str] = "ok",
+    detail: dict | None = None,
+) -> Any:
     """Run fn, then audit the REAL outcome. On exception, record the error and re-raise.
 
     `outcome` defaults to "ok" (synchronous completion). Async ops that only *start* a task pass
@@ -443,9 +454,15 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
             # No intent here, deliberately: this refuses BEFORE fn() runs, so there is no
             # execution interval to open or close. Stamping an intent on a refusal would make
             # audit.in_flight() reason about an operation that never started.
-            audit.record(action, target=target, mutation=mutation, outcome="blocked:taint_mark_failed",
-                         detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
-                         principal=ledger_principal(), remote=ledger_remote())
+            audit.record(
+                action,
+                target=target,
+                mutation=mutation,
+                outcome="blocked:taint_mark_failed",
+                detail=_untrusted_detail(action, {**(detail or {}), "error": type(e).__name__}),
+                principal=ledger_principal(),
+                remote=ledger_remote(),
+            )
             raise ProximoError(
                 f"taint tracking is enabled but the taint marker could not be written for {action!r} "
                 "— refusing to return untrusted output untracked (fail-closed)"
@@ -475,9 +492,15 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
         # stranded entry is the ONLY record the operation will ever have — it is what
         # audit.in_flight() surfaces — so dropping who-asked loses attribution exactly for the
         # mutation nobody got to see finish.
-        audit.record(action, target=target, mutation=True, outcome=audit_mod.EXECUTING,
-                     detail=_untrusted_detail(action, {**(detail or {}), "intent": intent}),
-                     principal=ledger_principal(), remote=ledger_remote())
+        audit.record(
+            action,
+            target=target,
+            mutation=True,
+            outcome=audit_mod.EXECUTING,
+            detail=_untrusted_detail(action, {**(detail or {}), "intent": intent}),
+            principal=ledger_principal(),
+            remote=ledger_remote(),
+        )
     try:
         result = fn()
     except Exception as e:
@@ -487,11 +510,15 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
         # reader it did not happen. Record "error:timeout" (kept in the "error:" subtype family so
         # error-filters still catch it) so PROVE stays honest about "ran, outcome unknown".
         timed_out = isinstance(e, subprocess.TimeoutExpired)
-        audit.record(action, target=target, mutation=mutation,
-                     outcome="error:timeout" if timed_out else "error",
-                     detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
-                                                       "error": type(e).__name__}),
-                     principal=ledger_principal(), remote=ledger_remote())
+        audit.record(
+            action,
+            target=target,
+            mutation=mutation,
+            outcome="error:timeout" if timed_out else "error",
+            detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}), "error": type(e).__name__}),
+            principal=ledger_principal(),
+            remote=ledger_remote(),
+        )
         if timed_out:
             secs = getattr(e, "timeout", None)
             raise ProximoError(
@@ -506,8 +533,7 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
             # a raw OS errno string with no pointer to what to check. The ledger entry above still
             # carries the real exception type name — only what's RAISED to the caller changes.
             raise ProximoError(
-                f"{action}: cannot reach / authenticate to the Proxmox API — check "
-                f"{_unreachable_hint(action)}."
+                f"{action}: cannot reach / authenticate to the Proxmox API — check {_unreachable_hint(action)}."
             ) from e
         if isinstance(e, httpx.HTTPStatusError):
             # str(HTTPStatusError) embeds the full request URL — the operator's internal Proxmox
@@ -515,9 +541,7 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
             # ToolError text. Scrub it: raise only the action and the HTTP status/reason, matching
             # the ledger, which already records only type(e).__name__.
             resp = e.response
-            raise ProximoError(
-                f"{action}: Proxmox API returned HTTP {resp.status_code} {resp.reason_phrase}."
-            ) from e
+            raise ProximoError(f"{action}: Proxmox API returned HTTP {resp.status_code} {resp.reason_phrase}.") from e
         raise
     if callable(outcome):
         # fn() has ALREADY RUN — the mutation is real. A resolver bug (raise, or a non-str
@@ -528,24 +552,33 @@ def _audited_run(action: str, target: str, fn: Callable[[], Any], *,
             resolved_outcome = outcome(result)
             if not isinstance(resolved_outcome, str):
                 raise TypeError(
-                    f"outcome resolver for {action!r} returned "
-                    f"{type(resolved_outcome).__name__}, expected str"
+                    f"outcome resolver for {action!r} returned {type(resolved_outcome).__name__}, expected str"
                 )
         except Exception as e:
             # Carries the intent: fn() ALREADY RAN, so this is the terminal entry closing the
             # interval the `executing` record opened. Omitting it here would leave a real,
             # executed mutation looking permanently in-flight to audit.in_flight().
-            audit.record(action, target=target, mutation=mutation,
-                         outcome="error:outcome_resolution_failed",
-                         detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}),
-                                                           "error": type(e).__name__}),
-                         principal=ledger_principal(), remote=ledger_remote())
+            audit.record(
+                action,
+                target=target,
+                mutation=mutation,
+                outcome="error:outcome_resolution_failed",
+                detail=_untrusted_detail(action, {**(_with_intent(detail, intent) or {}), "error": type(e).__name__}),
+                principal=ledger_principal(),
+                remote=ledger_remote(),
+            )
             raise
     else:
         resolved_outcome = outcome
-    audit.record(action, target=target, mutation=mutation, outcome=resolved_outcome,
-                 detail=_untrusted_detail(action, _with_intent(detail, intent)),
-                 principal=ledger_principal(), remote=ledger_remote())
+    audit.record(
+        action,
+        target=target,
+        mutation=mutation,
+        outcome=resolved_outcome,
+        detail=_untrusted_detail(action, _with_intent(detail, intent)),
+        principal=ledger_principal(),
+        remote=ledger_remote(),
+    )
     if mutation:
         return {"status": resolved_outcome, "result": fence_output(action, result)}
     return fence_output(action, result)
@@ -556,11 +589,22 @@ def _record_plan(plan: Plan) -> None:
     with outcome="planned". This is the PLAN->PROVE weld: a verified chain shows the exact preview."""
     audit = _ledger()
     audit.record(
-        plan.action, target=plan.target, mutation=True, outcome="planned",
-        detail={"change": plan.change, "risk": plan.risk, "risk_reasons": plan.risk_reasons,
-                "blast_radius": plan.blast_radius, "current": plan.current,
-                "affected": plan.affected, "complete": plan.complete},
-        principal=ledger_principal(), remote=ledger_remote())
+        plan.action,
+        target=plan.target,
+        mutation=True,
+        outcome="planned",
+        detail={
+            "change": plan.change,
+            "risk": plan.risk,
+            "risk_reasons": plan.risk_reasons,
+            "blast_radius": plan.blast_radius,
+            "current": plan.current,
+            "affected": plan.affected,
+            "complete": plan.complete,
+        },
+        principal=ledger_principal(),
+        remote=ledger_remote(),
+    )
 
 
 def _plan(action: str, target: str, build: Callable[[], Plan]) -> Plan:
@@ -575,9 +619,15 @@ def _plan(action: str, target: str, build: Callable[[], Plan]) -> Plan:
     try:
         plan = build()
     except Exception as e:
-        audit.record(action, target=target, mutation=True, outcome="error",
-                     detail={"error": type(e).__name__, "phase": "planning"},
-                     principal=ledger_principal(), remote=ledger_remote())
+        audit.record(
+            action,
+            target=target,
+            mutation=True,
+            outcome="error",
+            detail={"error": type(e).__name__, "phase": "planning"},
+            principal=ledger_principal(),
+            remote=ledger_remote(),
+        )
         raise
     # The server tool name + target are AUTHORITATIVE for the ledger: stamp them onto the plan so the
     # "planned" entry pairs with the later "submitted"/"ok" entry under ONE action AND ONE target
@@ -600,9 +650,17 @@ def _plan(action: str, target: str, build: Callable[[], Plan]) -> Plan:
     return plan
 
 
-def run_governed(name: str, target: str, *, plan: Callable[[], Plan], execute: Callable[[], Any],
-                 confirm: bool, outcome: str | Callable[[Any], str] = "ok",
-                 detail: dict | None = None, surface: dict | None = None) -> Any:
+def run_governed(
+    name: str,
+    target: str,
+    *,
+    plan: Callable[[], Plan],
+    execute: Callable[[], Any],
+    confirm: bool,
+    outcome: str | Callable[[Any], str] = "ok",
+    detail: dict | None = None,
+    surface: dict | None = None,
+) -> Any:
     """The one governed-mutation ritual: recorded PLAN -> dry-run return, or audited execute.
 
     Byte-compatible with the hand-written shape it replaces at ~480 wrapper sites (A11 slice 2):
@@ -627,12 +685,17 @@ def run_governed(name: str, target: str, *, plan: Callable[[], Plan], execute: C
     built = _plan(name, target, plan)
     if not confirm:
         return {"status": "plan", **built.as_dict(), **(surface or {})}
-    return _audited(name, target, execute, mutation=True, outcome=outcome,
-                    detail={**(surface or {}), **(detail or {}), "confirmed": True})
+    return _audited(
+        name,
+        target,
+        execute,
+        mutation=True,
+        outcome=outcome,
+        detail={**(surface or {}), **(detail or {}), "confirmed": True},
+    )
 
 
-def _wait_task(api: ApiBackend, upid: str, node: str | None = None,
-               timeout: int = 120, interval: int = 2) -> dict:
+def _wait_task(api: ApiBackend, upid: str, node: str | None = None, timeout: int = 120, interval: int = 2) -> dict:
     """Poll a Proxmox task to completion. Snapshot ops are async; the auto-undo path must wait for
     the snapshot to actually finish before mutating. Raises if the task fails or times out."""
     deadline = time.monotonic() + timeout
@@ -650,8 +713,9 @@ def _wait_task(api: ApiBackend, upid: str, node: str | None = None,
         time.sleep(interval)
 
 
-def _auto_undo(action: str, target: str, api: ApiBackend, vmid: str,
-               detail: dict, kind: str = "lxc", node: str | None = None) -> dict:
+def _auto_undo(
+    action: str, target: str, api: ApiBackend, vmid: str, detail: dict, kind: str = "lxc", node: str | None = None
+) -> dict:
     """Take a labeled undo snapshot and WAIT for it. On success returns the undo-point dict; on
     failure returns an {"status": "blocked:undo_unavailable"} dict (and audits it) — the caller MUST NOT
     mutate when unavailable (fail-closed: no net, no risky act)."""
@@ -667,146 +731,232 @@ def _auto_undo(action: str, target: str, api: ApiBackend, vmid: str,
     enforce_envelope_rate(action, target, audit, detail=detail)
     snapname = undo_snapname()
     try:
-        upid = api.snapshot_create(vmid, snapname, kind=kind, node=node,
-                                   description="proximo auto-undo before mutation")
+        upid = api.snapshot_create(
+            vmid, snapname, kind=kind, node=node, description="proximo auto-undo before mutation"
+        )
         _wait_task(api, upid, node=node)
     except Exception as e:
-        audit.record(action, target=target, mutation=True, outcome="blocked:undo_unavailable",
-                     detail={**detail, "error": type(e).__name__},
-                     principal=ledger_principal(), remote=ledger_remote())
+        audit.record(
+            action,
+            target=target,
+            mutation=True,
+            outcome="blocked:undo_unavailable",
+            detail={**detail, "error": type(e).__name__},
+            principal=ledger_principal(),
+            remote=ledger_remote(),
+        )
         return {
             "status": "blocked:undo_unavailable",
-            "message": ("Requested an undo snapshot but it could not be created/completed (the "
-                        "container's storage may not support snapshots). Command NOT run "
-                        "(fail-closed). Re-run without snapshot=True to proceed unprotected."),
+            "message": (
+                "Requested an undo snapshot but it could not be created/completed (the "
+                "container's storage may not support snapshots). Command NOT run "
+                "(fail-closed). Re-run without snapshot=True to proceed unprotected."
+            ),
             "error": type(e).__name__,
         }
-    audit.record(action, target=target, mutation=True, outcome="undo_point",
-                 detail={"snapshot": snapname, "task": upid},
-                 principal=ledger_principal(), remote=ledger_remote())
-    return {"snapshot": snapname, "task": upid,
-            "revert": f"pve_rollback vmid={vmid} snapname={snapname}",
-            "note": ("undo points are NOT auto-pruned — they accumulate and consume storage; "
-                     "delete with pve_snapshot_delete when no longer needed.")}
+    audit.record(
+        action,
+        target=target,
+        mutation=True,
+        outcome="undo_point",
+        detail={"snapshot": snapname, "task": upid},
+        principal=ledger_principal(),
+        remote=ledger_remote(),
+    )
+    return {
+        "snapshot": snapname,
+        "task": upid,
+        "revert": f"pve_rollback vmid={vmid} snapname={snapname}",
+        "note": (
+            "undo points are NOT auto-pruned — they accumulate and consume storage; "
+            "delete with pve_snapshot_delete when no longer needed."
+        ),
+    }
 
 
-def _blocked(action: str, target: str, outcome: str, message: str, detail: dict | None = None,
-            *, mutation: bool = True) -> dict:
+def _blocked(
+    action: str, target: str, outcome: str, message: str, detail: dict | None = None, *, mutation: bool = True
+) -> dict:
     """Shared body for the four 'refuse + audit' helpers below."""
     audit = _ledger()
-    audit.record(action, target=target, mutation=mutation, outcome=outcome,
-                 detail=detail, principal=ledger_principal(), remote=ledger_remote())
+    audit.record(
+        action,
+        target=target,
+        mutation=mutation,
+        outcome=outcome,
+        detail=detail,
+        principal=ledger_principal(),
+        remote=ledger_remote(),
+    )
     return {"status": outcome, "message": message}
 
 
-def _blocked_mirror(action: str, ctid: str, api, detail: dict | None = None,
-                    *, mutation: bool = True) -> dict | None:
+def _blocked_mirror(action: str, ctid: str, api, detail: dict | None = None, *, mutation: bool = True) -> dict | None:
     """The reach-mirror gate at the tool seam: None = pass (dormant or allowed); otherwise a
     refuse+audit dict. Fail-CLOSED on an unanswerable map — no reachable map, no reach; the
     break-glass for an API outage is unsetting PROXIMO_REACH_PRIVILEGE, itself a witnessed
     reach-grant change. Sits AFTER the allowlist: intersection, never widening."""
     from .reachmirror import mirror_verdict
+
     verdict, vdetail = mirror_verdict(api, str(ctid))
     if verdict in ("off", "allowed"):
         return None
     merged = {**(detail or {}), **vdetail}
     if verdict == "misconfigured":
-        return _blocked(action, str(ctid), "blocked:mirror_misconfigured",
-                        f"{vdetail.get('error')}", merged, mutation=mutation)
+        return _blocked(
+            action, str(ctid), "blocked:mirror_misconfigured", f"{vdetail.get('error')}", merged, mutation=mutation
+        )
     if verdict == "unavailable":
-        return _blocked(action, str(ctid), "blocked:mirror_unavailable",
-                        f"the reach mirror could not read the permission map for /vms/{ctid} "
-                        f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
-                        "If the API is down and shell reach is needed, unset "
-                        "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
-                        "to the allowlist alone.", merged, mutation=mutation)
-    return _blocked(action, str(ctid), "blocked:mirror",
-                    f"the served token does not hold '{vdetail.get('privilege')}' on /vms/{ctid} "
-                    "— the reach mirror refuses (grant it there via pveum, on the path or its "
-                    "pool, to permit).", merged, mutation=mutation)
+        return _blocked(
+            action,
+            str(ctid),
+            "blocked:mirror_unavailable",
+            f"the reach mirror could not read the permission map for /vms/{ctid} "
+            f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
+            "If the API is down and shell reach is needed, unset "
+            "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
+            "to the allowlist alone.",
+            merged,
+            mutation=mutation,
+        )
+    return _blocked(
+        action,
+        str(ctid),
+        "blocked:mirror",
+        f"the served token does not hold '{vdetail.get('privilege')}' on /vms/{ctid} "
+        "— the reach mirror refuses (grant it there via pveum, on the path or its "
+        "pool, to permit).",
+        merged,
+        mutation=mutation,
+    )
 
 
-def _blocked_node_mirror(action: str, node: str, api, detail: dict | None = None,
-                         *, mutation: bool = False) -> dict | None:
+def _blocked_node_mirror(
+    action: str, node: str, api, detail: dict | None = None, *, mutation: bool = False
+) -> dict | None:
     """The reach mirror one altitude up: gates the host shell battery on the token holding the
     reach privilege at `/nodes/<node>`. Same fail-closed contract as `_blocked_mirror`; the node
     battery is read-only so the default is mutation=False."""
     from .reachmirror import node_verdict
+
     verdict, vdetail = node_verdict(api, str(node))
     if verdict in ("off", "allowed"):
         return None
     merged = {**(detail or {}), **vdetail, "node": str(node)}
     if verdict == "misconfigured":
-        return _blocked(action, str(node), "blocked:mirror_misconfigured",
-                        f"{vdetail.get('error')}", merged, mutation=mutation)
+        return _blocked(
+            action, str(node), "blocked:mirror_misconfigured", f"{vdetail.get('error')}", merged, mutation=mutation
+        )
     if verdict == "unavailable":
-        return _blocked(action, str(node), "blocked:mirror_unavailable",
-                        f"the reach mirror could not read the permission map for /nodes/{node} "
-                        f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
-                        "If the API is down and node evidence is needed, unset "
-                        "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
-                        "to the allowlist-free node gate.", merged, mutation=mutation)
-    return _blocked(action, str(node), "blocked:mirror",
-                    f"the served token does not hold '{vdetail.get('privilege')}' on "
-                    f"/nodes/{node} — the reach mirror refuses (grant it there via pveum to "
-                    "permit host-side evidence).", merged, mutation=mutation)
+        return _blocked(
+            action,
+            str(node),
+            "blocked:mirror_unavailable",
+            f"the reach mirror could not read the permission map for /nodes/{node} "
+            f"({vdetail.get('error')}) — fail-closed: no reachable map, no reach. "
+            "If the API is down and node evidence is needed, unset "
+            "PROXIMO_REACH_PRIVILEGE (a witnessed reach-grant change) to fall back "
+            "to the allowlist-free node gate.",
+            merged,
+            mutation=mutation,
+        )
+    return _blocked(
+        action,
+        str(node),
+        "blocked:mirror",
+        f"the served token does not hold '{vdetail.get('privilege')}' on "
+        f"/nodes/{node} — the reach mirror refuses (grant it there via pveum to "
+        "permit host-side evidence).",
+        merged,
+        mutation=mutation,
+    )
 
 
-def _blocked_allowlist(action: str, target: str, detail: dict | None = None,
-                       *, cfg: ProximoConfig, mutation: bool = True) -> dict:
+def _blocked_allowlist(
+    action: str, target: str, detail: dict | None = None, *, cfg: ProximoConfig, mutation: bool = True
+) -> dict:
     """Refuse + audit a container op whose CTID isn't on the allowlist (fail-closed), as a clean dict
     — checked at the server layer BEFORE any snapshot/exec, so a forbidden CTID never gets touched.
     `cfg` is required, not optional: the message names the store that fed the allowlist
     (cfg.ct_allowlist_source), and a call site that forgets it must fail loudly, not fall back
     to a remedy that names no store (2026-09-02). `mutation` must reflect the GATED tool's true
     class so blocked reads don't ledger as mutations."""
-    return _blocked(action, target, "blocked:allowlist",
-                    f"CTID {target} is not in PROXIMO_CT_ALLOWLIST (fail-closed). "
-                    + allowlist_remedy("PROXIMO_CT_ALLOWLIST", cfg.ct_allowlist_source),
-                    detail, mutation=mutation)
+    return _blocked(
+        action,
+        target,
+        "blocked:allowlist",
+        f"CTID {target} is not in PROXIMO_CT_ALLOWLIST (fail-closed). "
+        + allowlist_remedy("PROXIMO_CT_ALLOWLIST", cfg.ct_allowlist_source),
+        detail,
+        mutation=mutation,
+    )
 
 
-def _exec_disabled(action: str, target: str, detail: dict | None = None,
-                   *, mutation: bool = True) -> dict:
+def _exec_disabled(action: str, target: str, detail: dict | None = None, *, mutation: bool = True) -> dict:
     """In-container exec is off by default (safe). Refuse + audit; explain how to opt in.
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
-    return _blocked(action, target, "blocked:exec_disabled",
-                    ("In-container exec is disabled (safe default: API-only). It grants near-root on the "
-                     "PVE host; enable deliberately with PROXIMO_ENABLE_EXEC=1 and set PROXIMO_CT_ALLOWLIST."),
-                    detail, mutation=mutation)
+    return _blocked(
+        action,
+        target,
+        "blocked:exec_disabled",
+        (
+            "In-container exec is disabled (safe default: API-only). It grants near-root on the "
+            "PVE host; enable deliberately with PROXIMO_ENABLE_EXEC=1 and set PROXIMO_CT_ALLOWLIST."
+        ),
+        detail,
+        mutation=mutation,
+    )
 
 
-def _node_shell_disabled(action: str, target: str, detail: dict | None = None,
-                         *, mutation: bool = False) -> dict:
+def _node_shell_disabled(action: str, target: str, detail: dict | None = None, *, mutation: bool = False) -> dict:
     """The node shell battery is off by default. Refuse + audit; explain the opt-in. Its own
     flag, NOT enable_exec: host-journal breadth is a different disclosure grade than one
     container's, so opting into guest exec must not silently open the host battery."""
-    return _blocked(action, target, "blocked:node_shell_disabled",
-                    ("The read-only node shell battery is disabled (safe default: API-only). It "
-                     "reaches the HOST's journal/service state over ssh; enable deliberately with "
-                     "PROXIMO_ENABLE_NODE_SHELL=1."),
-                    detail, mutation=mutation)
+    return _blocked(
+        action,
+        target,
+        "blocked:node_shell_disabled",
+        (
+            "The read-only node shell battery is disabled (safe default: API-only). It "
+            "reaches the HOST's journal/service state over ssh; enable deliberately with "
+            "PROXIMO_ENABLE_NODE_SHELL=1."
+        ),
+        detail,
+        mutation=mutation,
+    )
 
 
-def _agent_disabled(action: str, target: str, detail: dict | None = None,
-                    *, mutation: bool = True) -> dict:
+def _agent_disabled(action: str, target: str, detail: dict | None = None, *, mutation: bool = True) -> dict:
     """qemu-agent ops are off by default. Refuse + audit; explain how to opt in.
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
-    return _blocked(action, target, "blocked:agent_disabled",
-                    ("qemu-agent ops are disabled (safe default: API-only). "
-                     "Enable with PROXIMO_ENABLE_AGENT=1 and set PROXIMO_AGENT_ALLOWLIST."),
-                    detail, mutation=mutation)
+    return _blocked(
+        action,
+        target,
+        "blocked:agent_disabled",
+        (
+            "qemu-agent ops are disabled (safe default: API-only). "
+            "Enable with PROXIMO_ENABLE_AGENT=1 and set PROXIMO_AGENT_ALLOWLIST."
+        ),
+        detail,
+        mutation=mutation,
+    )
 
 
-def _blocked_agent_allowlist(action: str, target: str, detail: dict | None = None,
-                              *, cfg: ProximoConfig, mutation: bool = True) -> dict:
+def _blocked_agent_allowlist(
+    action: str, target: str, detail: dict | None = None, *, cfg: ProximoConfig, mutation: bool = True
+) -> dict:
     """Refuse + audit a qemu-agent op whose VMID isn't on the allowlist (fail-closed). `cfg` is
     required for the same reason as _blocked_allowlist's: the message names the live store.
     `mutation` must reflect the GATED tool's true class so blocked reads don't ledger as mutations."""
-    return _blocked(action, target, "blocked:allowlist",
-                    f"Guest {target} is not in PROXIMO_AGENT_ALLOWLIST (fail-closed). "
-                    + allowlist_remedy("PROXIMO_AGENT_ALLOWLIST", cfg.agent_allowlist_source),
-                    detail, mutation=mutation)
+    return _blocked(
+        action,
+        target,
+        "blocked:allowlist",
+        f"Guest {target} is not in PROXIMO_AGENT_ALLOWLIST (fail-closed). "
+        + allowlist_remedy("PROXIMO_AGENT_ALLOWLIST", cfg.agent_allowlist_source),
+        detail,
+        mutation=mutation,
+    )
 
 
 def _agent_gate(cfg, action: str, vmid: str, *, mutation: bool) -> dict | None:
@@ -822,6 +972,7 @@ def _agent_gate(cfg, action: str, vmid: str, *, mutation: bool) -> dict | None:
 
 
 # --- In-container exec (ssh -> pct) — MUTATION-CAPABLE, confirm-gated ---
+
 
 @tool()
 def ct_exec(
@@ -892,8 +1043,9 @@ def ct_exec(
                 out["undo_point"] = undo_point
             return out
 
-        return _audited("ct_exec", str(ctid), _do, mutation=True,
-                        detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+        return _audited(
+            "ct_exec", str(ctid), _do, mutation=True, detail={**detail, "confirmed": True, "undo": bool(undo_point)}
+        )
     finally:
         # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
         # manual-audit-path mutation ends — covers the blocked:undo_unavailable EARLY
@@ -970,8 +1122,9 @@ def ct_psql(
                 out["undo_point"] = undo_point
             return out
 
-        return _audited("ct_psql", str(ctid), _do, mutation=True,
-                        detail={**detail, "confirmed": True, "undo": bool(undo_point)})
+        return _audited(
+            "ct_psql", str(ctid), _do, mutation=True, detail={**detail, "confirmed": True, "undo": bool(undo_point)}
+        )
     finally:
         # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
         # manual-audit-path mutation ends — covers the blocked:undo_unavailable EARLY
@@ -1004,8 +1157,7 @@ def _anchor_moved_hint(prev_entries: int | None, cur_entries: int) -> str:
             "TRUNCATION or WIPE signal. INVESTIGATE the ledger and the sink."
         )
     return base + (
-        f"Same entry count ({cur_entries}) but a different head — the tail was rewritten or forged. "
-        "INVESTIGATE."
+        f"Same entry count ({cur_entries}) but a different head — the tail was rewritten or forged. INVESTIGATE."
     )
 
 
@@ -1033,12 +1185,12 @@ def audit_entries(
     plus a note: the ledger not capturing an identity is a fact about the log, never a claim
     that nobody was responsible. This READS the chain; `audit_verify` PROVES it is intact.
     """
-    return read_entries(limit=limit, target=target, action=action,
-                        principal=principal, mutations_only=mutations_only)
-
+    return read_entries(limit=limit, target=target, action=action, principal=principal, mutations_only=mutations_only)
 
     # THIS Proximo's one PROVE ledger chain, which has no remote box to target. It is the
     # sole intentionally-bare tool; every other tool (incl. the ct_* exec tools) is @tool().
+
+
 @mcp.tool()
 def audit_verify(
     expected_head: Annotated[
@@ -1073,9 +1225,7 @@ def audit_verify(
     if pin is not None and not looks_like_head(pin):
         # A genuinely malformed pin is a CALLER error, not tamper — raise clearly instead of
         # letting it fall through to a "head mismatch" that cries wolf.
-        raise ProximoError(
-            f"invalid expected_head: {pin!r} (must be a 64-char hex head() value)"
-        )
+        raise ProximoError(f"invalid expected_head: {pin!r} (must be a 64-char hex head() value)")
     v = audit.verify(expected_head=pin)
     # When nothing is pinned, the forward walk can't see tail truncation / forged append / wipe —
     # nudge the operator to anchor the head off-box (the strong guarantee), so the feature isn't
@@ -1083,11 +1233,15 @@ def audit_verify(
     # Name BOTH paths, the automated one first: the FileSink anchor shipped in 0.13.0, but this
     # hint used to name only the manual env pin — so an end-to-end adopter read "off-box anchor"
     # as unshipped (2026-08-20 external report). The nudge is where the feature is discovered.
-    hint = None if pin is not None else (
-        "not pinned against tail attacks: set PROXIMO_AUDIT_ANCHOR_SINK=file + "
-        "PROXIMO_AUDIT_ANCHOR_FILE_PATH to auto-pin the head off-box (see SECURITY.md), or pin by "
-        "hand via PROXIMO_AUDIT_EXPECTED_HEAD / expected_head=. Unpinned, tail truncation / "
-        "forged append / full wipe are invisible — the off-box anchor is the strong guarantee."
+    hint = (
+        None
+        if pin is not None
+        else (
+            "not pinned against tail attacks: set PROXIMO_AUDIT_ANCHOR_SINK=file + "
+            "PROXIMO_AUDIT_ANCHOR_FILE_PATH to auto-pin the head off-box (see SECURITY.md), or pin by "
+            "hand via PROXIMO_AUDIT_EXPECTED_HEAD / expected_head=. Unpinned, tail truncation / "
+            "forged append / full wipe are invisible — the off-box anchor is the strong guarantee."
+        )
     )
     # A pinned "head mismatch" with the chain otherwise intact is byte-identical whether it's a tail
     # attack or a keyed-default upgrade that rotated the head. If a rotation archive sits beside the
@@ -1229,8 +1383,9 @@ def pve_agent_exec(
     # When PROXIMO_LEDGER_REDACT is set, store a fingerprint instead of the argv — in BOTH the plan's
     # change line (via redact=) and the execute-path audit detail.
     detail = command_fingerprint(command) if cfg.redact_ledger else {"command": command}
-    plan = _plan("pve_agent_exec", f"qemu/{vmid}",
-                 lambda: plan_agent_exec(vmid, command, node, redact=cfg.redact_ledger))
+    plan = _plan(
+        "pve_agent_exec", f"qemu/{vmid}", lambda: plan_agent_exec(vmid, command, node, redact=cfg.redact_ledger)
+    )
     if not confirm:
         return {"status": "plan", **plan.as_dict()}
 
@@ -1257,10 +1412,15 @@ def pve_agent_exec(
             try:
                 mark_tainted(os.path.dirname(audit.path), "pve_agent_exec")
             except Exception as e:  # noqa: BLE001 — any marker-write failure must fail CLOSED (below)
-                audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
-                             outcome="blocked:taint_mark_failed",
-                             detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__}),
-                             principal=ledger_principal(), remote=ledger_remote())
+                audit.record(
+                    "pve_agent_exec",
+                    target=f"qemu/{vmid}",
+                    mutation=True,
+                    outcome="blocked:taint_mark_failed",
+                    detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__}),
+                    principal=ledger_principal(),
+                    remote=ledger_remote(),
+                )
                 raise ProximoError(
                     "taint tracking is enabled but the taint marker could not be written for "
                     "'pve_agent_exec' — refusing to return untrusted output untracked (fail-closed)"
@@ -1290,10 +1450,15 @@ def pve_agent_exec(
                         "out-data": out_data,
                         "err-data": err_data,
                     }
-                    audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="ok",
-                                 detail=_untrusted_detail("pve_agent_exec",
-                                                          {**detail, "confirmed": True, "pid": pid}),
-                                 principal=ledger_principal(), remote=ledger_remote())
+                    audit.record(
+                        "pve_agent_exec",
+                        target=f"qemu/{vmid}",
+                        mutation=True,
+                        outcome="ok",
+                        detail=_untrusted_detail("pve_agent_exec", {**detail, "confirmed": True, "pid": pid}),
+                        principal=ledger_principal(),
+                        remote=ledger_remote(),
+                    )
                     # Fence ONLY the `result` field (the guest-controlled out-data/err-data), keeping the
                     # top-level `status` intact — same symmetric-envelope contract _audited honors for
                     # ct_exec/ct_psql. Fencing the whole {status,result} dict would bury `status` inside
@@ -1303,22 +1468,34 @@ def pve_agent_exec(
                     # Timeout BEFORE exit observed — honest "running" outcome, never "ok". This branch
                     # carries NO guest output (the command hasn't produced out-data yet) — only status,
                     # pid, and a Proximo-authored message — so there is nothing adversarial to fence.
-                    audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True,
-                                 outcome="running",
-                                 detail=_untrusted_detail(
-                                     "pve_agent_exec",
-                                     {**detail, "confirmed": True, "pid": pid, "timeout": timeout}),
-                                 principal=ledger_principal(), remote=ledger_remote())
+                    audit.record(
+                        "pve_agent_exec",
+                        target=f"qemu/{vmid}",
+                        mutation=True,
+                        outcome="running",
+                        detail=_untrusted_detail(
+                            "pve_agent_exec", {**detail, "confirmed": True, "pid": pid, "timeout": timeout}
+                        ),
+                        principal=ledger_principal(),
+                        remote=ledger_remote(),
+                    )
                     return {
-                        "status": "running", "pid": pid,
+                        "status": "running",
+                        "pid": pid,
                         "message": f"command is still running (pid={pid}) — did not exit within {timeout}s; "
-                                   "poll pve_agent_info with command='exec-status' and the returned pid."}
+                        "poll pve_agent_info with command='exec-status' and the returned pid.",
+                    }
                 time.sleep(_AGENT_POLL_INTERVAL)  # pace polls — do not hammer the PVE API
         except Exception as e:
-            audit.record("pve_agent_exec", target=f"qemu/{vmid}", mutation=True, outcome="error",
-                         detail=_untrusted_detail("pve_agent_exec",
-                                                  {"error": type(e).__name__, "confirmed": True}),
-                         principal=ledger_principal(), remote=ledger_remote())
+            audit.record(
+                "pve_agent_exec",
+                target=f"qemu/{vmid}",
+                mutation=True,
+                outcome="error",
+                detail=_untrusted_detail("pve_agent_exec", {"error": type(e).__name__, "confirmed": True}),
+                principal=ledger_principal(),
+                remote=ledger_remote(),
+            )
             raise
     finally:
         # A10: clear the per-operation CONSENT/ENVELOPE de-dup markers when this
@@ -1363,20 +1540,28 @@ from .door import (  # noqa: E402
 # read-distinguishing door, if John wants one, is a separate enforced proximo_read, not a label.
 @mcp.tool(**tool_annotations_kwargs(read_only=False))
 async def proximo_call(
-    tool: Annotated[str, Field(description="Exact tool name to run, e.g. 'pve_guest_power' "
-                                          "(from proximo_find_tools). Non-resident names are fine.")],
-    arguments: Annotated[dict | None, Field(description="The tool's arguments as an object, e.g. "
-                                            "{'vmid': 100, 'action': 'reboot'}. Get the shape from "
-                                            "proximo_tool_schema. Omit/null for a no-arg tool.")] = None,
+    tool: Annotated[
+        str,
+        Field(
+            description="Exact tool name to run, e.g. 'pve_guest_power' "
+            "(from proximo_find_tools). Non-resident names are fine."
+        ),
+    ],
+    arguments: Annotated[
+        dict | None,
+        Field(
+            description="The tool's arguments as an object, e.g. "
+            "{'vmid': 100, 'action': 'reboot'}. Get the shape from "
+            "proximo_tool_schema. Omit/null for a no-arg tool."
+        ),
+    ] = None,
 ) -> Any:
     """Call any Proximo tool by exact name, including ones not in this server's listed tools.
 
     Get the argument shape from proximo_tool_schema first. Same gates as calling it directly:
     dry-run PLAN, ledger entry, token ACL. A smaller doorway, not a looser one.
     """
-    return await dispatch_tool(server_mcp=mcp, catalog=escape_catalog(),
-                               name=tool, arguments=arguments or {})
-
+    return await dispatch_tool(server_mcp=mcp, catalog=escape_catalog(), name=tool, arguments=arguments or {})
 
 
 # `proximo doctor --product {pve,pbs,pmg,pdm}` mirrors `proximo mint --product`'s flag (verdict
@@ -1389,12 +1574,12 @@ async def proximo_call(
 # does exist — rather than pretending to check something that isn't there.
 _DOCTOR_NO_TOOL_REMEDY: dict[str, str] = {
     "pbs": "no pbs_doctor tool exists yet — run `proximo mint --product pbs` for the onboarding "
-           "runbook (its own verify step is the live connectivity check), or call pbs_version / "
-           "pbs_datastores_list directly once PROXIMO_PBS_BASE_URL and PROXIMO_PBS_TOKEN_PATH "
-           "are set.",
+    "runbook (its own verify step is the live connectivity check), or call pbs_version / "
+    "pbs_datastores_list directly once PROXIMO_PBS_BASE_URL and PROXIMO_PBS_TOKEN_PATH "
+    "are set.",
     "pdm": "no pdm_doctor tool exists yet — run `proximo mint --product pdm` for the onboarding "
-           "runbook (its own verify step is the live connectivity check), or call pdm_ping / "
-           "pdm_version directly once PROXIMO_PDM_BASE_URL and PROXIMO_PDM_TOKEN_PATH are set.",
+    "runbook (its own verify step is the live connectivity check), or call pdm_ping / "
+    "pdm_version directly once PROXIMO_PDM_BASE_URL and PROXIMO_PDM_TOKEN_PATH are set.",
 }
 
 # base-url env var per OTHER plane, used only to point a PVE-default doctor failure at the plane
@@ -1409,8 +1594,7 @@ _OTHER_PLANE_BASE_URL_ENV: dict[str, str] = {
 
 def _configured_other_planes(exclude: str) -> list[str]:
     """Which OTHER planes look configured (their base-url env var is set), in a stable order."""
-    return [p for p in ("pbs", "pmg", "pdm")
-            if p != exclude and os.environ.get(_OTHER_PLANE_BASE_URL_ENV[p])]
+    return [p for p in ("pbs", "pmg", "pdm") if p != exclude and os.environ.get(_OTHER_PLANE_BASE_URL_ENV[p])]
 
 
 def _run_doctor(product: str, target: str | None) -> dict:
@@ -1432,9 +1616,11 @@ def _run_doctor(product: str, target: str | None) -> dict:
             other = _configured_other_planes("pve")
             if other:
                 plane = other[0]
-                pointer = (f"`proximo doctor --product {plane}`" if plane in tools
-                           else f"`proximo mint --product {plane}`'s onboarding runbook "
-                                f"(no {plane}_doctor tool exists yet)")
+                pointer = (
+                    f"`proximo doctor --product {plane}`"
+                    if plane in tools
+                    else f"`proximo mint --product {plane}`'s onboarding runbook (no {plane}_doctor tool exists yet)"
+                )
                 raise ProximoError(
                     f"no PVE env is configured ({e}), but {_OTHER_PLANE_BASE_URL_ENV[plane]} is "
                     f"set — pve is only the CLI default; run {pointer} instead of --product pve."
@@ -1446,9 +1632,14 @@ def _record_session(kind: str) -> None:
     """Arrival/departure entries — only when the principal feature is configured (byte-compat)."""
     if not principal_feature_active():
         return
-    _ledger().record(kind, target="proximo", mutation=False,
-                     detail={"face": serving_face()}, principal=ledger_principal(),
-                     remote=ledger_remote())
+    _ledger().record(
+        kind,
+        target="proximo",
+        mutation=False,
+        detail={"face": serving_face()},
+        principal=ledger_principal(),
+        remote=ledger_remote(),
+    )
 
 
 def _reach_grant_check() -> None:
@@ -1466,6 +1657,7 @@ def _reach_grant_check() -> None:
         # derived_error — the derive is env-lane only, like the privilege itself.
         from .backends import ApiBackend
         from .config import ProximoConfig
+
         return ApiBackend(ProximoConfig.from_env())
 
     check_and_record(_instance_ledger(), door=serving_face(), api_factory=_env_api)
@@ -1486,11 +1678,15 @@ def _announce_estate_memory() -> None:
     costs one line, and a state file nobody knows about costs them the choice.
     """
     from proximo.memory import memory_enabled, memory_path
+
     if not memory_enabled():
         return
-    print(f"proximo: estate memory ON — local inventory at {memory_path()} "
-          f"(nothing leaves this box; PROXIMO_MEMORY=0 opts out, "
-          f"PROXIMO_MEMORY_PATH moves it)", file=sys.stderr)
+    print(
+        f"proximo: estate memory ON — local inventory at {memory_path()} "
+        f"(nothing leaves this box; PROXIMO_MEMORY=0 opts out, "
+        f"PROXIMO_MEMORY_PATH moves it)",
+        file=sys.stderr,
+    )
 
 
 def _load_receipt_denylist():
@@ -1498,6 +1694,7 @@ def _load_receipt_denylist():
     receipt.py stays I/O-free. Returns a compiled pattern or None; warns loudly (never silently
     drops the requested redaction) if the env is set but the file is unreadable."""
     from proximo.receipt import compile_denylist
+
     deny_path = os.environ.get("PROXIMO_RECEIPT_DENYLIST")
     if not deny_path:
         return None
@@ -1506,9 +1703,11 @@ def _load_receipt_denylist():
             toks = [ln.strip() for ln in df if ln.strip() and not ln.lstrip().startswith("#")]
         return compile_denylist(toks)
     except OSError as e:
-        print(f"warning: PROXIMO_RECEIPT_DENYLIST={deny_path!r} unreadable ({e}); bare estate names "
-              "were NOT redacted from free text — read the receipt before you share it.",
-              file=sys.stderr)
+        print(
+            f"warning: PROXIMO_RECEIPT_DENYLIST={deny_path!r} unreadable ({e}); bare estate names "
+            "were NOT redacted from free text — read the receipt before you share it.",
+            file=sys.stderr,
+        )
         return None
 
 
@@ -1539,25 +1738,36 @@ def _cmd_reach_audit() -> None:
     import argparse as _ap
 
     from proximo import reach_audit
+
     p = _ap.ArgumentParser(prog="proximo reach-audit", add_help=True)
-    p.add_argument("--priv", action="append", default=None,
-                   help="candidate marker privilege (repeatable); default: the built-in "
-                        f"candidate sweep {', '.join(reach_audit.CANDIDATES)}")
-    p.add_argument("--ctids", default=None,
-                   help="comma-separated guest ids to audit (default: every lxc guest "
-                        "on the box — announced as a query count before running)")
-    p.add_argument("--token-path", default=None,
-                   help="audit a different token's map (e.g. the write token) without "
-                        "arming — path is read locally, the secret never prints")
+    p.add_argument(
+        "--priv",
+        action="append",
+        default=None,
+        help="candidate marker privilege (repeatable); default: the built-in "
+        f"candidate sweep {', '.join(reach_audit.CANDIDATES)}",
+    )
+    p.add_argument(
+        "--ctids",
+        default=None,
+        help="comma-separated guest ids to audit (default: every lxc guest "
+        "on the box — announced as a query count before running)",
+    )
+    p.add_argument(
+        "--token-path",
+        default=None,
+        help="audit a different token's map (e.g. the write token) without "
+        "arming — path is read locally, the secret never prints",
+    )
     args = p.parse_args(sys.argv[2:])
     try:
         api, token_id = reach_audit._api_and_token(args.token_path)
         if args.ctids:
-            ctids = list(dict.fromkeys(
-                c.strip() for c in args.ctids.split(",") if c.strip()))
+            ctids = list(dict.fromkeys(c.strip() for c in args.ctids.split(",") if c.strip()))
         else:
-            ctids = sorted((str(g.get("vmid")) for g in api.list_guests()
-                            if g.get("type") == "lxc"), key=reach_audit._ctid_key)
+            ctids = sorted(
+                (str(g.get("vmid")) for g in api.list_guests() if g.get("type") == "lxc"), key=reach_audit._ctid_key
+            )
         privs: list[str] = [str(pv) for pv in (args.priv or reach_audit.CANDIDATES)]
         print(reach_audit.render_header(ctids, privs, token_id), end="", flush=True)
         print(reach_audit.render_body(api, ctids, privs), end="")
@@ -1573,6 +1783,7 @@ def _cmd_badge() -> None:
     import json as _json
 
     from .principal import _b64url_dec, mint_badge, public_jwk
+
     parser = argparse.ArgumentParser(prog="proximo badge")
     sub = parser.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("mint")
@@ -1593,14 +1804,14 @@ def _cmd_badge() -> None:
             refuse_exposed_secret(args.key, "caller badge signing key")
             with open(args.key, "rb") as f:
                 pem = f.read()
+            register_secret(pem.decode("utf-8", errors="replace"))
             exp = None
             if args.exp:
                 try:
                     unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}[args.exp[-1]]
                     exp = int(time.time()) + int(args.exp[:-1]) * unit
                 except (KeyError, ValueError) as e:
-                    raise ValueError(
-                        f"malformed --exp {args.exp!r} — expected <int><s|m|h|d>, e.g. 90d") from e
+                    raise ValueError(f"malformed --exp {args.exp!r} — expected <int><s|m|h|d>, e.g. 90d") from e
             jwk = public_jwk(pem, args.sub)
             if args.jwk_out:
                 out = args.jwk_out
@@ -1613,7 +1824,8 @@ def _cmd_badge() -> None:
                 if not safe or safe in (".", "..") or safe != args.sub:
                     raise ValueError(
                         f"--sub {args.sub!r} is not a safe filename stem for the default "
-                        f"JWK path; pass --jwk-out explicitly")
+                        f"JWK path; pass --jwk-out explicitly"
+                    )
                 out = os.path.join(os.path.dirname(os.path.abspath(args.key)), f"{safe}.jwk")
             if os.path.islink(out):
                 raise ValueError(f"refusing to write JWK to a symlink: {out}")
@@ -1621,16 +1833,27 @@ def _cmd_badge() -> None:
                 _json.dump(jwk, f, indent=2)
             print(mint_badge(pem, args.sub, exp=exp))
             if exp is None:
-                print("no --exp given — badge expires after the default 30d (never minted "
-                      "without an expiry); pass --exp <int><s|m|h|d> to change the lifetime.",
-                      file=sys.stderr)
-            print(f"pinned public key written to {out} — copy it into the operator's "
-                  f"PROXIMO_CALLER_KEYS_DIR", file=sys.stderr)
+                print(
+                    "no --exp given — badge expires after the default 30d (never minted "
+                    "without an expiry); pass --exp <int><s|m|h|d> to change the lifetime.",
+                    file=sys.stderr,
+                )
+            print(
+                f"pinned public key written to {out} — copy it into the operator's PROXIMO_CALLER_KEYS_DIR",
+                file=sys.stderr,
+            )
         else:
             h_b64, p_b64, _ = args.badge.strip().split(".")
-            print(_json.dumps({"header": _json.loads(_b64url_dec(h_b64)),
-                               "payload": _json.loads(_b64url_dec(p_b64)),
-                               "note": "NOT VERIFIED — inspection only"}, indent=2))
+            print(
+                _json.dumps(
+                    {
+                        "header": _json.loads(_b64url_dec(h_b64)),
+                        "payload": _json.loads(_b64url_dec(p_b64)),
+                        "note": "NOT VERIFIED — inspection only",
+                    },
+                    indent=2,
+                )
+            )
     except Exception as e:
         print(f"proximo badge: {e}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -1681,16 +1904,22 @@ def main() -> None:
         import json
 
         from proximo.mint import PRODUCTS
+
         parser = argparse.ArgumentParser(prog="proximo doctor", add_help=False)
-        parser.add_argument("--target", default=None,
-                            help="Named target from PROXIMO_TARGETS registry to probe.")
-        parser.add_argument("--product", default="pve", choices=PRODUCTS,
-                            help=f"one of: {', '.join(PRODUCTS)} (default: pve; mirrors "
-                                 "`proximo mint --product`)")
-        parser.add_argument("--receipt", action="store_true",
-                            help="render the run as one pasteable artifact, with node and cluster "
-                                 "names, addresses, storage/pool ids, users, realms and API token "
-                                 "ids removed. Nothing is transmitted — sharing it is your call.")
+        parser.add_argument("--target", default=None, help="Named target from PROXIMO_TARGETS registry to probe.")
+        parser.add_argument(
+            "--product",
+            default="pve",
+            choices=PRODUCTS,
+            help=f"one of: {', '.join(PRODUCTS)} (default: pve; mirrors `proximo mint --product`)",
+        )
+        parser.add_argument(
+            "--receipt",
+            action="store_true",
+            help="render the run as one pasteable artifact, with node and cluster "
+            "names, addresses, storage/pool ids, users, realms and API token "
+            "ids removed. Nothing is transmitted — sharing it is your call.",
+        )
         args = parser.parse_args(sys.argv[2:])
         try:
             result = _run_doctor(args.product, args.target)
@@ -1709,6 +1938,7 @@ def main() -> None:
             from proximo import __version__
             from proximo.reachgrant import receipt_view
             from proximo.receipt import render
+
             # Bare CTIDs match no redaction pattern, so the reach-grant roster must become
             # counts+digest HERE, before render ever sees it — the id lists are exactly the
             # estate shape --receipt promises to remove.
@@ -1717,10 +1947,15 @@ def main() -> None:
                 result["config"]["reach_grant"] = receipt_view(_rg)
             # The clock AND the optional bare-name denylist live at this impure edge on purpose, so
             # `render` stays pure/I/O-free and the same report always produces the same artifact.
-            print(render(result, version=__version__,
-                         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                         deny=_load_receipt_denylist()),
-                  end="")
+            print(
+                render(
+                    result,
+                    version=__version__,
+                    generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    deny=_load_receipt_denylist(),
+                ),
+                end="",
+            )
             return
         print(json.dumps(result, indent=2))
         return
@@ -1729,8 +1964,21 @@ def main() -> None:
     # creates anything (a pillar Proximo raised would be a pillar the agent could lower) and
     # never echoes a configured path (doctor's disclosure rule). --check exits 1 while any
     # core station is empty — the cron/CI teeth that keep "opt-in" from meaning "forgotten".
+    # `proximo tools-checksum` — print-only: the sha256 of the tool surface THIS config serves and
+    # the count, for PROXIMO_TOOLS_PIN. The surfaces were applied above, exactly as the server
+    # applies them (this verb is not a quiet one), so the stamp line has already printed once.
+    if len(sys.argv) > 1 and sys.argv[1] == "tools-checksum":
+        from proximo.door import surface_checksum
+
+        if sys.argv[2:]:
+            print("usage: proximo tools-checksum   (no arguments; prints '<sha256>  <n> tools')", file=sys.stderr)
+            raise SystemExit(2)
+        hexd, n = surface_checksum()
+        print(f"{hexd}  {n} tools")
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "harden":
         from proximo.harden import check_exit, posture, render
+
         stations = posture()
         print(render(stations), end="")
         if "--check" in sys.argv[2:]:
@@ -1751,24 +1999,27 @@ def main() -> None:
         import json
 
         from proximo.mint import PRODUCTS, build_recipe, render_text
+
         parser = argparse.ArgumentParser(prog="proximo mint")
-        parser.add_argument("--product", default="pve",
-                            help=f"one of: {', '.join(PRODUCTS)} (default: pve)")
-        parser.add_argument("--user", default=None,
-                            help="service user (default: proximo@<product-realm>)")
-        parser.add_argument("--token-name", default="mcp",
-                            help="token name (default: mcp; unused for pmg)")
-        parser.add_argument("--token-file", default=None,
-                            help="credential file (default: ~/.config/proximo/<product>.token)")
-        parser.add_argument("--write", action="store_true",
-                            help="print the scoped WRITE grant instead of the read-only default")
-        parser.add_argument("--json", action="store_true",
-                            help="emit the recipe as structured JSON (mirrors doctor)")
+        parser.add_argument("--product", default="pve", help=f"one of: {', '.join(PRODUCTS)} (default: pve)")
+        parser.add_argument("--user", default=None, help="service user (default: proximo@<product-realm>)")
+        parser.add_argument("--token-name", default="mcp", help="token name (default: mcp; unused for pmg)")
+        parser.add_argument(
+            "--token-file", default=None, help="credential file (default: ~/.config/proximo/<product>.token)"
+        )
+        parser.add_argument(
+            "--write", action="store_true", help="print the scoped WRITE grant instead of the read-only default"
+        )
+        parser.add_argument("--json", action="store_true", help="emit the recipe as structured JSON (mirrors doctor)")
         args = parser.parse_args(sys.argv[2:])
         try:
-            recipe = build_recipe(product=args.product, user=args.user,
-                                  token_name=args.token_name, token_file=args.token_file,
-                                  write=args.write)
+            recipe = build_recipe(
+                product=args.product,
+                user=args.user,
+                token_name=args.token_name,
+                token_file=args.token_file,
+                write=args.write,
+            )
         except ValueError as e:
             print(f"proximo mint: {e}", file=sys.stderr)
             raise SystemExit(2) from None
@@ -1786,17 +2037,20 @@ def main() -> None:
 
         from proximo.arm import ArmError, as_dict, do_arm, do_disarm
         from proximo.arm import render_text as render_arm_text
+
         verb = sys.argv[1]
         parser = argparse.ArgumentParser(prog=f"proximo {verb}")
-        parser.add_argument("--session", default=None,
-                            help="session key to scope this toggle to (default: "
-                                 "$PROXIMO_SESSION_KEY, else the global token path)")
-        parser.add_argument("--json", action="store_true",
-                            help="emit the result as structured JSON (mirrors doctor/mint)")
+        parser.add_argument(
+            "--session",
+            default=None,
+            help="session key to scope this toggle to (default: $PROXIMO_SESSION_KEY, else the global token path)",
+        )
+        parser.add_argument(
+            "--json", action="store_true", help="emit the result as structured JSON (mirrors doctor/mint)"
+        )
         args = parser.parse_args(sys.argv[2:])
         try:
-            result = (do_arm(session=args.session) if verb == "arm"
-                      else do_disarm(session=args.session))
+            result = do_arm(session=args.session) if verb == "arm" else do_disarm(session=args.session)
         except ArmError as e:
             print(f"proximo {verb}: {e}", file=sys.stderr)
             raise SystemExit(2) from None
@@ -1810,15 +2064,19 @@ def main() -> None:
         import json
 
         from proximo.arm import reap_as_dict, reap_stale_arms, render_reap
+
         parser = argparse.ArgumentParser(prog="proximo reap")
-        parser.add_argument("--dry-run", action="store_true",
-                            help="report the decisions and change nothing")
-        parser.add_argument("--json", action="store_true",
-                            help="emit the decisions as structured JSON (mirrors doctor/mint)")
+        parser.add_argument("--dry-run", action="store_true", help="report the decisions and change nothing")
+        parser.add_argument(
+            "--json", action="store_true", help="emit the decisions as structured JSON (mirrors doctor/mint)"
+        )
         args = parser.parse_args(sys.argv[2:])
         decisions = reap_stale_arms(dry_run=args.dry_run)
-        print(json.dumps(reap_as_dict(decisions, dry_run=args.dry_run), indent=2) if args.json
-              else render_reap(decisions, dry_run=args.dry_run))
+        print(
+            json.dumps(reap_as_dict(decisions, dry_run=args.dry_run), indent=2)
+            if args.json
+            else render_reap(decisions, dry_run=args.dry_run)
+        )
         return
     # `proximo badge` — offline caller-badge mint (signs with an operator-held EC P-256
     # private key, never touches the network) and a NEVER-VERIFYING inspect for debugging a
@@ -1843,6 +2101,7 @@ def main() -> None:
     # Best-effort by contract (see arm.hold_session_lock) — it must never keep the server from
     # starting, and an arm that goes unheld only ever ends up disarmed, never over-privileged.
     from proximo.arm import hold_session_lock
+
     _arm_lock = hold_session_lock()
     if _arm_lock:
         print(f"proximo: holding the session arm lock ({_arm_lock})", file=sys.stderr)
@@ -2174,6 +2433,19 @@ from proximo.tools.pdm import (  # noqa: E402,F401
     pdm_tasks_list,
     pdm_users_list,
     pdm_version,
+)
+from proximo.tools.pdm_access import (  # noqa: E402,F401
+    pdm_acl_update,
+    pdm_permissions_get,
+    pdm_token_create,
+    pdm_token_delete,
+    pdm_token_update,
+    pdm_user_create,
+    pdm_user_delete,
+    pdm_user_get,
+    pdm_user_token_get,
+    pdm_user_tokens_list,
+    pdm_user_update,
 )
 from proximo.tools.pdm_fleet import (  # noqa: E402,F401
     pdm_pve_lxc_migrate,
@@ -2845,6 +3117,9 @@ from proximo.tools.pve_sdn_routing import (  # noqa: E402,F401
     pve_sdn_route_map_entry_update,
     pve_sdn_route_maps_list,
 )
+from proximo.tools.raw_door import (  # noqa: E402,F401
+    proximo_api_get,
+)
 from proximo.tools.wiki_tools import (  # noqa: E402,F401
     proximo_wiki,
     proximo_wiki_read,
@@ -2880,7 +3155,16 @@ if MCP_MAJOR == 1:
     async def _proximo_call_tool(name: str, arguments: dict):
         if name not in mcp._tool_manager._tools:
             raise ProximoError(_unknown_tool_error(name))
-        return await _fastmcp_call_tool(name, arguments)
+        try:
+            return await _fastmcp_call_tool(name, arguments)
+        except ToolError as e:
+            # The last seam before str(e) reaches the model. The SDK validates arguments BEFORE
+            # the tool body, so a caller value that fails coercion is echoed by pydantic outside
+            # target_aware (lens 2026-09-20); scrub the wire text here, cause chain kept.
+            clean = redact(str(e))
+            if clean != str(e):
+                raise ToolError(clean) from e.__cause__
+            raise
 
 
 if __name__ == "__main__":

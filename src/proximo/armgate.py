@@ -49,6 +49,7 @@ import stat
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ._secretfile import register_secret
 from .backends import ProximoError
 from .principal import ledger_principal
 from .targets import ledger_remote
@@ -88,7 +89,9 @@ def _read_token(path: str) -> bytes | None:
         if not stat.S_ISREG(st.st_mode):
             return None
         with open(path, "rb") as f:
-            return f.read().strip()
+            data = f.read().strip()
+        register_secret(data.decode("utf-8", errors="replace"))  # the arm token is a token
+        return data
     except OSError:
         return None
 

@@ -18,6 +18,7 @@ toolset. A tool in zero toolsets is unreachable the moment anyone scopes by tool
 with no error, because "not in the set you asked for" and "in no set at all" look identical from
 the outside. That test is the load-bearing one; the rest is ergonomics.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -37,6 +38,7 @@ ALWAYS = set(door._ALWAYS_REGISTERED)
 
 # --- the load-bearing invariant ----------------------------------------------------------
 
+
 def test_every_tool_belongs_to_at_least_one_toolset():
     """No tool may be orphaned. An orphan is unreachable and nothing would report it."""
     covered = set()
@@ -44,8 +46,7 @@ def test_every_tool_belongs_to_at_least_one_toolset():
         covered |= {n for n in REGISTRY if n.startswith(prefixes)}
     orphans = sorted(set(REGISTRY) - covered - ALWAYS)
     assert not orphans, (
-        f"{len(orphans)} tools belong to NO toolset and would be unreachable when scoping "
-        f"by toolset: {orphans[:12]}"
+        f"{len(orphans)} tools belong to NO toolset and would be unreachable when scoping by toolset: {orphans[:12]}"
     )
 
 
@@ -53,7 +54,7 @@ def test_toolsets_are_a_partition_of_their_plane():
     """A toolset's tools must all come from one plane — mixed toolsets make scoping unpredictable."""
     for name, prefixes in TOOLSETS.items():
         plane = name.split(".", 1)[0]
-        if plane in ("exec", "core", "memory", "wiki"):
+        if plane in ("exec", "core", "memory", "wiki", "raw"):
             # exec/memory/wiki are deliberately cross-plane utility sets, not plane domains.
             # wiki indexes docs for ALL FOUR planes (that is why it is not named pve_docs),
             # so a per-plane partition is the wrong shape for it by construction.
@@ -63,6 +64,7 @@ def test_toolsets_are_a_partition_of_their_plane():
 
 
 # --- filtering behaviour -------------------------------------------------------------------
+
 
 def test_unset_is_inert():
     assert toolset_keep(REGISTRY, None) == set(REGISTRY)
@@ -110,45 +112,45 @@ def test_unknown_toolset_error_names_the_valid_ones():
 #
 # The first line is the one worth keeping honest: an earlier draft of this test asserted a
 # number that made toolsets look like they solved the 8k case. They do not.
-LARGEST_TOOLSET_BUDGET = 120_000     # ~30k tokens — must clear a 32k window
-TWO_TOOLSET_BUDGET = 110_000         # ~27k tokens — two common domains together
-MEDIAN_TOOLSET_BUDGET = 50_000       # ~12k tokens — the typical pick
+LARGEST_TOOLSET_BUDGET = 120_000  # ~30k tokens — must clear a 32k window
+TWO_TOOLSET_BUDGET = 110_000  # ~27k tokens — two common domains together
+MEDIAN_TOOLSET_BUDGET = 50_000  # ~12k tokens — the typical pick
 
 
 def _payload(names) -> int:
     import json
 
     reg = server.mcp._tool_manager._tools
-    return len(json.dumps([
-        {"name": n, "description": getattr(reg[n], "description", "") or "",
-         "inputSchema": getattr(reg[n], "parameters", {}) or {}}
-        for n in sorted(names)
-    ]))
+    return len(
+        json.dumps(
+            [
+                {
+                    "name": n,
+                    "description": getattr(reg[n], "description", "") or "",
+                    "inputSchema": getattr(reg[n], "parameters", {}) or {},
+                }
+                for n in sorted(names)
+            ]
+        )
+    )
 
 
 def test_every_toolset_fits_a_32k_context():
     """No single domain may exceed a 32k local window — that is the tier toolsets serve."""
-    oversized = {
-        name: _payload({n for n in REGISTRY if n.startswith(prefixes)})
-        for name, prefixes in TOOLSETS.items()
-    }
+    oversized = {name: _payload({n for n in REGISTRY if n.startswith(prefixes)}) for name, prefixes in TOOLSETS.items()}
     over = {k: v for k, v in oversized.items() if v > LARGEST_TOOLSET_BUDGET}
     assert not over, f"toolsets too big for a 32k context: { {k: f'{v:,}B' for k, v in over.items()} }"
 
 
 def test_the_typical_toolset_is_small():
-    sizes = sorted(
-        _payload({n for n in REGISTRY if n.startswith(p)}) for p in TOOLSETS.values()
-    )
+    sizes = sorted(_payload({n for n in REGISTRY if n.startswith(p)}) for p in TOOLSETS.values())
     median = sizes[len(sizes) // 2]
     assert median <= MEDIAN_TOOLSET_BUDGET, f"median toolset is {median:,} B (~{median // 4:,} tok)"
 
 
 def test_two_common_toolsets_fit_a_32k_context():
     payload = _payload(toolset_keep(REGISTRY, "pve.guests,pve.cluster"))
-    assert payload <= TWO_TOOLSET_BUDGET, (
-        f"pve.guests+pve.cluster is {payload:,} B (~{payload // 4:,} tokens)"
-    )
+    assert payload <= TWO_TOOLSET_BUDGET, f"pve.guests+pve.cluster is {payload:,} B (~{payload // 4:,} tokens)"
 
 
 def test_toolsets_do_not_claim_to_solve_the_8k_case():
@@ -158,13 +160,10 @@ def test_toolsets_do_not_claim_to_solve_the_8k_case():
     for an 8k window with working room. If that ever stops being true, update the copy — do not
     silently start claiming it.
     """
-    real_domains = {k: v for k, v in TOOLSETS.items()
-                    if k not in ("exec", "memory", "wiki")}
+    real_domains = {k: v for k, v in TOOLSETS.items() if k not in ("exec", "memory", "wiki", "raw")}
     # exec = 4 tools, memory = 1 tool, wiki = 2 tools: deliberately tiny cross-plane utility
     # sets, not the "domain" tier the 8k docs claim is about
-    smallest = min(
-        _payload({n for n in REGISTRY if n.startswith(p)}) for p in real_domains.values()
-    )
+    smallest = min(_payload({n for n in REGISTRY if n.startswith(p)}) for p in real_domains.values())
     assert smallest > 4_000, (
         "a real domain toolset now fits an 8k context — the docs claim dynamic mode is required "
         "for that tier; re-check the claim before relaxing this test"

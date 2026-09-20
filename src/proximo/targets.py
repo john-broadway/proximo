@@ -17,6 +17,7 @@ from typing import Annotated, get_args, get_origin
 
 from pydantic import BeforeValidator, Field
 
+from ._secretfile import redact
 from .backends import ProximoError
 
 # Params that name a Proxmox object ID. Their descriptions say "Numeric VMID/CTID", so an agent
@@ -140,6 +141,16 @@ def target_aware(fn):
         token = _active_target.set(proximo_target)
         try:
             return fn(*args, **kwargs)
+        except Exception as e:
+            # The tool boundary is where str(e) becomes model-visible text (the 1.x SDK renders
+            # any in-tool exception verbatim): scrub the message of a FOREIGN exception in place
+            # — same object, same type, same cause chain — so a subprocess argv or an echoed
+            # request header never leaves. ProximoError already scrubbed itself at construction.
+            if e.args and isinstance(e.args[0], str):
+                clean = redact(e.args[0])
+                if clean != e.args[0]:
+                    e.args = (clean, *e.args[1:])
+            raise
         finally:
             _active_target.reset(token)
 

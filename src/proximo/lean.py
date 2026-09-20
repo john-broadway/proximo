@@ -1,8 +1,8 @@
-"""LEAN mode — a searchable catalog instead of every resident tool schema (912 at 0.42.0). THE DEFAULT since
+"""LEAN mode — a searchable catalog instead of every resident tool schema (924 at 0.43.0). THE DEFAULT since
 the 0.30 flip.
 
 WHY THIS EXISTS. Proximo's tools/list payload is ~290k tokens across 906 tools (measured
-2026-08-01; the registry is 912 at 0.42.0) (~101k for one
+2026-08-01; the registry is 924 at 0.43.0) (~101k for one
 auto-scoped plane). A local model with an 8k-32k window cannot connect at all: the catalog
 arrives before the first question and exhausts the context. That was reported from the outside,
 with a measurement, and it is correct. Byte-trimming already took ~21% off and cannot close a

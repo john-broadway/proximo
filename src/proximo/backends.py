@@ -21,6 +21,7 @@ from urllib.parse import quote, urlencode
 
 import httpx
 
+from ._secretfile import read_secret, redact
 from ._tls import fingerprint_pinned_context, httpx_verify
 from .config import ProximoConfig, allowlist_remedy
 
@@ -73,7 +74,16 @@ _TIMEZONE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+/-]{0,63}\Z")
 
 
 class ProximoError(RuntimeError):
-    """Operational error surfaced to the caller (never carries secrets)."""
+    """Operational error surfaced to the caller (never carries secrets).
+
+    "Never" is enforced, not hoped: the message is passed through the output scrubber at
+    construction, so a registered secret or an auth-header shape that reached an f-string
+    (an API body, an argv, an echoed request) leaves as `<redacted>`."""
+
+    def __init__(self, *args: object) -> None:
+        if args and isinstance(args[0], str):
+            args = (redact(args[0]), *args[1:])
+        super().__init__(*args)
 
 
 def _check_vmid(vmid: str) -> str:
@@ -938,9 +948,8 @@ class ApiBackend:
     def _auth_header(self) -> dict[str, str]:
         # Token file holds: USER@REALM!TOKENID=SECRET  (e.g. root@pam!proximo=<uuid>).
         # Header format verified vs PVE docs 2026-06-07: PVEAPIToken=..., no Bearer, no CSRF.
-        # Read at call time; never logged.
-        with open(self.config.token_path, encoding="utf-8") as f:
-            token = f.read().strip()
+        # Read at call time; never logged; registered with the output scrubber on first read.
+        token = read_secret(self.config.token_path, "PVE token file")
         return {"Authorization": f"PVEAPIToken={token}"}
 
     def _resolve_node(self, node: str | None) -> str:

@@ -20,168 +20,226 @@ from proximo import taint
 
 # The exact catalog from the design doc §Component 0 — pinned here so a future accidental edit
 # to ADVERSARIAL_TOOLS is caught by a diff against this literal, not just "still non-empty".
-_EXPECTED_ADVERSARIAL = frozenset({
-    # guest-influenced
-    "ct_logs", "ct_exec", "ct_psql", "ct_diagnose",
-    "pve_agent_exec", "pve_agent_info", "pve_agent_file_read",
-    "pve_node_logs", "pve_node_diagnose",
-    # email/external
-    "pmg_quarantine_spam", "pmg_quarantine_virus", "pmg_quarantine_attachment",
-    "pmg_quarantine_spamstatus", "pmg_quarantine_virusstatus", "pmg_quarantine_spamusers",
-    "pmg_quarantine_blocklist_list", "pmg_quarantine_welcomelist_list",
-    "pmg_tracker_list", "pmg_tracker_detail",
-    "pmg_node_syslog",
-    "pmg_statistics_sender", "pmg_statistics_receiver", "pmg_statistics_domains",
-    # PMG node ops odds (Wave 9b, 2026-07-17): free-text diagnostic/log dumps + mail metadata —
-    # see taint.py's own entry comment for the full argument.
-    "pmg_node_report", "pmg_node_journal", "pmg_node_task_log",
-    "pmg_node_postfix_queue_list", "pmg_node_postfix_queue_message_get",
-    # PMG LDAP profiles + fetchmail (Wave 9c, 2026-07-17): LDAP users/groups are pulled directly
-    # from the external directory — see taint.py's own entry comment for the full argument.
-    "pmg_ldap_users_list", "pmg_ldap_user_emails_get",
-    "pmg_ldap_groups_list", "pmg_ldap_group_members_get",
-    # config free-text + logs
-    "pve_node_syslog", "pve_node_journal", "pve_task_log", "pve_list_guests",
-    # Tier-1 memory recall re-serves names/tags stored FROM the adversarial reads above;
-    # classified adversarial so storage cannot launder taint (memory design rail, 2026-07-29)
-    "proximo_recall",
-    # audit_entries re-serves the ledger's target strings — the same guest/node names the
-    # adversarial reads produced — so it carries proximo_recall's rail one store over.
-    "audit_entries",
-    # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
-    # above all) — a thread can carry "now run pve_delete_guest" as easily as a fix. Same
-    # laundering argument as proximo_recall one line up (wiki seam design rail, 2026-07-29).
-    "proximo_wiki", "proximo_wiki_read",
-    "pve_guest_config_get", "pve_cluster_resources", "pve_snapshot_list",
-    "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
-    "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",
-    "pdm_pve_qemu_list", "pdm_pve_lxc_list", "pdm_pve_resources", "pbs_snapshots_list",
-    # file-level restore (2026-09-17): guest-authored file names in the listings; the download
-    # result echoes the caller's remote path and the guest-named local file.
-    "pve_file_restore_list", "pve_file_restore_download", "pbs_catalog_list", "pbs_file_download",
-    # upstream/package-maintainer-authored free text — added Wave 1a (2026-07-15 full-surface
-    # campaign), postdating the 2026-07-02 design doc snapshot above; see taint.py's own comment
-    # on this entry for the reasoning.
-    "pve_apt_changelog",
-    # same rationale, Wave 1b (2026-07-15 full-surface campaign).
-    "pbs_apt_changelog", "pmg_apt_changelog",
-    # PBS node OS admin plane (Wave 2c, 2026-07-15 full-surface campaign): free-text logs carry
-    # externally-authored bytes — same rationale as pve_node_syslog/journal/pve_task_log above.
-    "pbs_node_journal", "pbs_node_syslog", "pbs_node_task_log",
-    # PBS ACME (Wave 3b review finding, 2026-07-15): the PBS host fetches a CALLER-CHOSEN
-    # directory URL and returns the response — content authored by whoever controls the URL.
-    "pbs_acme_tos",
-    # PMG ACME (Wave 9g, 2026-07-17): pmg_acme_tos/pmg_acme_meta share the identical
-    # caller-chosen-directory-URL fetch shape as pbs_acme_tos above; pmg_acme_meta has no PBS
-    # equivalent at all (genuinely new this wave) but carries the same risk — see taint.py's own
-    # entry comment for the full argument.
-    "pmg_acme_tos", "pmg_acme_meta",
-    # PBS tape drive/changer OPERATIONS (Wave 4c, 2026-07-15 full-surface campaign):
-    # read-label/inventory/cartridge-memory carry the physical tape's own label-text / LTO MAM
-    # attributes, no return-side pattern constraint in the schema. changer_status is a deliberate
-    # divergence from a naive "status=trusted" reading — it returns a label-text field per slot
-    # too (see pbs_tape_ops.py module docstring's Taint section for the full argument).
-    "pbs_tape_drive_read_label", "pbs_tape_drive_cartridge_memory", "pbs_tape_drive_inventory",
-    "pbs_tape_changer_status",
-    # PBS tape media CATALOG (Wave 4d, 2026-07-15 full-surface campaign — CLOSES Wave 4): media
-    # list/content both carry the physical tape's own label-text (media_list's field has NO
-    # return-side pattern at all, an even clearer call than changer_status above); media_content
-    # ALSO carries `snapshot` (guest-influenced backup id/type/time), matching the
-    # pbs_snapshots_list precedent directly. media_status_get is a conservative default under
-    # genuine ambiguity — the live schema declares its return type null despite the description
-    # implying real per-media data (see pbs_tape_jobs.py module docstring's Taint section).
-    "pbs_tape_media_list", "pbs_tape_media_content", "pbs_tape_media_status_get",
-    # PBS S3 client configs (Wave 5a, 2026-07-15 full-surface campaign): list-buckets makes a
-    # live outbound call to an operator-configured S3 endpoint, but the RETURNED bucket names are
-    # authored by whoever controls the remote S3 account — externally-authored content, argued
-    # against the pbs_acme_tos precedent in pbs_s3.py's module docstring.
-    "pbs_s3_list_buckets",
-    # PBS admin job views + node odds + pull/push (Wave 5c, 2026-07-15 full-surface campaign):
-    # pbs_node_report generates a free-text diagnostic bundle (schema returns a bare string)
-    # that plausibly embeds config values, log tails, and system state — same category as
-    # pve_node_syslog/pbs_node_journal/pbs_node_task_log above.
-    "pbs_node_report",
-    # PBS datastore-admin remainder (Wave 5d, 2026-07-15 — the ACTUAL PBS plane closer, built
-    # from the Wave 5c adversarial review's missing-endpoint list): groups_list/group_notes_get
-    # carry guest/operator-influenced backup ids + free-text notes (pbs_snapshots_list
-    # precedent); the remote_scan family returns REMOTE-authored content (pbs_s3_list_buckets
-    # precedent — see taint.py's own entry comment + pbs_datastore_admin.py's Taint section).
-    "pbs_groups_list", "pbs_group_notes_get",
-    "pbs_remote_scan", "pbs_remote_scan_groups", "pbs_remote_scan_namespaces",
-    # PVE Ceph core observability + flags (Wave 6a, 2026-07-16 full-surface campaign):
-    # pve_ceph_log returns free-text log lines ({n, t} per schema), Sys.Syslog-channel content —
-    # same rationale as pve_node_syslog/pve_node_journal/pve_task_log above.
-    "pve_ceph_log",
-    # Wave 6a review Finding 2 (2026-07-16): pve_ceph_metadata's schema types every per-instance
-    # mon/mgr/mds entry "additionalProperties": 1 (an open shape) with self-reported hostname/
-    # addr/name fields — the same daemon-self-report content-channel shape as pbs_remote_scan
-    # above (whoever controls the daemon controls these bytes). See taint.py's own entry comment
-    # + proximo/ceph.py's module docstring Taint section for the full argument.
-    "pve_ceph_metadata",
-    # Wave 6b (2026-07-16): pve_ceph_mon_list/pve_ceph_mgr_list/pve_ceph_mds_list return the SAME
-    # daemon-self-reported name/host/addr/ceph_version strings as pve_ceph_metadata above, just
-    # sliced per service type instead of aggregated — same channel, argued (not just asserted)
-    # against the closed-shape counter-argument in taint.py's own entry comment + proximo/ceph.py's
-    # module docstring Taint section.
-    "pve_ceph_mon_list", "pve_ceph_mgr_list", "pve_ceph_mds_list",
-    # Wave 6c (2026-07-16): pve_ceph_osd_tree's schema types the ENTIRE nested CRUSH-bucket
-    # response additionalProperties:1 (open, untyped) — an even more extreme shape than
-    # pve_ceph_metadata's own per-instance open map — with daemon-self-reported per-node
-    # telemetry. pve_ceph_osd_metadata's osd{} sub-object carries hostname/back_addr/front_addr/
-    # hb_back_addr/hb_front_addr — the SAME field set that made the aggregated pve_ceph_metadata
-    # ADVERSARIAL in Wave 6a; this is that channel's single-OSD drill-down. NOT here:
-    # pve_ceph_osd_lv_info — argued REVIEWED_TRUSTED instead (closed shape, LOCAL `lvs`
-    # shell-out on the SAME host, not a cross-daemon network self-report) — see taint.py's own
-    # entry comment + proximo/ceph.py's module docstring Taint section for the full argument.
-    "pve_ceph_osd_tree", "pve_ceph_osd_metadata",
-    # Wave 6d (2026-07-16) shipped pool/fs list/status REVIEWED_TRUSTED; the Wave 6d adversarial
-    # review (2026-07-17, Finding 1) REVERSED that ruling to ADVERSARIAL: pool_name/fs name are
-    # unconstrained free-text (pattern-only, no length cap) creatable by any cephx-capable client
-    # or by Ceph itself outside any operator action — the same channel that already landed
-    # pve_list_guests/pve_snapshot_list above; application_metadata is a third channel, settable
-    # via raw `ceph osd pool application set` outside this API entirely. See taint.py's own entry
-    # comment + proximo/ceph.py's module docstring Taint section for the full argument.
-    "pve_ceph_pool_list", "pve_ceph_pool_status", "pve_ceph_fs_list",
-    # Wave 7a (2026-07-17): PVE SDN gap-fill + global control plane. pve_sdn_zone_ip_vrf's
-    # nexthops are peer-announced over the running BGP/EVPN routing protocol (same wire-learned
-    # channel as pve_ceph_metadata/pve_ceph_osd_metadata); pve_sdn_vnet_mac_vrf's schema is
-    # explicit that its routes are "self-originates OR has learned via BGP" — a genuinely mixed
-    # channel, classified conservatively. See taint.py's own entry comment + network.py's module
-    # docstring Taint section for the full argument.
-    "pve_sdn_zone_ip_vrf", "pve_sdn_vnet_mac_vrf",
-    # Wave 7c (2026-07-17): PVE SDN controllers + DNS + IPAMs. pve_sdn_ipam_status's schema
-    # gives ZERO item-shape documentation (bare array, no `items` key at all) and the
-    # domain-known content is guest IP/MAC/hostname address entries — genuinely
-    # guest-influenced, the same wire-learned/guest-controlled-content rationale as
-    # pve_sdn_zone_ip_vrf/pve_sdn_vnet_mac_vrf above. See taint.py's own entry comment +
-    # sdn_objects.py's module docstring Taint section for the full argument.
-    "pve_sdn_ipam_status",
-    # Wave 7d (2026-07-17): PVE SDN fabrics. pve_sdn_fabric_status_neighbors' neighbor field
-    # is the remote peer's own self-announced identity, and status/uptime are explicitly
-    # "as returned by FRR"; pve_sdn_fabric_status_routes' via (nexthop list) is peer-injected
-    # over the running routing protocol — same wire-learned channel as
-    # pve_sdn_zone_ip_vrf/pve_ceph_metadata above. NOT here: pve_sdn_fabric_status_interfaces
-    # — REVIEWED_TRUSTED instead (its {name, state, type} shape is the fabric's own
-    # locally-rendered interface, no peer-announced field). Basis, on the record
-    # (STRIKE-AND-CORRECT: an earlier version of this comment cited a "campaign doc Wave 7d
-    # chunk listing" that does not exist): the schema's local-only field shape PLUS the
-    # 2026-07-17 COORDINATOR RE-RULING (`.scratch/2026-07-15-full-surface-campaign.md` lines
-    # 853-864, binding) — see taint.py's own entry comment + sdn_fabrics.py's module
-    # docstring fact #3 for the full argument.
-    "pve_sdn_fabric_status_neighbors", "pve_sdn_fabric_status_routes",
-    # PMG PBS remote config + node-side PBS backup jobs (Wave 9f, 2026-07-17): snapshot/backup-id
-    # labels are stored on the REMOTE PBS instance — externally-authored content, the
-    # pbs_snapshots_list cross-plane precedent — see taint.py's own entry comment for the full
-    # argument.
-    "pmg_node_pbs_snapshots_list", "pmg_node_pbs_snapshot_get",
-    # PMG quarantine + statistics remainder (Wave 9j, 2026-07-18, THE FINAL CHUNK — closes the
-    # PMG plane): full attacker-authored email content / attacker-controllable attachment
-    # filenames, and external address literals in the statistics return schema — see taint.py's
-    # own entry comment for the full per-tool argument.
-    "pmg_quarantine_content_get", "pmg_quarantine_attachments_list",
-    "pmg_statistics_contact", "pmg_statistics_detail",
-    "pmg_statistics_recentreceivers", "pmg_statistics_recentsenders",
-})
+_EXPECTED_ADVERSARIAL = frozenset(
+    {
+        # guest-influenced
+        "ct_logs",
+        "ct_exec",
+        "ct_psql",
+        "ct_diagnose",
+        "pve_agent_exec",
+        "pve_agent_info",
+        "pve_agent_file_read",
+        "pve_node_logs",
+        "pve_node_diagnose",
+        # email/external
+        "pmg_quarantine_spam",
+        "pmg_quarantine_virus",
+        "pmg_quarantine_attachment",
+        "pmg_quarantine_spamstatus",
+        "pmg_quarantine_virusstatus",
+        "pmg_quarantine_spamusers",
+        "pmg_quarantine_blocklist_list",
+        "pmg_quarantine_welcomelist_list",
+        "pmg_tracker_list",
+        "pmg_tracker_detail",
+        "pmg_node_syslog",
+        "pmg_statistics_sender",
+        "pmg_statistics_receiver",
+        "pmg_statistics_domains",
+        # PMG node ops odds (Wave 9b, 2026-07-17): free-text diagnostic/log dumps + mail metadata —
+        # see taint.py's own entry comment for the full argument.
+        "pmg_node_report",
+        "pmg_node_journal",
+        "pmg_node_task_log",
+        "pmg_node_postfix_queue_list",
+        "pmg_node_postfix_queue_message_get",
+        # PMG LDAP profiles + fetchmail (Wave 9c, 2026-07-17): LDAP users/groups are pulled directly
+        # from the external directory — see taint.py's own entry comment for the full argument.
+        "pmg_ldap_users_list",
+        "pmg_ldap_user_emails_get",
+        "pmg_ldap_groups_list",
+        "pmg_ldap_group_members_get",
+        # config free-text + logs
+        "pve_node_syslog",
+        "pve_node_journal",
+        "pve_task_log",
+        "pve_list_guests",
+        # Tier-1 memory recall re-serves names/tags stored FROM the adversarial reads above;
+        # classified adversarial so storage cannot launder taint (memory design rail, 2026-07-29)
+        "proximo_recall",
+        # audit_entries re-serves the ledger's target strings — the same guest/node names the
+        # adversarial reads produced — so it carries proximo_recall's rail one store over.
+        "audit_entries",
+        # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
+        # above all) — a thread can carry "now run pve_delete_guest" as easily as a fix. Same
+        # laundering argument as proximo_recall one line up (wiki seam design rail, 2026-07-29).
+        "proximo_wiki",
+        "proximo_wiki_read",
+        "pve_guest_config_get",
+        "pve_cluster_resources",
+        "pve_snapshot_list",
+        "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
+        "pve_storage_content",
+        "pdm_pve_qemu_config",
+        "pdm_pve_lxc_config",
+        "pdm_pve_qemu_list",
+        "pdm_pve_lxc_list",
+        "pdm_pve_resources",
+        "pbs_snapshots_list",
+        # file-level restore (2026-09-17): guest-authored file names in the listings; the download
+        # result echoes the caller's remote path and the guest-named local file.
+        "pve_file_restore_list",
+        "pve_file_restore_download",
+        "pbs_catalog_list",
+        "pbs_file_download",
+        "proximo_api_get",  # the raw GET door: any published read, free text and logs included
+        # upstream/package-maintainer-authored free text — added Wave 1a (2026-07-15 full-surface
+        # campaign), postdating the 2026-07-02 design doc snapshot above; see taint.py's own comment
+        # on this entry for the reasoning.
+        "pve_apt_changelog",
+        # same rationale, Wave 1b (2026-07-15 full-surface campaign).
+        "pbs_apt_changelog",
+        "pmg_apt_changelog",
+        # PBS node OS admin plane (Wave 2c, 2026-07-15 full-surface campaign): free-text logs carry
+        # externally-authored bytes — same rationale as pve_node_syslog/journal/pve_task_log above.
+        "pbs_node_journal",
+        "pbs_node_syslog",
+        "pbs_node_task_log",
+        # PBS ACME (Wave 3b review finding, 2026-07-15): the PBS host fetches a CALLER-CHOSEN
+        # directory URL and returns the response — content authored by whoever controls the URL.
+        "pbs_acme_tos",
+        # PMG ACME (Wave 9g, 2026-07-17): pmg_acme_tos/pmg_acme_meta share the identical
+        # caller-chosen-directory-URL fetch shape as pbs_acme_tos above; pmg_acme_meta has no PBS
+        # equivalent at all (genuinely new this wave) but carries the same risk — see taint.py's own
+        # entry comment for the full argument.
+        "pmg_acme_tos",
+        "pmg_acme_meta",
+        # PBS tape drive/changer OPERATIONS (Wave 4c, 2026-07-15 full-surface campaign):
+        # read-label/inventory/cartridge-memory carry the physical tape's own label-text / LTO MAM
+        # attributes, no return-side pattern constraint in the schema. changer_status is a deliberate
+        # divergence from a naive "status=trusted" reading — it returns a label-text field per slot
+        # too (see pbs_tape_ops.py module docstring's Taint section for the full argument).
+        "pbs_tape_drive_read_label",
+        "pbs_tape_drive_cartridge_memory",
+        "pbs_tape_drive_inventory",
+        "pbs_tape_changer_status",
+        # PBS tape media CATALOG (Wave 4d, 2026-07-15 full-surface campaign — CLOSES Wave 4): media
+        # list/content both carry the physical tape's own label-text (media_list's field has NO
+        # return-side pattern at all, an even clearer call than changer_status above); media_content
+        # ALSO carries `snapshot` (guest-influenced backup id/type/time), matching the
+        # pbs_snapshots_list precedent directly. media_status_get is a conservative default under
+        # genuine ambiguity — the live schema declares its return type null despite the description
+        # implying real per-media data (see pbs_tape_jobs.py module docstring's Taint section).
+        "pbs_tape_media_list",
+        "pbs_tape_media_content",
+        "pbs_tape_media_status_get",
+        # PBS S3 client configs (Wave 5a, 2026-07-15 full-surface campaign): list-buckets makes a
+        # live outbound call to an operator-configured S3 endpoint, but the RETURNED bucket names are
+        # authored by whoever controls the remote S3 account — externally-authored content, argued
+        # against the pbs_acme_tos precedent in pbs_s3.py's module docstring.
+        "pbs_s3_list_buckets",
+        # PBS admin job views + node odds + pull/push (Wave 5c, 2026-07-15 full-surface campaign):
+        # pbs_node_report generates a free-text diagnostic bundle (schema returns a bare string)
+        # that plausibly embeds config values, log tails, and system state — same category as
+        # pve_node_syslog/pbs_node_journal/pbs_node_task_log above.
+        "pbs_node_report",
+        # PBS datastore-admin remainder (Wave 5d, 2026-07-15 — the ACTUAL PBS plane closer, built
+        # from the Wave 5c adversarial review's missing-endpoint list): groups_list/group_notes_get
+        # carry guest/operator-influenced backup ids + free-text notes (pbs_snapshots_list
+        # precedent); the remote_scan family returns REMOTE-authored content (pbs_s3_list_buckets
+        # precedent — see taint.py's own entry comment + pbs_datastore_admin.py's Taint section).
+        "pbs_groups_list",
+        "pbs_group_notes_get",
+        "pbs_remote_scan",
+        "pbs_remote_scan_groups",
+        "pbs_remote_scan_namespaces",
+        # PVE Ceph core observability + flags (Wave 6a, 2026-07-16 full-surface campaign):
+        # pve_ceph_log returns free-text log lines ({n, t} per schema), Sys.Syslog-channel content —
+        # same rationale as pve_node_syslog/pve_node_journal/pve_task_log above.
+        "pve_ceph_log",
+        # Wave 6a review Finding 2 (2026-07-16): pve_ceph_metadata's schema types every per-instance
+        # mon/mgr/mds entry "additionalProperties": 1 (an open shape) with self-reported hostname/
+        # addr/name fields — the same daemon-self-report content-channel shape as pbs_remote_scan
+        # above (whoever controls the daemon controls these bytes). See taint.py's own entry comment
+        # + proximo/ceph.py's module docstring Taint section for the full argument.
+        "pve_ceph_metadata",
+        # Wave 6b (2026-07-16): pve_ceph_mon_list/pve_ceph_mgr_list/pve_ceph_mds_list return the SAME
+        # daemon-self-reported name/host/addr/ceph_version strings as pve_ceph_metadata above, just
+        # sliced per service type instead of aggregated — same channel, argued (not just asserted)
+        # against the closed-shape counter-argument in taint.py's own entry comment + proximo/ceph.py's
+        # module docstring Taint section.
+        "pve_ceph_mon_list",
+        "pve_ceph_mgr_list",
+        "pve_ceph_mds_list",
+        # Wave 6c (2026-07-16): pve_ceph_osd_tree's schema types the ENTIRE nested CRUSH-bucket
+        # response additionalProperties:1 (open, untyped) — an even more extreme shape than
+        # pve_ceph_metadata's own per-instance open map — with daemon-self-reported per-node
+        # telemetry. pve_ceph_osd_metadata's osd{} sub-object carries hostname/back_addr/front_addr/
+        # hb_back_addr/hb_front_addr — the SAME field set that made the aggregated pve_ceph_metadata
+        # ADVERSARIAL in Wave 6a; this is that channel's single-OSD drill-down. NOT here:
+        # pve_ceph_osd_lv_info — argued REVIEWED_TRUSTED instead (closed shape, LOCAL `lvs`
+        # shell-out on the SAME host, not a cross-daemon network self-report) — see taint.py's own
+        # entry comment + proximo/ceph.py's module docstring Taint section for the full argument.
+        "pve_ceph_osd_tree",
+        "pve_ceph_osd_metadata",
+        # Wave 6d (2026-07-16) shipped pool/fs list/status REVIEWED_TRUSTED; the Wave 6d adversarial
+        # review (2026-07-17, Finding 1) REVERSED that ruling to ADVERSARIAL: pool_name/fs name are
+        # unconstrained free-text (pattern-only, no length cap) creatable by any cephx-capable client
+        # or by Ceph itself outside any operator action — the same channel that already landed
+        # pve_list_guests/pve_snapshot_list above; application_metadata is a third channel, settable
+        # via raw `ceph osd pool application set` outside this API entirely. See taint.py's own entry
+        # comment + proximo/ceph.py's module docstring Taint section for the full argument.
+        "pve_ceph_pool_list",
+        "pve_ceph_pool_status",
+        "pve_ceph_fs_list",
+        # Wave 7a (2026-07-17): PVE SDN gap-fill + global control plane. pve_sdn_zone_ip_vrf's
+        # nexthops are peer-announced over the running BGP/EVPN routing protocol (same wire-learned
+        # channel as pve_ceph_metadata/pve_ceph_osd_metadata); pve_sdn_vnet_mac_vrf's schema is
+        # explicit that its routes are "self-originates OR has learned via BGP" — a genuinely mixed
+        # channel, classified conservatively. See taint.py's own entry comment + network.py's module
+        # docstring Taint section for the full argument.
+        "pve_sdn_zone_ip_vrf",
+        "pve_sdn_vnet_mac_vrf",
+        # Wave 7c (2026-07-17): PVE SDN controllers + DNS + IPAMs. pve_sdn_ipam_status's schema
+        # gives ZERO item-shape documentation (bare array, no `items` key at all) and the
+        # domain-known content is guest IP/MAC/hostname address entries — genuinely
+        # guest-influenced, the same wire-learned/guest-controlled-content rationale as
+        # pve_sdn_zone_ip_vrf/pve_sdn_vnet_mac_vrf above. See taint.py's own entry comment +
+        # sdn_objects.py's module docstring Taint section for the full argument.
+        "pve_sdn_ipam_status",
+        # Wave 7d (2026-07-17): PVE SDN fabrics. pve_sdn_fabric_status_neighbors' neighbor field
+        # is the remote peer's own self-announced identity, and status/uptime are explicitly
+        # "as returned by FRR"; pve_sdn_fabric_status_routes' via (nexthop list) is peer-injected
+        # over the running routing protocol — same wire-learned channel as
+        # pve_sdn_zone_ip_vrf/pve_ceph_metadata above. NOT here: pve_sdn_fabric_status_interfaces
+        # — REVIEWED_TRUSTED instead (its {name, state, type} shape is the fabric's own
+        # locally-rendered interface, no peer-announced field). Basis, on the record
+        # (STRIKE-AND-CORRECT: an earlier version of this comment cited a "campaign doc Wave 7d
+        # chunk listing" that does not exist): the schema's local-only field shape PLUS the
+        # 2026-07-17 COORDINATOR RE-RULING (`.scratch/2026-07-15-full-surface-campaign.md` lines
+        # 853-864, binding) — see taint.py's own entry comment + sdn_fabrics.py's module
+        # docstring fact #3 for the full argument.
+        "pve_sdn_fabric_status_neighbors",
+        "pve_sdn_fabric_status_routes",
+        # PMG PBS remote config + node-side PBS backup jobs (Wave 9f, 2026-07-17): snapshot/backup-id
+        # labels are stored on the REMOTE PBS instance — externally-authored content, the
+        # pbs_snapshots_list cross-plane precedent — see taint.py's own entry comment for the full
+        # argument.
+        "pmg_node_pbs_snapshots_list",
+        "pmg_node_pbs_snapshot_get",
+        # PMG quarantine + statistics remainder (Wave 9j, 2026-07-18, THE FINAL CHUNK — closes the
+        # PMG plane): full attacker-authored email content / attacker-controllable attachment
+        # filenames, and external address literals in the statistics return schema — see taint.py's
+        # own entry comment for the full per-tool argument.
+        "pmg_quarantine_content_get",
+        "pmg_quarantine_attachments_list",
+        "pmg_statistics_contact",
+        "pmg_statistics_detail",
+        "pmg_statistics_recentreceivers",
+        "pmg_statistics_recentsenders",
+    }
+)
 
 
 # === Classification ==============================================================================
@@ -209,8 +267,7 @@ def test_is_adversarial_false_for_unknown_tool():
 # === Switches (env-gated, inert by default) ======================================================
 
 
-_ALL_TAINT_ENV = (taint.TAINT_TRACK_ENV, taint.FORBID_ENV, taint.REQUIRE_CONSENT_ENV,
-                   taint.FENCE_ENV)
+_ALL_TAINT_ENV = (taint.TAINT_TRACK_ENV, taint.FORBID_ENV, taint.REQUIRE_CONSENT_ENV, taint.FENCE_ENV)
 
 
 @pytest.fixture(autouse=True)
@@ -401,10 +458,7 @@ def test_concurrent_marks_from_threads_stay_atomic(tmp_path):
     still parses as valid JSON (no torn/interleaved write survives the flock+mkstemp+replace)."""
     audit_dir = str(tmp_path)
     n = 20
-    threads = [
-        threading.Thread(target=taint.mark_tainted, args=(audit_dir, f"source-{i}"))
-        for i in range(n)
-    ]
+    threads = [threading.Thread(target=taint.mark_tainted, args=(audit_dir, f"source-{i}")) for i in range(n)]
     for t in threads:
         t.start()
     for t in threads:
@@ -423,7 +477,11 @@ def test_concurrent_marks_from_threads_stay_atomic(tmp_path):
 def test_fence_shape_exact():
     result = taint.fence("ct_exec", {"a": 1, "b": [1, 2, 3]})
     assert set(result.keys()) == {
-        "proximo_untrusted", "source", "warning", "data", "proximo_untrusted_end",
+        "proximo_untrusted",
+        "source",
+        "warning",
+        "data",
+        "proximo_untrusted_end",
     }
     assert result["proximo_untrusted"] is True
     assert result["proximo_untrusted_end"] is True
@@ -515,9 +573,16 @@ def test_taint_forbid_set_empty_entries_dropped(monkeypatch):
 
 def _tree(*osds):
     """A minimal nested CRUSH-tree fixture: root -> one host bucket -> osd leaves."""
-    return {"root": {"id": -1, "name": "default", "type": "root", "children": [
-        {"id": -2, "name": "pve", "type": "host", "children": list(osds)},
-    ]}}
+    return {
+        "root": {
+            "id": -1,
+            "name": "default",
+            "type": "root",
+            "children": [
+                {"id": -2, "name": "pve", "type": "host", "children": list(osds)},
+            ],
+        }
+    }
 
 
 def _find_by_id(result, match_id):
@@ -543,8 +608,10 @@ class TestCaptureAdversarialCurrentFinder:
         """No finder= passed -> the original flat-list key-equality lookup, byte-for-byte as
         before the Wave 6c extension (every Wave 6b caller relies on this)."""
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_mon_list",
-            lambda: [{"name": "pve", "host": "pve"}], "pve",
+            str(tmp_path),
+            "pve_ceph_mon_list",
+            lambda: [{"name": "pve", "host": "pve"}],
+            "pve",
         )
         assert ok is True
         assert current["name"] == "pve"
@@ -552,7 +619,11 @@ class TestCaptureAdversarialCurrentFinder:
     def test_finder_locates_entry_in_nested_shape(self, tmp_path):
         tree = _tree({"id": 0, "name": "osd.0"}, {"id": 1, "name": "osd.1"})
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: tree, 1, finder=_find_by_id,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: tree,
+            1,
+            finder=_find_by_id,
         )
         assert ok is True
         assert current["name"] == "osd.1"
@@ -562,7 +633,11 @@ class TestCaptureAdversarialCurrentFinder:
         found, never mistaken for 'no match' just because 0 is falsy in Python."""
         tree = _tree({"id": 0, "name": "osd.0"})
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: tree, 0, finder=_find_by_id,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: tree,
+            0,
+            finder=_find_by_id,
         )
         assert ok is True
         assert current == {"id": 0, "name": "osd.0"}
@@ -570,7 +645,11 @@ class TestCaptureAdversarialCurrentFinder:
     def test_finder_no_match_degrades_to_empty_not_failure(self, tmp_path):
         tree = _tree({"id": 0, "name": "osd.0"})
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: tree, 99, finder=_find_by_id,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: tree,
+            99,
+            finder=_find_by_id,
         )
         assert ok is True
         assert current == {}
@@ -580,7 +659,11 @@ class TestCaptureAdversarialCurrentFinder:
             raise RuntimeError("unreachable")
 
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", _raise, 0, finder=_find_by_id,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            _raise,
+            0,
+            finder=_find_by_id,
         )
         assert ok is False
         assert current == {}
@@ -589,11 +672,15 @@ class TestCaptureAdversarialCurrentFinder:
         """Wave 6c review Finding 2 (MINOR): a raising `finder` must degrade exactly like a
         raising `read()` — the finder call must be inside the SAME try/except contract, not left
         to propagate uncaught (a materially different, non-fail-open failure mode)."""
+
         def _raising_finder(result, match_id):
             raise RuntimeError("finder blew up")
 
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: _tree({"id": 0, "name": "osd.0"}), 0,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: _tree({"id": 0, "name": "osd.0"}),
+            0,
             finder=_raising_finder,
         )
         assert ok is False
@@ -605,7 +692,11 @@ class TestCaptureAdversarialCurrentFinder:
         tree = _tree({"id": 0, "name": "osd.0"})
 
         current, ok = taint.capture_adversarial_current(
-            audit_dir, "pve_ceph_osd_tree", lambda: tree, 0, finder=_find_by_id,
+            audit_dir,
+            "pve_ceph_osd_tree",
+            lambda: tree,
+            0,
+            finder=_find_by_id,
         )
 
         assert ok is True
@@ -617,7 +708,11 @@ class TestCaptureAdversarialCurrentFinder:
     def test_finder_inert_when_tracking_off(self, tmp_path):
         tree = _tree({"id": 0, "name": "osd.0"})
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: tree, 0, finder=_find_by_id,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: tree,
+            0,
+            finder=_find_by_id,
         )
         assert ok is True
         assert taint.is_tainted(str(tmp_path)) is False
@@ -634,7 +729,10 @@ class TestCaptureAdversarialCurrentFinder:
         obj = {"id": 1, "name": "rbd", "crush_rule": "replicated_rule"}
 
         current, ok = taint.capture_adversarial_current(
-            audit_dir, "pve_ceph_pool_status", lambda: obj, "rbd",
+            audit_dir,
+            "pve_ceph_pool_status",
+            lambda: obj,
+            "rbd",
             finder=lambda result, _match_id: dict(result) if isinstance(result, dict) else None,
         )
 
@@ -649,7 +747,11 @@ class TestCaptureAdversarialCurrentFinder:
         """A finder returning None (rather than {}) for 'no match' must degrade the same way —
         `finder(result, match_id) or {}` normalizes any falsy return."""
         current, ok = taint.capture_adversarial_current(
-            str(tmp_path), "pve_ceph_osd_tree", lambda: {}, 0, finder=lambda *_: None,
+            str(tmp_path),
+            "pve_ceph_osd_tree",
+            lambda: {},
+            0,
+            finder=lambda *_: None,
         )
         assert ok is True
         assert current == {}

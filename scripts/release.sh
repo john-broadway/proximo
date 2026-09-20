@@ -58,6 +58,20 @@ uv run ruff check . || RC=1   # full repo — match CI's `ruff check .` (src+tes
 # `from tests.foo import ...` passes here and fails on CI, which runs bare. CLAUDE.md names
 # this as a blind spot and this gate was using the blind form (mechanics lens, 2026-09-04).
 uv run pytest tests/test_version_consistency.py -q || RC=1
+# THE NO-PROJECT JOB. Public CI's requirements-drift job runs this tree's tests with
+# `uv run --no-project --with pytest` (no proximo installed). From THIS dir the command lies:
+# the project .venv is bound anyway, so a conftest that imports proximo passes here and errors
+# every test there (PR #73 on the 0.43.0 curated sha, 2026-09-20: 5 errors, the publish refused
+# at the required-checks step). Run it the way CI meets it: a fresh clone, a fresh env.
+NPTMP="$(mktemp -d)"
+if git clone -q "$ROOT" "$NPTMP/tree" 2>/dev/null; then
+  ( cd "$NPTMP/tree" && UV_PROJECT_ENVIRONMENT="$NPTMP/env" uv run --no-project --with pytest \
+      pytest tests/test_requirements_lock.py -q -p no:cacheprovider ) \
+    || { printf 'release: the no-project drift job (public CI shape) is RED on a clean clone of HEAD.\n' >&2; RC=1; }
+else
+  printf 'release: could not clone HEAD for the no-project check\n' >&2; RC=1
+fi
+rm -rf "$NPTMP"
 # SAY WHAT THE NEXT GATE IS LOOKING AT. release_leak_audit reads git HEAD (git ls-tree /
 # git show <ref>:<path>), never the working tree. This script's FIRST action rewrites the
 # version files, so on the first pass the tree is always dirty and the audit below is always

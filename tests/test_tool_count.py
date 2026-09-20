@@ -33,7 +33,11 @@ from pathlib import Path
 import proximo.door as door
 import proximo.server as server
 
-EXPECTED_TOOL_COUNT = 912  # +4 (file-level restore, 2026-09-17): pve_file_restore_list/download
+EXPECTED_TOOL_COUNT = 924  # +11 (PDM identity core, 2026-09-19): pdm_user_get/create/update/delete,
+# pdm_user_tokens_list, pdm_user_token_get, pdm_token_create/update/delete, pdm_acl_update,
+# pdm_permissions_get. Before that 913: +1 (the raw GET door, 2026-09-19): proximo_api_get, any published
+# read on any plane, validated against the vendored tree, gated reads refused. Before that 912:
+# +4 (file-level restore, 2026-09-17): pve_file_restore_list/download
 # + pbs_catalog_list/pbs_file_download. Before that 908:
 # +2 (pve_node_logs / pve_node_diagnose, 2026-08-26): the read half of
 # the host side of the junction. +1 before (audit_entries, 2026-08-01): the READ side of PROVE. 0.29.0
