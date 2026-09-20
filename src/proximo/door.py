@@ -18,6 +18,8 @@ their ORDER relative to tool registration is load-bearing.
 from __future__ import annotations
 
 import difflib
+import hashlib
+import json
 import os
 import sys
 import warnings
@@ -45,13 +47,14 @@ def _default_mcp():
 # a file-set PROXIMO_SURFACES actually work; same footgun CONSENT hit in 0.13). audit_verify is
 # always kept: PROVE is never scopeable away.
 SURFACES: dict[str, tuple[str, ...]] = {
-    "pve": ("pve_",),   # Proxmox VE (includes the pve_agent_* qemu-agent edge)
-    "pbs": ("pbs_",),   # Proxmox Backup Server
-    "pmg": ("pmg_",),   # Proxmox Mail Gateway
-    "pdm": ("pdm_",),   # Proxmox Datacenter Manager (reads + governed fleet control: power/snapshot/migrate)
-    "exec": ("ct_",),   # in-container exec/psql/logs/diagnose (ssh -> pct)
+    "pve": ("pve_",),  # Proxmox VE (includes the pve_agent_* qemu-agent edge)
+    "pbs": ("pbs_",),  # Proxmox Backup Server
+    "pmg": ("pmg_",),  # Proxmox Mail Gateway
+    "pdm": ("pdm_",),  # Proxmox Datacenter Manager (reads + governed fleet control: power/snapshot/migrate)
+    "exec": ("ct_",),  # in-container exec/psql/logs/diagnose (ssh -> pct)
     "memory": ("proximo_recall", "proximo_baseline"),  # Tier-1 estate memory (default-on; PROXIMO_MEMORY=0 opts out)
     "wiki": ("proximo_wiki",),  # local docs index, prefix covers _read (opt-in via PROXIMO_WIKI)
+    "raw": ("proximo_api_get",),  # the raw GET door: every published read on every configured plane
 }
 # Never scopeable away, for two different reasons. `audit_verify` because PROVE must not be
 # removable. `proximo_call` because it is the by-name escape hatch: the four scoping layers below
@@ -69,55 +72,144 @@ _ALWAYS_REGISTERED = frozenset({"audit_verify", "audit_entries", "proximo_call"}
 # (tests/test_toolsets.py pins that; there is no runtime warning for an orphan).
 TOOLSETS: dict[str, tuple[str, ...]] = {
     # --- Proxmox VE ---
-    "pve.guests":      ("pve_guest", "pve_list_guests", "pve_clone", "pve_template", "pve_snapshot",
-                        "pve_rollback", "pve_disk", "pve_cloudinit", "pve_agent", "pve_create_vm",
-                        "pve_create_container", "pve_delete_guest"),
-    "pve.cluster":     ("pve_cluster", "pve_node", "pve_ha", "pve_task", "pve_hardware",
-                        "pve_mapping", "pve_diagnose", "pve_doctor"),
-    "pve.storage":     ("pve_storage", "pve_backup", "pve_restore", "pve_file_restore", "pve_replication"),
+    "pve.guests": (
+        "pve_guest",
+        "pve_list_guests",
+        "pve_clone",
+        "pve_template",
+        "pve_snapshot",
+        "pve_rollback",
+        "pve_disk",
+        "pve_cloudinit",
+        "pve_agent",
+        "pve_create_vm",
+        "pve_create_container",
+        "pve_delete_guest",
+    ),
+    "pve.cluster": (
+        "pve_cluster",
+        "pve_node",
+        "pve_ha",
+        "pve_task",
+        "pve_hardware",
+        "pve_mapping",
+        "pve_diagnose",
+        "pve_doctor",
+    ),
+    "pve.storage": ("pve_storage", "pve_backup", "pve_restore", "pve_file_restore", "pve_replication"),
     # SDN is split out deliberately: 83 of the 87 network tools are SDN, and most operators
     # never configure it. Folding them together made "I want network tools" cost 27k tokens.
-    "pve.network":     ("pve_network",),
-    "pve.sdn":         ("pve_sdn",),
-    "pve.firewall":    ("pve_firewall", "pve_ipset", "pve_security_groups"),
-    "pve.access":      ("pve_user", "pve_role", "pve_acl", "pve_token", "pve_group", "pve_pool",
-                        "pve_realm", "pve_tfa", "pve_overbroad"),
-    "pve.ceph":        ("pve_ceph",),
+    "pve.network": ("pve_network",),
+    "pve.sdn": ("pve_sdn",),
+    "pve.firewall": ("pve_firewall", "pve_ipset", "pve_security_groups"),
+    "pve.access": (
+        "pve_user",
+        "pve_role",
+        "pve_acl",
+        "pve_token",
+        "pve_group",
+        "pve_pool",
+        "pve_realm",
+        "pve_tfa",
+        "pve_overbroad",
+    ),
+    "pve.ceph": ("pve_ceph",),
     "pve.maintenance": ("pve_apt", "pve_acme", "pve_notification", "pve_metrics"),
     # --- Proxmox Backup Server ---
-    "pbs.datastores":  ("pbs_datastore", "pbs_gc", "pbs_prune", "pbs_snapshot", "pbs_backup",
-                        "pbs_catalog", "pbs_file_download",
-                        "pbs_verify", "pbs_sync", "pbs_admin", "pbs_s3", "pbs_remote", "pbs_key",
-                        "pbs_encryption_key", "pbs_namespace", "pbs_pull", "pbs_push"),
-    "pbs.tape":        ("pbs_tape",),
-    "pbs.access":      ("pbs_user", "pbs_realm", "pbs_tfa", "pbs_group", "pbs_acl", "pbs_token",
-                        "pbs_role", "pbs_permission"),
-    "pbs.node":        ("pbs_node", "pbs_disk", "pbs_service", "pbs_subscription", "pbs_tasks"),
-    "pbs.maintenance": ("pbs_apt", "pbs_acme", "pbs_notification", "pbs_metrics", "pbs_traffic",
-                        "pbs_status", "pbs_version", "pbs_ping", "pbs_job"),
+    "pbs.datastores": (
+        "pbs_datastore",
+        "pbs_gc",
+        "pbs_prune",
+        "pbs_snapshot",
+        "pbs_backup",
+        "pbs_catalog",
+        "pbs_file_download",
+        "pbs_verify",
+        "pbs_sync",
+        "pbs_admin",
+        "pbs_s3",
+        "pbs_remote",
+        "pbs_key",
+        "pbs_encryption_key",
+        "pbs_namespace",
+        "pbs_pull",
+        "pbs_push",
+    ),
+    "pbs.tape": ("pbs_tape",),
+    "pbs.access": (
+        "pbs_user",
+        "pbs_realm",
+        "pbs_tfa",
+        "pbs_group",
+        "pbs_acl",
+        "pbs_token",
+        "pbs_role",
+        "pbs_permission",
+    ),
+    "pbs.node": ("pbs_node", "pbs_disk", "pbs_service", "pbs_subscription", "pbs_tasks"),
+    "pbs.maintenance": (
+        "pbs_apt",
+        "pbs_acme",
+        "pbs_notification",
+        "pbs_metrics",
+        "pbs_traffic",
+        "pbs_status",
+        "pbs_version",
+        "pbs_ping",
+        "pbs_job",
+    ),
     # --- Proxmox Mail Gateway ---
-    "pmg.quarantine":  ("pmg_quarantine", "pmg_spam", "pmg_virus", "pmg_attachment", "pmg_track"),
-    "pmg.rules":       ("pmg_ruledb", "pmg_action", "pmg_who", "pmg_what", "pmg_when",
-                        "pmg_customscores", "pmg_dkim", "pmg_mimetypes", "pmg_regextest",
-                        "pmg_welcomelist"),
-    "pmg.mail":        ("pmg_transport", "pmg_mynetworks", "pmg_fetchmail", "pmg_tlspolicy",
-                        "pmg_relay", "pmg_postfix", "pmg_mail", "pmg_domain", "pmg_dnsbl",
-                        "pmg_tls_inbound_domains"),
-    "pmg.statistics":  ("pmg_statistics", "pmg_stat"),
-    "pmg.access":      ("pmg_access", "pmg_user", "pmg_ldap", "pmg_tfa", "pmg_role", "pmg_acl",
-                        "pmg_token", "pmg_group"),
-    "pmg.node":        ("pmg_node", "pmg_cluster", "pmg_service", "pmg_subscription", "pmg_disk",
-                        "pmg_doctor", "pmg_tasks"),
-    "pmg.maintenance": ("pmg_apt", "pmg_acme", "pmg_notification", "pmg_config", "pmg_backup",
-                        "pmg_metrics", "pmg_version", "pmg_ping", "pmg_pbs_remote"),
+    "pmg.quarantine": ("pmg_quarantine", "pmg_spam", "pmg_virus", "pmg_attachment", "pmg_track"),
+    "pmg.rules": (
+        "pmg_ruledb",
+        "pmg_action",
+        "pmg_who",
+        "pmg_what",
+        "pmg_when",
+        "pmg_customscores",
+        "pmg_dkim",
+        "pmg_mimetypes",
+        "pmg_regextest",
+        "pmg_welcomelist",
+    ),
+    "pmg.mail": (
+        "pmg_transport",
+        "pmg_mynetworks",
+        "pmg_fetchmail",
+        "pmg_tlspolicy",
+        "pmg_relay",
+        "pmg_postfix",
+        "pmg_mail",
+        "pmg_domain",
+        "pmg_dnsbl",
+        "pmg_tls_inbound_domains",
+    ),
+    "pmg.statistics": ("pmg_statistics", "pmg_stat"),
+    "pmg.access": ("pmg_access", "pmg_user", "pmg_ldap", "pmg_tfa", "pmg_role", "pmg_acl", "pmg_token", "pmg_group"),
+    "pmg.node": ("pmg_node", "pmg_cluster", "pmg_service", "pmg_subscription", "pmg_disk", "pmg_doctor", "pmg_tasks"),
+    "pmg.maintenance": (
+        "pmg_apt",
+        "pmg_acme",
+        "pmg_notification",
+        "pmg_config",
+        "pmg_backup",
+        "pmg_metrics",
+        "pmg_version",
+        "pmg_ping",
+        "pmg_pbs_remote",
+    ),
     # --- the rest ---
-    "pdm":             ("pdm_",),
-    "exec":            ("ct_",),
+    "pdm": ("pdm_",),
+    "exec": ("ct_",),
     # Tier-1 estate memory (default-on since 0.30, PROXIMO_MEMORY=0 opts out; see proximo/memory.py)
-    "memory":          ("proximo_recall", "proximo_baseline"),
+    "memory": ("proximo_recall", "proximo_baseline"),
     # Local Proxmox docs index (opt-in via PROXIMO_WIKI; see proximo/wiki.py). One prefix
     # covers both tools; the seam is a file contract, so no builder import exists anywhere.
-    "wiki":            ("proximo_wiki",),
+    "wiki": ("proximo_wiki",),
+    # the raw GET door: every published read on every plane by path. Cross-plane by construction
+    # and NOT resident in the lean facade (it would cost every request ~330 tokens); reachable
+    # in every mode by name through proximo_read/proximo_call, which dispatch from the full catalog.
+    "raw": ("proximo_api_get",),
 }
 
 
@@ -136,7 +228,8 @@ def toolset_keep(names: Iterable[str], spec: str | None) -> set[str]:
     if unknown:
         raise ValueError(
             f"PROXIMO_TOOLSETS: unknown toolset(s) {unknown} — valid: {sorted(TOOLSETS)} "
-            "(refusing to start rather than serve a set you didn't pick)")
+            "(refusing to start rather than serve a set you didn't pick)"
+        )
     prefixes = tuple(p for t in picked for p in TOOLSETS[t])
     return {n for n in names if n.startswith(prefixes) or n in _ALWAYS_REGISTERED}
 
@@ -153,7 +246,8 @@ def surface_keep(names: Iterable[str], spec: str | None) -> set[str]:
     if unknown:
         raise ValueError(
             f"PROXIMO_SURFACES: unknown surface(s) {unknown} — valid: {sorted(SURFACES)} "
-            "(refusing to start rather than serve a surface you didn't pick)")
+            "(refusing to start rather than serve a surface you didn't pick)"
+        )
     prefixes = tuple(p for t in picked for p in SURFACES[t])
     return {n for n in names if n.startswith(prefixes) or n in _ALWAYS_REGISTERED}
 
@@ -169,8 +263,12 @@ def configured_surfaces() -> set[str]:
     This is what lets a PVE+PBS-only box auto-serve just those planes' tools — no flag.
     """
     found: set[str] = set()
-    for plane, env in (("pve", "PROXIMO_API_BASE_URL"), ("pbs", "PROXIMO_PBS_BASE_URL"),
-                       ("pmg", "PROXIMO_PMG_BASE_URL"), ("pdm", "PROXIMO_PDM_BASE_URL")):
+    for plane, env in (
+        ("pve", "PROXIMO_API_BASE_URL"),
+        ("pbs", "PROXIMO_PBS_BASE_URL"),
+        ("pmg", "PROXIMO_PMG_BASE_URL"),
+        ("pdm", "PROXIMO_PDM_BASE_URL"),
+    ):
         if os.environ.get(env, "").strip():
             found.add(plane)
     try:  # a target of any kind configures that plane; a broken registry must not crash startup
@@ -189,16 +287,20 @@ def configured_surfaces() -> set[str]:
     # real config, with the whole suite green, because the test doubles mirror the full registry.
     from proximo.memory import memory_enabled
     from proximo.wiki import wiki_enabled
+
     if memory_enabled():
         found.add("memory")
     if wiki_enabled():
         found.add("wiki")
+    # The raw door serves whichever planes are configured; it is on whenever any of them is.
+    if found - _UTILITY_SURFACES:
+        found.add("raw")
     return found
 
 
 # Surfaces that are real but are NOT data planes: they can never make a config unambiguous on
 # their own. See the guard in _autoscope_keep.
-_UTILITY_SURFACES = frozenset({"exec", "memory", "wiki"})
+_UTILITY_SURFACES = frozenset({"exec", "memory", "wiki", "raw"})
 
 
 def _autoscope_planes() -> set[str] | None:
@@ -259,16 +361,15 @@ def _apply_dynamic(server_mcp) -> None:
 def _apply_catalog(server_mcp) -> None:
     """The pre-0.30 default door by name: full schemas, auto-scoped to configured planes."""
     planes = _autoscope_planes()
-    if planes is None:   # autoscope off, or no data plane detected → ambiguous, touch nothing
+    if planes is None:  # autoscope off, or no data plane detected → ambiguous, touch nothing
         return
     registry = server_mcp._tool_manager._tools
     keep = surface_keep(registry.keys(), ",".join(sorted(planes)))
-    if len(keep) < len(registry):   # only announce/prune when it actually narrows
-        _prune_registry(server_mcp, keep,
-                        f"auto-scoped to configured planes ({','.join(sorted(planes))})")
+    if len(keep) < len(registry):  # only announce/prune when it actually narrows
+        _prune_registry(server_mcp, keep, f"auto-scoped to configured planes ({','.join(sorted(planes))})")
 
 
-def _apply_surfaces(server_mcp=None) -> None:
+def _apply_surfaces_scope(server_mcp=None) -> None:
     """Scope the live registry to the door the operator picked. ValueError propagates to main().
 
     TWO AXES, not one ladder. SCOPE answers "which planes/tools exist here"; DOOR answers "how
@@ -318,8 +419,11 @@ def _apply_surfaces(server_mcp=None) -> None:
     # facade, so it reads and mutates the registry (external vet, 2026-08-02).
     tools_spec = os.environ.get("PROXIMO_TOOLS")
     if tools_spec and tools_spec.strip():
-        _prune_registry(server_mcp, tool_keep(server_mcp._tool_manager._tools.keys(), tools_spec),
-                        f"PROXIMO_TOOLS={tools_spec.strip()}")
+        _prune_registry(
+            server_mcp,
+            tool_keep(server_mcp._tool_manager._tools.keys(), tools_spec),
+            f"PROXIMO_TOOLS={tools_spec.strip()}",
+        )
         return
 
     toolsets_spec = os.environ.get("PROXIMO_TOOLSETS")
@@ -332,9 +436,11 @@ def _apply_surfaces(server_mcp=None) -> None:
             _apply_catalog(server_mcp)
             return
         if picked != "all":
-            _prune_registry(server_mcp,
-                            toolset_keep(server_mcp._tool_manager._tools.keys(), toolsets_spec),
-                            f"PROXIMO_TOOLSETS={toolsets_spec.strip()}")
+            _prune_registry(
+                server_mcp,
+                toolset_keep(server_mcp._tool_manager._tools.keys(), toolsets_spec),
+                f"PROXIMO_TOOLSETS={toolsets_spec.strip()}",
+            )
         return
 
     spec = os.environ.get("PROXIMO_SURFACES")
@@ -344,8 +450,11 @@ def _apply_surfaces(server_mcp=None) -> None:
         # door. Prune BEFORE apply_lean — it snapshots the searchable catalog at call time, so
         # the order is what makes the operator's plane choice narrow the facade's world too.
         if spec.strip().lower() != "all":
-            _prune_registry(server_mcp, surface_keep(server_mcp._tool_manager._tools.keys(), spec),
-                            f"PROXIMO_SURFACES={spec.strip()}")
+            _prune_registry(
+                server_mcp,
+                surface_keep(server_mcp._tool_manager._tools.keys(), spec),
+                f"PROXIMO_SURFACES={spec.strip()}",
+            )
         # A facade over a UTILITY-ONLY world is worse than no facade. `memory`/`wiki`/`exec` are
         # cross-plane utility surfaces, not planes: scoped to those alone the searchable catalog
         # is a handful of tools, and the facade's own description tells the model "the other ~900
@@ -390,9 +499,12 @@ def collapse_nullable_anyof(node: Any) -> Any:
     """
     if isinstance(node, dict):
         branches = node.get("anyOf")
-        if (isinstance(branches, list) and len(branches) == 2
-                and all(isinstance(b, dict) and set(b) == {"type"} for b in branches)
-                and any(b["type"] == "null" for b in branches)):
+        if (
+            isinstance(branches, list)
+            and len(branches) == 2
+            and all(isinstance(b, dict) and set(b) == {"type"} for b in branches)
+            and any(b["type"] == "null" for b in branches)
+        ):
             node.pop("anyOf")
             node["type"] = [b["type"] for b in branches]
         for value in node.values():
@@ -466,8 +578,8 @@ def tool_keep(names: Iterable[str], spec: str | None) -> set[str]:
     unknown = sorted(picked - names)
     if unknown:
         raise ValueError(
-            f"PROXIMO_TOOLS: unknown tool(s) {unknown} "
-            "(refusing to start rather than serve a set you didn't pick)")
+            f"PROXIMO_TOOLS: unknown tool(s) {unknown} (refusing to start rather than serve a set you didn't pick)"
+        )
     return picked | (names & _ALWAYS_REGISTERED)
 
 
@@ -611,7 +723,7 @@ def apply_lean(server_mcp=None) -> dict:
             "local memory in one call, with no search and no schema lookup, and it stamps how "
             "old the answer is. Come here for everything else.\n\n"
             f"The facade is resident; {searchable} more tools on this server are searchable but "
-            "not. Search for what you want (\"guest power\", \"ceph pool\", \"firewall\"), then "
+            'not. Search for what you want ("guest power", "ceph pool", "firewall"), then '
             "call proximo_tool_schema on a result to get its arguments, then proximo_read "
             "(read-only tools) or proximo_call to run it. All terms must match."
         )
@@ -619,8 +731,8 @@ def apply_lean(server_mcp=None) -> dict:
         find_tools_doc = (
             "Search Proximo's full tool catalog by keyword. START HERE.\n\n"
             f"Only this facade is loaded; {searchable} more tools on this server are searchable "
-            "but not resident. Search for what you want (\"guest power\", \"ceph pool\", "
-            "\"firewall\"), then call proximo_tool_schema on a result to get its arguments, "
+            'but not resident. Search for what you want ("guest power", "ceph pool", '
+            '"firewall"), then call proximo_tool_schema on a result to get its arguments, '
             "then proximo_read (read-only tools) or proximo_call to run it. All terms must match."
         )
 
@@ -636,10 +748,14 @@ def apply_lean(server_mcp=None) -> dict:
         # next instead (matches are still the plain list, so a hit path is unchanged).
         results = lean.search_tools(catalog, query, limit=limit)
         if not results:
-            return {"matches": [], "note": (
-                f"No tool matched {query!r}. Try broader or different terms; Proximo may simply "
-                "not have this capability. If you already know the exact tool name, call it with "
-                "proximo_call(tool=..., arguments=...).")}
+            return {
+                "matches": [],
+                "note": (
+                    f"No tool matched {query!r}. Try broader or different terms; Proximo may simply "
+                    "not have this capability. If you already know the exact tool name, call it with "
+                    "proximo_call(tool=..., arguments=...)."
+                ),
+            }
         return results
 
     @server_mcp.tool(**tool_annotations_kwargs(read_only=True))
@@ -670,18 +786,15 @@ def apply_lean(server_mcp=None) -> dict:
             # reads the same bytes the hint derivation read at decoration time. If a tool ever
             # gains a description= override, keep its leading marker in agreement with the
             # docstring's — a split here would let the client's hint and this door disagree.
-            desc = getattr(target, "description", None) or getattr(
-                getattr(target, "fn", None), "__doc__", None)
+            desc = getattr(target, "description", None) or getattr(getattr(target, "fn", None), "__doc__", None)
             verdict = lean.read_only_marker(desc)
             if verdict is not True:
-                why = ("a MUTATION tool" if verdict is False
-                       else "not marked READ-ONLY, so it is refused fail-closed")
+                why = "a MUTATION tool" if verdict is False else "not marked READ-ONLY, so it is refused fail-closed"
                 raise ProximoError(
                     f"proximo_read refuses {resolved!r}: {why}. This door only runs read-only "
                     f"tools; run it with proximo_call(tool={resolved!r}, arguments=...) instead."
                 )
-        return await dispatch_tool(server_mcp=server_mcp, catalog=full,
-                                   name=tool, arguments=arguments or {})
+        return await dispatch_tool(server_mcp=server_mcp, catalog=full, name=tool, arguments=arguments or {})
 
     # proximo_call is NOT redefined here. It is a module-level tool in _ALWAYS_REGISTERED, so it
     # is already resident, and it dispatches from FULL_CATALOG rather than this narrowed snapshot.
@@ -694,9 +807,12 @@ def apply_lean(server_mcp=None) -> dict:
     keep = facade | set(_ALWAYS_REGISTERED)
     for name in [n for n in server_mcp._tool_manager._tools if n not in keep]:
         server_mcp.remove_tool(name)
-    print(f"proximo: lean mode — {len(facade)} facade tools registered"
-          f"{' (memory-first: proximo_recall resident)' if recall_resident else ''}, "
-          f"{len(catalog)} searchable", file=sys.stderr)
+    print(
+        f"proximo: lean mode — {len(facade)} facade tools registered"
+        f"{' (memory-first: proximo_recall resident)' if recall_resident else ''}, "
+        f"{len(catalog)} searchable",
+        file=sys.stderr,
+    )
     return catalog
 
 
@@ -708,10 +824,70 @@ def _unknown_tool_error(name: str) -> str:
     governed/lean faces already return, so error-matching stays uniform."""
     real = lean.resolve_alias(name)
     if real in FULL_CATALOG:
-        return (f"{name!r} is not a resident tool on this server (the dynamic door lists only the "
-                f"facade); call it with proximo_call(tool={real!r}, arguments=...), or search with "
-                "proximo_find_tools.")
+        return (
+            f"{name!r} is not a resident tool on this server (the dynamic door lists only the "
+            f"facade); call it with proximo_call(tool={real!r}, arguments=...), or search with "
+            "proximo_find_tools."
+        )
     near = difflib.get_close_matches(name, FULL_CATALOG, n=3, cutoff=0.6)
     hint = f" — did you mean: {', '.join(near)}" if near else ""
-    return (f"unknown tool {name!r}{hint}. Reach any Proximo tool by name via "
-            "proximo_call(tool=..., arguments=...); search the catalog with proximo_find_tools.")
+    return (
+        f"unknown tool {name!r}{hint}. Reach any Proximo tool by name via "
+        "proximo_call(tool=..., arguments=...); search the catalog with proximo_find_tools."
+    )
+
+
+# --- The served surface has a checksum an operator can pin -----------------------------------
+# Field read 2026-09-20: one rival pins a compile-time-fixed tool registry by SHA-256; ours was a
+# manifest file. This hashes what THIS process serves — every registered tool's name, description
+# and input schema after auto-scoping, slimming and the door choice — so it is per config: a
+# default PVE box and a four-plane box serve different surfaces and carry different sums. Printed
+# at every surface apply beside the count line; PROXIMO_TOOLS_PIN refuses to start on a mismatch.
+TOOLS_PIN_ENV = "PROXIMO_TOOLS_PIN"
+
+
+def surface_checksum(server_mcp=None) -> tuple[str, int]:
+    """SHA-256 over the canonical served surface (sorted by name, sort_keys JSON, no whitespace)
+    and the tool count. The registry Tool spells its schema `.parameters` on both mcp majors."""
+    if server_mcp is None:
+        server_mcp = _default_mcp()
+    rows = sorted(
+        (
+            {"name": t.name, "description": t.description or "", "parameters": t.parameters}
+            for t in server_mcp._tool_manager._tools.values()  # noqa: SLF001
+        ),
+        key=lambda r: r["name"],
+    )
+    blob = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).hexdigest(), len(rows)
+
+
+def enforce_tools_pin(server_mcp=None) -> None:
+    """Refuse to serve a surface whose checksum is not the pinned one. Unset = not enforced.
+    Accepts an optional `sha256:` prefix and any case; anything that is not 64 hex is refused
+    outright rather than read as "no pin"."""
+    raw = os.environ.get(TOOLS_PIN_ENV, "").strip()
+    if not raw:
+        return
+    pin = raw.lower().removeprefix("sha256:")
+    if len(pin) != 64 or any(c not in "0123456789abcdef" for c in pin):
+        raise ValueError(f"{TOOLS_PIN_ENV} must be 64 hex characters (optionally prefixed sha256:), got {raw!r}")
+    have, n = surface_checksum(server_mcp)
+    if have != pin:
+        raise ValueError(
+            f"{TOOLS_PIN_ENV} mismatch: this config serves {n} tools with sha256 {have}, the pin says {pin}. "
+            "The checksum is per config (planes, toolsets, surfaces, door, the PROXIMO_TARGETS registry) and per "
+            "version: re-read it with "
+            "`proximo tools-checksum` on THIS box and re-pin, or fix the config that drifted."
+        )
+
+
+def _apply_surfaces(server_mcp=None) -> None:
+    """Scope the registry (see _apply_surfaces_scope), then stamp and gate what it serves: every
+    caller — the stdio server, doctor, the network faces — prints the checksum and hits the pin."""
+    if server_mcp is None:
+        server_mcp = _default_mcp()
+    _apply_surfaces_scope(server_mcp)
+    hexd, n = surface_checksum(server_mcp)
+    print(f"proximo: tool surface sha256 {hexd} ({n} tools served)", file=sys.stderr)
+    enforce_tools_pin(server_mcp)

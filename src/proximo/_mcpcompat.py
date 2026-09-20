@@ -101,7 +101,33 @@ def make_server(name: str, version: str) -> Any:
                 from .door import _unknown_tool_error  # noqa: PLC0415 — door imports compat; break the cycle here
 
                 raise ProximoError(_unknown_tool_error(name))
-            return await super().call_tool(name, arguments, context)
+            try:
+                return await super().call_tool(name, arguments, context)
+            except ToolError as e:
+                # 2.x sanitizes every non-ToolError raised inside a tool to "Error executing tool
+                # <name>" (UnexpectedToolError), so an adopter on this SDK read every refusal —
+                # lease expired, consent missing, scope, did-you-mean, the read door — as a bare
+                # tool name (2026-09-19, dogfood server on 2.2.0). ProximoError is the caller-safe
+                # channel by design (backends.py: never carries secrets; _audited_run scrubs URLs
+                # into it) and 1.x has shown its text verbatim since day one. Translate exactly
+                # that class, keeping the SDK's prefix and the cause chain (governed.py reads
+                # type(__cause__).__name__); everything else keeps the SDK's contract.
+                from .backends import ProximoError  # noqa: PLC0415 — same lazy leaf as above
+
+                cause = e
+                while isinstance(cause, ToolError) and cause.__cause__ is not None:
+                    cause = cause.__cause__
+                if isinstance(cause, ProximoError):
+                    raise ToolError(f"Error executing tool {name}: {cause}") from cause
+                # The last seam before str(e) reaches the model: argument validation runs in the
+                # SDK before the tool body, so a caller value echoed by pydantic never met
+                # target_aware (lens 2026-09-20). Scrub here; cause kept for governed.py.
+                from ._secretfile import redact  # noqa: PLC0415 — leaf
+
+                clean = redact(str(e))
+                if clean != str(e):
+                    raise ToolError(clean) from e.__cause__
+                raise
 
     return _GovernedMCPServer(name, version=version)
 

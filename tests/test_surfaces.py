@@ -71,6 +71,12 @@ def test_every_registered_tool_belongs_to_exactly_one_surface():
     assert not multi, f"tools matching more than one surface: {multi}"
 
 
+def _fake_tool(name: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(name=name, description=f"READ-ONLY: {name}", parameters={"type": "object"})
+
+
 def test_apply_surfaces_prunes_a_registry(monkeypatch):
     """_apply_surfaces drives mcp.remove_tool from the env spec — proven on a fake.
 
@@ -83,7 +89,9 @@ def test_apply_surfaces_prunes_a_registry(monkeypatch):
 
     class _FakeTM:
         def __init__(self):
-            self._tools = {n: None for n in ("pve_doctor", "pbs_prune", "ct_exec", "audit_verify")}
+            # Registry Tool shape the surface checksum reads (name / description / parameters);
+            # a bare None here crashed the stamp that every surface apply now prints (09-20).
+            self._tools = {n: _fake_tool(n) for n in ("pve_doctor", "pbs_prune", "ct_exec", "audit_verify")}
 
     class _FakeMCP:
         def __init__(self):
@@ -100,7 +108,7 @@ def test_apply_surfaces_prunes_a_registry(monkeypatch):
 
         def tool(self, *a, **kw):   # FastMCP's decorator: registers by function name
             def deco(fn):
-                self._tool_manager._tools.setdefault(fn.__name__, fn)   # real one keeps existing
+                self._tool_manager._tools.setdefault(fn.__name__, _fake_tool(fn.__name__))  # real one keeps existing
                 return fn
             return deco
 

@@ -116,3 +116,15 @@ def _memory_db_in_tmp(tmp_path):
             os.environ.pop("PROXIMO_MEMORY_PATH", None)
         else:
             os.environ["PROXIMO_MEMORY_PATH"] = prev
+
+
+@pytest.fixture(autouse=True)
+def _clear_secret_registry():
+    """The output scrubber's registry is process-wide (a fixture token read in one test would
+    redact the same literal in a later test's error assertion, with no visible link between the
+    two files). Start every test clean."""
+    from proximo import _secretfile
+
+    _secretfile.clear_registered_secrets()
+    yield
+    _secretfile.clear_registered_secrets()

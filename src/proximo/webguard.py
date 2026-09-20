@@ -27,7 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
-from ._secretfile import refuse_exposed_secret
+from ._secretfile import read_secret, refuse_exposed_secret
 
 LOCALHOST_ADDRS = frozenset({"127.0.0.1", "localhost", "::1"})
 
@@ -87,7 +87,7 @@ def load_token_file(env_var: str) -> str | None:
         return None
     refuse_exposed_secret(path, f"{env_var} bearer-token file")
     try:
-        token = open(path, encoding="utf-8").read().strip()  # noqa: SIM115
+        token = read_secret(path, f"{env_var} bearer-token file")
     except OSError as e:
         raise RuntimeError(f"{env_var}={path!r} could not be read: {e}") from e
     if not token:

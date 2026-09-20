@@ -1,5 +1,9 @@
 """PBS access governance — users, API tokens, ACL, roles, permissions.
 
+Also the PDM identity core (2026-09-19): PDM's access API is this one (same proxmox-access
+crate), so tools/pdm_access.py drives these helpers with a PdmBackend; `_plane(api)` and the
+`plane=` kwarg on the pure plan factories put the right name on actions and PLAN targets.
+
 Wave 2a of the full-surface campaign (`.scratch/2026-07-15-full-surface-campaign.md`, "2a — PBS
 identity core"). Mirrors the PVE access plane's own split into dedicated modules (access.py /
 access_users.py / access_governance.py) but for PBS's distinct auth/ACL model — this closes the
@@ -222,6 +226,14 @@ _TFA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]*\Z")
 _TFA_TYPES = frozenset({"totp", "u2f", "webauthn", "recovery", "yubico"})
 
 
+def _plane(api) -> str:
+    """Which product this backend speaks for. PDM's access model is PBS's (the same proxmox-access
+    crate: users, tokens, one 'auth-id', one 'role' per ACL entry), so the identity core below
+    serves both; only action names and PLAN targets carry the plane. Duck-typed on the class
+    name so this module never imports proximo.pdm."""
+    return "pdm" if any(c.__name__ == "PdmBackend" for c in type(api).__mro__) else "pbs"
+
+
 def _reject_dot_traversal(s: str, label: str) -> None:
     """Reject a '.'/'..'-containing identifier — it flows into the URL path and the HTTP client
     normalizes dot-segments BEFORE sending, so a crafted value can retarget the request onto a
@@ -234,7 +246,7 @@ def _check_userid(userid: str) -> str:
     s = str(userid).strip()
     if not _USERID_RE.match(s):
         raise ProximoError(
-            f"invalid PBS userid: {userid!r} — expected 'user@realm' "
+            f"invalid userid: {userid!r} — expected 'user@realm' "
             "(user part: no whitespace/colon/slash/control chars; "
             "realm: letters/digits/._- only, starting with a letter/digit/underscore)"
         )
@@ -246,8 +258,7 @@ def _check_tokenname(name: str) -> str:
     s = str(name).strip()
     if not _TOKENNAME_RE.match(s):
         raise ProximoError(
-            f"invalid PBS token-name: {name!r} — expected letters/digits/._- only, "
-            "starting with a letter/digit/underscore"
+            f"invalid token-name: {name!r} — expected letters/digits/._- only, starting with a letter/digit/underscore"
         )
     _reject_dot_traversal(s, "token-name")
     return s
@@ -256,10 +267,7 @@ def _check_tokenname(name: str) -> str:
 def _check_authid(auth_id: str) -> str:
     s = str(auth_id).strip()
     if not _AUTHID_RE.match(s):
-        raise ProximoError(
-            f"invalid PBS auth-id: {auth_id!r} — expected 'user@realm' or "
-            "'user@realm!token-name'"
-        )
+        raise ProximoError(f"invalid auth-id: {auth_id!r} — expected 'user@realm' or 'user@realm!token-name'")
     _reject_dot_traversal(s, "auth-id")
     return s
 
@@ -267,9 +275,7 @@ def _check_authid(auth_id: str) -> str:
 def _check_groupid(groupid: str) -> str:
     s = str(groupid).strip()
     if not _GROUPID_RE.match(s):
-        raise ProximoError(
-            f"invalid PBS group id: {groupid!r} — no whitespace/colon/slash/control chars"
-        )
+        raise ProximoError(f"invalid group id: {groupid!r} — no whitespace/colon/slash/control chars")
     _reject_dot_traversal(s, "group id")
     return s
 
@@ -277,10 +283,10 @@ def _check_groupid(groupid: str) -> str:
 def _check_acl_path(path: str) -> str:
     s = str(path).strip()
     if ".." in s:
-        raise ProximoError(f"invalid PBS ACL path: {path!r} (path traversal rejected)")
+        raise ProximoError(f"invalid ACL path: {path!r} (path traversal rejected)")
     if not _ACL_PATH_RE.match(s):
         raise ProximoError(
-            f"invalid PBS ACL path: {path!r} — expected '/' or '/segment/…/segment' "
+            f"invalid ACL path: {path!r} — expected '/' or '/segment/…/segment' "
             "(each segment: letters/digits/underscore first char, then letters/digits/._-)"
         )
     return s
@@ -289,7 +295,7 @@ def _check_acl_path(path: str) -> str:
 def _check_roleid(roleid: str) -> str:
     s = str(roleid).strip()
     if not _ROLEID_RE.match(s):
-        raise ProximoError(f"invalid PBS role id: {roleid!r} — expected letters/digits only")
+        raise ProximoError(f"invalid role id: {roleid!r} — expected letters/digits only")
     return s
 
 
@@ -297,8 +303,7 @@ def _check_tfa_id(tfa_id: str) -> str:
     s = str(tfa_id).strip()
     if not _TFA_ID_RE.match(s):
         raise ProximoError(
-            f"invalid PBS TFA entry id: {tfa_id!r} — expected alnum/:._- only, "
-            "starting with a letter/digit"
+            f"invalid PBS TFA entry id: {tfa_id!r} — expected alnum/:._- only, starting with a letter/digit"
         )
     _reject_dot_traversal(s, "TFA entry id")
     return s
@@ -318,7 +323,7 @@ def _check_acl_principal(auth_id: str | None, group: str | None) -> tuple[str | 
     not a PBS 400 the caller has to decode."""
     if (auth_id is None) == (group is None):
         raise ProximoError(
-            "pbs_acl_update requires exactly one of auth_id or group (PBS's ACL entry names "
+            "acl_update requires exactly one of auth_id or group (an ACL entry names "
             "either a user/token principal via auth_id, or a group via group — never both, "
             "never neither)"
         )
@@ -330,6 +335,7 @@ def _check_acl_principal(auth_id: str | None, group: str | None) -> tuple[str | 
 # ---------------------------------------------------------------------------
 # Secret redaction helper
 # ---------------------------------------------------------------------------
+
 
 def _password_redacted_detail(password: str | None) -> dict:
     """Unconditional redaction for the optional PBS user-create password — never store even a
@@ -352,6 +358,7 @@ def _client_key_redacted_detail(client_key: str | None) -> dict:
 # update ops and their plan-factory previews call the SAME builder so the field list can't
 # silently diverge between the two.
 # ---------------------------------------------------------------------------
+
 
 def _realm_directory_fields(
     *,
@@ -470,6 +477,7 @@ def _realm_singleton_fields(comment: str | None = None, default: bool | None = N
 # the field list can't silently diverge (mirrors pbs_config.py's _datastore_schedule_fields).
 # ---------------------------------------------------------------------------
 
+
 def _user_fields(
     comment: str | None = None,
     email: str | None = None,
@@ -494,6 +502,13 @@ def _user_fields(
     return fields
 
 
+def _delete_props_wire(api, delete_props) -> str | list[str]:
+    """PBS's form-encoded PUT wants the comma list; PDM's typed JSON API types `delete` as an
+    array. The same names, the wire shape the backend speaks."""
+    joined = _join_delete_props(delete_props)
+    return joined.split(",") if _plane(api) == "pdm" else joined
+
+
 def _join_delete_props(delete_props) -> str:
     # Smoke-confirm: PBS's accepted array encoding for the 'delete' property-list param (comma-
     # joined here, matching this codebase's existing PVE-list convention for array-shaped form
@@ -507,6 +522,7 @@ def _join_delete_props(delete_props) -> str:
 # ---------------------------------------------------------------------------
 # Backend functions — users (read)
 # ---------------------------------------------------------------------------
+
 
 def users_list(api: PbsBackend, include_tokens: bool = False) -> list[dict]:
     """GET /access/users — list all PBS users.
@@ -531,6 +547,7 @@ def user_get(api: PbsBackend, userid: str) -> dict:
 # Backend functions — users (mutation). Do NOT self-gate — the server layer adds confirm-gating
 # + audit, mirroring every other plane in this codebase.
 # ---------------------------------------------------------------------------
+
 
 def user_create(
     api: PbsBackend,
@@ -583,7 +600,7 @@ def user_update(
     userid = _check_userid(userid)
     data: dict = _user_fields(comment, email, enable, expire, firstname, lastname)
     if delete_props is not None:
-        data["delete"] = _join_delete_props(delete_props)
+        data["delete"] = _delete_props_wire(api, delete_props)
     digest = _check_digest(digest)
     if digest is not None:
         data["digest"] = digest
@@ -604,6 +621,7 @@ def user_delete(api: PbsBackend, userid: str, digest: str | None = None) -> obje
 # Backend functions — API tokens (read)
 # ---------------------------------------------------------------------------
 
+
 def user_tokens_list(api: PbsBackend, userid: str) -> list[dict]:
     """GET /access/users/{userid}/token — list a user's API tokens. No secret is ever returned
     by this endpoint — shown ONCE at creation (token_create) or regeneration (token_update)."""
@@ -623,6 +641,7 @@ def user_token_get(api: PbsBackend, userid: str, token_name: str) -> dict:
 # Backend functions — API tokens (mutation)
 # ---------------------------------------------------------------------------
 
+
 def token_create(
     api: PbsBackend,
     userid: str,
@@ -638,10 +657,12 @@ def token_create(
     retrievable again. MUST NEVER be written to the audit ledger; the server-layer wrapper
     enforces this by never putting it in the `detail=` dict passed to `_audited()`.
 
-    PBS has NO privsep-equivalent parameter on this endpoint (unlike PVE's token_create) — a
-    PBS API token's privileges come entirely from its OWN ACL grants (pbs_acl_update with
-    auth_id='user@realm!token-name'); there is no "inherit all owner permissions" toggle to
-    invent here.
+    No privsep parameter on this endpoint (unlike PVE's token_create): a token's privileges are
+    its OWN ACL grants (acl_update with auth_id='user@realm!token-name') bounded by its owning
+    user's on the same path — proxmox-access-control acl.rs lookup_privs_details does
+    `privs &= owner_privs` ("limit privs to that of owning user"), one crate for PBS and PDM.
+    Live-proven on pdm-test 2026-09-19: Auditor granted to the token alone resolved to no
+    privileges until the owner held Auditor too. There is no "inherit owner" toggle to invent.
     """
     userid = _check_userid(userid)
     token_name = _check_tokenname(token_name)
@@ -688,7 +709,7 @@ def token_update(
     if regenerate:
         data["regenerate"] = True
     if delete_props is not None:
-        data["delete"] = _join_delete_props(delete_props)
+        data["delete"] = _delete_props_wire(api, delete_props)
     digest = _check_digest(digest)
     if digest is not None:
         data["digest"] = digest
@@ -711,6 +732,7 @@ def token_delete(api: PbsBackend, userid: str, token_name: str, digest: str | No
 # ---------------------------------------------------------------------------
 # Backend functions — ACL / roles / permissions
 # ---------------------------------------------------------------------------
+
 
 def acl_get(api: PbsBackend, path: str | None = None, exact: bool | None = None) -> list[dict]:
     """GET /access/acl — read ACL entries (path/propagate/roleid/ugid/ugid_type), optionally
@@ -766,7 +788,9 @@ def roles_list(api: PbsBackend) -> list[dict]:
 
 
 def permissions_get(
-    api: PbsBackend, auth_id: str | None = None, path: str | None = None,
+    api: PbsBackend,
+    auth_id: str | None = None,
+    path: str | None = None,
 ) -> dict:
     """GET /access/permissions — resolved effective privileges for `auth_id` (or the calling
     token/user if omitted), optionally scoped to one ACL path. Returns a map of ACL path to a
@@ -784,6 +808,7 @@ def permissions_get(
 # context); return a Plan the caller can inspect. Never self-gate.
 # ---------------------------------------------------------------------------
 
+
 def plan_user_create(
     userid: str,
     comment: str | None = None,
@@ -792,6 +817,7 @@ def plan_user_create(
     expire: int | None = None,
     firstname: str | None = None,
     lastname: str | None = None,
+    plane: str = "pbs",
 ) -> Plan:
     """Preview creating a PBS user. PURE — no API call.
 
@@ -802,19 +828,20 @@ def plan_user_create(
 
     RISK_MEDIUM: creates a new credential-holder in the access-control system.
     """
+    P = plane.upper()
     userid = _check_userid(userid)
     fields = _user_fields(comment, email, enable, expire, firstname, lastname)
-    blast = [f"creates PBS user {userid!r}" + (f" with {fields}" if fields else " (no optional fields set)")]
+    blast = [f"creates {P} user {userid!r}" + (f" with {fields}" if fields else " (no optional fields set)")]
     if enable is False:
         blast.append(f"user {userid!r} is created DISABLED (enable=False) — cannot log in until enabled")
     return Plan(
-        action="pbs_user_create",
-        target=f"pbs/access/users/{userid}",
-        change=f"create PBS user {userid!r}: {fields}",
+        action=f"{plane}_user_create",
+        target=f"{plane}/access/users/{userid}",
+        change=f"create {P} user {userid!r}: {fields}",
         current={},
         blast_radius=blast,
         risk=RISK_MEDIUM,
-        risk_reasons=["creates a new principal in the PBS access-control system"],
+        risk_reasons=[f"creates a new principal in the {P} access-control system"],
         note="an optional password, if supplied, is redacted from every plan/ledger surface — it never appears here",
     )
 
@@ -835,6 +862,8 @@ def plan_user_update(
     CAPTURE: reads GET /access/users/{userid} -> plan.current; on failure -> complete=False.
     RISK_MEDIUM. enable=False is called out explicitly in the blast radius (stops login).
     """
+    plane = _plane(api)
+    P = plane.upper()
     userid = _check_userid(userid)
     current: dict = {}
     complete = True
@@ -846,22 +875,22 @@ def plan_user_update(
         note_capture = " Could not capture current user config — no guided revert available."
 
     fields = _user_fields(comment, email, enable, expire, firstname, lastname)
-    blast = [f"updates PBS user {userid!r}: {fields}"]
+    blast = [f"updates {P} user {userid!r}: {fields}"]
     if enable is False:
         blast.append(f"enable=False STOPS LOGIN for {userid!r} immediately")
     if delete_props:
         blast.append(f"clears properties {list(delete_props)!r} from {userid!r}")
 
     return Plan(
-        action="pbs_user_update",
-        target=f"pbs/access/users/{userid}",
-        change=f"update PBS user {userid!r}: {fields}",
+        action=f"{plane}_user_update",
+        target=f"{plane}/access/users/{userid}",
+        change=f"update {P} user {userid!r}: {fields}",
         current=current,
         blast_radius=blast,
         risk=RISK_MEDIUM,
         risk_reasons=["changes an existing principal's account state (login, contact, expiry)"],
         complete=complete,
-        note="revert by re-applying the captured config with pbs_user_update." + note_capture,
+        note=f"revert by re-applying the captured config with {plane}_user_update." + note_capture,
     )
 
 
@@ -876,6 +905,8 @@ def plan_user_delete(api: PbsBackend, userid: str) -> Plan:
     ACL entries granted directly to this userid become orphaned (they no longer resolve to
     anyone).
     """
+    plane = _plane(api)
+    P = plane.upper()
     userid = _check_userid(userid)
     current: dict = {}
     complete = True
@@ -896,22 +927,22 @@ def plan_user_delete(api: PbsBackend, userid: str) -> Plan:
         note_capture += " Could not read the user's tokens — token-loss extent unknown."
 
     return Plan(
-        action="pbs_user_delete",
-        target=f"pbs/access/users/{userid}",
-        change=f"delete PBS user {userid!r}",
+        action=f"{plane}_user_delete",
+        target=f"{plane}/access/users/{userid}",
+        change=f"delete {P} user {userid!r}",
         current=current,
         blast_radius=[
-            f"PERMANENTLY removes PBS user {userid!r} — no undo" + token_count_note,
+            f"PERMANENTLY removes {P} user {userid!r} — no undo" + token_count_note,
             f"any ACL entries granted directly to {userid!r} become orphaned",
         ],
         risk=RISK_MEDIUM,
         risk_reasons=[
             f"permanent removal of principal {userid!r} and its owned API tokens",
-            "no rollback primitive — recreate with pbs_user_create to recover (tokens cannot be "
+            f"no rollback primitive — recreate with {plane}_user_create to recover (tokens cannot be "
             "recovered; new ones must be reissued)",
         ],
         complete=complete,
-        note="irreversible; no PBS snapshot primitive applies to access-control state." + note_capture,
+        note=f"irreversible; no {P} snapshot primitive applies to access-control state." + note_capture,
     )
 
 
@@ -921,6 +952,7 @@ def plan_token_create(
     comment: str | None = None,
     enable: bool | None = None,
     expire: int | None = None,
+    plane: str = "pbs",
 ) -> Plan:
     """Preview creating a PBS API token. PURE — no API call.
 
@@ -933,15 +965,18 @@ def plan_token_create(
     same honesty check already proven for pve_token_create (a duration-shaped value like 86400
     is a date in Jan 1970, already expired).
     """
+    P = plane.upper()
     userid = _check_userid(userid)
     token_name = _check_tokenname(token_name)
 
     blast = [
         f"creates token {userid}!{token_name}",
         "the token secret value will be shown ONCE at creation; it cannot be retrieved again "
-        "(only regenerated via pbs_token_update, which invalidates the old secret)",
+        f"(only regenerated via {plane}_token_update, which invalidates the old secret)",
         "the new token has NO privileges until an ACL entry grants it some "
-        "(pbs_acl_update with auth_id=f'{userid}!{token_name}')",
+        f"({plane}_acl_update with auth_id='{userid}!{token_name}'), and never more than its "
+        f"owning user {userid} holds on the same path ({P} resolves a token's privileges as its own "
+        "grants AND the owner's — grant the user first, or the token resolves to nothing)",
     ]
 
     if not expire:
@@ -959,7 +994,7 @@ def plan_token_create(
             _e = None
         if _e is not None and 0 < _e < 1_000_000_000:
             blast.append(
-                f"WARNING: expire={expire!r} looks like a TTL/duration, but PBS treats it as an "
+                f"WARNING: expire={expire!r} looks like a TTL/duration, but {P} treats it as an "
                 "ABSOLUTE UNIX timestamp (seconds since epoch) — this token would be created "
                 "ALREADY EXPIRED (a date in the past). Use a future epoch timestamp instead."
             )
@@ -969,8 +1004,8 @@ def plan_token_create(
         change += f", comment={comment!r}"
 
     return Plan(
-        action="pbs_token_create",
-        target=f"pbs/access/users/{userid}/token/{token_name}",
+        action=f"{plane}_token_create",
+        target=f"{plane}/access/users/{userid}/token/{token_name}",
         change=change,
         current={},
         blast_radius=blast,
@@ -988,6 +1023,7 @@ def plan_token_update(
     expire: int | None = None,
     regenerate: bool = False,
     delete_props: list[str] | None = None,
+    plane: str = "pbs",
 ) -> Plan:
     """Preview updating a PBS API token. PURE — no API call.
 
@@ -1024,8 +1060,8 @@ def plan_token_update(
         reasons = ["metadata-only change (comment/enable/expire/properties) — the secret is unchanged"]
 
     return Plan(
-        action="pbs_token_update",
-        target=f"pbs/access/users/{userid}/token/{token_name}",
+        action=f"{plane}_token_update",
+        target=f"{plane}/access/users/{userid}/token/{token_name}",
         change=f"update token {userid}!{token_name} (regenerate={regenerate})",
         current={},
         blast_radius=blast,
@@ -1035,23 +1071,28 @@ def plan_token_update(
     )
 
 
-def plan_token_delete(userid: str, token_name: str) -> Plan:
+def plan_token_delete(
+    userid: str,
+    token_name: str,
+    plane: str = "pbs",
+) -> Plan:
     """Preview revoking (deleting) a PBS API token. PURE — no API call.
 
     RISK_MEDIUM: revocation is IRREVERSIBLE — the secret is permanently gone and any system or
     integration using this token loses PBS API access immediately. No undo; issue a new token
     (pbs_token_create) to replace it.
     """
+    P = plane.upper()
     userid = _check_userid(userid)
     token_name = _check_tokenname(token_name)
     return Plan(
-        action="pbs_token_delete",
-        target=f"pbs/access/users/{userid}/token/{token_name}",
+        action=f"{plane}_token_delete",
+        target=f"{plane}/access/users/{userid}/token/{token_name}",
         change=f"revoke (permanently delete) token {userid}!{token_name}",
         current={},
         blast_radius=[
             f"PERMANENTLY revokes token {userid}!{token_name} — the secret is gone forever, no undo",
-            "any service or integration using this token loses PBS API access immediately",
+            f"any service or integration using this token loses {P} API access immediately",
         ],
         risk=RISK_MEDIUM,
         risk_reasons=[
@@ -1083,6 +1124,8 @@ def plan_acl_update(
     entries currently AT this exact path, for context); a failed read does not block the plan
     but sets complete=False.
     """
+    plane = _plane(api)
+    P = plane.upper()
     path = _check_acl_path(path)
     role = _check_roleid(role)
     auth_id, group = _check_acl_principal(auth_id, group)
@@ -1101,31 +1144,32 @@ def plan_acl_update(
     change = f"{verb} role {role!r} {'from' if delete else 'to'} {principal!r} at path {path!r}"
 
     return Plan(
-        action="pbs_acl_update",
-        target=f"pbs/access/acl:{path}:{principal}",
+        action=f"{plane}_acl_update",
+        target=f"{plane}/access/acl:{path}:{principal}",
         change=change,
         current={"entries_at_path": current},
         blast_radius=[
             f"{'REVOKES' if delete else 'GRANTS'} role {role!r} {'from' if delete else 'to'} "
             f"{principal!r} at {path!r} — this changes what {principal!r} is authorized to do "
-            "on the PBS server",
+            f"on the {P} server",
             "propagate="
-            + (str(propagate) if propagate is not None else "PBS default (true)")
+            + (str(propagate) if propagate is not None else f"{P} default (true)")
             + " controls whether the change also applies to everything under this path",
         ],
         risk=RISK_HIGH,
         risk_reasons=[
             "every ACL change grants or revokes authority — treated as HIGH unconditionally on "
-            "this plane (PBS's inheritance/shadow semantics are not live-verified here)",
+            f"this plane ({P}'s inheritance/shadow semantics are not live-verified here)",
         ],
         complete=complete,
-        note="no rollback primitive — revert with a second pbs_acl_update call (grant<->revoke)." + note_capture,
+        note=f"no rollback primitive — revert with a second {plane}_acl_update call (grant<->revoke)." + note_capture,
     )
 
 
 # ---------------------------------------------------------------------------
 # Backend functions — realms: AD (Wave 2b)
 # ---------------------------------------------------------------------------
+
 
 def realm_ad_list(api: PbsBackend) -> list[dict]:
     """GET /config/access/ad — list configured AD realms."""
@@ -1166,10 +1210,19 @@ def realm_ad_create(
         "realm": realm,
         "server1": server1,
         **_realm_directory_fields(
-            comment=comment, default=default, filter=filter, mode=mode, port=port,
-            server2=server2, sync_attributes=sync_attributes,
-            sync_defaults_options=sync_defaults_options, user_classes=user_classes,
-            verify=verify, base_dn=base_dn, bind_dn=bind_dn, capath=capath,
+            comment=comment,
+            default=default,
+            filter=filter,
+            mode=mode,
+            port=port,
+            server2=server2,
+            sync_attributes=sync_attributes,
+            sync_defaults_options=sync_defaults_options,
+            user_classes=user_classes,
+            verify=verify,
+            base_dn=base_dn,
+            bind_dn=bind_dn,
+            capath=capath,
         ),
     }
     if password is not None:
@@ -1201,10 +1254,19 @@ def realm_ad_update(
     """PUT /config/access/ad/{realm} — update an AD realm's config."""
     realm = _check_realm(realm)
     data: dict = _realm_directory_fields(
-        comment=comment, default=default, filter=filter, mode=mode, port=port,
-        server2=server2, sync_attributes=sync_attributes,
-        sync_defaults_options=sync_defaults_options, user_classes=user_classes,
-        verify=verify, base_dn=base_dn, bind_dn=bind_dn, capath=capath,
+        comment=comment,
+        default=default,
+        filter=filter,
+        mode=mode,
+        port=port,
+        server2=server2,
+        sync_attributes=sync_attributes,
+        sync_defaults_options=sync_defaults_options,
+        user_classes=user_classes,
+        verify=verify,
+        base_dn=base_dn,
+        bind_dn=bind_dn,
+        capath=capath,
     )
     if server1 is not None:
         data["server1"] = server1
@@ -1232,6 +1294,7 @@ def realm_ad_delete(api: PbsBackend, realm: str, digest: str | None = None) -> o
 # Backend functions — realms: LDAP (Wave 2b). Same shape as AD, but base_dn + user_attr are
 # REQUIRED on create (AD requires neither).
 # ---------------------------------------------------------------------------
+
 
 def realm_ldap_list(api: PbsBackend) -> list[dict]:
     """GET /config/access/ldap — list configured LDAP realms."""
@@ -1273,10 +1336,19 @@ def realm_ldap_create(
         "server1": server1,
         "user-attr": user_attr,
         **_realm_directory_fields(
-            comment=comment, default=default, filter=filter, mode=mode, port=port,
-            server2=server2, sync_attributes=sync_attributes,
-            sync_defaults_options=sync_defaults_options, user_classes=user_classes,
-            verify=verify, base_dn=base_dn, bind_dn=bind_dn, capath=capath,
+            comment=comment,
+            default=default,
+            filter=filter,
+            mode=mode,
+            port=port,
+            server2=server2,
+            sync_attributes=sync_attributes,
+            sync_defaults_options=sync_defaults_options,
+            user_classes=user_classes,
+            verify=verify,
+            base_dn=base_dn,
+            bind_dn=bind_dn,
+            capath=capath,
         ),
     }
     if password is not None:
@@ -1310,10 +1382,19 @@ def realm_ldap_update(
     OPTIONAL here (unlike create) — omit to leave unchanged."""
     realm = _check_realm(realm)
     data: dict = _realm_directory_fields(
-        comment=comment, default=default, filter=filter, mode=mode, port=port,
-        server2=server2, sync_attributes=sync_attributes,
-        sync_defaults_options=sync_defaults_options, user_classes=user_classes,
-        verify=verify, base_dn=base_dn, bind_dn=bind_dn, capath=capath,
+        comment=comment,
+        default=default,
+        filter=filter,
+        mode=mode,
+        port=port,
+        server2=server2,
+        sync_attributes=sync_attributes,
+        sync_defaults_options=sync_defaults_options,
+        user_classes=user_classes,
+        verify=verify,
+        base_dn=base_dn,
+        bind_dn=bind_dn,
+        capath=capath,
     )
     if server1 is not None:
         data["server1"] = server1
@@ -1342,6 +1423,7 @@ def realm_ldap_delete(api: PbsBackend, realm: str, digest: str | None = None) ->
 # ---------------------------------------------------------------------------
 # Backend functions — realms: OpenID (Wave 2b)
 # ---------------------------------------------------------------------------
+
 
 def realm_openid_list(api: PbsBackend) -> list[dict]:
     """GET /config/access/openid — list configured OpenID realms."""
@@ -1378,8 +1460,13 @@ def realm_openid_create(
         "issuer-url": issuer_url,
         "client-id": client_id,
         **_openid_fields(
-            comment=comment, default=default, acr_values=acr_values, audiences=audiences,
-            autocreate=autocreate, prompt=prompt, scopes=scopes,
+            comment=comment,
+            default=default,
+            acr_values=acr_values,
+            audiences=audiences,
+            autocreate=autocreate,
+            prompt=prompt,
+            scopes=scopes,
         ),
     }
     # username-claim is CREATE-ONLY (see _openid_fields' note) — added here, not on the update path.
@@ -1412,8 +1499,13 @@ def realm_openid_update(
     so sending it would hard-fail the whole request (see _openid_fields' note)."""
     realm = _check_realm(realm)
     data: dict = _openid_fields(
-        comment=comment, default=default, acr_values=acr_values, audiences=audiences,
-        autocreate=autocreate, prompt=prompt, scopes=scopes,
+        comment=comment,
+        default=default,
+        acr_values=acr_values,
+        audiences=audiences,
+        autocreate=autocreate,
+        prompt=prompt,
+        scopes=scopes,
     )
     if issuer_url is not None:
         data["issuer-url"] = issuer_url
@@ -1443,6 +1535,7 @@ def realm_openid_delete(api: PbsBackend, realm: str, digest: str | None = None) 
 # Backend functions — realms: PAM / PBS built-in (Wave 2b). GET/PUT only — no create/delete
 # endpoint exists for either (fixed built-in realms).
 # ---------------------------------------------------------------------------
+
 
 def realm_pam_get(api: PbsBackend) -> dict:
     """GET /config/access/pam — read the built-in PAM realm config (comment/default only)."""
@@ -1491,6 +1584,7 @@ def realm_pbs_set(
 # ---------------------------------------------------------------------------
 # Backend functions — TFA (Wave 2b)
 # ---------------------------------------------------------------------------
+
 
 def tfa_list(api: PbsBackend) -> list[dict]:
     """GET /access/tfa — list ALL users' TFA configuration (per-user entries + lock state)."""
@@ -1643,6 +1737,7 @@ def tfa_webauthn_set(
 # Plan functions — realms: AD (Wave 2b)
 # ---------------------------------------------------------------------------
 
+
 def plan_realm_ad_create(realm: str, server1: str, **fields) -> Plan:
     """Preview creating an AD realm. PURE — no API call. RISK_MEDIUM: adds a new auth source; a
     misconfigured realm can let unintended principals authenticate, or none at all if broken.
@@ -1661,7 +1756,7 @@ def plan_realm_ad_create(realm: str, server1: str, **fields) -> Plan:
         risk=RISK_MEDIUM,
         risk_reasons=["adds a new auth source — auth config, not an authority grant by itself"],
         note="an optional bind password, if supplied, is redacted from every plan/ledger "
-             "surface — it never appears here",
+        "surface — it never appears here",
     )
 
 
@@ -1726,14 +1821,17 @@ def plan_realm_ad_delete(api: PbsBackend, realm: str) -> Plan:
 # Plan functions — realms: LDAP (Wave 2b) — same shape as AD.
 # ---------------------------------------------------------------------------
 
+
 def plan_realm_ldap_create(realm: str, server1: str, base_dn: str, user_attr: str, **fields) -> Plan:
     """Preview creating an LDAP realm. PURE — no API call. RISK_MEDIUM."""
     realm = _check_realm(realm)
     return Plan(
         action="pbs_realm_ldap_create",
         target=f"pbs/config/access/ldap/{realm}",
-        change=(f"create LDAP realm {realm!r} (server1={server1!r}, base_dn={base_dn!r}, "
-                f"user_attr={user_attr!r}){f' with {fields}' if fields else ''}"),
+        change=(
+            f"create LDAP realm {realm!r} (server1={server1!r}, base_dn={base_dn!r}, "
+            f"user_attr={user_attr!r}){f' with {fields}' if fields else ''}"
+        ),
         current={},
         blast_radius=[
             f"adds LDAP auth realm {realm!r} (server1={server1!r}) to the PBS server",
@@ -1743,7 +1841,7 @@ def plan_realm_ldap_create(realm: str, server1: str, base_dn: str, user_attr: st
         risk=RISK_MEDIUM,
         risk_reasons=["adds a new auth source — auth config, not an authority grant by itself"],
         note="an optional bind password, if supplied, is redacted from every plan/ledger "
-             "surface — it never appears here",
+        "surface — it never appears here",
     )
 
 
@@ -1807,6 +1905,7 @@ def plan_realm_ldap_delete(api: PbsBackend, realm: str) -> Plan:
 # Plan functions — realms: OpenID (Wave 2b)
 # ---------------------------------------------------------------------------
 
+
 def plan_realm_openid_create(realm: str, issuer_url: str, client_id: str, **fields) -> Plan:
     """Preview creating an OpenID realm. PURE — no API call. RISK_MEDIUM. Deliberately takes NO
     client_key parameter (same discipline as plan_user_create's password exclusion)."""
@@ -1814,8 +1913,10 @@ def plan_realm_openid_create(realm: str, issuer_url: str, client_id: str, **fiel
     return Plan(
         action="pbs_realm_openid_create",
         target=f"pbs/config/access/openid/{realm}",
-        change=(f"create OpenID realm {realm!r} (issuer_url={issuer_url!r}, client_id={client_id!r})"
-                f"{f' with {fields}' if fields else ''}"),
+        change=(
+            f"create OpenID realm {realm!r} (issuer_url={issuer_url!r}, client_id={client_id!r})"
+            f"{f' with {fields}' if fields else ''}"
+        ),
         current={},
         blast_radius=[
             f"adds OpenID auth realm {realm!r} (issuer={issuer_url!r}) to the PBS server",
@@ -1888,6 +1989,7 @@ def plan_realm_openid_delete(api: PbsBackend, realm: str) -> Plan:
 # Plan functions — realms: PAM / PBS built-in (Wave 2b)
 # ---------------------------------------------------------------------------
 
+
 def plan_realm_pam_set(api: PbsBackend, comment: str | None = None, default: bool | None = None) -> Plan:
     """Preview updating the built-in PAM realm. CAPTURE-or-declare. RISK_MEDIUM — but PAM has no
     delete endpoint, so the worst case here is a comment/default-preselect change, not a lockout."""
@@ -1946,6 +2048,7 @@ def plan_realm_pbs_set(api: PbsBackend, comment: str | None = None, default: boo
 # Plan functions — TFA (Wave 2b)
 # ---------------------------------------------------------------------------
 
+
 def plan_tfa_add(userid: str, tfa_type: str, description: str | None = None) -> Plan:
     """Preview adding a TFA entry. PURE — no API call. RISK_MEDIUM: creates a new 2FA factor for
     the user (same "creates a credential" class as plan_token_create). Deliberately takes NO
@@ -1973,12 +2076,13 @@ def plan_tfa_add(userid: str, tfa_type: str, description: str | None = None) -> 
         risk=RISK_MEDIUM,
         risk_reasons=["adds a new 2FA credential for the user"],
         note="any acting-user password and any recovery codes generated are NOT in this "
-             "plan — they surface once in the execute result",
+        "plan — they surface once in the execute result",
     )
 
 
-def plan_tfa_update(api: PbsBackend, userid: str, tfa_id: str, description: str | None = None,
-                    enable: bool | None = None) -> Plan:
+def plan_tfa_update(
+    api: PbsBackend, userid: str, tfa_id: str, description: str | None = None, enable: bool | None = None
+) -> Plan:
     """Preview updating a TFA entry. CAPTURE-or-declare (best-effort read of this one entry).
     RISK_MEDIUM."""
     userid = _check_userid(userid)
@@ -2033,8 +2137,7 @@ def plan_tfa_delete(api: PbsBackend, userid: str, tfa_id: str) -> Plan:
         blast.insert(1, f"user currently has {total} TFA entry/entries")
         if total <= 1:
             blast.append(
-                f"if this is {userid!r}'s LAST factor and the realm REQUIRES TFA, the user may "
-                "be unable to log in"
+                f"if this is {userid!r}'s LAST factor and the realm REQUIRES TFA, the user may be unable to log in"
             )
     return Plan(
         action="pbs_tfa_delete",
@@ -2044,8 +2147,7 @@ def plan_tfa_delete(api: PbsBackend, userid: str, tfa_id: str) -> Plan:
         blast_radius=blast,
         risk=RISK_HIGH,
         risk_reasons=[
-            "removes a 2FA factor — weakens authentication (account-takeover enabler / lockout); "
-            "no rollback primitive",
+            "removes a 2FA factor — weakens authentication (account-takeover enabler / lockout); no rollback primitive",
         ],
         complete=complete,
         note="irreversible; re-enroll a new factor with pbs_tfa_add to restore 2FA coverage." + note_capture,
@@ -2076,8 +2178,13 @@ def plan_tfa_unlock(userid: str) -> Plan:
     )
 
 
-def plan_tfa_webauthn_set(api: PbsBackend, rp_id: str | None = None, origin: str | None = None,
-                          rp_name: str | None = None, allow_subdomains: bool | None = None) -> Plan:
+def plan_tfa_webauthn_set(
+    api: PbsBackend,
+    rp_id: str | None = None,
+    origin: str | None = None,
+    rp_name: str | None = None,
+    allow_subdomains: bool | None = None,
+) -> Plan:
     """Preview updating the server-wide WebAuthn config. CAPTURE-or-declare. RISK_MEDIUM — but the
     blast radius calls out the schema's own break-existing-credentials warnings explicitly."""
     current: dict = {}
@@ -2104,8 +2211,7 @@ def plan_tfa_webauthn_set(api: PbsBackend, rp_id: str | None = None, origin: str
         blast_radius=blast,
         risk=RISK_MEDIUM,
         risk_reasons=[
-            "server-wide WebAuthn config change — id/origin changes can break every "
-            "user's existing credential",
+            "server-wide WebAuthn config change — id/origin changes can break every user's existing credential",
         ],
         complete=complete,
         note="revert by re-applying the captured config with pbs_tfa_webauthn_set." + note_capture,

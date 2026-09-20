@@ -72,7 +72,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from ._secretfile import refuse_exposed_secret
+from ._secretfile import read_secret, refuse_exposed_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
 from .backends import ProximoError, fingerprint_refused
 from .pbs import _check_namespace
@@ -111,9 +111,7 @@ def _check_vmid(vmid: int | str) -> str:
     """Validate a VMID (100–999999999); returns as string for URL use."""
     s = str(vmid)
     if not _VMID_RE.match(s):
-        raise ProximoError(
-            f"invalid VMID: {vmid!r} (must be 100–999999999)"
-        )
+        raise ProximoError(f"invalid VMID: {vmid!r} (must be 100–999999999)")
     return s
 
 
@@ -132,10 +130,7 @@ def _check_node(node: str) -> str:
     """Validate a PDM node name (hostname characters)."""
     s = str(node)
     if not _NODE_RE.match(s):
-        raise ProximoError(
-            f"invalid PDM node name: {node!r} "
-            "(must start with alnum, then alnum/._/-, <=64 chars)"
-        )
+        raise ProximoError(f"invalid PDM node name: {node!r} (must start with alnum, then alnum/._/-, <=64 chars)")
     return s
 
 
@@ -179,9 +174,7 @@ def _check_power_action(kind: str, action: str) -> str:
     a = str(action)
     allowed = _POWER_ACTIONS[k]
     if a not in allowed:
-        raise ProximoError(
-            f"invalid power action {action!r} for {k}: PDM proxies {allowed} (no reboot/suspend)"
-        )
+        raise ProximoError(f"invalid power action {action!r} for {k}: PDM proxies {allowed} (no reboot/suspend)")
     return a
 
 
@@ -194,9 +187,7 @@ def _check_snapname(snapname: str) -> str:
     """Validate a snapshot name (path segment for delete/rollback)."""
     s = str(snapname)
     if not _SNAPNAME_RE.match(s):
-        raise ProximoError(
-            f"invalid snapshot name: {snapname!r} (start with a letter, then alnum/_/-, <=40 chars)"
-        )
+        raise ProximoError(f"invalid snapshot name: {snapname!r} (start with a letter, then alnum/_/-, <=40 chars)")
     return s
 
 
@@ -214,9 +205,7 @@ def _check_upid(upid: str) -> str:
     """Validate a task UPID used as a path segment (bare or PDM remote-qualified)."""
     s = str(upid)
     if not _UPID_RE.match(s):
-        raise ProximoError(
-            f"invalid task UPID: {upid!r} (must be a 'UPID:...' or '<type>:<remote>!UPID:...' task id)"
-        )
+        raise ProximoError(f"invalid task UPID: {upid!r} (must be a 'UPID:...' or '<type>:<remote>!UPID:...' task id)")
     return s
 
 
@@ -259,6 +248,7 @@ def _strip_secrets(d: dict) -> dict:
 # PdmConfig
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class PdmConfig:
     """Configuration for the PDM API backend.
@@ -275,8 +265,8 @@ class PdmConfig:
         PROXIMO_PDM_FINGERPRINT  optional  WIRE-ENFORCED exact-cert SHA-256 pin (self-signed PDM)
     """
 
-    base_url: str          # e.g. "https://pdm.example.com:8443/api2/json"
-    token_path: str        # file containing: TOKENID:SECRET  (run-but-not-read)
+    base_url: str  # e.g. "https://pdm.example.com:8443/api2/json"
+    token_path: str  # file containing: TOKENID:SECRET  (run-but-not-read)
     verify_tls: bool = True
     ca_bundle: str | None = None
     fingerprint: str | None = None  # WIRE-ENFORCED exact-cert pin — see PdmBackend.__init__
@@ -300,8 +290,7 @@ class PdmConfig:
         (e.g. "PROXIMO_PDM_VERIFY_TLS=false" or "PDM target verify_tls=false").
         """
         warnings.warn(
-            f"{source} with no CA bundle and no fingerprint — "
-            "talking to the PDM API without cert validation.",
+            f"{source} with no CA bundle and no fingerprint — talking to the PDM API without cert validation.",
             stacklevel=3,
         )
 
@@ -362,6 +351,7 @@ class PdmConfig:
 # PdmBackend
 # ---------------------------------------------------------------------------
 
+
 class PdmBackend:
     """Management via the Proxmox Datacenter Manager REST API using a PDM API token.
 
@@ -399,9 +389,8 @@ class PdmBackend:
         # Token file holds: TOKENID:SECRET  (e.g. proximo@pdm!token:secret)
         # Header: Authorization: PDMAPIToken TOKENID:SECRET
         # NOTE: SPACE separator (not '=' like PBSAPIToken= / PVEAPIToken=)
-        # Read at call time; NEVER logged.
-        with open(self.config.token_path, encoding="utf-8") as f:
-            token = f.read().strip()
+        # Read at call time; NEVER logged; registered with the output scrubber on first read.
+        token = read_secret(self.config.token_path, "PDM token file")
         return {"Authorization": f"PDMAPIToken {token}"}
 
     def _get(self, path: str, params: dict | None = None):
@@ -412,6 +401,13 @@ class PdmBackend:
     def _post(self, path: str, data: dict | None = None, params: dict | None = None):
         """POST a mutation. Body goes as JSON; token read at call time, never logged."""
         r = self._client.post(path, headers=self._auth_header(), json=data or {}, params=params or {})
+        r.raise_for_status()
+        return r.json().get("data")
+
+    def _put(self, path: str, data: dict | None = None):
+        """PUT a config update. Body goes as JSON (PDM's typed API wants real booleans, not
+        PVE-style 1/0); token read at call time, never logged."""
+        r = self._client.put(path, headers=self._auth_header(), json=data or {})
         r.raise_for_status()
         return r.json().get("data")
 
@@ -445,8 +441,7 @@ class PdmBackend:
         path = f"/pbs/remotes/{r}/{subpath.lstrip('/')}"
         return self._get(path, params)
 
-    def _pve_remote_post(self, remote: str, subpath: str, data: dict | None = None,
-                         params: dict | None = None):
+    def _pve_remote_post(self, remote: str, subpath: str, data: dict | None = None, params: dict | None = None):
         """Proxy a POST mutation to a PVE remote registered in PDM.
 
         Same flat scheme as _pve_remote_get (/pve/remotes/<remote>/<subpath>), for
@@ -561,8 +556,15 @@ class PdmBackend:
             params["node"] = _check_node(node)
         return self._pve_remote_get(remote, kind, params or None) or []
 
-    def _guest_config(self, kind: str, remote: str, vmid: int | str, node: str | None = None,
-                      snapshot: str | None = None, state: str = "active") -> dict:
+    def _guest_config(
+        self,
+        kind: str,
+        remote: str,
+        vmid: int | str,
+        node: str | None = None,
+        snapshot: str | None = None,
+        state: str = "active",
+    ) -> dict:
         """GET /pve/remotes/{remote}/{kind}/{vmid}/config → guest config.
 
         Shared body for pve_qemu_config/pve_lxc_config — node, snapshot are OPTIONAL
@@ -586,8 +588,9 @@ class PdmBackend:
         """
         return self._guest_list("qemu", remote, node)
 
-    def pve_qemu_config(self, remote: str, vmid: int | str, node: str | None = None,
-                        snapshot: str | None = None, state: str = "active") -> dict:
+    def pve_qemu_config(
+        self, remote: str, vmid: int | str, node: str | None = None, snapshot: str | None = None, state: str = "active"
+    ) -> dict:
         """GET /pve/remotes/{remote}/qemu/{vmid}/config → VM config.
 
         node, snapshot: OPTIONAL query params (node is NOT required).
@@ -605,8 +608,9 @@ class PdmBackend:
         """
         return self._guest_list("lxc", remote, node)
 
-    def pve_lxc_config(self, remote: str, vmid: int | str, node: str | None = None,
-                       snapshot: str | None = None, state: str = "active") -> dict:
+    def pve_lxc_config(
+        self, remote: str, vmid: int | str, node: str | None = None, snapshot: str | None = None, state: str = "active"
+    ) -> dict:
         """GET /pve/remotes/{remote}/lxc/{vmid}/config → LXC config.
 
         node, snapshot: OPTIONAL query params (node is NOT required).
@@ -635,8 +639,7 @@ class PdmBackend:
         """
         return self._pbs_remote_get(remote, "datastore") or []
 
-    def pbs_snapshots_list(self, remote: str, datastore: str,
-                           ns: str | None = None) -> list[dict]:
+    def pbs_snapshots_list(self, remote: str, datastore: str, ns: str | None = None) -> list[dict]:
         """GET /pbs/remotes/{remote}/datastore/{datastore}/snapshots → snapshot list.
 
         ns: optional namespace filter (query 'ns').
@@ -647,8 +650,7 @@ class PdmBackend:
         if ns is not None:
             ns = _check_namespace(ns)
             params["ns"] = ns
-        return self._pbs_remote_get(remote, f"datastore/{ds}/snapshots",
-                                    params or None) or []
+        return self._pbs_remote_get(remote, f"datastore/{ds}/snapshots", params or None) or []
 
     # ---------------------------------------------------------------------------
     # E: Tasks + access
@@ -721,8 +723,15 @@ class PdmBackend:
         v = _check_vmid(vmid)
         return self._pve_remote_get(remote, f"{k}/{v}/status") or {}
 
-    def guest_migrate(self, remote: str, kind: str, vmid: int | str, target: str,
-                      online: bool = False, target_storage: str | None = None) -> str:
+    def guest_migrate(
+        self,
+        remote: str,
+        kind: str,
+        vmid: int | str,
+        target: str,
+        online: bool = False,
+        target_storage: str | None = None,
+    ) -> str:
         """POST /pve/remotes/{remote}/{kind}/{vmid}/migrate → task UPID.
 
         In-cluster migration. `target` is a node name; `online` migrates a running guest.
@@ -742,9 +751,18 @@ class PdmBackend:
             body["target-storage"] = [_check_opt(target_storage, "target-storage")]
         return self._pve_remote_post(remote, f"{k}/{v}/migrate", body)
 
-    def guest_remote_migrate(self, remote: str, kind: str, vmid: int | str, target_remote: str,
-                             target_bridge: str, target_storage: str, target_vmid: int | str | None = None,
-                             online: bool = False, delete: bool = False) -> str:
+    def guest_remote_migrate(
+        self,
+        remote: str,
+        kind: str,
+        vmid: int | str,
+        target_remote: str,
+        target_bridge: str,
+        target_storage: str,
+        target_vmid: int | str | None = None,
+        online: bool = False,
+        delete: bool = False,
+    ) -> str:
         """POST /pve/remotes/{remote}/{kind}/{vmid}/remote-migrate → task UPID.
 
         Cross-remote (datacenter-to-datacenter) migration. `target_remote` is the destination
@@ -773,8 +791,15 @@ class PdmBackend:
             body["delete"] = True
         return self._pve_remote_post(remote, f"{k}/{v}/remote-migrate", body)
 
-    def snapshot_create(self, remote: str, kind: str, vmid: int | str, snapname: str,
-                        description: str | None = None, vmstate: bool = False) -> str:
+    def snapshot_create(
+        self,
+        remote: str,
+        kind: str,
+        vmid: int | str,
+        snapname: str,
+        description: str | None = None,
+        vmstate: bool = False,
+    ) -> str:
         """POST /pve/remotes/{remote}/{kind}/{vmid}/snapshot → task UPID.
 
         `vmstate` includes the VM's RAM state (qemu). This is also the auto-UNDO

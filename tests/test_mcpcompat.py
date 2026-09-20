@@ -96,9 +96,13 @@ def test_annotations_read_only_reads_a_real_annotations_model():
 
 
 def test_tool_error_is_catchable_and_wraps_the_in_tool_exception():
-    """The 1.x wrap contract governed.py leans on — 'Error executing tool {name}: {e}',
-    __cause__ intact — holds on BOTH majors (probed on 2.0.0; pinned here so an SDK release
-    changing it fails THIS test, not a governance sanitizer downstream)."""
+    """The wrap contract governed.py leans on: an in-tool exception comes back as a ToolError
+    whose message starts 'Error executing tool {name}' with __cause__ intact, on BOTH majors.
+    Only the PREFIX and the cause are common ground: 1.x appends '{e}' (the text), 2.x raises
+    UnexpectedToolError with the text STRIPPED for anything that is not the SDK's ToolError
+    (2026-09-20: this docstring used to claim the '{e}' part held on 2.x; it never did, and
+    this test never asserted it — see test_proximo_error_text_reaches_the_caller_on_both_majors
+    for the seam that restores it for ProximoError only)."""
     import anyio
 
     srv = compat.make_server("compat-probe", version="0.0.0")
@@ -200,5 +204,144 @@ def test_the_in_process_unknown_tool_delta_is_the_documented_one():
         expected = compat.ToolError if compat.MCP_MAJOR == 1 else ProximoError
         with pytest.raises(expected):
             await srv.call_tool("pve_ghost_tool", {})
+
+    anyio.run(go)
+
+
+# --- ProximoError text through the SDK boundary, both majors --------------------------------
+# Found 2026-09-19 driving the dogfood server (mcp 2.2.0): a `blocked:lease_expired` refusal came
+# back as a bare "Error executing tool proximo_call: Error executing tool pve_guest_power". On 1.x
+# the SDK appends str(e) to every wrapped exception; on 2.x only its own ToolError carries text and
+# every other exception is sanitized to the tool name. ProximoError is the caller-safe channel by
+# design (backends.py: "never carries secrets"; _audited_run scrubs URLs into it; 1.x has shown its
+# text verbatim since day one), so the 2.x seam translates exactly that class and nothing else.
+
+
+def _probe_server():
+    import anyio  # noqa: F401 — asserts the runner is present for the callers below
+
+    from proximo.backends import ProximoError
+
+    srv = compat.make_server("compat-probe", version="0.0.0")
+
+    @srv.tool()
+    def refuse() -> dict:
+        """MUTATION probe: raises the caller-safe error class."""
+        raise ProximoError("arm lease expired: 'refuse' refused — armed 7203s ago, TTL 3600s; re-arm to continue")
+
+    @srv.tool()
+    def crash() -> dict:
+        """READ-ONLY probe: raises something that is NOT caller-safe."""
+        raise ValueError("inner-detail-sentinel")
+
+    return srv
+
+
+def test_proximo_error_text_reaches_the_caller_on_both_majors():
+    import anyio
+
+    from proximo.backends import ProximoError
+
+    srv = _probe_server()
+
+    async def go():
+        with pytest.raises(compat.ToolError) as exc:
+            await srv.call_tool("refuse", {})
+        assert "re-arm to continue" in str(exc.value), str(exc.value)
+        assert "Error executing tool refuse" in str(exc.value)
+        assert isinstance(exc.value.__cause__, ProximoError)
+
+    anyio.run(go)
+
+
+def test_a_non_proximo_error_stays_sanitized_on_2x_and_wrapped_on_1x():
+    """The control: the seam must not widen exposure. A ValueError keeps the SDK's own contract
+    per major (text on 1.x, name-only on 2.x); ONLY ProximoError is translated."""
+    import anyio
+
+    srv = _probe_server()
+
+    async def go():
+        with pytest.raises(compat.ToolError) as exc:
+            await srv.call_tool("crash", {})
+        assert "Error executing tool crash" in str(exc.value)
+        assert isinstance(exc.value.__cause__, ValueError)
+        if compat.MCP_MAJOR == 2:
+            assert "inner-detail-sentinel" not in str(exc.value), str(exc.value)
+        else:
+            assert "inner-detail-sentinel" in str(exc.value)
+
+    anyio.run(go)
+
+
+def test_proximo_error_text_survives_the_nested_door():
+    """proximo_call -> tool: the inner refusal rides through two SDK wraps. Pin the REASON, not
+    the prefix shape (1.x carries both tool names, 2.x carries the outer one)."""
+    import anyio
+
+    from proximo import server
+    from proximo.backends import ProximoError
+    from proximo.door import dispatch_tool
+
+    srv = _probe_server()
+
+    @srv.tool()
+    async def door(tool: str, arguments: dict | None = None) -> dict:
+        """MUTATION probe: the escape hatch, minus the catalog."""
+        catalog = {n: t for n, t in srv._tool_manager._tools.items()}  # noqa: SLF001
+        return await dispatch_tool(server_mcp=srv, catalog=catalog, name=tool, arguments=arguments or {})
+
+    async def go():
+        with pytest.raises(compat.ToolError) as exc:
+            await srv.call_tool("door", {"tool": "refuse"})
+        assert "re-arm to continue" in str(exc.value), str(exc.value)
+        cause = exc.value
+        while isinstance(cause, compat.ToolError) and cause.__cause__ is not None:
+            cause = cause.__cause__
+        assert isinstance(cause, ProximoError), type(cause)
+        assert server is not None  # keep the import honest: dispatch_tool is the real funnel
+
+    anyio.run(go)
+
+
+def test_the_cause_walk_follows_proximo_error_rewraps_and_stops_at_a_foreign_one():
+    """The seam walks __cause__ through ToolError links only. A tool that re-raises
+    `ProximoError(...) from ProximoError` (the two shapes in the tree: vectors.py, pmg_node.py)
+    keeps its text on both majors. A tool that re-wraps a caught ProximoError as a NON-Proximo
+    exception hands the SDK a foreign error and, on 2.x, loses the text by the SDK's own rule:
+    that is the documented boundary (lens 2026-09-20), pinned so a future re-wrap is a visible
+    choice, not a silent regression of this seam."""
+    import anyio
+
+    from proximo.backends import ProximoError
+
+    srv = compat.make_server("compat-probe", version="0.0.0")
+
+    @srv.tool()
+    def rewrap_same() -> dict:
+        """READ-ONLY probe."""
+        try:
+            raise ProximoError("inner reason: re-arm to continue")
+        except ProximoError as e:
+            raise ProximoError(f"outer: {e}") from e
+
+    @srv.tool()
+    def rewrap_foreign() -> dict:
+        """READ-ONLY probe."""
+        try:
+            raise ProximoError("inner reason: re-arm to continue")
+        except ProximoError as e:
+            raise RuntimeError("foreign wrapper") from e
+
+    async def go():
+        with pytest.raises(compat.ToolError) as exc:
+            await srv.call_tool("rewrap_same", {})
+        assert "re-arm to continue" in str(exc.value)
+        with pytest.raises(compat.ToolError) as exc:
+            await srv.call_tool("rewrap_foreign", {})
+        if compat.MCP_MAJOR == 2:
+            assert "re-arm to continue" not in str(exc.value)
+        else:
+            assert "foreign wrapper" in str(exc.value)
 
     anyio.run(go)

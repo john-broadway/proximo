@@ -54,6 +54,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from ._secretfile import register_secret
+
 GENESIS_HASH = "0" * 64
 _KEY_ALG = "hmac-sha256"
 # Fields excluded from the hashed `body`. `alg` is a transparency marker, NOT a trusted input: verify()
@@ -142,6 +144,7 @@ def load_or_create_key(path: str) -> bytes:
             os.unlink(tmp)
     with open(path, encoding="utf-8") as f:
         text = f.read().strip()
+    register_secret(text)  # the HMAC key must never appear in an error either
     if not text:
         raise ValueError(f"audit key file {path} is empty — refusing an empty key (fail-closed)")
     try:

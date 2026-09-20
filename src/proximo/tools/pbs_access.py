@@ -256,11 +256,13 @@ def pbs_token_create(
 ) -> dict:
     """MUTATION (MEDIUM): create an API token for a PBS user.
 
-    Dry-run by default. PBS has NO privsep concept (unlike PVE) — the new token has NO
+    Dry-run by default. PBS has NO privsep toggle (unlike PVE) — the new token has NO
     privileges until an ACL entry grants it some (pbs_acl_update with
-    auth_id='{userid}!{token_name}'). confirm=True executes and returns a dict whose result
-    carries the token secret (value) ONCE — it is never written to the audit ledger and cannot
-    be retrieved again (only regenerated via pbs_token_update, which invalidates it).
+    auth_id='{userid}!{token_name}'), and never more than its owning user holds on that path
+    (grant the user first, or the token resolves to nothing). confirm=True executes and
+    returns a dict whose result carries the token secret (value) ONCE — it is never written to
+    the audit ledger and cannot be retrieved again (only regenerated via pbs_token_update,
+    which invalidates it).
     Synchronous. Use pbs_user_tokens_list to see a user's existing tokens, or pbs_token_delete to
     remove one. Needs PROXIMO_PBS_* config.
     """

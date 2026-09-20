@@ -2,6 +2,29 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.43.0] — 2026-09-20
+
+**Every published read on every plane, by path.**
+`proximo_api_get(plane, path, params)` is the raw GET door: the floor under the curated tools. The path is matched against the vendored API trees (`proximo/apidoc/`, one file per product, dated) with GET as the only method BEFORE the wire is touched; write-only paths, console and migration tunnels and unknown paths are refused with the nearest published reads named. Reads a curated tool already gates (the qemu-agent family behind `PROXIMO_ENABLE_AGENT`, the byte streams the file-restore tools land on disk) are refused with that tool named, so the door never launders a gate. The result is the vendor's `data` in a labelled envelope (`derived: false`, the published path it matched); a body over `PROXIMO_RAW_MAX_BYTES` (256 KiB) comes back labelled truncated with its size, never as a silent prefix. Its own toolset (`raw`), reachable in every mode by name through `proximo_read`, audited under its own name, adversarial in the taint model by construction. 913 tools at this point; the identity core below takes it to 924.
+
+**PDM has an identity core of its own now.**
+Eleven `pdm_*` tools for users, API tokens, ACL and effective permissions: the first native PDM mutations (`pdm_user_create/update/delete`, `pdm_token_create/update/delete`, `pdm_acl_update`), PLAN by default and confirm-gated like every other write, plus `pdm_user_get`, `pdm_user_tokens_list`, `pdm_user_token_get` and `pdm_permissions_get`. PDM's access API is PBS's (the same proxmox-access crate), so the PBS helpers drive it through a PdmBackend that gained a JSON `PUT`; the plane name on actions and PLAN targets follows the backend. A user's password and a token's secret never reach the ledger. Live-proven against PDM 1.1.4 in the lab: user create, update (clearing properties rides as the JSON array PDM wants), token create with the secret handed back once, ACL grant and revoke, effective permissions, delete. One fact the proof surfaced now sits in the PLAN text and the tool descriptions on both planes: a token's privileges are its own grants bounded by its owning user's on the same path (the shared access crate does `privs &= owner_privs`), so a token granted Auditor alone resolves to nothing until the user holds it too. The proof also read twelve PBS/PDM PLAN strings ending in a stray `f` (an f-string prefix inside the closing quote, from the plane refactor); fixed, with a text-level test on every access-plan string for both planes. 924 tools.
+
+**Secrets cannot leave through an error.**
+Every secret Proximo reads by path (the PVE, PBS and PDM tokens, the PMG password, the web and anchor bearers, the audit key, the arm token) is registered with an output scrubber at read time, and every error text that leaves through the MCP wire is passed through it: a ProximoError scrubs its own message at construction, the tool boundary scrubs the message of anything else a tool body raised (in place, type and cause chain kept), and the wire handler on both SDK majors scrubs what is left, including the argument-validation echo the SDK produces before a tool body ever runs. The PMG session ticket and the A2A and badge signing keys are registered too. The four auth-header shapes Proximo sends scrub even when the value was never registered. Values under eight characters are not registered, so a short secret cannot shred every message it occurs in. Until now HTTP errors were cut to a status line and the error class carried no secrets by design, but a subprocess error with an argv password or an echoed request header had no scrubber in front of the model.
+
+**The tool surface has a checksum you can pin.**
+`proximo tools-checksum` prints the sha256 of what this config serves, every tool's name, description and input schema after scoping and the door choice, and the count; the server prints the same line at every start. `PROXIMO_TOOLS_PIN` refuses to start on a mismatch and names both hashes. The sum is per config and per version, and the docs say so.
+
+**A refusal keeps its reason on the mcp 2.x SDK.**
+On mcp 2.x every exception that is not the SDK's own `ToolError` is sanitized to `Error executing tool <name>`, so a client on that SDK read every Proximo refusal (an expired arm lease, a missing consent, a scope block, the did-you-mean pointer for an unknown tool, the read door's `proximo_read refuses …`) as a bare tool name. The 1.x SDK had always passed the text through, and the one test on the wrap asserted only the `Error executing tool` prefix, so the 2.x CI leg stayed green. The compat server now translates exactly one class, `ProximoError` (the caller-safe channel, never a secret), back into a `ToolError` that carries the reason with the cause chain intact; every other exception keeps the SDK's own contract, pinned by a control. Read back on the dogfood server (mcp 2.2.0) that showed the bare line.
+
+**The coverage receipt is generated, not typed.**
+`scripts/api_coverage.py` measures how much of the four API trees the curated tools reach (71% of 1,721 operations touched; PDM 23%). A tool module that imports another plane's helpers credits its plane with exactly those defs. Controls both ways in `tests/test_api_coverage.py`.
+
+**Two anyio advisories closed in the image.**
+`anyio` 4.13.0 to 4.15.1 (CVE-2026-63374 and CVE-2026-64847; the fix arrived in 4.14.2). Wheel installs resolve their own `anyio`; the container image carries the pinned export, so it needed this release to move.
+
 ## [0.42.0] — 2026-09-17
 
 **One file out of a backup, without restoring the guest.**
