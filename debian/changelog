@@ -1,3 +1,16 @@
+proximo (0.43.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.43.0 (minor: every read on every plane by path, and PDM's own identity core.
+    proximo_api_get reaches any GET the four planes publish, validated against the vendored API
+    trees before the wire; write paths and gated reads are refused with the tool named. Eleven
+    pdm_* tools give Datacenter Manager its first native mutations (users, tokens, ACL,
+    permissions), live-proven against PDM 1.1.4. A refusal keeps its reason on the mcp 2.x SDK;
+    secrets cannot leave through an error; the served tool surface has a checksum an operator
+    can pin (PROXIMO_TOOLS_PIN, proximo tools-checksum). anyio 4.15.1 closes CVE-2026-63374 and
+    CVE-2026-64847. 924 tools.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 20 Sep 2026 05:20:33 +0000
+
 proximo (0.42.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.42.0 (minor: one file out of a backup, and a blind listing that says so.

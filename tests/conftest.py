@@ -116,3 +116,23 @@ def _memory_db_in_tmp(tmp_path):
             os.environ.pop("PROXIMO_MEMORY_PATH", None)
         else:
             os.environ["PROXIMO_MEMORY_PATH"] = prev
+
+
+@pytest.fixture(autouse=True)
+def _clear_secret_registry():
+    """The output scrubber's registry is process-wide (a fixture token read in one test would
+    redact the same literal in a later test's error assertion, with no visible link between the
+    two files). Start every test clean.
+
+    Import lazily and tolerate absence: CI's requirements-drift job runs this tree's tests with
+    `uv run --no-project` (no proximo installed) and a conftest that imports the package at
+    collection time errors every test in that job before it starts (public PR #73 on the 0.43.0
+    curated sha, 2026-09-20)."""
+    try:
+        from proximo import _secretfile
+    except ImportError:  # a no-project job (requirements-drift) has no registry to clear
+        yield
+        return
+    _secretfile.clear_registered_secrets()
+    yield
+    _secretfile.clear_registered_secrets()

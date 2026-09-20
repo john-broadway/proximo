@@ -87,7 +87,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from ._secretfile import refuse_exposed_secret
+from ._secretfile import read_secret, refuse_exposed_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
 from ._validate import check_digest
 from .backends import ProximoError, fingerprint_refused
@@ -422,9 +422,8 @@ class PbsBackend:
     def _auth_header(self) -> dict[str, str]:
         # Token file holds: USER@REALM!TOKENID:SECRET  (e.g. backup@pbs!token:secret)
         # Header: PBSAPIToken=USER@REALM!TOKENID:SECRET
-        # Read at call time; NEVER logged.
-        with open(self.config.token_path, encoding="utf-8") as f:
-            token = f.read().strip()
+        # Read at call time; NEVER logged; registered with the output scrubber on first read.
+        token = read_secret(self.config.token_path, "PBS token file")
         return {"Authorization": f"PBSAPIToken={token}"}
 
     def _get(self, path: str, params: dict | None = None):

@@ -298,6 +298,8 @@ Pair it with `PROXIMO_ARM_TTL=3600` and a forgotten `disarm` expires on its own.
 [SECURITY.md](../SECURITY.md) for the stronger mint-and-revoke pattern, where no write token
 exists at rest at all.
 
+**Pin the tool surface.** `proximo tools-checksum` prints the sha256 of what this config serves (every tool's name, description and input schema, after scoping and the door choice) and the count. Put it in `PROXIMO_TOOLS_PIN` and the server refuses to start if the surface it would serve is not that one: an upgrade, a scope change or a tampered install all read as a mismatch that names both hashes. The sum is per config and per version (planes, toolsets, surfaces, the door, the `PROXIMO_TARGETS` registry), so read it on the box that will serve it and re-pin after every deliberate change. The pin gates every entrypoint that serves tools, `proximo doctor` included: a drifted pin takes doctor offline too, and its refusal names both hashes so the drift is the diagnosis.
+
 If a session dies while armed — crash, kill, a client that just went away — nothing runs its
 `disarm`, and the write token stays in place. `proximo reap` puts it back:
 
@@ -366,7 +368,7 @@ that flip is itself a witnessed `reach_grant` change.
 
 ## Fitting a smaller model — scoping the tool surface
 
-Proximo governs 912 operations, and **the default door is small**: with nothing configured,
+Proximo serves 924 tools, and **the default door is small**: with nothing configured,
 the server serves the dynamic facade — search, schema, read, call, recall and the audit
 trail (~1,740 tokens) — with everything this box serves still callable through it. That is the 0.30
 flip, and the reason is measured: the catalog doors below cost your model context at
@@ -374,7 +376,7 @@ connection time, before you ask anything, and the full surface is ~290k tokens o
 ~35x over the 8,192-token default window of a stock local model, which means dead on connect.
 The catalog doors are explicit choices now. Four layers, most specific wins. Every figure
 below was measured on 2026-08-01, at the 0.30 flip, against that day's registry (906 tools; the note
-under the table records the method). The registry is 912 at 0.42.0, so the per-row tool counts read a
+under the table records the method). The registry is 924 at 0.43.0, so the per-row tool counts read a
 few higher today; the token costs are the measurement:
 
 | Set this | Serves | Real cost |
@@ -400,7 +402,7 @@ tokenizer for any specific model.
 Available toolsets: `pve.guests` `pve.cluster` `pve.storage` `pve.network` `pve.sdn`
 `pve.firewall` `pve.access` `pve.ceph` `pve.maintenance` · `pbs.datastores` `pbs.tape`
 `pbs.access` `pbs.node` `pbs.maintenance` · `pmg.quarantine` `pmg.rules` `pmg.mail`
-`pmg.statistics` `pmg.access` `pmg.node` `pmg.maintenance` · `pdm` · `exec`.
+`pmg.statistics` `pmg.access` `pmg.node` `pmg.maintenance` · `pdm` · `exec` · `raw` (the GET door).
 
 A typo refuses startup rather than quietly serving a different set than you picked, and
 `audit_verify` and `proximo_call` are never scopeable away — PROVE is not optional at any

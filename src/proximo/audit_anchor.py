@@ -76,7 +76,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from ._secretfile import refuse_exposed_secret
+from ._secretfile import read_secret
 from ._tls import httpx_verify
 from .audit import looks_like_head
 
@@ -272,10 +272,8 @@ class HttpSink(AnchorSink):
         if not self.token_path:
             return {}
         # Per-call, fail-closed BEFORE any bytes leave: perms floor first, then read.
-        refuse_exposed_secret(self.token_path, "anchor bearer token file")
         try:
-            with open(self.token_path, encoding="utf-8") as f:
-                token = f.read().strip()
+            token = read_secret(self.token_path, "anchor bearer token file", floor=True)
         except OSError as e:
             raise AnchorError(
                 f"http anchor sink: cannot read token file {self.token_path!r}: {e}"

@@ -208,16 +208,30 @@ def test_the_network_faces_reach_a_context_pruned_tool(monkeypatch):
         assert direct.startswith("404"), (
             f"expected the direct face call to 404 on a pruned tool, got {direct!r}")
 
+        # Spy on the hatch's own dispatcher: "resolved" is read against the catalog the hatch
+        # hands it, so a name the hatch refuses (dispatch_tool's did-you-mean) reads False here.
+        # (Until 2026-09-20 this test read "resolved and ran" off the exception TYPE NAME in the
+        # governed 502 — `"ToolError" in hatched` — and called a ProximoError "the hatch refused
+        # the name". On mcp 2.x the compat seam now bottoms the cause chain at the tool's own
+        # ProximoError, so that heuristic accused the seam in the full suite while passing alone.)
+        seen: dict = {}
+        real_dispatch = server.dispatch_tool
+
+        async def spy(server_mcp, catalog, name, arguments):
+            seen["name"] = name
+            seen["resolved"] = door.lean.resolve_alias(name) in catalog
+            return await real_dispatch(server_mcp=server_mcp, catalog=catalog, name=name, arguments=arguments)
+
+        monkeypatch.setattr(server, "dispatch_tool", spy)
         hatched = anyio.run(go, "proximo_call", {"tool": "pve_ceph_status", "arguments": {}})
         assert not hatched.startswith("404"), (
             "the face could not reach a pruned tool through the hatch — the escape hatch is "
             f"stdio-only and the surface differs by transport ({hatched!r})")
-        # 502 here means the tool was RESOLVED and RAN (and then failed on an unreachable test
-        # API, which is the expected end of the road in a unit test). Reaching it is the
-        # property; succeeding against a fake host is not.
-        assert "ToolError" in hatched or hatched == "ok", (
-            f"expected the tool to run and fail on connectivity, got {hatched!r} — a "
-            "ProximoError here would mean the hatch itself refused the name")
+        assert seen == {"name": "pve_ceph_status", "resolved": True}, seen
+        # 502 here means the tool RAN and failed on an unreachable test API, which is the
+        # expected end of the road in a unit test. Reaching it is the property; succeeding
+        # against a fake host is not.
+        assert hatched == "ok" or hatched.startswith("502"), hatched
     finally:
         server.mcp._tool_manager._tools.clear()
         server.mcp._tool_manager._tools.update(saved)

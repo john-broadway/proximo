@@ -107,321 +107,381 @@ from .envelope import _parse_forbid
 # Curated set from the design doc's untrusted-read surface map (§Component 0) — total, not a
 # denylist: a later completeness test asserts every registered tool is classified one way or the
 # other, so an unclassified new tool fails CI rather than silently riding as "trusted".
-ADVERSARIAL_TOOLS: frozenset[str] = frozenset({
-    # guest-influenced: exec-output / agent-info / in-guest file reads carry guest-controlled bytes
-    "ct_logs", "ct_exec", "ct_psql", "ct_diagnose",
-    "pve_agent_exec", "pve_agent_info", "pve_agent_file_read",
-    # host-shell journal/battery: free-text host log lines, service output — same channel class
-    # as ct_logs/ct_diagnose and pve_node_journal one altitude up (2026-08-26).
-    "pve_node_logs", "pve_node_diagnose",
-    # email/external: quarantine content, mail tracker/statistics carry externally-authored bytes
-    "pmg_quarantine_spam", "pmg_quarantine_virus", "pmg_quarantine_attachment",
-    "pmg_quarantine_spamstatus", "pmg_quarantine_virusstatus", "pmg_quarantine_spamusers",
-    "pmg_quarantine_blocklist_list", "pmg_quarantine_welcomelist_list",
-    "pmg_tracker_list", "pmg_tracker_detail",
-    "pmg_node_syslog",
-    "pmg_statistics_sender", "pmg_statistics_receiver", "pmg_statistics_domains",
-    # Wave 9b (2026-07-17): PMG node ops odds (pmg_node.py chunk 9b). `pmg_node_report`/
-    # `pmg_node_journal` are free-text diagnostic/log dumps — exact pbs_node_report/
-    # pve_node_journal/pbs_node_journal precedent. `pmg_node_task_log` is a DIVERGENCE from the
-    # Wave 9 draft's own REVIEWED_TRUSTED guess ("task metadata, not mail content") — the
-    # schema's own {n, t} shape carries free-text log lines, matching pve_task_log/
-    # pbs_node_task_log exactly (NOT here: pmg_node_task_status — {pid, status} carries no free
-    # text, REVIEWED_TRUSTED below, matching both planes' own task_status). `pmg_node_
-    # postfix_queue_list`/`pmg_node_postfix_queue_message_get` carry mail metadata (sender/
-    # receiver/reason, schema's own sortfield enum) and full message content respectively —
-    # attacker-shapeable, matching the pmg_quarantine_content_get family's reasoning one plane
-    # over. See pmg_node.py module docstring's chunk 9b facts #14/#25 for the full argument.
-    "pmg_node_report", "pmg_node_journal", "pmg_node_task_log",
-    "pmg_node_postfix_queue_list", "pmg_node_postfix_queue_message_get",
-    # Wave 9c (2026-07-17): PMG LDAP profiles + fetchmail (extends pmg.py/tools/pmg_mail.py).
-    # `pmg_ldap_users_list`/`pmg_ldap_user_emails_get`/`pmg_ldap_groups_list`/
-    # `pmg_ldap_group_members_get` return content PULLED FROM THE EXTERNAL LDAP DIRECTORY
-    # (account/dn/pmail/email/gid — literal directory entries, not anything PMG's own operator
-    # typed) — whoever controls that directory (or an entry within it) controls these bytes, the
-    # same "externally-authored content over an operator-configured channel" reasoning that
-    # landed `pbs_remote_scan`/`pve_ceph_metadata` here. NOT here: the LDAP profile CRUD/config/
-    # sync tools and the fetchmail CRUD tools — all REVIEWED_TRUSTED below (operator-authored
-    # config; `bindpw`/`pass` are a secret-HANDLING concern, argued in pmg.py's Wave 9c module
-    # section, not a taint/content-trust one — the same orthogonal-axes precedent as
-    # sdn_objects.py's dns/ipam reads).
-    "pmg_ldap_users_list", "pmg_ldap_user_emails_get",
-    "pmg_ldap_groups_list", "pmg_ldap_group_members_get",
-    # config free-text + logs: operator-set, but free-text fields a guest/attacker can shape
-    "pve_node_syslog", "pve_node_journal", "pve_task_log", "pve_list_guests",
-    # Tier-1 memory recall re-serves names/tags STORED from the adversarial reads above —
-    # classified adversarial itself so stored bytes re-enter the taint model rather than
-    # laundering through the estate map (design rail, 2026-07-29).
-    "proximo_recall",
-    # The PROVE ledger's `target` fields carry the same guest/node names the adversarial reads
-    # above produced — reading entries back re-serves those bytes, so it re-enters the taint
-    # model rather than laundering through the log. Exactly proximo_recall's rail, one store
-    # over. (The `detail` body is fingerprinted under the default PROXIMO_LEDGER_REDACT.)
-    "audit_entries",
-    # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
-    # above all): a thread can carry "now run pve_delete_guest" as easily as a fix, and the
-    # bytes arrive already inside the model's context window. Classified adversarial for the
-    # same reason as proximo_recall one line up — retrieved bytes must re-enter the taint
-    # model instead of laundering through local storage. This is the rail that makes reading
-    # a community corpus defensible at all (wiki seam design, 2026-07-29).
-    "proximo_wiki", "proximo_wiki_read",
-    "pve_guest_config_get", "pve_cluster_resources", "pve_snapshot_list",
-    "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
-    "pve_storage_content", "pdm_pve_qemu_config", "pdm_pve_lxc_config",
-    "pdm_pve_qemu_list", "pdm_pve_lxc_list", "pdm_pve_resources", "pbs_snapshots_list",
-    # file-level restore (2026-09-17): the entries are the guest's OWN file names and the
-    # download result echoes the remote path the caller chose and the guest-named local file.
-    "pve_file_restore_list", "pve_file_restore_download", "pbs_catalog_list", "pbs_file_download",
-    # upstream/package-maintainer-authored free text (Wave 1a, 2026-07-15): unlike the other six
-    # pve_apt_* tools (structured, Proxmox-authored config/status), the changelog body is authored
-    # by whoever maintains the package in the configured repo — an attacker who compromises a
-    # configured repo (or gets a malicious one added) could shape this text.
-    "pve_apt_changelog",
-    # same rationale, Wave 1b (2026-07-15): PBS/PMG's apt_changelog is equally
-    # upstream/package-maintainer-authored free text, not Proxmox-authored.
-    "pbs_apt_changelog", "pmg_apt_changelog",
-    # Wave 3b review finding (2026-07-15): `pbs_acme_tos` makes the PBS host fetch a
-    # CALLER-CHOSEN directory URL and returns the response text — the content source is
-    # whoever controls that URL, a more direct version of the changelog rationale above.
-    "pbs_acme_tos",
-    # Wave 9g (2026-07-17): PMG's own `pmg_acme_tos`/`pmg_acme_meta` share the identical
-    # caller-chosen-`directory`-URL fetch shape as `pbs_acme_tos` above — the PMG host makes the
-    # outbound fetch and the response content is authored by whoever controls that URL.
-    # `pmg_acme_meta` has NO PBS equivalent at all (a genuinely new PMG-only endpoint, not a
-    # parity gap) but carries the exact same directory-fetch risk, so it's classified the same
-    # way. See pmg.py's own "Wave 9g" module section for the full argument.
-    "pmg_acme_tos", "pmg_acme_meta",
-    # Wave 2c (2026-07-15): PBS node OS admin — same rationale as pve_node_syslog/journal/
-    # pve_task_log above: free-text logs carry externally-authored bytes (attacker-influenced
-    # process/service output can land in a task log or the system journal).
-    "pbs_node_journal", "pbs_node_syslog", "pbs_node_task_log",
-    # Wave 4c (2026-07-15): PBS tape drive/changer OPERATIONS — content-carrying reads matching
-    # the pbs_snapshots_list precedent. read-label/inventory carry the physical tape's own
-    # label-text with NO return-side pattern constraint in the schema (whoever labeled the
-    # cartridge controls these bytes). cartridge-memory carries LTO MAM name/value pairs read
-    # directly off the physical medium's own onboard memory chip, no pattern/enum constraint at
-    # all. changer_status is a DELIBERATE DIVERGENCE from a naive "status=trusted" reading (see
-    # pbs_tape_ops.py module docstring's Taint section for the full argument): unlike
-    # pbs_tape_drive_status (pure telemetry, no label-text field), changer status returns a
-    # label-text field per slot/drive entry — the same media-label content class as
-    # read-label/inventory, just via the changer instead of the drive.
-    "pbs_tape_drive_read_label", "pbs_tape_drive_cartridge_memory", "pbs_tape_drive_inventory",
-    "pbs_tape_changer_status",
-    # Wave 4d (2026-07-15): PBS tape media CATALOG. media_list carries `label-text` with NO
-    # return-side pattern constraint at all (an even clearer call than changer_status above,
-    # which at least had a typed pattern and still landed here) — structurally identical to
-    # read-label/inventory from the start. media_content carries BOTH `label-text` and
-    # `snapshot` (a guest-influenced backup id/type/time string) — directly matches the
-    # pbs_snapshots_list precedent. media_status_get is classified ADVERSARIAL as a conservative
-    # default under genuine ambiguity: the live schema declares this endpoint's return type
-    # `null` despite its "Get current media status" description, so the real content is unknown
-    # from the schema alone; by analogy to media_list (whose entries carry `status` ALONGSIDE
-    # `label-text`) a per-media status fetch plausibly returns similar content — see
-    # pbs_tape_jobs.py module docstring's Taint section for the full argument (mirrors
-    # changer_status's own "classify as adversarial when unsure" reasoning from Wave 4c).
-    # NOT here: pbs_tape_media_sets — a deliberate divergence, checked field-by-field against the
-    # live schema and confirmed to carry NO label-text field at all (see REVIEWED_TRUSTED below).
-    "pbs_tape_media_list", "pbs_tape_media_content", "pbs_tape_media_status_get",
-    # Wave 5a (2026-07-15): PBS S3 client configs. `pbs_s3_list_buckets` makes a LIVE outbound
-    # call to an OPERATOR-CONFIGURED S3 endpoint (unlike pbs_acme_tos's caller-chosen URL) — but
-    # classification is by CONTENT CHANNEL, not by who chose the target: the returned bucket
-    # names are authored by whoever controls the remote S3 account, the same externally-authored-
-    # content category that lands pve_storage_content/pbs_snapshots_list here despite their own
-    # targets also being operator-configured. See pbs_s3.py module docstring's Taint section for
-    # the full argument (explicitly weighed against the pbs_acme_tos precedent, not silently
-    # decided the same way).
-    "pbs_s3_list_buckets",
-    # Wave 5c (2026-07-15): PBS admin job views + node odds + pull/push.
-    # `pbs_node_report` generates a free-text diagnostic bundle (schema: returns a bare string)
-    # that plausibly embeds config values, log tails, and system state — same category as
-    # pve_node_syslog/pbs_node_journal/pbs_node_task_log above, not the structured-config
-    # REVIEWED_TRUSTED reads elsewhere in this same wave (job-list views, traffic-control status,
-    # node identity/config/rrd, version, pull/push — all classified REVIEWED_TRUSTED; see
-    # pbs_admin.py module docstring's Taint section for the full per-tool argument).
-    "pbs_node_report",
-    # Wave 5d (2026-07-15): PBS datastore-admin remainder — the ACTUAL PBS plane closer (built
-    # from the Wave 5c adversarial review's missing-endpoint list). groups_list/group_notes_get
-    # carry guest/operator-influenced backup ids + free-text notes (the notes body itself, and
-    # its first line as each group's `comment`) — the pbs_snapshots_list precedent exactly.
-    # The remote_scan family returns REMOTE-authored content (store names/comments/maintenance
-    # messages, group ids + comments, namespace names + comments — all authored on the remote
-    # PBS, whoever controls it controls these bytes) — the pbs_s3_list_buckets precedent
-    # (externally-authored content over an operator-configured channel). NOT here:
-    # pbs_snapshot_protected_get (paired write-half types the field as a schema-typed boolean),
-    # pbs_datastore_rrd/active_operations/datastores_usage (numeric/typed server telemetry) —
-    # see pbs_datastore_admin.py module docstring's Taint section for each argument.
-    "pbs_groups_list", "pbs_group_notes_get",
-    "pbs_remote_scan", "pbs_remote_scan_groups", "pbs_remote_scan_namespaces",
-    # Wave 6a (2026-07-16): PVE Ceph core observability + flags. `pve_ceph_log` returns
-    # free-text log lines ({n, t} per schema truth), Sys.Syslog permission channel — same
-    # rationale as pve_node_syslog/pve_node_journal/pve_task_log above.
-    "pve_ceph_log",
-    # Wave 6a review Finding 2 (2026-07-16, adversarial review reclassification): `pve_ceph_
-    # metadata`'s schema types every per-instance mon/mgr/mds entry `"additionalProperties": 1`
-    # — an explicitly OPEN shape, not a closed structured record — and the documented fields
-    # include `hostname`, `addr`/`addrs`, and `name`, all SELF-REPORTED by each daemon at
-    # registration, not typed in by the operator. A daemon that joins the cluster with a
-    # leaked/rogue cephx key (or a compromised existing OSD/MON/MDS host) controls those
-    # strings the same way `pbs_remote_scan`'s remote PBS controls the store names/comments
-    # that landed IT in ADVERSARIAL_TOOLS above ("whoever controls it controls these bytes") —
-    # aggregated across every node in the cluster, into the calling agent's context unfiltered.
-    # flags-list/flag-get/cfg_db/cfg_raw/cfg_value/crush/rules/cmd_safety stay REVIEWED_TRUSTED
-    # (closed-shape, structured, no open daemon-self-report field) — see proximo/ceph.py module
-    # docstring's Taint section for the full per-tool argument, including why `pve_ceph_status`
-    # is REVIEWED_TRUSTED despite its own vague `{"type": "object"}` schema shape.
-    "pve_ceph_metadata",
-    # Wave 6b (2026-07-16): PVE Ceph services lifecycle. `pve_ceph_mon_list`/`pve_ceph_mgr_list`/
-    # `pve_ceph_mds_list` return per-instance `name`/`host`/`addr`/`ceph_version` fields — the
-    # SAME daemon-self-reported identity strings that made `pve_ceph_metadata` ADVERSARIAL above,
-    # just sliced by service type instead of aggregated across mon/mgr/mds/osd/node. The
-    # counter-argument (these three schemas are CLOSED-shape — every field explicitly named, no
-    # `additionalProperties: 1` the way metadata's per-instance entries declare) is real and was
-    # weighed, but the controlling rule stays "channel, not by who chose (or already controls)
-    # the target": a rogue/compromised mon/mgr/mds daemon controls addr/host/name in the
-    # per-type list the identical way it controls those same fields inside the aggregated
-    # metadata view — the JSON container shape changes how PVE happens to present the bytes, not
-    # who authored them. Classifying the list view REVIEWED_TRUSTED while the aggregate view
-    # (built one wave earlier, same daemons, same fields) stays ADVERSARIAL would be an
-    # inconsistent channel call for functionally identical content. See proximo/ceph.py module
-    # docstring's Taint section for the full argument.
-    "pve_ceph_mon_list", "pve_ceph_mgr_list", "pve_ceph_mds_list",
-    # Wave 6c (2026-07-16): PVE Ceph OSD. `pve_ceph_osd_tree`'s schema types the ENTIRE nested
-    # CRUSH-bucket response additionalProperties:1 (open, untyped) — an even more extreme "we
-    # cannot statically say what's in here" shape than pve_ceph_metadata's own per-instance open
-    # map, and its documented per-node properties (status/weight/in/usage/latencies/...) are
-    # daemon-self-reported telemetry flowing back through the same monitor-cluster channel.
-    # `pve_ceph_osd_metadata`'s osd{} sub-object carries hostname/back_addr/front_addr/
-    # hb_back_addr/hb_front_addr — literally the SAME daemon-self-reported identity/address field
-    # set that made the aggregated pve_ceph_metadata ADVERSARIAL in Wave 6a; this is that exact
-    # channel's single-OSD drill-down (same relationship pve_ceph_mon_list/etc. bore to the
-    # aggregate view in Wave 6b), not a new judgment call. NOT here: `pve_ceph_osd_lv_info` — a
-    # DELIBERATE divergence, argued (not defaulted) in proximo/ceph.py's module docstring Taint
-    # section: closed schema shape (no additionalProperties:1) and content sourced from a LOCAL
-    # `lvs` shell-out on the SAME host administering the OSD, not a cross-daemon network
-    # self-report at cluster registration — the same local-config-read class as cfg_raw/cfg_db
-    # (REVIEWED_TRUSTED below), not the mon/mgr/mds/metadata registration-handshake class above.
-    # Strengthened (Wave 6c review, 2026-07-16): "forging requires root" alone doesn't rule out a
-    # non-root daemon compromise writing malicious data through some OTHER channel, so the
-    # sharper, more load-bearing ground is that lv_name/vg_name are not operator-typed or
-    # daemon-rewritable strings in the first place — ceph-volume lvm create/prepare
-    # auto-generates them as UUID-derived identifiers at OSD-creation time, and the running
-    # ceph-osd daemon doesn't rewrite them during normal operation, so a routinely-compromised
-    # (non-root) OSD daemon process has no channel to steer arbitrary bytes into these fields;
-    # only a fresh root/host-level escalation reaches them at all. See proximo/ceph.py's module
-    # docstring Taint section for the full two-ground argument.
-    "pve_ceph_osd_tree", "pve_ceph_osd_metadata",
-    # Wave 6d (2026-07-16) shipped pve_ceph_pool_list/pve_ceph_pool_status/pve_ceph_fs_list as
-    # REVIEWED_TRUSTED; the Wave 6d adversarial review (2026-07-17, Finding 1) REVERSED that
-    # ruling. The original argument rested on two schema citations that don't hold up and never
-    # engaged the closest, most damaging precedent already sitting in THIS set. Corrected
-    # argument: pool_name (POST .../pool) and CephFS name (POST .../fs/{name}) both validate
-    # against the pattern `^[^:/\s]+$` ONLY -- no length cap at all (unlike Wave 6b's mds name,
-    # which carries maxLength: 200) -- and are creatable by ANY cephx-capable client holding mon
-    # caps, not only through Proximo's own pool_create/fs_create; Ceph itself also auto-creates
-    # pools with no operator action at all (device_health_metrics, .mgr). That is structurally
-    # identical to "operator-set, but free-text fields a guest/attacker can shape" -- the exact
-    # rule that already landed pve_list_guests/pve_cluster_resources/pve_snapshot_list in this
-    # set for VM/CT/snapshot NAMES, a precedent the original Wave 6d argument never mentioned.
-    # pool_status's `application_metadata` is a THIRD channel the original argument's own
-    # operator-chosen/cluster-computed dichotomy didn't cover: it's populated by
-    # `ceph osd pool application set <pool> <app> <key> <value>`, a raw Ceph admin command
-    # entirely OUTSIDE pve_ceph_pool_create/pve_ceph_pool_set (neither exposes an
-    # application-metadata key/value parameter) -- Proximo mediates neither the write nor any
-    # cluster-computed derivation of it. CORRECTION to the original argument's schema citations
-    # (do not repeat them): pool_list's application_metadata/autoscale_status and pool_status's
-    # own return carry NO "additionalProperties": 1 anywhere -- that marker sits ONLY on
-    # fs_list's own per-entry object (schema line 904, `GET /nodes/{node}/ceph/fs`
-    # returns.items), not on the pool side at all; the original ceph.py docstring/tests had this
-    # exactly backwards. Bias conservative per this module's own stated policy: classify as
-    # adversarial when unsure. See proximo/ceph.py module docstring's Wave 6d Taint section for
-    # the full argument.
-    "pve_ceph_pool_list", "pve_ceph_pool_status", "pve_ceph_fs_list",
-    # Wave 7a (2026-07-17): PVE SDN gap-fill + global control plane. `pve_sdn_zone_ip_vrf`'s
-    # entries carry `nexthops` explicitly documented as "the interface name or ip address of the
-    # next hop" — peer-announced over the running BGP/EVPN routing protocol, the same
-    # wire-learned-content channel that made pve_ceph_metadata/pve_ceph_osd_metadata
-    # ADVERSARIAL (a compromised peer controls these bytes). `pve_sdn_vnet_mac_vrf`'s schema
-    # description is explicit that its routes are content this node "self-originates OR has
-    # learned via BGP" — a genuinely mixed local/wire-learned channel, classified conservatively
-    # per this module's own "classify as adversarial when unsure" policy. NOT here:
-    # pve_sdn_zone_get/vnet_get/subnet_get/dry_run/zone_status_list/zone_bridges/zone_content —
-    # all REVIEWED_TRUSTED (operator-authored config, PVE's own apply-state machine, or a
-    # structural guest-NIC index reference, argued not defaulted) — see network.py's module
-    # docstring Taint section for the full per-tool argument.
-    "pve_sdn_zone_ip_vrf", "pve_sdn_vnet_mac_vrf",
-    # Wave 7c (2026-07-17): PVE SDN controllers + DNS + IPAMs. `pve_sdn_ipam_status`'s schema
-    # gives ZERO item-shape documentation (`returns: {"type": "array"}`, no `items` key at
-    # all — the most undocumented read on the whole SDN plane) and the domain-known content
-    # is guest IP/MAC/hostname address entries — genuinely guest-influenced (whatever guest
-    # holds that address chose to be there), the same wire-learned/guest-controlled-content
-    # rationale that already landed pve_sdn_zone_ip_vrf/pve_sdn_vnet_mac_vrf here. NOT here:
-    # pve_sdn_controllers_list/controller_get/dns_list/dns_get/ipams_list/ipam_get — all
-    # REVIEWED_TRUSTED (operator-authored SDN integration config; dns_get/ipam_get's
-    # schema-undocumented single-object GET shape is a SECRET-HANDLING concern — see
-    # sdn_objects.py's module docstring RULING — not a content-trust/taint concern).
-    "pve_sdn_ipam_status",
-    # Wave 7d (2026-07-17): PVE SDN fabrics (config CRUD + node-scoped status) — the FINAL
-    # chunk of Wave 7. `pve_sdn_fabric_status_neighbors`'s `neighbor` field is the remote
-    # peer's own self-announced IP/hostname, and its `status`/`uptime` are explicitly
-    # documented "as returned by FRR" — the same wire-learned-content channel that made
-    # pve_sdn_zone_ip_vrf/pve_ceph_metadata ADVERSARIAL. `pve_sdn_fabric_status_routes`'s
-    # `via` (nexthop list) is injected by whatever peer announces it over the running
-    # routing protocol — the identical channel. NOT here: `pve_sdn_fabric_status_interfaces`
-    # — its `{name, state, type}` shape describes the fabric's OWN locally-rendered network
-    # interface, with no field documented as peer-announced or FRR-reported (checked
-    # field-by-field against the raw schema); REVIEWED_TRUSTED instead.
-    # STRIKE-AND-CORRECT (post-review, 2026-07-17): this comment previously cited "the
-    # campaign doc's own Wave 7d chunk listing" as corroborating this classification — that
-    # citation was FABRICATED (no such section exists in the campaign doc; the quoted text is
-    # the pinned draft decomposition, already cited separately, and the campaign doc's own
-    # ruling block said the OPPOSITE at the time). The classification stands anyway, but on
-    # its real basis: the schema's local-only field shape above, PLUS the 2026-07-17
-    # COORDINATOR RE-RULING (`.scratch/2026-07-15-full-surface-campaign.md` lines 853-864,
-    # binding — corrects the ruling block's original coarse "neighbors/interfaces/routes"
-    # grouping per the draft's own Fact #17). See sdn_fabrics.py's module docstring fact #3
-    # for the full argument and the strike-and-correct note.
-    "pve_sdn_fabric_status_neighbors", "pve_sdn_fabric_status_routes",
-    # Wave 9f (2026-07-17): PMG PBS remote config + node-side PBS backup jobs (extends pmg.py/
-    # tools/pmg_mail.py). `pmg_node_pbs_snapshots_list`/`pmg_node_pbs_snapshot_get` return
-    # backup-id/backup-time/verification labels stored on the REMOTE PBS instance — whoever wrote
-    # those backups (or compromised the remote) controls these strings, the exact
-    # `pbs_snapshots_list` cross-plane precedent. NOT here (REVIEWED_TRUSTED instead, after the
-    # mandatory/defensive secret-strip): `pmg_pbs_remote_list`/`_get`, `pmg_node_pbs_jobs_list` —
-    # operator-authored config, same channel as this file's other config-CRUD families; `password`/
-    # `encryption-key` are a secret-HANDLING concern (pmg.py's Wave 9f module section), not a
-    # taint/content-trust one, the same orthogonal-axes precedent as sdn_objects.py's dns/ipam
-    # reads.
-    "pmg_node_pbs_snapshots_list", "pmg_node_pbs_snapshot_get",
-    # Wave 9j (2026-07-18, THE FINAL CHUNK — closes the PMG plane): quarantine + statistics
-    # remainder (extends pmg.py/tools/pmg_mail.py). `pmg_quarantine_content_get`/
-    # `pmg_quarantine_attachments_list` carry full attacker-authored email content (subject/
-    # from/sender/header/raw-body-prefix) and attacker-controllable attachment filenames,
-    # respectively — direct siblings of the already-ADVERSARIAL pmg_quarantine_spam/virus/
-    # attachment family. `pmg_statistics_contact`/`pmg_statistics_detail`/
-    # `pmg_statistics_recentreceivers`/`pmg_statistics_recentsenders` each carry a literal
-    # EXTERNAL address field in their return schema (`contact`; `sender`/`receiver`;
-    # `receiver`; `sender`, respectively) — MATCH-TWINS to the already-ADVERSARIAL
-    # `pmg_statistics_sender`/`pmg_statistics_receiver`/`pmg_statistics_domains` above (the 9e
-    # review's own "ratings consistent with shipped twins" law, applied here to taint). NOT
-    # here (REVIEWED_TRUSTED instead): `pmg_quarantine_link_get` — the returned `link` is
-    # PMG-GENERATED, not attacker content (a SECRET-handling concern instead — RULING 4, pmg.py's
-    # own Wave 9j module section, an orthogonal axis from taint); `pmg_quarantine_users_list` —
-    # TRUSTED despite also returning address fields (not like pmg_statistics_receiver, which IS
-    # ADVERSARIAL). The distinguishing axis: quarantine_users_list enumerates *config state* —
-    # which mailboxes have operator-curated BL/WL settings — while statistics_receiver returns
-    # *traffic-derived content* (any address that received scanned mail). An attacker can flood
-    # statistics_receiver but cannot cause a new address to appear in users_list; only admin or
-    # the mailbox owner's own self-service action can. Config-enumeration (admin-scoped,
-    # operator-driven) vs. traffic-content (external-authored) is the real axis.
-    # `pmg_quarantine_sendlink` — a mutation whose own return is `null`;
-    # `pmg_statistics_maildistribution`/`pmg_statistics_rejectcount` — both SCHEMA-CONFIRMED pure
-    # aggregate-numeric fields only (checked field-by-field: hour/time index + in/out/spam/virus/
-    # bounce/RBL/PREGREET counts, zero address or free-text field anywhere), twins of the
-    # already-REVIEWED_TRUSTED `pmg_statistics_mailcount`.
-    "pmg_quarantine_content_get", "pmg_quarantine_attachments_list",
-    "pmg_statistics_contact", "pmg_statistics_detail",
-    "pmg_statistics_recentreceivers", "pmg_statistics_recentsenders",
-})
+ADVERSARIAL_TOOLS: frozenset[str] = frozenset(
+    {
+        # guest-influenced: exec-output / agent-info / in-guest file reads carry guest-controlled bytes
+        "ct_logs",
+        "ct_exec",
+        "ct_psql",
+        "ct_diagnose",
+        "pve_agent_exec",
+        "pve_agent_info",
+        "pve_agent_file_read",
+        # host-shell journal/battery: free-text host log lines, service output — same channel class
+        # as ct_logs/ct_diagnose and pve_node_journal one altitude up (2026-08-26).
+        "pve_node_logs",
+        "pve_node_diagnose",
+        # email/external: quarantine content, mail tracker/statistics carry externally-authored bytes
+        "pmg_quarantine_spam",
+        "pmg_quarantine_virus",
+        "pmg_quarantine_attachment",
+        "pmg_quarantine_spamstatus",
+        "pmg_quarantine_virusstatus",
+        "pmg_quarantine_spamusers",
+        "pmg_quarantine_blocklist_list",
+        "pmg_quarantine_welcomelist_list",
+        "pmg_tracker_list",
+        "pmg_tracker_detail",
+        "pmg_node_syslog",
+        "pmg_statistics_sender",
+        "pmg_statistics_receiver",
+        "pmg_statistics_domains",
+        # Wave 9b (2026-07-17): PMG node ops odds (pmg_node.py chunk 9b). `pmg_node_report`/
+        # `pmg_node_journal` are free-text diagnostic/log dumps — exact pbs_node_report/
+        # pve_node_journal/pbs_node_journal precedent. `pmg_node_task_log` is a DIVERGENCE from the
+        # Wave 9 draft's own REVIEWED_TRUSTED guess ("task metadata, not mail content") — the
+        # schema's own {n, t} shape carries free-text log lines, matching pve_task_log/
+        # pbs_node_task_log exactly (NOT here: pmg_node_task_status — {pid, status} carries no free
+        # text, REVIEWED_TRUSTED below, matching both planes' own task_status). `pmg_node_
+        # postfix_queue_list`/`pmg_node_postfix_queue_message_get` carry mail metadata (sender/
+        # receiver/reason, schema's own sortfield enum) and full message content respectively —
+        # attacker-shapeable, matching the pmg_quarantine_content_get family's reasoning one plane
+        # over. See pmg_node.py module docstring's chunk 9b facts #14/#25 for the full argument.
+        "pmg_node_report",
+        "pmg_node_journal",
+        "pmg_node_task_log",
+        "pmg_node_postfix_queue_list",
+        "pmg_node_postfix_queue_message_get",
+        # Wave 9c (2026-07-17): PMG LDAP profiles + fetchmail (extends pmg.py/tools/pmg_mail.py).
+        # `pmg_ldap_users_list`/`pmg_ldap_user_emails_get`/`pmg_ldap_groups_list`/
+        # `pmg_ldap_group_members_get` return content PULLED FROM THE EXTERNAL LDAP DIRECTORY
+        # (account/dn/pmail/email/gid — literal directory entries, not anything PMG's own operator
+        # typed) — whoever controls that directory (or an entry within it) controls these bytes, the
+        # same "externally-authored content over an operator-configured channel" reasoning that
+        # landed `pbs_remote_scan`/`pve_ceph_metadata` here. NOT here: the LDAP profile CRUD/config/
+        # sync tools and the fetchmail CRUD tools — all REVIEWED_TRUSTED below (operator-authored
+        # config; `bindpw`/`pass` are a secret-HANDLING concern, argued in pmg.py's Wave 9c module
+        # section, not a taint/content-trust one — the same orthogonal-axes precedent as
+        # sdn_objects.py's dns/ipam reads).
+        "pmg_ldap_users_list",
+        "pmg_ldap_user_emails_get",
+        "pmg_ldap_groups_list",
+        "pmg_ldap_group_members_get",
+        # config free-text + logs: operator-set, but free-text fields a guest/attacker can shape
+        "pve_node_syslog",
+        "pve_node_journal",
+        "pve_task_log",
+        "pve_list_guests",
+        # Tier-1 memory recall re-serves names/tags STORED from the adversarial reads above —
+        # classified adversarial itself so stored bytes re-enter the taint model rather than
+        # laundering through the estate map (design rail, 2026-07-29).
+        "proximo_recall",
+        # The PROVE ledger's `target` fields carry the same guest/node names the adversarial reads
+        # above produced — reading entries back re-serves those bytes, so it re-enters the taint
+        # model rather than laundering through the log. Exactly proximo_recall's rail, one store
+        # over. (The `detail` body is fingerprinted under the default PROXIMO_LEDGER_REDACT.)
+        "audit_entries",
+        # The wiki index re-serves THIRD-PARTY-AUTHORED community content (solved forum threads
+        # above all): a thread can carry "now run pve_delete_guest" as easily as a fix, and the
+        # bytes arrive already inside the model's context window. Classified adversarial for the
+        # same reason as proximo_recall one line up — retrieved bytes must re-enter the taint
+        # model instead of laundering through local storage. This is the rail that makes reading
+        # a community corpus defensible at all (wiki seam design, 2026-07-29).
+        "proximo_wiki",
+        "proximo_wiki_read",
+        "pve_guest_config_get",
+        "pve_cluster_resources",
+        "pve_snapshot_list",
+        "pve_backup_freshness",  # embeds guest names (free text) in verdicts/flags
+        "pve_storage_content",
+        "pdm_pve_qemu_config",
+        "pdm_pve_lxc_config",
+        "pdm_pve_qemu_list",
+        "pdm_pve_lxc_list",
+        "pdm_pve_resources",
+        "pbs_snapshots_list",
+        # file-level restore (2026-09-17): the entries are the guest's OWN file names and the
+        # download result echoes the remote path the caller chose and the guest-named local file.
+        "pve_file_restore_list",
+        "pve_file_restore_download",
+        "pbs_catalog_list",
+        "pbs_file_download",
+        # the raw GET door (2026-09-19) returns whatever read the vendor publishes, guest config
+        # free-text, task logs and journal included: the most conservative class by construction.
+        "proximo_api_get",
+        # upstream/package-maintainer-authored free text (Wave 1a, 2026-07-15): unlike the other six
+        # pve_apt_* tools (structured, Proxmox-authored config/status), the changelog body is authored
+        # by whoever maintains the package in the configured repo — an attacker who compromises a
+        # configured repo (or gets a malicious one added) could shape this text.
+        "pve_apt_changelog",
+        # same rationale, Wave 1b (2026-07-15): PBS/PMG's apt_changelog is equally
+        # upstream/package-maintainer-authored free text, not Proxmox-authored.
+        "pbs_apt_changelog",
+        "pmg_apt_changelog",
+        # Wave 3b review finding (2026-07-15): `pbs_acme_tos` makes the PBS host fetch a
+        # CALLER-CHOSEN directory URL and returns the response text — the content source is
+        # whoever controls that URL, a more direct version of the changelog rationale above.
+        "pbs_acme_tos",
+        # Wave 9g (2026-07-17): PMG's own `pmg_acme_tos`/`pmg_acme_meta` share the identical
+        # caller-chosen-`directory`-URL fetch shape as `pbs_acme_tos` above — the PMG host makes the
+        # outbound fetch and the response content is authored by whoever controls that URL.
+        # `pmg_acme_meta` has NO PBS equivalent at all (a genuinely new PMG-only endpoint, not a
+        # parity gap) but carries the exact same directory-fetch risk, so it's classified the same
+        # way. See pmg.py's own "Wave 9g" module section for the full argument.
+        "pmg_acme_tos",
+        "pmg_acme_meta",
+        # Wave 2c (2026-07-15): PBS node OS admin — same rationale as pve_node_syslog/journal/
+        # pve_task_log above: free-text logs carry externally-authored bytes (attacker-influenced
+        # process/service output can land in a task log or the system journal).
+        "pbs_node_journal",
+        "pbs_node_syslog",
+        "pbs_node_task_log",
+        # Wave 4c (2026-07-15): PBS tape drive/changer OPERATIONS — content-carrying reads matching
+        # the pbs_snapshots_list precedent. read-label/inventory carry the physical tape's own
+        # label-text with NO return-side pattern constraint in the schema (whoever labeled the
+        # cartridge controls these bytes). cartridge-memory carries LTO MAM name/value pairs read
+        # directly off the physical medium's own onboard memory chip, no pattern/enum constraint at
+        # all. changer_status is a DELIBERATE DIVERGENCE from a naive "status=trusted" reading (see
+        # pbs_tape_ops.py module docstring's Taint section for the full argument): unlike
+        # pbs_tape_drive_status (pure telemetry, no label-text field), changer status returns a
+        # label-text field per slot/drive entry — the same media-label content class as
+        # read-label/inventory, just via the changer instead of the drive.
+        "pbs_tape_drive_read_label",
+        "pbs_tape_drive_cartridge_memory",
+        "pbs_tape_drive_inventory",
+        "pbs_tape_changer_status",
+        # Wave 4d (2026-07-15): PBS tape media CATALOG. media_list carries `label-text` with NO
+        # return-side pattern constraint at all (an even clearer call than changer_status above,
+        # which at least had a typed pattern and still landed here) — structurally identical to
+        # read-label/inventory from the start. media_content carries BOTH `label-text` and
+        # `snapshot` (a guest-influenced backup id/type/time string) — directly matches the
+        # pbs_snapshots_list precedent. media_status_get is classified ADVERSARIAL as a conservative
+        # default under genuine ambiguity: the live schema declares this endpoint's return type
+        # `null` despite its "Get current media status" description, so the real content is unknown
+        # from the schema alone; by analogy to media_list (whose entries carry `status` ALONGSIDE
+        # `label-text`) a per-media status fetch plausibly returns similar content — see
+        # pbs_tape_jobs.py module docstring's Taint section for the full argument (mirrors
+        # changer_status's own "classify as adversarial when unsure" reasoning from Wave 4c).
+        # NOT here: pbs_tape_media_sets — a deliberate divergence, checked field-by-field against the
+        # live schema and confirmed to carry NO label-text field at all (see REVIEWED_TRUSTED below).
+        "pbs_tape_media_list",
+        "pbs_tape_media_content",
+        "pbs_tape_media_status_get",
+        # Wave 5a (2026-07-15): PBS S3 client configs. `pbs_s3_list_buckets` makes a LIVE outbound
+        # call to an OPERATOR-CONFIGURED S3 endpoint (unlike pbs_acme_tos's caller-chosen URL) — but
+        # classification is by CONTENT CHANNEL, not by who chose the target: the returned bucket
+        # names are authored by whoever controls the remote S3 account, the same externally-authored-
+        # content category that lands pve_storage_content/pbs_snapshots_list here despite their own
+        # targets also being operator-configured. See pbs_s3.py module docstring's Taint section for
+        # the full argument (explicitly weighed against the pbs_acme_tos precedent, not silently
+        # decided the same way).
+        "pbs_s3_list_buckets",
+        # Wave 5c (2026-07-15): PBS admin job views + node odds + pull/push.
+        # `pbs_node_report` generates a free-text diagnostic bundle (schema: returns a bare string)
+        # that plausibly embeds config values, log tails, and system state — same category as
+        # pve_node_syslog/pbs_node_journal/pbs_node_task_log above, not the structured-config
+        # REVIEWED_TRUSTED reads elsewhere in this same wave (job-list views, traffic-control status,
+        # node identity/config/rrd, version, pull/push — all classified REVIEWED_TRUSTED; see
+        # pbs_admin.py module docstring's Taint section for the full per-tool argument).
+        "pbs_node_report",
+        # Wave 5d (2026-07-15): PBS datastore-admin remainder — the ACTUAL PBS plane closer (built
+        # from the Wave 5c adversarial review's missing-endpoint list). groups_list/group_notes_get
+        # carry guest/operator-influenced backup ids + free-text notes (the notes body itself, and
+        # its first line as each group's `comment`) — the pbs_snapshots_list precedent exactly.
+        # The remote_scan family returns REMOTE-authored content (store names/comments/maintenance
+        # messages, group ids + comments, namespace names + comments — all authored on the remote
+        # PBS, whoever controls it controls these bytes) — the pbs_s3_list_buckets precedent
+        # (externally-authored content over an operator-configured channel). NOT here:
+        # pbs_snapshot_protected_get (paired write-half types the field as a schema-typed boolean),
+        # pbs_datastore_rrd/active_operations/datastores_usage (numeric/typed server telemetry) —
+        # see pbs_datastore_admin.py module docstring's Taint section for each argument.
+        "pbs_groups_list",
+        "pbs_group_notes_get",
+        "pbs_remote_scan",
+        "pbs_remote_scan_groups",
+        "pbs_remote_scan_namespaces",
+        # Wave 6a (2026-07-16): PVE Ceph core observability + flags. `pve_ceph_log` returns
+        # free-text log lines ({n, t} per schema truth), Sys.Syslog permission channel — same
+        # rationale as pve_node_syslog/pve_node_journal/pve_task_log above.
+        "pve_ceph_log",
+        # Wave 6a review Finding 2 (2026-07-16, adversarial review reclassification): `pve_ceph_
+        # metadata`'s schema types every per-instance mon/mgr/mds entry `"additionalProperties": 1`
+        # — an explicitly OPEN shape, not a closed structured record — and the documented fields
+        # include `hostname`, `addr`/`addrs`, and `name`, all SELF-REPORTED by each daemon at
+        # registration, not typed in by the operator. A daemon that joins the cluster with a
+        # leaked/rogue cephx key (or a compromised existing OSD/MON/MDS host) controls those
+        # strings the same way `pbs_remote_scan`'s remote PBS controls the store names/comments
+        # that landed IT in ADVERSARIAL_TOOLS above ("whoever controls it controls these bytes") —
+        # aggregated across every node in the cluster, into the calling agent's context unfiltered.
+        # flags-list/flag-get/cfg_db/cfg_raw/cfg_value/crush/rules/cmd_safety stay REVIEWED_TRUSTED
+        # (closed-shape, structured, no open daemon-self-report field) — see proximo/ceph.py module
+        # docstring's Taint section for the full per-tool argument, including why `pve_ceph_status`
+        # is REVIEWED_TRUSTED despite its own vague `{"type": "object"}` schema shape.
+        "pve_ceph_metadata",
+        # Wave 6b (2026-07-16): PVE Ceph services lifecycle. `pve_ceph_mon_list`/`pve_ceph_mgr_list`/
+        # `pve_ceph_mds_list` return per-instance `name`/`host`/`addr`/`ceph_version` fields — the
+        # SAME daemon-self-reported identity strings that made `pve_ceph_metadata` ADVERSARIAL above,
+        # just sliced by service type instead of aggregated across mon/mgr/mds/osd/node. The
+        # counter-argument (these three schemas are CLOSED-shape — every field explicitly named, no
+        # `additionalProperties: 1` the way metadata's per-instance entries declare) is real and was
+        # weighed, but the controlling rule stays "channel, not by who chose (or already controls)
+        # the target": a rogue/compromised mon/mgr/mds daemon controls addr/host/name in the
+        # per-type list the identical way it controls those same fields inside the aggregated
+        # metadata view — the JSON container shape changes how PVE happens to present the bytes, not
+        # who authored them. Classifying the list view REVIEWED_TRUSTED while the aggregate view
+        # (built one wave earlier, same daemons, same fields) stays ADVERSARIAL would be an
+        # inconsistent channel call for functionally identical content. See proximo/ceph.py module
+        # docstring's Taint section for the full argument.
+        "pve_ceph_mon_list",
+        "pve_ceph_mgr_list",
+        "pve_ceph_mds_list",
+        # Wave 6c (2026-07-16): PVE Ceph OSD. `pve_ceph_osd_tree`'s schema types the ENTIRE nested
+        # CRUSH-bucket response additionalProperties:1 (open, untyped) — an even more extreme "we
+        # cannot statically say what's in here" shape than pve_ceph_metadata's own per-instance open
+        # map, and its documented per-node properties (status/weight/in/usage/latencies/...) are
+        # daemon-self-reported telemetry flowing back through the same monitor-cluster channel.
+        # `pve_ceph_osd_metadata`'s osd{} sub-object carries hostname/back_addr/front_addr/
+        # hb_back_addr/hb_front_addr — literally the SAME daemon-self-reported identity/address field
+        # set that made the aggregated pve_ceph_metadata ADVERSARIAL in Wave 6a; this is that exact
+        # channel's single-OSD drill-down (same relationship pve_ceph_mon_list/etc. bore to the
+        # aggregate view in Wave 6b), not a new judgment call. NOT here: `pve_ceph_osd_lv_info` — a
+        # DELIBERATE divergence, argued (not defaulted) in proximo/ceph.py's module docstring Taint
+        # section: closed schema shape (no additionalProperties:1) and content sourced from a LOCAL
+        # `lvs` shell-out on the SAME host administering the OSD, not a cross-daemon network
+        # self-report at cluster registration — the same local-config-read class as cfg_raw/cfg_db
+        # (REVIEWED_TRUSTED below), not the mon/mgr/mds/metadata registration-handshake class above.
+        # Strengthened (Wave 6c review, 2026-07-16): "forging requires root" alone doesn't rule out a
+        # non-root daemon compromise writing malicious data through some OTHER channel, so the
+        # sharper, more load-bearing ground is that lv_name/vg_name are not operator-typed or
+        # daemon-rewritable strings in the first place — ceph-volume lvm create/prepare
+        # auto-generates them as UUID-derived identifiers at OSD-creation time, and the running
+        # ceph-osd daemon doesn't rewrite them during normal operation, so a routinely-compromised
+        # (non-root) OSD daemon process has no channel to steer arbitrary bytes into these fields;
+        # only a fresh root/host-level escalation reaches them at all. See proximo/ceph.py's module
+        # docstring Taint section for the full two-ground argument.
+        "pve_ceph_osd_tree",
+        "pve_ceph_osd_metadata",
+        # Wave 6d (2026-07-16) shipped pve_ceph_pool_list/pve_ceph_pool_status/pve_ceph_fs_list as
+        # REVIEWED_TRUSTED; the Wave 6d adversarial review (2026-07-17, Finding 1) REVERSED that
+        # ruling. The original argument rested on two schema citations that don't hold up and never
+        # engaged the closest, most damaging precedent already sitting in THIS set. Corrected
+        # argument: pool_name (POST .../pool) and CephFS name (POST .../fs/{name}) both validate
+        # against the pattern `^[^:/\s]+$` ONLY -- no length cap at all (unlike Wave 6b's mds name,
+        # which carries maxLength: 200) -- and are creatable by ANY cephx-capable client holding mon
+        # caps, not only through Proximo's own pool_create/fs_create; Ceph itself also auto-creates
+        # pools with no operator action at all (device_health_metrics, .mgr). That is structurally
+        # identical to "operator-set, but free-text fields a guest/attacker can shape" -- the exact
+        # rule that already landed pve_list_guests/pve_cluster_resources/pve_snapshot_list in this
+        # set for VM/CT/snapshot NAMES, a precedent the original Wave 6d argument never mentioned.
+        # pool_status's `application_metadata` is a THIRD channel the original argument's own
+        # operator-chosen/cluster-computed dichotomy didn't cover: it's populated by
+        # `ceph osd pool application set <pool> <app> <key> <value>`, a raw Ceph admin command
+        # entirely OUTSIDE pve_ceph_pool_create/pve_ceph_pool_set (neither exposes an
+        # application-metadata key/value parameter) -- Proximo mediates neither the write nor any
+        # cluster-computed derivation of it. CORRECTION to the original argument's schema citations
+        # (do not repeat them): pool_list's application_metadata/autoscale_status and pool_status's
+        # own return carry NO "additionalProperties": 1 anywhere -- that marker sits ONLY on
+        # fs_list's own per-entry object (schema line 904, `GET /nodes/{node}/ceph/fs`
+        # returns.items), not on the pool side at all; the original ceph.py docstring/tests had this
+        # exactly backwards. Bias conservative per this module's own stated policy: classify as
+        # adversarial when unsure. See proximo/ceph.py module docstring's Wave 6d Taint section for
+        # the full argument.
+        "pve_ceph_pool_list",
+        "pve_ceph_pool_status",
+        "pve_ceph_fs_list",
+        # Wave 7a (2026-07-17): PVE SDN gap-fill + global control plane. `pve_sdn_zone_ip_vrf`'s
+        # entries carry `nexthops` explicitly documented as "the interface name or ip address of the
+        # next hop" — peer-announced over the running BGP/EVPN routing protocol, the same
+        # wire-learned-content channel that made pve_ceph_metadata/pve_ceph_osd_metadata
+        # ADVERSARIAL (a compromised peer controls these bytes). `pve_sdn_vnet_mac_vrf`'s schema
+        # description is explicit that its routes are content this node "self-originates OR has
+        # learned via BGP" — a genuinely mixed local/wire-learned channel, classified conservatively
+        # per this module's own "classify as adversarial when unsure" policy. NOT here:
+        # pve_sdn_zone_get/vnet_get/subnet_get/dry_run/zone_status_list/zone_bridges/zone_content —
+        # all REVIEWED_TRUSTED (operator-authored config, PVE's own apply-state machine, or a
+        # structural guest-NIC index reference, argued not defaulted) — see network.py's module
+        # docstring Taint section for the full per-tool argument.
+        "pve_sdn_zone_ip_vrf",
+        "pve_sdn_vnet_mac_vrf",
+        # Wave 7c (2026-07-17): PVE SDN controllers + DNS + IPAMs. `pve_sdn_ipam_status`'s schema
+        # gives ZERO item-shape documentation (`returns: {"type": "array"}`, no `items` key at
+        # all — the most undocumented read on the whole SDN plane) and the domain-known content
+        # is guest IP/MAC/hostname address entries — genuinely guest-influenced (whatever guest
+        # holds that address chose to be there), the same wire-learned/guest-controlled-content
+        # rationale that already landed pve_sdn_zone_ip_vrf/pve_sdn_vnet_mac_vrf here. NOT here:
+        # pve_sdn_controllers_list/controller_get/dns_list/dns_get/ipams_list/ipam_get — all
+        # REVIEWED_TRUSTED (operator-authored SDN integration config; dns_get/ipam_get's
+        # schema-undocumented single-object GET shape is a SECRET-HANDLING concern — see
+        # sdn_objects.py's module docstring RULING — not a content-trust/taint concern).
+        "pve_sdn_ipam_status",
+        # Wave 7d (2026-07-17): PVE SDN fabrics (config CRUD + node-scoped status) — the FINAL
+        # chunk of Wave 7. `pve_sdn_fabric_status_neighbors`'s `neighbor` field is the remote
+        # peer's own self-announced IP/hostname, and its `status`/`uptime` are explicitly
+        # documented "as returned by FRR" — the same wire-learned-content channel that made
+        # pve_sdn_zone_ip_vrf/pve_ceph_metadata ADVERSARIAL. `pve_sdn_fabric_status_routes`'s
+        # `via` (nexthop list) is injected by whatever peer announces it over the running
+        # routing protocol — the identical channel. NOT here: `pve_sdn_fabric_status_interfaces`
+        # — its `{name, state, type}` shape describes the fabric's OWN locally-rendered network
+        # interface, with no field documented as peer-announced or FRR-reported (checked
+        # field-by-field against the raw schema); REVIEWED_TRUSTED instead.
+        # STRIKE-AND-CORRECT (post-review, 2026-07-17): this comment previously cited "the
+        # campaign doc's own Wave 7d chunk listing" as corroborating this classification — that
+        # citation was FABRICATED (no such section exists in the campaign doc; the quoted text is
+        # the pinned draft decomposition, already cited separately, and the campaign doc's own
+        # ruling block said the OPPOSITE at the time). The classification stands anyway, but on
+        # its real basis: the schema's local-only field shape above, PLUS the 2026-07-17
+        # COORDINATOR RE-RULING (`.scratch/2026-07-15-full-surface-campaign.md` lines 853-864,
+        # binding — corrects the ruling block's original coarse "neighbors/interfaces/routes"
+        # grouping per the draft's own Fact #17). See sdn_fabrics.py's module docstring fact #3
+        # for the full argument and the strike-and-correct note.
+        "pve_sdn_fabric_status_neighbors",
+        "pve_sdn_fabric_status_routes",
+        # Wave 9f (2026-07-17): PMG PBS remote config + node-side PBS backup jobs (extends pmg.py/
+        # tools/pmg_mail.py). `pmg_node_pbs_snapshots_list`/`pmg_node_pbs_snapshot_get` return
+        # backup-id/backup-time/verification labels stored on the REMOTE PBS instance — whoever wrote
+        # those backups (or compromised the remote) controls these strings, the exact
+        # `pbs_snapshots_list` cross-plane precedent. NOT here (REVIEWED_TRUSTED instead, after the
+        # mandatory/defensive secret-strip): `pmg_pbs_remote_list`/`_get`, `pmg_node_pbs_jobs_list` —
+        # operator-authored config, same channel as this file's other config-CRUD families; `password`/
+        # `encryption-key` are a secret-HANDLING concern (pmg.py's Wave 9f module section), not a
+        # taint/content-trust one, the same orthogonal-axes precedent as sdn_objects.py's dns/ipam
+        # reads.
+        "pmg_node_pbs_snapshots_list",
+        "pmg_node_pbs_snapshot_get",
+        # Wave 9j (2026-07-18, THE FINAL CHUNK — closes the PMG plane): quarantine + statistics
+        # remainder (extends pmg.py/tools/pmg_mail.py). `pmg_quarantine_content_get`/
+        # `pmg_quarantine_attachments_list` carry full attacker-authored email content (subject/
+        # from/sender/header/raw-body-prefix) and attacker-controllable attachment filenames,
+        # respectively — direct siblings of the already-ADVERSARIAL pmg_quarantine_spam/virus/
+        # attachment family. `pmg_statistics_contact`/`pmg_statistics_detail`/
+        # `pmg_statistics_recentreceivers`/`pmg_statistics_recentsenders` each carry a literal
+        # EXTERNAL address field in their return schema (`contact`; `sender`/`receiver`;
+        # `receiver`; `sender`, respectively) — MATCH-TWINS to the already-ADVERSARIAL
+        # `pmg_statistics_sender`/`pmg_statistics_receiver`/`pmg_statistics_domains` above (the 9e
+        # review's own "ratings consistent with shipped twins" law, applied here to taint). NOT
+        # here (REVIEWED_TRUSTED instead): `pmg_quarantine_link_get` — the returned `link` is
+        # PMG-GENERATED, not attacker content (a SECRET-handling concern instead — RULING 4, pmg.py's
+        # own Wave 9j module section, an orthogonal axis from taint); `pmg_quarantine_users_list` —
+        # TRUSTED despite also returning address fields (not like pmg_statistics_receiver, which IS
+        # ADVERSARIAL). The distinguishing axis: quarantine_users_list enumerates *config state* —
+        # which mailboxes have operator-curated BL/WL settings — while statistics_receiver returns
+        # *traffic-derived content* (any address that received scanned mail). An attacker can flood
+        # statistics_receiver but cannot cause a new address to appear in users_list; only admin or
+        # the mailbox owner's own self-service action can. Config-enumeration (admin-scoped,
+        # operator-driven) vs. traffic-content (external-authored) is the real axis.
+        # `pmg_quarantine_sendlink` — a mutation whose own return is `null`;
+        # `pmg_statistics_maildistribution`/`pmg_statistics_rejectcount` — both SCHEMA-CONFIRMED pure
+        # aggregate-numeric fields only (checked field-by-field: hour/time index + in/out/spam/virus/
+        # bounce/RBL/PREGREET counts, zero address or free-text field anywhere), twins of the
+        # already-REVIEWED_TRUSTED `pmg_statistics_mailcount`.
+        "pmg_quarantine_content_get",
+        "pmg_quarantine_attachments_list",
+        "pmg_statistics_contact",
+        "pmg_statistics_detail",
+        "pmg_statistics_recentreceivers",
+        "pmg_statistics_recentsenders",
+    }
+)
 
 
 def is_adversarial(tool: str) -> bool:
@@ -456,9 +516,7 @@ def taint_tracking_on() -> bool:
     otherwise an operator disabling a mode by writing ``=0`` would still silently get marker-writes).
     FORBID is a comma-LIST value, so mere non-empty presence = configured (an empty string = unset),
     matching how envelope.py treats PROXIMO_FORBID."""
-    return (_env_truthy(TAINT_TRACK_ENV)
-            or _env_set_nonempty(FORBID_ENV)
-            or _env_truthy(REQUIRE_CONSENT_ENV))
+    return _env_truthy(TAINT_TRACK_ENV) or _env_set_nonempty(FORBID_ENV) or _env_truthy(REQUIRE_CONSENT_ENV)
 
 
 def fence_on() -> bool:
@@ -505,8 +563,9 @@ def mark_tainted(audit_dir: str, source: str, *, now: float | None = None) -> No
     marker_path = os.path.join(marker_dir, _MARKER_NAME)
     lock_path = marker_path + ".lock"
 
-    with open(lock_path, "a+", encoding="utf-8",
-              opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW, 0o600)) as lf:
+    with open(
+        lock_path, "a+", encoding="utf-8", opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW, 0o600)
+    ) as lf:
         fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
         try:
             first_ts = ts

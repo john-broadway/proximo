@@ -51,7 +51,7 @@ The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your
 <summary><b>Verify in 60 seconds</b>: three receipts, no trust required</summary>
 
 ```bash
-# 1. The tool count is real. Ask the server itself, cold (=> 912).
+# 1. The tool count is real. Ask the server itself, cold (=> 924).
 #    (in a clone of this repo, after `uv sync`)
 uv run python -c "import asyncio; from proximo import server; \
 print(len(asyncio.run(server.mcp.list_tools())))"
@@ -73,8 +73,8 @@ vendor. Demand them everywhere.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark-dee22419.svg">
-    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light-b5bf8610.svg" width="860">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark-b2d87987.svg">
+    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light-cd1a0a42.svg" width="860">
   </picture>
 </p>
 
@@ -189,7 +189,7 @@ Run it yourself anywhere: <a href="./scripts/demo/hand_the_keys.py"><code>script
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
-912 tools is an estate, not a starting point, and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,740 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,781, a whole plane ~101,398, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 912. The doorway is yours to size.** Coverage and context stopped being the same number.
+924 tools is an estate, not a starting point, and you only carry the part you use. Since 0.30 the floor IS the default: a bare install serves the search-and-call facade (~1,740 tokens of context) with every tool this box serves still callable; one domain like `pve.guests` runs ~9,781, a whole plane ~101,398, `PROXIMO_TOOLSETS=catalog` the classic auto-scoped catalog. **The estate is 924. The doorway is yours to size.** Coverage and context stopped being the same number.
 
 Where an operator actually starts:
 
@@ -210,15 +210,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.42.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.42.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.43.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.43.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.42.0 (one file out of a backup, and a blind listing that says so).** Four tools
-> pull a single file out of a PBS-backed backup without restoring the guest, on both planes,
-> into a private, capped landing directory; the result carries the sha256, never the bytes.
-> The backup and snapshot listings refuse a blind token's empty result and name the exact
-> grant, where they used to answer `[]` on a storage full of archives. 912 tools.
+> **New in 0.43.0 (every read on every plane by path, and PDM's own identity core).** The raw
+> GET door reaches any read the four planes publish, checked against the vendored API trees
+> before the wire; write paths and gated reads are refused with the tool named. Eleven `pdm_*`
+> tools give Datacenter Manager its first native mutations (users, tokens, ACL, permissions),
+> live-proven against PDM 1.1.4. A refusal keeps its reason on the mcp 2.x SDK, secrets cannot
+> leave through an error, and the served tool surface has a sha256 you can pin. 924 tools.
 >
-> Recent: **0.41.1** made the image's security patch layer rebuild every run, instead of only when the base digest moved. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.42.0** pulled one file out of a PBS-backed backup without restoring the guest, and refused a blind token's empty listing. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -255,17 +256,17 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.42.0**: **one file out of a backup, and a blind listing that says so.** Four tools
-  walk a PBS-backed backup's catalog and pull one file out, through PVE's file-restore API or
-  straight off the backup server, without restoring the guest: a governed PLAN names source,
-  path, destination and cap; the bytes land in a fresh private directory and the result carries
-  their sha256. The backup and snapshot listings stop repeating a blind token's `[]` as "no
-  backups": an empty result from a token that provably cannot see is refused with the grant to
-  make. The collector behind that reads a grant as PVE does, held where defined.
+- 🩸 **0.43.0**: **every read on every plane by path, and PDM's own identity core.** The raw
+  GET door reaches any published read on PVE, PBS, PMG and PDM, validated against the vendored
+  API trees before the wire; write paths and gated reads are refused with the nearest tool
+  named. Datacenter Manager gets its first native mutations, eleven identity tools live-proven
+  in the lab. On the mcp 2.x SDK a refusal carries its reason again. Every secret Proximo reads
+  by path is scrubbed from any error that leaves, and the served tool surface has a checksum an
+  operator can pin. 924 tools, and a generated coverage receipt in place of a typed one.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
-**The numbers, honestly:** 912 MCP tools, proved in two deliberate layers. **12,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.
+**The numbers, honestly:** 924 MCP tools, proved in two deliberate layers. **12,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.
 
 **Proven live** (not mocks): the trust spine end-to-end; identity/storage/SDN/firewall/HA create→read→delete with the ledger verified throughout; offline + online live-migration and HA fencing (softdog) on a real 3-node cluster; full PBS/PMG/PDM planes including a real cross-datacenter move.
 **Not yet proven — said plainly:** *hardware*-watchdog fencing (needs physical iTCO/IPMI) and behavior at production scale. The unrecoverable ops (SDN *apply*, etc.) are deliberately never fired live: proven by plan, held back by design, not a gap. Per-surface detail: [`CHANGELOG.md`](./CHANGELOG.md).
@@ -279,7 +280,7 @@ _Every release before it (every pillar, every redteam, every fix) lives in [`CHA
 | **[Verify](VERIFY.md)** | Every trust claim paired with the command that proves it. Run them cold. |
 | **[Security](SECURITY.md)** | The two-deployment trust model, all thirteen controls, what each honestly holds, reporting. |
 | **[Threat model](docs/THREAT_MODEL.md)** | What Proximo defends against, what it doesn't, where the boundaries sit. |
-| **[Tools](docs/TOOLS.md)** | All 912 tools, grouped by surface, typed inputs. |
+| **[Tools](docs/TOOLS.md)** | All 924 tools, grouped by surface, typed inputs. |
 | **[Agents](AGENTS.md)** | The page written for the agent itself: Proximo's sharp edges, stated first. |
 | **[Known issues](docs/known-issues.md)** | What's broken or odd right now, said plainly. |
 | **[Contributing](.github/CONTRIBUTING.md)** | Dev setup, the CI gates, what a PR is expected to keep intact. |

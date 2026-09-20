@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "tools": [
     {
       "name": "ct_exec",
@@ -1936,7 +1936,7 @@
     },
     {
       "name": "pbs_token_create",
-      "description": "MUTATION (MEDIUM): create an API token for a PBS user.\n\nDry-run by default. PBS has NO privsep concept (unlike PVE) — the new token has NO\nprivileges until an ACL entry grants it some (pbs_acl_update with\nauth_id='{userid}!{token_name}'). confirm=True executes and returns a dict whose result\ncarries the token secret (value) ONCE — it is never written to the audit ledger and cannot\nbe retrieved again (only regenerated via pbs_token_update, which invalidates it).\nSynchronous. Use pbs_user_tokens_list to see a user's existing tokens, or pbs_token_delete to\nremove one. Needs PROXIMO_PBS_* config.",
+      "description": "MUTATION (MEDIUM): create an API token for a PBS user.\n\nDry-run by default. PBS has NO privsep toggle (unlike PVE) — the new token has NO\nprivileges until an ACL entry grants it some (pbs_acl_update with\nauth_id='{userid}!{token_name}'), and never more than its owning user holds on that path\n(grant the user first, or the token resolves to nothing). confirm=True executes and\nreturns a dict whose result carries the token secret (value) ONCE — it is never written to\nthe audit ledger and cannot be retrieved again (only regenerated via pbs_token_update,\nwhich invalidates it).\nSynchronous. Use pbs_user_tokens_list to see a user's existing tokens, or pbs_token_delete to\nremove one. Needs PROXIMO_PBS_* config.",
       "inputSchema": {
         "properties": {
           "userid": {
@@ -10080,6 +10080,515 @@
             "default": false,
             "description": "If true, include API token entries alongside user accounts.",
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_get",
+      "description": "READ-ONLY: get a PDM user's config (userid, enabled flag, expiry, email, comment,\nfirstname/lastname; no tokens, no secrets). Use pdm_user_tokens_list for the user's API\ntokens, or pdm_user_create/update/delete to manage the user. Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "PDM user id to look up, format 'user@realm'.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_create",
+      "description": "MUTATION (MEDIUM): create a PDM user. Dry-run by default. `password` is optional and,\nwhen supplied, unconditionally redacted from the plan, detail and ledger. confirm=True\nexecutes and returns a dict; synchronous. Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "New PDM user id, format 'user@realm'.",
+            "type": "string"
+          },
+          "comment": {
+            "default": null,
+            "description": "Optional free-text comment.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "default": null,
+            "description": "Optional email address.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enable": {
+            "default": null,
+            "description": "Whether the account can log in; None defers to PDM's default (enabled).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expire": {
+            "default": null,
+            "description": "Optional account expiry as a Unix timestamp; None/0 means no expiry.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "firstname": {
+            "default": null,
+            "description": "Optional first name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastname": {
+            "default": null,
+            "description": "Optional last name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "default": null,
+            "description": "Optional initial password; redacted from all plans/logs/ledger.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_update",
+      "description": "MUTATION (MEDIUM): update a PDM user (enable=False stops login immediately). Dry-run by\ndefault; the PLAN reads the current config first. No password parameter: the user\nendpoint's password field is not the way to set one. confirm=True executes and returns a\ndict; synchronous. Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "PDM user id to update, format 'user@realm'.",
+            "type": "string"
+          },
+          "comment": {
+            "default": null,
+            "description": "Optional free-text comment; omit to leave unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "default": null,
+            "description": "Optional email address; omit to leave unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enable": {
+            "default": null,
+            "description": "Whether the account can log in; False stops login. Omit to leave unchanged.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expire": {
+            "default": null,
+            "description": "Account expiry as a Unix timestamp; omit to leave unchanged.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "firstname": {
+            "default": null,
+            "description": "Optional first name; omit to leave unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastname": {
+            "default": null,
+            "description": "Optional last name; omit to leave unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delete_props": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Property names to clear: any of 'comment', 'firstname', 'lastname', 'email'."
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_delete",
+      "description": "MUTATION (MEDIUM): delete a PDM user. Dry-run by default; the PLAN reads the user's config\nand tokens to show what vanishes (permanent, no undo: the user's tokens go with it and ACL\nentries naming it are orphaned). To stop login without deleting, use pdm_user_update\n(enable=False). confirm=True executes and returns a dict. Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "PDM user id to delete, format 'user@realm'.",
+            "type": "string"
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_tokens_list",
+      "description": "READ-ONLY: list a PDM user's API tokens (token-name, tokenid, comment, expiry, enabled\nflag; never the secret). Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "Owning PDM user, format 'user@realm'.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_user_token_get",
+      "description": "READ-ONLY: one PDM API token's metadata (comment, expiry, enabled flag, token-name,\ntokenid; never the secret). Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "Owning PDM user, format 'user@realm'.",
+            "type": "string"
+          },
+          "token_name": {
+            "description": "Token name (the part after '!' in the full tokenid).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userid",
+          "token_name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_token_create",
+      "description": "MUTATION (MEDIUM): create an API token for a PDM user. Dry-run by default. The new token\nhas no privileges until pdm_acl_update grants it some (auth_id='user@realm!token_name'), and\nnever more than its owning user holds on that path (grant the user first).\nconfirm=True returns the token secret ONCE in the result; it is never written to the ledger\nand cannot be retrieved again (only regenerated). Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "Owning PDM user, format 'user@realm'.",
+            "type": "string"
+          },
+          "token_name": {
+            "description": "Name for the new API token, unique per user.",
+            "type": "string"
+          },
+          "comment": {
+            "default": null,
+            "description": "Optional free-text comment describing the token's purpose.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enable": {
+            "default": null,
+            "description": "Whether the token is usable immediately; None defers to PDM's default (enabled).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expire": {
+            "default": null,
+            "description": "Optional token expiry as a Unix timestamp; None/0 means no expiry.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid",
+          "token_name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_token_update",
+      "description": "MUTATION: update a PDM API token's metadata; regenerate=True is HIGH (a new secret, the\nold one invalid at once, returned ONCE and never ledgered). Dry-run by default. Needs\nPROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "Owning PDM user, format 'user@realm'.",
+            "type": "string"
+          },
+          "token_name": {
+            "description": "Name of the API token to update.",
+            "type": "string"
+          },
+          "comment": {
+            "default": null,
+            "description": "Optional free-text comment; omit to leave unchanged.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enable": {
+            "default": null,
+            "description": "Whether the token is usable; False disables it immediately. Omit to leave unchanged.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expire": {
+            "default": null,
+            "description": "Token expiry as a Unix timestamp; omit to leave unchanged.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "regenerate": {
+            "default": false,
+            "description": "If True, issue a BRAND-NEW secret and invalidate the old one immediately (HIGH).",
+            "type": "boolean"
+          },
+          "delete_props": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Property names to clear ('comment')."
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid",
+          "token_name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_token_delete",
+      "description": "MUTATION (MEDIUM, IRREVERSIBLE): permanently revoke a PDM API token; any integration using\nit loses access at once. Dry-run by default. Needs PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "userid": {
+            "description": "Owning PDM user, format 'user@realm'.",
+            "type": "string"
+          },
+          "token_name": {
+            "description": "Name of the API token to revoke.",
+            "type": "string"
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userid",
+          "token_name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_acl_update",
+      "description": "MUTATION (HIGH): grant or revoke a PDM ACL entry (PUT /access/acl). Every ACL change\ngrants or revokes authority, so it is HIGH unconditionally. Dry-run by default (reads the\nentries at this exact path for context). Exactly one of auth_id/group. Revert with a second\ncall (grant<->revoke). Use pdm_acl_list to see entries, pdm_roles_list for the roles. Needs\nPROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "ACL path the entry applies to, e.g. '/resource/lab' or '/'.",
+            "type": "string"
+          },
+          "role": {
+            "description": "A single PDM role id to grant or revoke, e.g. 'Auditor'.",
+            "type": "string"
+          },
+          "auth_id": {
+            "default": null,
+            "description": "User or token principal ('user@realm' or 'user@realm!token-name'). Exactly one of auth_id/group is required.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "Group principal. Exactly one of auth_id/group is required.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "propagate": {
+            "default": null,
+            "description": "Whether the grant propagates below `path`; omit for PDM's default (true).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "delete": {
+            "default": false,
+            "description": "False to grant the role, True to revoke it.",
+            "type": "boolean"
+          },
+          "digest": {
+            "default": null,
+            "description": "Optional SHA256 config digest to prevent concurrent modifications.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirm": {
+            "default": false,
+            "description": "False (default) returns a dry-run PLAN preview; True executes the mutation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "role"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdm_permissions_get",
+      "description": "READ-ONLY: resolved effective privileges for a PDM user/token (path -> privilege ->\npropagate bit), the inherited plus direct view that pdm_acl_list's raw entries resolve to.\nNeeds PROXIMO_PDM_* config.",
+      "inputSchema": {
+        "properties": {
+          "auth_id": {
+            "default": null,
+            "description": "User or token to resolve ('user@realm' or 'user@realm!token-name'); omit for the calling credential.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "default": null,
+            "description": "ACL path to scope the result to; omit for every path.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -32239,6 +32748,40 @@
         "required": [
           "route_map_id",
           "order"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "proximo_api_get",
+      "description": "READ-ONLY: run any GET the plane publishes, by path, and return the vendor's data\nlabelled raw.\n\nThe floor under the curated tools: when no tool covers a read, this does, with the same\nledger entry every read gets. The path must match a GET in the vendored API tree (write\npaths, tunnels and unknown paths are refused with the nearest published reads named), and\nreads a curated tool already gates (qemu-agent, byte streams) are refused with that tool\nnamed. Bodies over PROXIMO_RAW_MAX_BYTES come back labelled truncated with their size.",
+      "inputSchema": {
+        "properties": {
+          "plane": {
+            "description": "Which API tree: 'pve', 'pbs', 'pmg' or 'pdm'.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute API path with real values in it, e.g. the guest status path for one VMID. No query string.",
+            "type": "string"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Flat query parameters (string/number/bool values)."
+          }
+        },
+        "required": [
+          "plane",
+          "path"
         ],
         "type": "object"
       }

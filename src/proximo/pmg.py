@@ -35,7 +35,7 @@ from urllib.parse import quote
 
 import httpx
 
-from ._secretfile import refuse_exposed_secret
+from ._secretfile import read_secret, refuse_exposed_secret, register_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
 from ._validate import redact_secrets
 from .backends import ProximoError, fingerprint_refused
@@ -397,14 +397,17 @@ class PmgBackend:
         self._csrf: str | None = None
         self._lock = threading.Lock()
 
+    def _read_password(self) -> str:
+        """The one read of the PMG password: permission floor, strip, register with the scrubber."""
+        return read_secret(self.config.password_path, "PMG password file")
+
     def _login(self) -> None:
         """POST /access/ticket to obtain a session ticket and CSRF token.
 
         Password is read from config.password_path at call time — NEVER logged,
         never stored beyond the local scope of this method.
         """
-        with open(self.config.password_path, encoding="utf-8") as f:
-            password = f.read().strip()
+        password = self._read_password()
         r = self._client.post(
             "/access/ticket",
             data={"username": self.config.username, "password": password},
@@ -413,6 +416,8 @@ class PmgBackend:
         data = r.json()["data"]
         self._ticket = data["ticket"]
         self._csrf = data["CSRFPreventionToken"]
+        register_secret(self._ticket)  # session secrets Proxmox handed us: never in an error either
+        register_secret(self._csrf)
 
     def _ensure_ticket(self) -> None:
         """Lazy login — only calls _login() if no cached ticket exists.

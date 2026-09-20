@@ -26,6 +26,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from jwt import PyJWK
 
+from .._secretfile import register_secret
+
 
 def _b64url(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
@@ -56,6 +58,7 @@ def _thumbprint(pub: ec.EllipticCurvePublicKey) -> str:
 def load_operator_key(path: str | Path) -> OperatorKey:
     """Load an EC P-256 private key (PEM) and derive its thumbprint ``kid``."""
     pem = Path(path).read_bytes()
+    register_secret(pem.decode("utf-8", errors="replace"))  # a key is a secret Proximo reads by path
     priv = serialization.load_pem_private_key(pem, password=None)
     if not isinstance(priv, ec.EllipticCurvePrivateKey) or not isinstance(priv.curve, ec.SECP256R1):
         raise ValueError("A2A signing key must be an EC P-256 (prime256v1) private key for ES256.")

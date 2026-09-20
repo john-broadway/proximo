@@ -117,8 +117,7 @@ class _FakeApi:
 
     def guest_status(self, vmid, kind="lxc", node=None) -> dict:
         self._record("guest_status", vmid, kind, node)
-        return {"status": "running", "name": "sentinel-guest", "uptime": 500,
-                "cpu": 0.1, "mem": 1, "maxmem": 2}
+        return {"status": "running", "name": "sentinel-guest", "uptime": 500, "cpu": 0.1, "mem": 1, "maxmem": 2}
 
     def guest_power(self, vmid, action, kind="lxc", node=None) -> dict:
         self._record("guest_power", vmid, action, kind, node)
@@ -192,6 +191,7 @@ class _FakeApi:
         def _generic(*a: Any, **kw: Any) -> dict:
             self._record(name, *a, **kw)
             return {}
+
         return _generic
 
 
@@ -253,8 +253,9 @@ class _FakeExec:
         self.calls.append(("run", (ctid, command), {"timeout": timeout}))
         return ExecResult(str(ctid), " ".join(command), 0, "sentinel-out", "")
 
-    def psql(self, ctid: str, sql: str, *, db: str = "postgres", user: str = "postgres",
-             timeout: int = 60) -> ExecResult:
+    def psql(
+        self, ctid: str, sql: str, *, db: str = "postgres", user: str = "postgres", timeout: int = 60
+    ) -> ExecResult:
         self.calls.append(("psql", (ctid, sql), {"db": db, "user": user, "timeout": timeout}))
         return ExecResult(str(ctid), sql, 0, "sentinel-out", "")
 
@@ -275,6 +276,7 @@ class _FakePdm:
         def _generic(*a: Any, **kw: Any) -> dict:
             self.calls.append((name, a, kw))
             return {}
+
         return _generic
 
 
@@ -284,12 +286,16 @@ def wired(tmp_path, monkeypatch):
     PLAN->PROVE weld still runs (mirrors test_server_plan.py / test_server_new_wiring.py)."""
     log = str(tmp_path / "audit.log")
     cfg = ProximoConfig(
-        api_base_url="https://pve1:8006/api2/json", node="node1", token_path="/run/x",
+        api_base_url="https://pve1:8006/api2/json",
+        node="node1",
+        token_path="/run/x",
         audit_log_path=log,
         # ct_exec/ct_psql and the qemu-agent tools are OFF by default (safe default); flip them
         # on + allow every ctid/vmid so this sweep can reach their dry-run PLAN path too.
-        enable_exec=True, ct_allowlist=frozenset({"*"}),
-        enable_agent=True, agent_allowlist=frozenset({"*"}),
+        enable_exec=True,
+        ct_allowlist=frozenset({"*"}),
+        enable_agent=True,
+        agent_allowlist=frozenset({"*"}),
     )
     api = _FakeApi()
     pbs = _FakePbs()
@@ -301,8 +307,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_pbs", lambda: (SimpleNamespace(), pbs))
     monkeypatch.setattr(server, "_pmg", lambda: (SimpleNamespace(node="pmg1"), pmg))
     monkeypatch.setattr(server, "_pdm", lambda: (SimpleNamespace(), pdm))
-    return SimpleNamespace(cfg=cfg, api=api, pbs=pbs, pmg=pmg, pdm=pdm, exec_=exec_,
-                           ledger=ledger, log=log)
+    return SimpleNamespace(cfg=cfg, api=api, pbs=pbs, pmg=pmg, pdm=pdm, exec_=exec_, ledger=ledger, log=log)
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +514,8 @@ def _fallback_value(pname: str, ann: str) -> Any:
 # for THAT specific tool (each cites the validator that forces it — see the research notes in
 # the PR/commit, not reproduced here to keep this file focused).
 CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
+    # the raw door validates `path` against the vendored tree: only a published GET passes
+    "proximo_api_get": {"plane": "pve", "path": "/version", "params": None},
     # firewall action is ACCEPT/DROP/REJECT, not a power verb; exercise the guest-scoped path
     # (scope="guest") so vmid/kind actually surface in the change/blast text (_scope_label).
     "pve_firewall_rule_add": {"action": "ACCEPT", "scope": "guest", "vmid": "100", "kind": "lxc"},
@@ -544,12 +551,24 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # mutually irrelevant here; leave them unset so the plan reflects only the type_="email" +
     # email pair. `account` added Wave 8a (ldapuser extension) — same treatment.
     "pmg_who_object_add": {
-        "domain": None, "regex": None, "ip": None, "cidr": None, "mode": None,
-        "profile": None, "group": None, "account": None,
+        "domain": None,
+        "regex": None,
+        "ip": None,
+        "cidr": None,
+        "mode": None,
+        "profile": None,
+        "group": None,
+        "account": None,
     },
     "pmg_who_object_update": {
-        "domain": None, "regex": None, "ip": None, "cidr": None, "mode": None,
-        "profile": None, "group": None, "account": None,
+        "domain": None,
+        "regex": None,
+        "ip": None,
+        "cidr": None,
+        "mode": None,
+        "profile": None,
+        "group": None,
+        "account": None,
     },
     # Action-object update/delete/GET ids are compound "ogroup_objid" (e.g. "13_26"), NOT a bare
     # ruledb id — _check_action_object_id's own docstring example.
@@ -589,7 +608,10 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     "pbs_node_disk_wipe": {"disk": "sda1"},
     "pbs_node_disk_directory_create": {"disk": "sda", "filesystem": "ext4"},
     "pbs_node_disk_zfs_create": {
-        "devices": "sda,sdb", "raidlevel": "mirror", "ashift": 12, "compression": "lz4",
+        "devices": "sda,sdb",
+        "raidlevel": "mirror",
+        "ashift": 12,
+        "compression": "lz4",
     },
     # Guest backup-job selection (vmid/all_guests/pool) is mutually exclusive; leave only vmid set.
     "pve_backup_job_create": {"pool": None, "exclude": None, "all_guests": None},
@@ -646,6 +668,9 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # pbs_permissions_get's "auth_id" needs the same PBS 'user@realm' shape as above — the
     # generic alnum fallback ("sentinelauth") fails pbs_access._check_authid.
     "pbs_permissions_get": {"auth_id": "testuser@pbs"},
+    # the PDM identity core shares the PBS helpers, so it shares the same principal shapes
+    "pdm_acl_update": {"auth_id": "testuser@pdm", "group": None},
+    "pdm_permissions_get": {"auth_id": "testuser@pdm"},
     # pbs_tfa_add's "tfa_type" is a fixed enum (totp/u2f/webauthn/recovery/yubico —
     # pbs_access._check_tfa_type), not a free alnum token like the generic fallback synthesizes.
     "pbs_tfa_add": {"tfa_type": "totp"},
@@ -742,7 +767,9 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     "pbs_tape_key_get": {"fingerprint": ":".join(["ab"] * 32)},
     "pbs_tape_key_delete": {"fingerprint": ":".join(["ab"] * 32), "digest": "0" * 64},
     "pbs_tape_key_update_password": {
-        "fingerprint": ":".join(["ab"] * 32), "digest": "0" * 64, "kdf": "scrypt",
+        "fingerprint": ":".join(["ab"] * 32),
+        "digest": "0" * 64,
+        "kdf": "scrypt",
     },
     # "kdf" is a CLOSED enum {none,scrypt,pbkdf2} (pbs_tape_media._check_kdf) — the generic alnum
     # fallback ("sentinelkdf") fails it. "key" (pbs_tape_key_create only) is a 300-600 char JSON
@@ -764,7 +791,8 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # rejected even though they appear in the raw schema enum) — the generic alnum fallback
     # ("sentinelstatus") fails it.
     "pbs_tape_media_status_set": {
-        "uuid": "12345678-1234-1234-1234-123456789abc", "status": "retired",
+        "uuid": "12345678-1234-1234-1234-123456789abc",
+        "status": "retired",
     },
     # tape backup-job/one-off-backup "max_depth" (0-7) / "worker_threads" (1-32) are BOUNDED ints
     # (pbs_tape_jobs._check_max_depth/_check_worker_threads) — the generic int fallback (100)
@@ -772,10 +800,15 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # pbs_tape_jobs._check_notify_user) — the generic alnum fallback ("sentinelnotifyuser") fails
     # it; the global "userid" sentinel above is keyed to a DIFFERENT param name.
     "pbs_tape_backup_job_create": {
-        "max_depth": 3, "worker_threads": 4, "notify_user": "testuser@pbs",
+        "max_depth": 3,
+        "worker_threads": 4,
+        "notify_user": "testuser@pbs",
     },
     "pbs_tape_backup_job_update": {
-        "max_depth": 3, "worker_threads": 4, "notify_user": "testuser@pbs", "digest": "0" * 64,
+        "max_depth": 3,
+        "worker_threads": 4,
+        "notify_user": "testuser@pbs",
+        "digest": "0" * 64,
         "delete": ["comment"],
     },
     "pbs_tape_backup": {"max_depth": 3, "worker_threads": 4, "notify_user": "testuser@pbs"},
@@ -803,7 +836,9 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     "pbs_metrics_influxdb_http_delete": {"digest": "0" * 64},
     "pbs_metrics_influxdb_udp_create": {"host": "192.0.2.10:8089"},
     "pbs_metrics_influxdb_udp_update": {
-        "host": "192.0.2.10:8089", "digest": "0" * 64, "delete": ["comment"],
+        "host": "192.0.2.10:8089",
+        "digest": "0" * 64,
+        "delete": ["comment"],
     },
     "pbs_metrics_influxdb_udp_delete": {"digest": "0" * 64},
     # PBS admin node config (Wave 5c) "digest" needs the same 64-char lowercase-hex SHA-256 shape
@@ -860,7 +895,10 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # blanket per-param population this sweep does would otherwise trip that guard for every
     # single param the tool has, which is not what this override is testing.
     "pve_ceph_osd_create": {
-        "dev": "/dev/sdb", "db_dev": "/dev/sdc", "wal_dev": "/dev/sdd", "osds_per_device": None,
+        "dev": "/dev/sdb",
+        "db_dev": "/dev/sdc",
+        "wal_dev": "/dev/sdd",
+        "osds_per_device": None,
     },
     # PVE Ceph pools (Wave 6d) "application"/"pg_autoscale_mode" are CLOSED enums
     # (backends._check_ceph_pool_application/_check_ceph_pool_autoscale_mode) — the generic
@@ -875,12 +913,19 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     # propertyString (backends._check_ceph_pool_erasure_coding) — the generic alnum fallback
     # fails it (no "=").
     "pve_ceph_pool_create": {
-        "application": "rbd", "pg_autoscale_mode": "warn", "target_size": "10G",
-        "min_size": 2, "size": 3, "erasure_coding": "k=2,m=1",
+        "application": "rbd",
+        "pg_autoscale_mode": "warn",
+        "target_size": "10G",
+        "min_size": 2,
+        "size": 3,
+        "erasure_coding": "k=2,m=1",
     },
     "pve_ceph_pool_set": {
-        "application": "rbd", "pg_autoscale_mode": "warn", "target_size": "10G",
-        "min_size": 2, "size": 3,
+        "application": "rbd",
+        "pg_autoscale_mode": "warn",
+        "target_size": "10G",
+        "min_size": 2,
+        "size": 3,
     },
     # PVE SDN vnet-scoped firewall (Wave 7b) "action" is ACCEPT/DROP/REJECT
     # (firewall._check_action, imported) — the global "start" default (a power-verb sentinel)
@@ -915,11 +960,13 @@ CUSTOM_KWARGS: dict[str, dict[str, Any]] = {
     "pve_sdn_controller_create": {"controller_type": "bgp"},
     "pve_sdn_controller_update": {"options": {"asn": 65000}},
     "pve_sdn_dns_create": {
-        "dns_type": "powerdns", "fingerprint": ":".join(["ab"] * 32),
+        "dns_type": "powerdns",
+        "fingerprint": ":".join(["ab"] * 32),
     },
     "pve_sdn_dns_update": {"fingerprint": ":".join(["ab"] * 32)},
     "pve_sdn_ipam_create": {
-        "ipam_type": "netbox", "fingerprint": ":".join(["ab"] * 32),
+        "ipam_type": "netbox",
+        "fingerprint": ":".join(["ab"] * 32),
     },
     "pve_sdn_ipam_update": {"fingerprint": ":".join(["ab"] * 32)},
     # PVE SDN controllers/DNS/IPAMs LIST reads (Wave 7c) — the optional `type` filter param
@@ -1047,15 +1094,61 @@ def _kwargs_for(name: str) -> dict[str, Any]:
 # an inert optional PMG "what-object" filter field for unrelated tools, so requiring it globally
 # would produce false failures rather than catching a real bug.
 # ---------------------------------------------------------------------------
-IDENTITY_PARAMS = frozenset({
-    "vmid", "newid", "ctid", "storage", "target_storage", "snapname", "disk", "volid",
-    "upid", "remote", "remote_id", "store", "datastore", "ns", "namespace",
-    "backup_id", "group", "ogroup", "id_", "roleid", "groupid", "tokenid", "userid",
-    "new_owner", "realm", "poolid", "pool", "path", "pos", "iface", "zone", "vnet", "subnet",
-    "mapping_id", "metrics_id", "ep_type", "job_id", "rep_id", "domain", "domains",
-    "transport", "mail_id", "mail_ids", "tracker_id", "sid", "resources", "rule", "plugin_id",
-    "auth_id", "account", "mail",
-})
+IDENTITY_PARAMS = frozenset(
+    {
+        "vmid",
+        "newid",
+        "ctid",
+        "storage",
+        "target_storage",
+        "snapname",
+        "disk",
+        "volid",
+        "upid",
+        "remote",
+        "remote_id",
+        "store",
+        "datastore",
+        "ns",
+        "namespace",
+        "backup_id",
+        "group",
+        "ogroup",
+        "id_",
+        "roleid",
+        "groupid",
+        "tokenid",
+        "userid",
+        "new_owner",
+        "realm",
+        "poolid",
+        "pool",
+        "path",
+        "pos",
+        "iface",
+        "zone",
+        "vnet",
+        "subnet",
+        "mapping_id",
+        "metrics_id",
+        "ep_type",
+        "job_id",
+        "rep_id",
+        "domain",
+        "domains",
+        "transport",
+        "mail_id",
+        "mail_ids",
+        "tracker_id",
+        "sid",
+        "resources",
+        "rule",
+        "plugin_id",
+        "auth_id",
+        "account",
+        "mail",
+    }
+)
 
 # Per-tool identity exemptions: a param IS identity-bearing in general, but for this specific
 # tool the plan_* builder deliberately does not echo the raw value anywhere in its output. Each
@@ -1106,6 +1199,7 @@ IDENTITY_EXEMPT: dict[str, frozenset[str]] = {
     # but NOT path — path is an optional scoping filter passed to pbs_access.permissions_get(),
     # not folded into the target (same "list-filter, not identity" treatment as pbs_acl_get above).
     "pbs_permissions_get": frozenset({"path"}),
+    "pdm_permissions_get": frozenset({"path"}),  # same seam as pbs_permissions_get above
     # pbs_tape_media_list's ledger target is the fixed "pbs/tape/media/list" — mirrors
     # pbs_snapshots_list's own ns/backup_id exemption above: `pool` is an OPTIONAL narrowing
     # filter on a directory-style list, not the sole identity of what's being listed (there is no
@@ -1199,9 +1293,7 @@ def test_mutating_wrapper_plan_shape(name, wired):
         f"the wrapper is labelling its plan/ledger entry with a DIFFERENT tool's action (copy-paste bug)"
     )
     target = resp.get("target")
-    assert isinstance(target, str) and target, (
-        f"{name}: plan.target must be a non-empty string, got {target!r}"
-    )
+    assert isinstance(target, str) and target, f"{name}: plan.target must be a non-empty string, got {target!r}"
     assert resp.get("risk") in {"none", "low", "medium", "high"}, (
         f"{name}: plan.risk is {resp.get('risk')!r}, not a known RISK_* level"
     )
@@ -1212,10 +1304,7 @@ def test_mutating_wrapper_plan_shape(name, wired):
     id_kwargs = _identity_kwargs(name, kwargs)
     if id_kwargs:
         hay = _haystack(resp)
-        missing = [
-            (pname, val) for pname, val in id_kwargs.items()
-            if val is not None and _value_missing(val, hay)
-        ]
+        missing = [(pname, val) for pname, val in id_kwargs.items() if val is not None and _value_missing(val, hay)]
         assert not missing, (
             f"{name}: identity argument(s) {missing} were passed but do NOT appear anywhere in "
             f"the returned plan's target/change ({hay!r}) — the wrapper may be building its plan "
@@ -1287,6 +1376,11 @@ def _entries(log: str) -> list[dict]:
 
 # Honest allowlist for read tools — same discipline as NOT_SHAPE_ASSERTED above, reasons cited.
 NOT_SHAPE_ASSERTED_READ: dict[str, str] = {
+    # The raw GET door identifies its object by an API PATH, not a Proxmox object param; the
+    # target string is `plane:path` and the tree match, the gate refusals, the params shape, the
+    # ledger seam and the envelope are all pinned in tests/test_raw_door.py.
+    "proximo_api_get": "tools/raw_door.py proximo_api_get(): object = an API path; seams pinned in "
+    "tests/test_raw_door.py",
     # Aggregate preflight/diagnostic reads: gather evidence from SEVERAL sub-reads under one
     # tool-level ledger entry with a fixed, non-identity target ("preflight" / node-only) by
     # design — there is no per-call identity argument to trace through a target string.
@@ -1300,22 +1394,22 @@ NOT_SHAPE_ASSERTED_READ: dict[str, str] = {
     # object for a target string to reflect. Its request/response/ledger/taint/PLAN seams are all
     # pinned in tests/test_escape_hatch.py, including a control run against a direct call.
     "proximo_call": "server.py proximo_call(): by-name dispatcher, no ledger entry or identity "
-                    "params of its own; seams pinned in tests/test_escape_hatch.py",
+    "params of its own; seams pinned in tests/test_escape_hatch.py",
     "proximo_recall": "tools/memory_tools.py: Tier-1 memory (default-on since the 0.30 flip) — "
-                      "answers from the LOCAL map, so it has no Proxmox object identity params "
-                      "for this sweep to probe; request/response/ledger seams are pinned in "
-                      "tests/test_memory.py",
+    "answers from the LOCAL map, so it has no Proxmox object identity params "
+    "for this sweep to probe; request/response/ledger seams are pinned in "
+    "tests/test_memory.py",
     "proximo_baseline": "tools/memory_tools.py: Tier-1 memory (default-on since the 0.30 flip); "
-                        "request/response/ledger seams incl. the no-PVE-call stored path are "
-                        "pinned in tests/test_memory.py",
+    "request/response/ledger seams incl. the no-PVE-call stored path are "
+    "pinned in tests/test_memory.py",
     "proximo_wiki": "tools/wiki_tools.py: opt-in local docs index — refuses (ProximoError) when "
-                    "PROXIMO_WIKI is unset, as in this sweep's env; request/response/ledger seams "
-                    "are pinned in tests/test_wiki.py "
-                    "(test_proximo_wiki_is_a_governed_read_on_the_ledger)",
+    "PROXIMO_WIKI is unset, as in this sweep's env; request/response/ledger seams "
+    "are pinned in tests/test_wiki.py "
+    "(test_proximo_wiki_is_a_governed_read_on_the_ledger)",
     "proximo_wiki_read": "tools/wiki_tools.py: opt-in local docs index (same PROXIMO_WIKI refusal "
-                         "as proximo_wiki); the ledger seam INCLUDING the section-id target is "
-                         "pinned in tests/test_wiki.py "
-                         "(test_proximo_wiki_read_is_a_governed_read_carrying_its_target)",
+    "as proximo_wiki); the ledger seam INCLUDING the section-id target is "
+    "pinned in tests/test_wiki.py "
+    "(test_proximo_wiki_read_is_a_governed_read_carrying_its_target)",
 }
 
 
@@ -1341,10 +1435,7 @@ def test_read_wrapper_request_shape(name, wired):
         return
 
     hay = json.dumps(entries, default=str)
-    missing = [
-        (pname, val) for pname, val in id_kwargs.items()
-        if val is not None and _value_missing(val, hay)
-    ]
+    missing = [(pname, val) for pname, val in id_kwargs.items() if val is not None and _value_missing(val, hay)]
     assert not missing, (
         f"{name}: identity argument(s) {missing} were passed but do NOT appear anywhere in the "
         f"ledger entry/entries recorded for this call ({hay!r}) — the read wrapper may be "
