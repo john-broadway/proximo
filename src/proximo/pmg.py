@@ -35,6 +35,8 @@ from urllib.parse import quote
 
 import httpx
 
+from proximo._secretfile import safe_exception_text
+
 from ._secretfile import read_secret, refuse_exposed_secret, register_secret
 from ._tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
 from ._validate import redact_secrets
@@ -5385,7 +5387,7 @@ def _ruledb_reset_capture_count(
     try:
         return len(read() or []), None
     except Exception as e:  # noqa: BLE001 — deliberate: ANY capture-read failure degrades honestly
-        return None, f"{label} count capture failed: {type(e).__name__}: {e}"
+        return None, f"{label} count capture failed: {safe_exception_text(e)}"
 
 
 def plan_ruledb_reset(api: PmgBackend) -> Plan:
@@ -8675,7 +8677,7 @@ def plan_node_pbs_snapshot_restore(
         times = {s.get("backup-time") for s in snaps if isinstance(s, dict)}
         exists = backup_time in times
     except Exception as e:
-        fail_notes.append(f"snapshot existence check failed: {type(e).__name__}: {e}")
+        fail_notes.append(f"snapshot existence check failed: {safe_exception_text(e)}")
 
     counts: dict[str, int | None] = {}
     if database:

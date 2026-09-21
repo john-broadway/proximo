@@ -125,7 +125,9 @@ def tool(*d_args: Any, **d_kwargs: Any):
         if not _MCP_TOOL_SUPPORTS_ANNOTATIONS:
             # An EXPLICIT annotations= kwarg must degrade the same way the derived path does:
             # on a pre-annotations SDK (the 1.24 floor) passing it through is a TypeError at
-            # import — and CI's 1.x leg runs the lock's pin, not the floor, so it never sees it.
+            # import — and no CI leg runs the floor itself: the 1.x compat leg installs
+            # `mcp>=1.24,<2`, which resolves to the NEWEST 1.x, so it never sees it either.
+            # (Before 0.44.0 that leg read the lock's own 1.x pin; same blind spot, new cause.)
             kwargs.pop("annotations", None)
         elif "annotations" not in kwargs and (ann := _annotations_from_doc(fn.__doc__)) is not None:
             kwargs["annotations"] = ann

@@ -483,6 +483,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from proximo._secretfile import safe_exception_text
+
 from .backends import (
     _CEPH_CMD_SAFETY_SERVICES,
     ProximoError,
@@ -616,7 +618,7 @@ def _cmd_safety_note(api: Any, action: str, service: str, service_id: str, node:
             f"{service_id!r} — ADVISORY ONLY, verify yourself before proceeding."
         )
     except Exception as e:
-        return f"cmd-safety unavailable: {type(e).__name__}: {e}"
+        return f"cmd-safety unavailable: {safe_exception_text(e)}"
 
 
 def _parse_ceph_service(service: str) -> tuple[str, str | None]:

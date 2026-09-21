@@ -2,6 +2,20 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.44.0] — 2026-09-21
+
+**No tool leaks an exception's raw text any more.**
+A runtime leak found by an adversarial lens closed one site and named the class: `f"{type(e).__name__}: {e}"` reached the model from thirteen sites across eleven modules, and httpx builds its message from the request URL, so a failed call could carry the estate's internal host and port out to the caller. `redact()` cannot catch that: it hides registered literals and auth shapes, not addresses, and the string does not exist until the call fails, so no source audit finds it either. All thirteen now go through `safe_exception_text` in `_secretfile.py`, and `tests/test_no_raw_exception_text.py` scans `src/` so the shape cannot come back, with a planted control proving the matcher sees what it forbids and does not accuse the safe type-name-only form.
+
+**Our own artifacts run the newest mcp.**
+The lock, both hash-pinned `requirements/*.txt` exports, the container image and the SBOM move from `mcp==1.28.1` to `mcp==2.2.0`. `[tool.uv] constraint-dependencies` held them at 1.x from the dual-support port in 0.39.0, described there as waiting on "its own later deliberate act"; this is that act. The hold was load-bearing right up to the previous release: until 0.43.0, mcp 2.x sanitized every exception that was not its own `ToolError` into `Error executing tool <name>`, so a 2.x client read every Proximo refusal as a bare tool name. Shipping a 2.x image before that fix would have shipped a governance layer whose refusals said nothing.
+
+**The published floor does not move, and one CI leg is now the only thing keeping that honest.**
+`mcp>=1.24,<3` still admits 1.x, so nothing an adopter pinned stops resolving. The dual-major matrix is inverted to match reality: leg 2 runs the lock's own hash-pinned 2.x, and leg 1 overrides down to `mcp>=1.24,<2` unpinned. The override is always whichever major the lock is not. That leg is now the only proof behind the 1.x half of the published range, and the workflow says so: if it is ever dropped, the 1.x claim comes out of `pyproject.toml` in the same commit. Proven both ways before this shipped, on the newest of each major: 12,482 passed / 12 skipped on mcp 2.2.0, and 12,478 / 16 on mcp 1.30.0, which is newer than the 1.28.1 the lock had been pinning.
+
+**What the dependency surface actually gained.**
+Five packages enter the installed set (`httpcore2`, `httpx2`, `mcp-types`, `opentelemetry-api`, `truststore`) and two leave (`pydantic-settings`, `python-dotenv`). A sixth, `httpx2-jsfetch`, appears in the lock but carries `sys_platform == 'emscripten'`, so it never installs on any platform Proximo runs on. `pip-audit` is clean on both the runtime and dev exports at these pins. Re-pin `PROXIMO_TOOLS_PIN` after upgrading if you use it.
+
 ## [0.43.0] — 2026-09-20
 
 **Every published read on every plane, by path.**

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.43.0"
+version = "0.44.0"
 description = "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,6 +27,16 @@ dependencies = [
   # (full suite verified on 1.24.0). The <3 ceiling excludes the unproven next major; the
   # admitted set is pinned as a SUPPORTED_MAJORS table in tests/test_dependency_bounds.py
   # via `packaging` — never a substring check.
+  # THE TWO-MAJOR RULE, so this range is never argued from scratch again: Proximo supports AT
+  # MOST TWO mcp majors at a time — the one our own artifacts RUN (the lock: 2.x since 0.44.0)
+  # and the ONE BEHIND IT, as an upgrade window for adopters who pinned. Never three.
+  # When 3.0 ships: move the lock to 3.x, move this floor to `mcp>=2,<4`, and DELETE the 1.x
+  # branches — the whole seam is 203 lines in _mcpcompat.py plus 12 MCP_MAJOR branches across
+  # two files (measured 2026-09-21), so dropping a major is a deletion, not a refactor.
+  # Carrying 1.x today is NOT inertia: upstream shipped 1.30.0 and 2.2.0 on the SAME DAY
+  # (2026-09-07), so it is a maintained major, and dropping a major the vendor still cuts does
+  # not make us current, it only narrows who can install us. The trigger to drop it is upstream
+  # stopping 1.x releases, or 3.0 arriving — whichever comes first.
   "mcp>=1.24,<3",
   "httpx>=0.27,<1",  # Proxmox REST API client
   # Imported directly in 43 modules (Field param docs, BeforeValidator coercion) but was
@@ -76,14 +86,18 @@ proximo-a2a = "proximo._a2a_entry:main"     # A2A server shim (friendly error wi
 proximo-http = "proximo._http_entry:main"   # HTTP/OpenAPI face shim (friendly error without [http] extra)
 proximo-mcp-http = "proximo._mcp_http_entry:main"  # MCP-over-streamable-HTTP face shim (friendly error without [mcp-http] extra)
 
-[tool.uv]
-# STAGED ROLLOUT of the mcp major, deliberately: the published metadata above admits 1.x AND
-# 2.x (both suite-proven — CI runs both legs every push), but OUR OWN artifacts (uv.lock →
-# requirements/*.txt → CI default leg, container, SBOM) stay on 1.x for this release. Flipping
-# the shipped container's mcp major is its own later deliberate act, not a side effect of the
-# dual-support port. Remove this constraint to move the lock (and everything downstream of it)
-# to 2.x.
-constraint-dependencies = ["mcp>=1.24,<2"]
+# [tool.uv] carried `constraint-dependencies = ["mcp>=1.24,<2"]` from the dual-support port
+# (0.39.0) until 0.44.0: the published metadata admitted 1.x AND 2.x, but our own artifacts
+# (uv.lock -> requirements/*.txt -> the CI default leg, the container, the SBOM) stayed on 1.x
+# while the flip waited on "its own later deliberate act". That act is this release. It was
+# load-bearing right up to it: until 0.43.0, mcp 2.x sanitized every non-ToolError to
+# "Error executing tool <name>", so a 2.x client read every Proximo refusal as a bare tool
+# name. Shipping a 2.x image before that fix would have shipped a mute governance layer.
+#
+# The lock now resolves the newest mcp (2.x). The published floor deliberately does NOT move:
+# `mcp>=1.24,<3` still admits 1.x, and CI's compat leg installs 1.x unpinned to keep that
+# claim honest. Constrain here again only to hold the lock BELOW what the metadata admits,
+# and say why.
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/proximo"]

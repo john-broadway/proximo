@@ -105,3 +105,49 @@ def refuse_exposed_secret(path: str, what: str) -> None:
             f"Refusing to start: anything on this box could read the secret. "
             f"Fix: chmod 600 {path}"
         )
+
+
+# --- exception text that can be handed to a model -------------------------------------------
+#
+# THE GAP redact() DOES NOT CLOSE. redact() hides REGISTERED SECRET LITERALS and auth-header
+# shapes. An internal address is neither, so it walks straight through. httpx builds its error
+# message out of the REQUEST URL:
+#
+#     Client error '403 Forbidden' for url 'https://<internal-ip>:8006/api2/json/nodes/.../status'
+#
+# so any tool formatting the type-name-plus-message shape into a RESPONSE hands the caller the
+# estate's topology. That is a RUNTIME leak: no source audit can ever catch it, because the
+# string does not exist until the call fails.
+#
+# WHY NOT DROP THE MESSAGE. `_audited_run` keeps only the type name, which is right for a
+# durable ledger. A model answering "why could you not read that storage?" needs "403
+# Forbidden" to say anything useful. So the LOCATOR goes and the REASON stays.
+_URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]+")
+# Dotted quad with an optional port. Deliberately not a general hostname sweep: that would eat
+# ordinary words and make messages unreadable, and a bare FQDN with no scheme is not the shape
+# httpx produces.
+_ADDR_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b")
+_MAX_EXC_TEXT = 400
+
+
+def safe_exception_text(exc: BaseException, *, limit: int = _MAX_EXC_TEXT) -> str:
+    """`Type: message` with every locator removed, safe to return to a caller.
+
+    Strips URLs and bare IPv4[:port] before running the result through redact(), so both the
+    estate's topology and any registered secret are gone. Returns the bare type name when the
+    exception carries no message. Bounded, because an exception body is context the caller pays
+    for. Use this anywhere exception text enters a RESPONSE; `_audited_run`'s type-only rule
+    still governs what enters the LEDGER.
+    """
+    name = type(exc).__name__
+    try:
+        body = str(exc)
+    except Exception:  # a __str__ that itself raises must not take the caller down
+        body = ""
+    if not body:
+        return name
+    body = _URL_RE.sub("<url>", body)
+    body = _ADDR_RE.sub("<addr>", body)
+    text = redact(f"{name}: {body}")
+    text = " ".join(text.split())  # one line: a multi-line body reads as structure it is not
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"

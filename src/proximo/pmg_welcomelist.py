@@ -98,6 +98,8 @@ were not individually smoked.
 """
 from __future__ import annotations
 
+from proximo._secretfile import safe_exception_text
+
 from .backends import ProximoError
 from .planning import RISK_LOW, RISK_MEDIUM, Plan
 from .pmg import PmgBackend, _check_ruledb_id
@@ -322,7 +324,7 @@ def _welcomelist_capture_current(api: PmgBackend, type_: str, id_: str) -> tuple
     try:
         return welcomelist_object_get(api, type_, id_), None
     except Exception as e:  # noqa: BLE001 — deliberate: ANY capture-read failure degrades honestly
-        return {}, f"current-state capture failed: {type(e).__name__}: {e}"
+        return {}, f"current-state capture failed: {safe_exception_text(e)}"
 
 
 # ---------------------------------------------------------------------------

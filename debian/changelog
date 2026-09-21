@@ -1,3 +1,20 @@
+proximo (0.44.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.44.0 (minor: no tool leaks an exception's raw text any more -- thirteen
+    sites across eleven modules now go through safe_exception_text, closing a runtime leak
+    that could carry the estate's internal host and port out through httpx's own message,
+    with a structural guard so the shape cannot return. Also: our own artifacts run the
+    newest mcp. The lock, both
+    hash-pinned requirements exports, the container image and the SBOM move from mcp 1.28.1 to
+    2.2.0; the [tool.uv] constraint that held them at 1.x since 0.39.0 is removed. The published
+    floor is unchanged at mcp>=1.24,<3, and the CI dual-major matrix is inverted so the compat
+    leg installs the newest 1.x unpinned, which is now the only proof behind that half of the
+    range. Five packages enter the installed set (httpcore2, httpx2, mcp-types,
+    opentelemetry-api, truststore) and two leave (pydantic-settings, python-dotenv). Proven on
+    the newest of each major: 12,482/12 on mcp 2.2.0 and 12,478/16 on mcp 1.30.0. 924 tools.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Mon, 21 Sep 2026 00:34:06 +0000
+
 proximo (0.43.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.43.0 (minor: every read on every plane by path, and PDM's own identity core.

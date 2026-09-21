@@ -46,6 +46,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from ._secretfile import safe_exception_text
 from .backends import ProximoError, _check_node
 from .pbs import (
     PbsBackend,
@@ -220,7 +221,7 @@ def _size_probe(list_fn, remote: str) -> tuple[dict | None, str | None]:
                 return e, None
         return None, f"no entry named {name!r} under {parent!r} in the listing"
     except Exception as exc:  # noqa: BLE001 — the plan records the probe's failure, never hides it
-        return None, f"listing {parent!r} failed: {type(exc).__name__}: {exc}"
+        return None, f"listing {parent!r} failed: {safe_exception_text(exc)}"
 
 
 def _is_dir(entry: dict | None, tar: bool) -> bool:

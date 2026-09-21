@@ -92,6 +92,8 @@ import ipaddress
 import re
 from urllib.parse import urlencode, urlsplit
 
+from proximo._secretfile import safe_exception_text
+
 from . import blast as blast_engine
 from .backends import ProximoError, _check_node
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
@@ -706,7 +708,7 @@ def _sdn_dry_run_note(api, node: str | None = None) -> str:
             + " | ".join(parts)
         )
     except Exception as e:
-        return f"dry-run unavailable: {type(e).__name__}: {e}"
+        return f"dry-run unavailable: {safe_exception_text(e)}"
 
 
 def plan_sdn_apply(api, node: str | None = None) -> Plan:

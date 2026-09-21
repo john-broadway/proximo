@@ -210,16 +210,15 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.43.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.43.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.44.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.44.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.43.0 (every read on every plane by path, and PDM's own identity core).** The raw
-> GET door reaches any read the four planes publish, checked against the vendored API trees
-> before the wire; write paths and gated reads are refused with the tool named. Eleven `pdm_*`
-> tools give Datacenter Manager its first native mutations (users, tokens, ACL, permissions),
-> live-proven against PDM 1.1.4. A refusal keeps its reason on the mcp 2.x SDK, secrets cannot
-> leave through an error, and the served tool surface has a sha256 you can pin. 924 tools.
+> **New in 0.44.0 (our own artifacts run the newest mcp).** The lock, both hash-pinned
+> requirement exports, the container image and the SBOM move to `mcp==2.2.0`, retiring the
+> constraint that had held them at 1.x since 0.39.0. The published floor does not move:
+> `mcp>=1.24,<3` still admits 1.x, and the CI compat leg installs the newest 1.x unpinned to
+> keep that claim honest. Proven on the newest of each major before shipping. 924 tools.
 >
-> Recent: **0.42.0** pulled one file out of a PBS-backed backup without restoring the guest, and refused a blind token's empty listing. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.43.0** opened a raw GET door on every plane and gave Datacenter Manager its own identity core. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -256,13 +255,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.43.0**: **every read on every plane by path, and PDM's own identity core.** The raw
-  GET door reaches any published read on PVE, PBS, PMG and PDM, validated against the vendored
-  API trees before the wire; write paths and gated reads are refused with the nearest tool
-  named. Datacenter Manager gets its first native mutations, eleven identity tools live-proven
-  in the lab. On the mcp 2.x SDK a refusal carries its reason again. Every secret Proximo reads
-  by path is scrubbed from any error that leaves, and the served tool surface has a checksum an
-  operator can pin. 924 tools, and a generated coverage receipt in place of a typed one.
+- 🩸 **0.44.0**: **our own artifacts run the newest mcp.** The lock, the hash-pinned requirement
+  exports, the container image and the SBOM move to `mcp==2.2.0`; the `[tool.uv]` constraint that
+  pinned them to 1.x since 0.39.0 is gone. The published range is unchanged at `mcp>=1.24,<3`, and
+  the dual-major CI matrix is inverted so the compat leg installs the newest 1.x unpinned, which
+  is now the only proof behind the 1.x half of that range. Measured on the newest of each major:
+  12,482 passed / 12 skipped on 2.2.0, and 12,478 / 16 on 1.30.0.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 

@@ -35,6 +35,7 @@ import sys
 import urllib.request
 from math import isfinite, sqrt
 
+from proximo._secretfile import safe_exception_text
 from proximo.backends import ProximoError
 from proximo.memory import _DEFAULT_AUDIT_LOG, _own_the_file, _warned
 from proximo.ranking import rows_from_hits
@@ -111,7 +112,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
             raise
         except Exception as e:
             raise ProximoError(
-                f"embedding endpoint failed ({type(e).__name__}: {e}) — check {_ENV} "
+                f"embedding endpoint failed ({safe_exception_text(e)}) — check {_ENV} "
                 "points at a live OpenAI-compatible /v1/embeddings server") from e
         rows = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(rows, list) or len(rows) != len(chunk):

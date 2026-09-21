@@ -304,6 +304,8 @@ from __future__ import annotations
 
 import re
 
+from proximo._secretfile import safe_exception_text
+
 from .backends import ProximoError, _check_timezone, _check_upid
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 from .pmg import (
@@ -1653,7 +1655,7 @@ def plan_backup_restore(
         names = {f.get("filename") for f in files if isinstance(f, dict)}
         exists = filename in names
     except Exception as e:
-        fail_notes.append(f"backup file existence check failed: {type(e).__name__}: {e}")
+        fail_notes.append(f"backup file existence check failed: {safe_exception_text(e)}")
 
     # Ruledb capture (only meaningful when database=True, the schema default and the only
     # ruledb-touching branch) — reuses pmg.py's own factory-reset capture helper verbatim.

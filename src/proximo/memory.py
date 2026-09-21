@@ -40,6 +40,7 @@ import time
 import warnings
 from datetime import UTC, datetime
 
+from proximo._secretfile import safe_exception_text
 from proximo.backends import ProximoError
 
 _FALSY = ("0", "false", "no", "off")
@@ -442,7 +443,7 @@ def _observe(method: str, rows: list) -> None:
         finally:
             mem.close()
     except Exception as e:  # NEVER fail the read that fed us — warn loudly, once per path+reason
-        reason = f"{memory_path()}: {type(e).__name__}: {e}"
+        reason = f"{memory_path()}: {safe_exception_text(e)}"
         if reason not in _warned:
             _warned.add(reason)
             warnings.warn(
@@ -492,7 +493,7 @@ def memory_status() -> dict:
         finally:
             mem.close()
     except Exception as e:
-        out["error"] = f"{type(e).__name__}: {e}"
+        out["error"] = f"{safe_exception_text(e)}"
     return out
 
 
@@ -509,7 +510,7 @@ def journal_record(tool: str, subject: str, report: dict) -> None:
         finally:
             mem.close()
     except Exception as e:
-        reason = f"{memory_path()}: {type(e).__name__}: {e}"
+        reason = f"{memory_path()}: {safe_exception_text(e)}"
         if reason not in _warned:
             _warned.add(reason)
             warnings.warn(

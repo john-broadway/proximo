@@ -9,7 +9,8 @@
 # this job detects, it cannot fix.
 #
 # WHY IT EXISTS (2026-08-20 external report): CI's dual-major matrix tests the CHECKOUT, with
-# only mcp swapped over the 1.x lock; release-pypi's verify job fresh-resolves the published
+# only mcp swapped over the lock (the lock's own major is 2.x since 0.44.0; the swapped leg is
+# whichever major it is not); release-pypi's verify job fresh-resolves the published
 # wheel but runs only at release time. Between releases, the exact path most adopters take —
 # an unpinned resolve of the published wheel picking whatever PyPI serves today — was covered
 # by nobody. This closes that window at daily cost.

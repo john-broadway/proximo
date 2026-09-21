@@ -42,8 +42,9 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
         # The dual-major port (A13): every push proves the suite on BOTH supported mcp majors.
-        # Leg 1 runs the lock's own hash-pinned 1.x; leg 2 overrides to the newest 2.x so a
-        # breaking 2.x release turns up here first, not in an adopter's fresh install.
+        # INVERTED IN 0.44.0, when the lock moved to 2.x: leg 2 now runs the lock's own
+        # hash-pinned 2.x, and leg 1 overrides DOWN to 1.x to keep the published floor
+        # (`mcp>=1.24,<3`) honest. The override is always whichever major the lock is NOT.
         mcp-major: ["1", "2"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -54,13 +55,15 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
           python -m pip install --no-deps --no-build-isolation -e .
-      - name: Pin the mcp major under test (2.x leg; the lock itself stays on 1.x by design)
-        if: matrix.mcp-major == '2'
-        # Deliberate exception to this job's --require-hashes guarantee: the 2.x SDK and its
-        # transitive deps are not in the lock (the lock is constrained to 1.x), so this leg
-        # installs them unpinned. Scope: test-only; nothing this step installs reaches a
-        # shipped artifact (container/SBOM install from the hash-pinned exports).
-        run: python -m pip install "mcp>=2,<3"
+      - name: Pin the mcp major under test (1.x compat leg; the lock itself is 2.x since 0.44.0)
+        if: matrix.mcp-major == '1'
+        # Deliberate exception to this job's --require-hashes guarantee: the 1.x SDK and its
+        # transitive deps are no longer in the lock, so this leg installs them unpinned. Scope:
+        # test-only; nothing this step installs reaches a shipped artifact (container/SBOM
+        # install from the hash-pinned exports). This leg is the ONLY thing keeping the
+        # published `mcp>=1.24,<3` floor honest now that our own artifacts are 2.x — if it is
+        # ever dropped, drop the 1.x claim from pyproject in the same commit.
+        run: python -m pip install "mcp>=1.24,<2"
       - name: Assert the installed mcp major matches this leg (never trust the resolver)
         run: |
           python - <<'EOF'

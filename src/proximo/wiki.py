@@ -57,6 +57,7 @@ import re
 import sqlite3
 import time
 
+from proximo._secretfile import safe_exception_text
 from proximo.backends import ProximoError
 
 _TRUTHY = ("1", "true", "yes", "on")
@@ -160,7 +161,7 @@ class WikiIndex:
         except sqlite3.DatabaseError as e:
             self._db.close()
             raise ProximoError(
-                f"{path} is not a readable wiki index ({type(e).__name__}: {e}) — rebuild it to "
+                f"{path} is not a readable wiki index ({safe_exception_text(e)}) — rebuild it to "
                 f"the contract in docs/SETUP.md ('The wiki index')") from None
         found = self._meta.get("contract_version")
         if found is None:

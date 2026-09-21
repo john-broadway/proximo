@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+from proximo._secretfile import safe_exception_text
 from proximo.backends import CONTAINER_PROBES
 from proximo.projection import classify_task_outcome
 
@@ -70,7 +71,7 @@ def diagnose_container(api, exec_, ctid: str, kind: str = "lxc", node: str | Non
                 # Carry the REASON, not just the class. A bare "ProximoError" told an operator
                 # running a DIAGNOSE tool nothing at all: allowlist denial, exec-disabled and a
                 # dead ssh host all collapsed into the same thirteen characters.
-                probes[key] = {"error": f"{type(e).__name__}: {e}" if str(e) else type(e).__name__}
+                probes[key] = {"error": safe_exception_text(e)}
         report["probes"] = probes
         fu = probes.get("failed_units", {})
         out = (fu.get("output") or "")
