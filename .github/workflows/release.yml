@@ -89,8 +89,8 @@ jobs:
       # Multi-arch: amd64 for Proxmox hosts/servers, arm64 for Apple-Silicon
       # workstations (the image runs wherever the MCP client lives). Proximo's
       # deps ship manylinux/musllinux wheels, so arm64 builds don't compile from source.
-      - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Cold-start smoke BEFORE the push: build amd64 only, load it into the local daemon, and run
       # the entrypoint. Until now the multi-arch build pushed an image whose ENTRYPOINT was never
@@ -100,7 +100,7 @@ jobs:
       # build+push below reuses these layers from the gha cache, so the second build is cheap.
       # Bound: this proves amd64 only; arm64 rides on the same source + manylinux/musllinux wheels.
       - name: Build amd64 image for the cold-start smoke (load, don't push)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           platforms: linux/amd64
@@ -148,7 +148,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
