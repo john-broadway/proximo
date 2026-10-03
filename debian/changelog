@@ -1,3 +1,17 @@
+proximo (0.44.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.44.1 (patch: PyJWT and urllib3 move past the October advisories. Sixteen
+    advisories were published on 2026-10-02 against two packages Proximo's own artifacts pin:
+    thirteen against PyJWT and three against urllib3. The lock, both hash-pinned requirements
+    exports, the container image and the SBOM move from pyjwt 2.13.0 to 2.15.0 and from urllib3
+    2.7.0 to 2.8.0; no other package moved. Hashes match PyPI's own listing and pip-audit is
+    clean on the new pins. Neither package is named in pyproject.toml, so adopter resolution is
+    unchanged. Also: the image build actions move to setup-buildx-action 4.4.1,
+    setup-qemu-action 4.4.0 and build-push-action 7.4.0, pinned by commit sha. 12,497/12 on
+    the new pins. 924 tools. No tool or API change.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 03 Oct 2026 04:02:08 +0000
+
 proximo (0.44.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.44.0 (minor: no tool leaks an exception's raw text any more -- thirteen

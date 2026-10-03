@@ -2,6 +2,18 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.44.1] — 2026-10-03
+
+**Our pinned PyJWT and urllib3 clear sixteen advisories.**
+On 2026-10-02 sixteen advisories were published against two packages Proximo's own artifacts pin: thirteen against PyJWT (one critical, six high) and three against urllib3 (two high). The lock, both hash-pinned `requirements/*.txt` exports, the container image and the SBOM move from `pyjwt==2.13.0` to `2.15.0` and from `urllib3==2.7.0` to `2.8.0`. No other package moved. The wheel and sdist hashes match PyPI's own listing for both releases, and `pip-audit` reports the sixteen on the old pins and nothing on the new ones.
+
+PyJWT reaches Proximo two ways: through `mcp`, and through the optional A2A face's card signing (`a2a/signing.py`). The signing path accepts ES256 only, which already refused the HMAC key-confusion class several of these advisories describe, but the parser-level ones (a deeply nested header raising `RecursionError` before any key is consulted) sit in front of that allowlist, so an A2A card from an untrusted peer could reach them. `tests/test_a2a_signing.py` signs and verifies with the real library, no mocks, and passes on 2.15.0. urllib3 is not in the runtime install at all: it reaches the dev and build exports only, through `requests`.
+
+Nothing an adopter pinned changes. Neither package is named in `pyproject.toml`, so a fresh `pip install` already resolved the current releases. The pins that were stale were ours: the lock, and the image built from it.
+
+**The image build actions move to their current releases.**
+`docker/setup-buildx-action` 4.4.1, `docker/setup-qemu-action` 4.4.0 and `docker/build-push-action` 7.4.0, each pinned by commit sha with the exact version in the comment. `build-push-action` had been commented `# v7`, a moving major that hid which release the sha was; it now names one. All three shas were dereferenced against the upstream tags before this shipped.
+
 ## [0.44.0] — 2026-09-21
 
 **No tool leaks an exception's raw text any more.**

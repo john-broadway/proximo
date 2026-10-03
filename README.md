@@ -210,15 +210,15 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.44.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.44.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.44.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.44.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.44.0 (our own artifacts run the newest mcp).** The lock, both hash-pinned
-> requirement exports, the container image and the SBOM move to `mcp==2.2.0`, retiring the
-> constraint that had held them at 1.x since 0.39.0. The published floor does not move:
-> `mcp>=1.24,<3` still admits 1.x, and the CI compat leg installs the newest 1.x unpinned to
-> keep that claim honest. Proven on the newest of each major before shipping. 924 tools.
+> **New in 0.44.1 (PyJWT and urllib3 move past the October advisories).** Sixteen advisories
+> landed on 2026-10-02 against two packages our own artifacts pin: thirteen on PyJWT, three on
+> urllib3. The lock, the hash-pinned exports, the image and the SBOM move to `pyjwt==2.15.0` and
+> `urllib3==2.8.0`, nothing else moves, and `pip-audit` is clean on the new pins. Neither is named
+> in `pyproject.toml`, so what an adopter pinned does not change. 924 tools.
 >
-> Recent: **0.43.0** opened a raw GET door on every plane and gave Datacenter Manager its own identity core. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.44.0** moved our own artifacts to the newest mcp and stopped every tool leaking an exception's raw text. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -255,12 +255,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.44.0**: **our own artifacts run the newest mcp.** The lock, the hash-pinned requirement
-  exports, the container image and the SBOM move to `mcp==2.2.0`; the `[tool.uv]` constraint that
-  pinned them to 1.x since 0.39.0 is gone. The published range is unchanged at `mcp>=1.24,<3`, and
-  the dual-major CI matrix is inverted so the compat leg installs the newest 1.x unpinned, which
-  is now the only proof behind the 1.x half of that range. Measured on the newest of each major:
-  12,482 passed / 12 skipped on 2.2.0, and 12,478 / 16 on 1.30.0.
+- 🩸 **0.44.1**: **PyJWT and urllib3 move past the October advisories.** Thirteen PyJWT and three
+  urllib3 advisories were published on 2026-10-02. The lock, the hash-pinned requirement exports,
+  the container image and the SBOM move to `pyjwt==2.15.0` and `urllib3==2.8.0`, and no other
+  package moves. Hashes match PyPI's own listing, `pip-audit` finds all sixteen on the old pins
+  and none on the new, and the A2A card-signing tests verify with the real library, no mocks.
+  12,497 passed / 12 skipped on the new pins.
 
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
