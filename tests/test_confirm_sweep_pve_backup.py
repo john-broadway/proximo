@@ -153,7 +153,8 @@ _SWEEP_CASES = [
         "pve_restore",
         dict(vmid="150", archive=_VALID_VOLID, storage="local", kind="lxc"),
         "submitted", "api", "posts", "/nodes/pve/lxc",
-        {"vmid": "150", "ostemplate": _VALID_VOLID, "storage": "local", "restore": 1},
+        # unique=1: a restore to a NEW vmid (no force) asks PVE for a fresh MAC (issue #82).
+        {"vmid": "150", "ostemplate": _VALID_VOLID, "storage": "local", "restore": 1, "unique": 1},
         id="restore",
     ),
     pytest.param(

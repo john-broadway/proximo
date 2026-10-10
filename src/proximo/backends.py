@@ -916,6 +916,38 @@ class ExecBackend:
                           proc.stdout, proc.stderr)
 
 
+_PVE_ABSENT_RE = re.compile(r"Configuration file 'nodes/[^/']+/(qemu-server|lxc)/(\d+)\.conf' does not exist")
+_KIND_DIR = {"qemu": "qemu-server", "lxc": "lxc"}
+
+
+def guest_absent(exc: BaseException, *, api=None, vmid: str | None = None, kind: str | None = None) -> bool:
+    """Whether an exception from a guest read means the guest is CONFIRMED absent.
+
+    A 404 is absent. PVE's real answer for a vmid with no config on the node read is HTTP 500,
+    "Configuration file 'nodes/<node>/<qemu-server|lxc>/<vmid>.conf' does not exist" (read live on
+    PVE 9.2, 2026-10-10, both kinds, status/current and config). That file is PER NODE: in a cluster
+    a guest alive on node B answers the same through node A. So a 500 only says "not on this node";
+    absence is confirmed only when the message names THIS guest's file AND /cluster/resources?type=vm
+    lists no guest with this vmid. Any other error, a roster that cannot be read, or a roster that
+    does list the vmid is UNKNOWN, never absence.
+    """
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None)
+    if code == 404:
+        return True
+    if code != 500 or api is None or vmid is None or kind not in _KIND_DIR:
+        return False
+    text = getattr(resp, "text", "") or getattr(resp, "reason_phrase", "") or ""
+    m = _PVE_ABSENT_RE.search(str(text))
+    if not m or m.group(1) != _KIND_DIR[kind] or m.group(2) != str(vmid):
+        return False
+    try:
+        roster = api._get("/cluster/resources?type=vm") or []
+    except Exception:
+        return False
+    return not any(str(r.get("vmid")) == str(vmid) for r in roster)
+
+
 class ApiBackend:
     """Management via the Proxmox REST API using a scoped API token."""
 

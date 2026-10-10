@@ -18,6 +18,7 @@ from proximo.backup import (
     plan_backup_delete,
     plan_restore,
     restore_guest,
+    restore_unique,
     vzdump_backup,
 )
 from proximo.backup_schedules import (
@@ -141,24 +142,26 @@ def pve_backup_delete(
 def pve_restore(
     vmid: Annotated[str, Field(description="Numeric ID for the restored guest — new if free, existing to overwrite.")],
     archive: Annotated[str, Field(description="Volume ID of the backup archive to restore from.")],
-    storage: Annotated[str, Field(description="Storage ID to restore the guest's disks onto (LXC only; ignored for QEMU).")],
+    storage: Annotated[str, Field(description="Storage ID the restored guest's disks go onto (PVE's default storage for the archive, LXC and QEMU alike).")],
     kind: Annotated[str, Field(description="Guest type: lxc or qemu.")] = "lxc",
     node: Annotated[str | None, Field(description="Proxmox node to restore onto; defaults to the configured node if omitted.")] = None,
     force: Annotated[bool, Field(description="If vmid already exists, overwrite/destroy the existing guest instead of failing.")] = False,
     pool: Annotated[str | None, Field(description="Resource pool to place the restored guest in.")] = None,
+    unique: Annotated[bool | None, Field(description="Give the restored guest a new random MAC address (PVE unique=1). Default: true, except a force overwrite of the same vmid the archive came from, which keeps the archive's MAC. The PLAN states which applies.")] = None,
     confirm: Annotated[bool, Field(description="Gate: false returns a dry-run PLAN, true executes the restore.")] = False,
 ) -> dict:
     """MUTATION (DESTRUCTIVE if it overwrites an existing guest): restore a guest from a backup
-    archive. Dry-run by default — the PLAN reads live guest state and states whether it CREATES or
-    OVERWRITES. confirm=True to execute. Async — returns a task UPID. Find the archive's volid
-    first with pve_backup_list."""
+    archive. Dry-run by default — the PLAN reads live guest state, states whether it CREATES or
+    OVERWRITES, and says what network identity the restored guest will wear. confirm=True to
+    execute. Async — returns a task UPID. Find the archive's volid first with pve_backup_list."""
     _, api, _, _ = _proximo_server._svc()
     target = f"{kind}/{vmid}"
     return run_governed(
         "pve_restore", target,
-        plan=lambda: plan_restore(api, vmid, archive, kind, node, force),
-        execute=lambda: restore_guest(api, vmid, archive, storage, kind, node, force, pool),
-        confirm=confirm, outcome="submitted", detail={"force": force})
+        plan=lambda: plan_restore(api, vmid, archive, kind, node, force, unique, storage=storage),
+        execute=lambda: restore_guest(api, vmid, archive, storage, kind, node, force, pool, unique),
+        confirm=confirm, outcome="submitted",
+        detail={"force": force, "unique": restore_unique(force, unique, archive, vmid)})
 
 
 # --- Backup Schedules (Plane B) — PVE backup jobs, replication, PBS scheduled jobs ---

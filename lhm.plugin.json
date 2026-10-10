@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.44.1",
+  "version": "0.44.2",
   "tools": [
     {
       "name": "ct_exec",
@@ -22639,7 +22639,7 @@
     },
     {
       "name": "pve_restore",
-      "description": "MUTATION (DESTRUCTIVE if it overwrites an existing guest): restore a guest from a backup\narchive. Dry-run by default — the PLAN reads live guest state and states whether it CREATES or\nOVERWRITES. confirm=True to execute. Async — returns a task UPID. Find the archive's volid\nfirst with pve_backup_list.",
+      "description": "MUTATION (DESTRUCTIVE if it overwrites an existing guest): restore a guest from a backup\narchive. Dry-run by default — the PLAN reads live guest state, states whether it CREATES or\nOVERWRITES, and says what network identity the restored guest will wear. confirm=True to\nexecute. Async — returns a task UPID. Find the archive's volid first with pve_backup_list.",
       "inputSchema": {
         "properties": {
           "vmid": {
@@ -22651,7 +22651,7 @@
             "type": "string"
           },
           "storage": {
-            "description": "Storage ID to restore the guest's disks onto (LXC only; ignored for QEMU).",
+            "description": "Storage ID the restored guest's disks go onto (PVE's default storage for the archive, LXC and QEMU alike).",
             "type": "string"
           },
           "kind": {
@@ -22677,6 +22677,14 @@
             "description": "Resource pool to place the restored guest in.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "unique": {
+            "default": null,
+            "description": "Give the restored guest a new random MAC address (PVE unique=1). Default: true, except a force overwrite of the same vmid the archive came from, which keeps the archive's MAC. The PLAN states which applies.",
+            "type": [
+              "boolean",
               "null"
             ]
           },

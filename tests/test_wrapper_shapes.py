@@ -1154,11 +1154,10 @@ IDENTITY_PARAMS = frozenset(
 # tool the plan_* builder deliberately does not echo the raw value anywhere in its output. Each
 # entry cites the source reason so this stays an honest, reviewable exception, not a quiet skip.
 IDENTITY_EXEMPT: dict[str, frozenset[str]] = {
-    # plan_restore(api, vmid, archive, kind, node, force) takes neither storage nor pool — the
-    # preview only needs vmid/kind to describe create-vs-overwrite; where the restored guest
-    # lands is orthogonal to that risk classification (storage/pool only matter to the REAL
-    # restore_guest() call on the confirm=True path). backup.py, plan_restore().
-    "pve_restore": frozenset({"storage", "pool"}),
+    # plan_restore() names the storage the disks land on (0.44.2, issue #82) but not the pool:
+    # pool placement only matters to the REAL restore_guest() call on the confirm=True path and
+    # changes no risk classification. backup.py, plan_restore().
+    "pve_restore": frozenset({"pool"}),
     # plan_ha_rule_update() deliberately shows which field NAMES changed ("resources", "nodes",
     # ...), never the new VALUES — so a passed value never appears verbatim anywhere in the plan.
     # cluster_ops.py, plan_ha_rule_update().

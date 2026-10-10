@@ -1,7 +1,18 @@
+proximo (0.44.2-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.44.2 (patch: a restored guest no longer wears the original's MAC address.
+    Issue #82: pve_restore of a QEMU backup to a new VMID produced a copy with the original's MAC
+    and SMBIOS UUID. restore_guest now sends storage for both guest kinds and unique=1 by default;
+    only a force overwrite of the same VMID the archive came from keeps the archive's MAC; unique
+    is a tool parameter and an explicit value wins. The plan names the network identity the restored guest
+    will wear, including what PVE cannot change inside the disks.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 10 Oct 2026 03:42:11 +0000
+
 proximo (0.44.1-1) UNRELEASED; urgency=medium
 
-  * Track upstream 0.44.1 (patch: PyJWT and urllib3 move past the October advisories. Sixteen
-    advisories were published on 2026-10-02 against two packages Proximo's own artifacts pin:
+  * Track upstream 0.44.1 (patch: PyJWT and urllib3 move past the late-September advisories.
+    Sixteen advisories were published on 2026-09-29 and 2026-09-30 against two packages Proximo's own artifacts pin:
     thirteen against PyJWT and three against urllib3. The lock, both hash-pinned requirements
     exports, the container image and the SBOM move from pyjwt 2.13.0 to 2.15.0 and from urllib3
     2.7.0 to 2.8.0; no other package moved. Hashes match PyPI's own listing and pip-audit is

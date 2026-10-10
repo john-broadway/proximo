@@ -779,3 +779,288 @@ def test_sighted_vm_backup_on_one_guest_is_scoped_sight_not_blindness(monkeypatc
     # docs/SETUP.md says so. Blindness is reserved for a token that can see NO guest's archives.
     api = _perm_api(monkeypatch, [], {"/storage/pbs": {"Datastore.AllocateSpace": 1}, "/vms/999": {"VM.Backup": 1}})
     assert backup_list_sighted(api, "pbs") == []
+
+
+# ── issue #82: a restored guest must not wear the original's network identity ────────────────
+# PVE's POST /nodes/{node}/{lxc,qemu} create-from-archive takes `unique` ("Assign a unique random
+# ethernet address", requires archive/restore) and `storage` ("Default storage") on BOTH kinds; the
+# QEMU branch sent neither, so a restore to a new vmid put a second machine with the same MAC on
+# the bridge, and the plan never said so.
+
+
+def test_restore_qemu_sends_storage_as_default_storage(monkeypatch):
+    api = ApiBackend(_cfg())
+    seen: dict = {}
+    monkeypatch.setattr(api, "_post", lambda path, data=None: seen.update(data=data) or "U")
+    restore_guest(api, "102", _VALID_VOLID, "local", kind="qemu")
+    assert seen["data"]["storage"] == "local"
+
+
+def test_restore_new_guest_gets_unique_mac_by_default(monkeypatch):
+    for kind in ("lxc", "qemu"):
+        api = ApiBackend(_cfg())
+        seen: dict = {}
+        monkeypatch.setattr(api, "_post", lambda path, data=None, _s=seen: _s.update(data=data) or "U")
+        restore_guest(api, "102", _VALID_VOLID, "local", kind=kind)
+        assert seen["data"]["unique"] == 1, kind
+
+
+def test_restore_force_overwrite_keeps_identity_by_default(monkeypatch):
+    # Overwriting the SAME vmid in place is the one case where keeping the MAC is what the
+    # operator means (DHCP reservations, firewall rules keyed on it).
+    for kind in ("lxc", "qemu"):
+        api = ApiBackend(_cfg())
+        seen: dict = {}
+        monkeypatch.setattr(api, "_post", lambda path, data=None, _s=seen: _s.update(data=data) or "U")
+        restore_guest(api, "102", _VALID_VOLID, "local", kind=kind, force=True)
+        assert "unique" not in seen["data"], kind
+
+
+def test_restore_unique_explicit_wins_over_the_default(monkeypatch):
+    api = ApiBackend(_cfg())
+    seen: dict = {}
+    monkeypatch.setattr(api, "_post", lambda path, data=None: seen.update(data=data) or "U")
+    restore_guest(api, "102", _VALID_VOLID, "local", kind="qemu", unique=False)
+    assert "unique" not in seen["data"]
+    restore_guest(api, "102", _VALID_VOLID, "local", kind="qemu", force=True, unique=True)
+    assert seen["data"]["unique"] == 1
+
+
+def test_plan_restore_new_guest_note_says_new_mac_and_what_stays():
+    p = plan_restore(_GuestMissingApi(), "102", _VALID_VOLID, kind="qemu")
+    note = p.note.lower()
+    assert "new mac" in note
+    assert "new smbios uuid" in note      # qemu-server's restore_update_config_line regenerates it under unique
+    assert "machine-id" in note          # the guest's own identity is copied, PVE cannot change it
+    assert "link_down=1" in note          # how to boot a test restore beside a running original
+
+
+def test_plan_restore_lxc_note_claims_no_smbios_and_no_guest_agent():
+    p = plan_restore(_GuestMissingApi(), "102", _VALID_VOLID, kind="lxc")
+    note = p.note.lower()
+    assert "new mac" in note
+    assert "smbios" not in note
+    assert "guest agent" not in note
+
+
+def test_plan_restore_unique_false_note_warns_shared_identity():
+    p = plan_restore(_GuestMissingApi(), "102", _VALID_VOLID, kind="qemu", unique=False)
+    note = p.note.lower()
+    assert "stored in the archive" in note
+    assert "unique=false" in note
+
+
+# ── issue #82, lens round 1: the default must know WHOSE identity the archive carries ─────────
+# "force keeps the MAC" is only right when the archive came from the SAME vmid it overwrites. A
+# force restore of vmid 102's archive onto vmid 150 rebuilds 150 from 102's config, MAC included,
+# and 102 may still be running: the #82 collision through the other door.
+
+
+def test_restore_force_across_vmids_still_gets_a_unique_mac(monkeypatch):
+    for kind in ("lxc", "qemu"):
+        api = ApiBackend(_cfg())
+        seen: dict = {}
+        monkeypatch.setattr(api, "_post", lambda path, data=None, _s=seen: _s.update(data=data) or "U")
+        restore_guest(api, "150", _VALID_VOLID, "local", kind=kind, force=True)  # archive is 102's
+        assert seen["data"]["unique"] == 1, kind
+
+
+def test_restore_lxc_explicit_unique_false_is_honoured(monkeypatch):
+    api = ApiBackend(_cfg())
+    seen: dict = {}
+    monkeypatch.setattr(api, "_post", lambda path, data=None: seen.update(data=data) or "U")
+    restore_guest(api, "150", _VALID_VOLID, "local", kind="lxc", unique=False)
+    assert "unique" not in seen["data"]
+
+
+def test_plan_restore_rejected_restore_carries_no_identity_note():
+    # vmid exists, no force: PVE rejects the restore, so there is no identity to describe.
+    p = plan_restore(_GuestExistsApi({"status": "running", "name": "x"}), "102", _VALID_VOLID, kind="qemu")
+    assert p.note == ""
+
+
+def test_plan_restore_force_across_vmids_note_says_new_mac():
+    p = plan_restore(_GuestExistsApi({"status": "stopped", "name": "x"}), "150", _VALID_VOLID,
+                     kind="qemu", force=True)
+    assert "new mac" in p.note.lower()
+
+
+def test_plan_restore_blast_names_the_storage_the_disks_land_on():
+    p = plan_restore(_GuestMissingApi(), "150", _VALID_VOLID, kind="qemu", storage="fast-nvme")
+    assert "fast-nvme" in p.change
+    assert "fast-nvme" in " ".join(p.blast_radius)
+
+
+# ── issue #82, lens round 2: the in-place rule must read every archive shape PVE restores from ──
+
+
+class _GuestCheckFailsApi:
+    """Fake api whose existence read fails for a NON-404 reason (timeout, 5xx): existence UNKNOWN."""
+
+    def guest_status(self, vmid, kind="lxc", node=None):
+        raise RuntimeError("upstream timeout")
+
+
+_PBS_VM_VOLID = "pbs-test:backup/vm/102/2026-07-09T02:00:00Z"
+_PBS_CT_VOLID = "pbs-test:backup/ct/150/2026-07-09T02:00:00Z"
+
+
+def test_vmid_from_backup_volid_reads_vzdump_and_pbs_shapes():
+    from proximo.backup import _vmid_from_backup_volid as f
+    assert f(_VALID_VOLID) == "102"                                      # vzdump file archive
+    assert f(_PBS_VM_VOLID) == "102"                                     # PBS snapshot, vm
+    assert f(_PBS_CT_VOLID) == "150"                                     # PBS snapshot, ct
+    assert f("vzdump-lxc-5-a:backup/vzdump-lxc-102-x") == "102"         # decoy in the storage id
+    assert f("local:backup/vzdump-qemu-102-x/vzdump-qemu-150-y") == "150"  # the basename wins
+    assert f("local:backup/vzdump-qemu-102.vma.zst") is None            # no vmid separator
+
+
+def test_restore_in_place_from_a_pbs_archive_keeps_the_archive_mac(monkeypatch):
+    api = ApiBackend(_cfg())
+    seen: dict = {}
+    monkeypatch.setattr(api, "_post", lambda path, data=None: seen.update(data=data) or "U")
+    restore_guest(api, "102", _PBS_VM_VOLID, "local", kind="qemu", force=True)
+    assert "unique" not in seen["data"]
+
+
+def test_plan_restore_in_place_note_names_the_reason():
+    p = plan_restore(_GuestExistsApi({"status": "stopped", "name": "x"}), "102", _VALID_VOLID,
+                     kind="lxc", force=True)
+    assert "same vmid the archive came from" in p.note
+
+
+def test_plan_restore_unknown_existence_hedges_the_identity_and_storage_lines():
+    p = plan_restore(_GuestCheckFailsApi(), "150", _VALID_VOLID, kind="qemu", storage="fast-nvme")
+    assert "if the restore proceeds" in p.note
+    storage_lines = [b for b in p.blast_radius if "fast-nvme" in b]
+    assert storage_lines and "if the restore proceeds" in storage_lines[0]
+
+
+def test_plan_restore_rejected_restore_names_no_storage_landing():
+    p = plan_restore(_GuestExistsApi({"status": "running", "name": "x"}), "102", _VALID_VOLID,
+                     kind="qemu", storage="fast-nvme")
+    assert not any("land on" in b for b in p.blast_radius)
+
+
+# ── issue #82 live proof (pve-test4, PVE 9.2): an ABSENT guest answers 500, not 404 ──────────
+# GET /nodes/{node}/{kind}/{vmid}/status/current on a vmid that does not exist returns HTTP 500 with
+# the message "Configuration file 'nodes/<node>/<kind-dir>/<vmid>.conf' does not exist". The plan's
+# 404-only test therefore never confirmed absence on a real PVE: every restore to a new vmid read as
+# UNKNOWN. Found when the hedge appeared on a plain new-vmid plan during the live proof.
+
+
+class _Resp:
+    def __init__(self, status_code, text=""):
+        self.status_code, self.text = status_code, text
+
+
+class _HttpErr(Exception):
+    def __init__(self, resp):
+        super().__init__("http")
+        self.response = resp
+
+
+_ABSENT_500 = _HttpErr(_Resp(
+    500, '{"message":"Configuration file \'nodes/pve/qemu-server/150.conf\' does not exist\\n","data":null}'))
+
+
+class _GuestRaisesApi:
+    def __init__(self, exc): self._exc = exc
+    def guest_status(self, vmid, kind="lxc", node=None): raise self._exc
+
+
+def test_guest_absent_reads_pves_500_config_does_not_exist_as_confirmed_absent():
+    from proximo.backends import guest_absent
+    roster = lambda: _GuestRaisesClusterApi(_ABSENT_500, [])  # noqa: E731 - an empty cluster, fresh each call
+    assert guest_absent(_HttpErr(_Resp(404))) is True
+    assert guest_absent(_ABSENT_500, api=roster(), vmid="150", kind="qemu") is True
+    assert guest_absent(_HttpErr(_Resp(500, '{"message":"storage \'x\' is not online","data":null}')),
+                        api=roster(), vmid="150", kind="qemu") is False
+    assert guest_absent(_HttpErr(_Resp(503, "")), api=roster(), vmid="150", kind="qemu") is False
+    assert guest_absent(RuntimeError("timeout"), api=roster(), vmid="150", kind="qemu") is False
+
+
+def test_plan_restore_absent_guest_on_real_pve_is_confirmed_not_unknown():
+    api = _GuestRaisesClusterApi(_ABSENT_500, [])
+    p = plan_restore(api, "150", _VALID_VOLID, kind="qemu", storage="local-lvm")
+    assert "not found" in " ".join(p.risk_reasons).lower()
+    assert "if the restore proceeds" not in p.note
+    assert not any("could NOT confirm" in b for b in p.blast_radius)
+
+
+def test_plan_restore_other_500_stays_unknown_and_hedged():
+    other = _HttpErr(_Resp(500, '{"message":"storage \'x\' is not online","data":null}'))
+    p = plan_restore(_GuestRaisesApi(other), "150", _VALID_VOLID, kind="qemu", storage="local-lvm")
+    assert any("could NOT confirm" in b for b in p.blast_radius)
+    assert "if the restore proceeds" in p.note
+
+
+# ── lens round 4: "Configuration file … does not exist" means NOT ON THIS NODE, not absent ────
+# The file is per node. In a cluster, reading guest 150 (alive on node B) through node A gives the
+# same 500. So a 500 is "not here"; absence needs the cluster-wide roster to agree.
+
+
+class _GuestRaisesClusterApi(_GuestRaisesApi):
+    """500-absent on the node read; `cluster` = what /cluster/resources?type=vm lists."""
+
+    def __init__(self, exc, cluster, cluster_raises=False):
+        super().__init__(exc)
+        self._cluster, self._cluster_raises = cluster, cluster_raises
+        self.cluster_reads = 0
+        self.config = SimpleNamespace(node="pve-a")  # the node the read went through
+
+    def _get(self, path, **kw):
+        if path.startswith("/nodes/"):   # the cloud-init plan reads /config through _get, not guest_status
+            raise self._exc
+        assert path.startswith("/cluster/resources"), path
+        self.cluster_reads += 1
+        if self._cluster_raises:
+            raise RuntimeError("cluster read failed")
+        return self._cluster
+
+
+_ON_NODE_B = [{"vmid": 150, "type": "qemu", "node": "pve-b", "status": "running"}]
+
+
+def test_guest_absent_500_needs_the_cluster_roster_to_agree():
+    from proximo.backends import guest_absent
+    empty = _GuestRaisesClusterApi(_ABSENT_500, [])
+    assert guest_absent(_ABSENT_500, api=empty, vmid="150", kind="qemu") is True
+    assert empty.cluster_reads == 1
+    elsewhere = _GuestRaisesClusterApi(_ABSENT_500, _ON_NODE_B)
+    assert guest_absent(_ABSENT_500, api=elsewhere, vmid="150", kind="qemu") is False
+    broken = _GuestRaisesClusterApi(_ABSENT_500, [], cluster_raises=True)
+    assert guest_absent(_ABSENT_500, api=broken, vmid="150", kind="qemu") is False
+    # without the roster there is no absence to confirm; a 404 needs none
+    assert guest_absent(_ABSENT_500) is False
+    assert guest_absent(_HttpErr(_Resp(404)), api=elsewhere, vmid="150", kind="qemu") is True
+    assert elsewhere.cluster_reads == 1  # the 404 did not read the roster
+
+
+def test_guest_absent_500_must_name_this_guests_config_file():
+    from proximo.backends import guest_absent
+    other_file = _HttpErr(_Resp(
+        500, '{"message":"Configuration file \'nodes/pve/qemu-server/151.conf\' does not exist\\n"}'))
+    api = _GuestRaisesClusterApi(other_file, [])
+    assert guest_absent(other_file, api=api, vmid="150", kind="qemu") is False
+    assert guest_absent(_ABSENT_500, api=_GuestRaisesClusterApi(_ABSENT_500, []), vmid="150", kind="lxc") is False
+
+
+def test_plan_restore_force_onto_a_guest_alive_on_another_node_is_not_creates_new():
+    api = _GuestRaisesClusterApi(_ABSENT_500, _ON_NODE_B)
+    p = plan_restore(api, "150", _VALID_VOLID, kind="qemu", force=True, storage="local-lvm")
+    assert not any("no existing guest is overwritten" in b for b in p.blast_radius)
+    assert any("could NOT confirm" in b for b in p.blast_radius)
+
+
+def test_the_other_three_plans_confirm_absence_on_the_live_500_shape():
+    from proximo.cloudinit import plan_template_convert
+    from proximo.cluster_ops import plan_migrate
+    from proximo.provisioning import plan_delete
+    for make in (lambda a: plan_delete(a, "150", kind="qemu"),
+                 lambda a: plan_template_convert(a, "150"),
+                 lambda a: plan_migrate(a, "150", "pve-b", kind="qemu")):
+        p = make(_GuestRaisesClusterApi(_ABSENT_500, []))
+        text = " ".join(p.blast_radius + p.risk_reasons).lower()
+        assert "could not" in text or "nothing would be" in text or "fail" in text  # the absent branch speaks
+        assert "could not verify" not in text and "could not confirm" not in text, text  # ...not the unknown one

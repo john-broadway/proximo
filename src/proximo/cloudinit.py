@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import re
 
-from .backends import ProximoError, _check_node, _check_vmid
+from .backends import ProximoError, _check_node, _check_vmid, guest_absent
 from .planning import RISK_HIGH, RISK_MEDIUM, Plan
 
 # ---------------------------------------------------------------------------
@@ -375,8 +375,7 @@ def plan_template_convert(
         raw = api._get(f"/nodes/{n}/qemu/{vmid}/config") or {}
         current = {k: raw[k] for k in ("name", "template") if k in raw}
     except Exception as e:
-        resp = getattr(e, "response", None)
-        if resp is not None and getattr(resp, "status_code", None) == 404:
+        if guest_absent(e, api=api, vmid=vmid, kind=kind):  # 404, or 500 "not on this node" + empty cluster roster
             found = False
         else:
             check_failed = True

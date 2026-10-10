@@ -831,6 +831,40 @@ def test_pve_restore_overwrite_with_force_is_high_and_dry_runs(tmp_path, monkeyp
     assert api.posts == []  # nothing restored on a dry-run
 
 
+def test_pve_restore_plan_states_the_network_identity(tmp_path, monkeypatch):
+    # issue #82: the plan must say what MAC the restored guest wears, not just create-vs-overwrite.
+    # The fake guest EXISTS, so force is needed for a restore PVE would accept; the archive is
+    # 102's and the target is 150, so this is not an in-place overwrite and the default is unique.
+    _wire(tmp_path, monkeypatch, status={"status": "stopped", "name": "x"})
+    out = server.pve_restore("150", "local:backup/vzdump-qemu-102-2026_06_08-02_00_00.vma.zst", "local", kind="qemu",
+                             force=True, confirm=False)
+    assert out["status"] == "plan"
+    assert "new mac" in out["note"].lower()
+    assert "onto storage 'local'" in out["change"]
+    out = server.pve_restore("150", "local:backup/vzdump-qemu-102-2026_06_08-02_00_00.vma.zst", "local", kind="qemu",
+                             force=True, unique=False, confirm=False)
+    assert "stored in the archive" in out["note"].lower()
+
+
+def test_pve_restore_confirm_threads_unique_to_the_api_call(tmp_path, monkeypatch):
+    _, api, _, _, log = _wire(tmp_path, monkeypatch, status={"status": "stopped", "name": "x"})
+    archive = "local:backup/vzdump-qemu-102-2026_06_08-02_00_00.vma.zst"
+    server.pve_restore("102", archive, "local", kind="qemu", confirm=True)
+    server.pve_restore("102", archive, "local", kind="qemu", unique=False, confirm=True)
+    assert [d.get("unique") for _, d in api.posts] == [1, None]
+    assert all(d["storage"] == "local" for _, d in api.posts)
+    # The audit records the DECISION the body carried, not the raw parameter (None for the default).
+    submitted = [e for e in _entries(log) if e["outcome"] == "submitted"]
+    assert [e["detail"].get("unique") for e in submitted] == [True, False]
+
+
+def test_pve_restore_in_place_plan_wears_the_archive_identity(tmp_path, monkeypatch):
+    _wire(tmp_path, monkeypatch, status={"status": "stopped", "name": "x"})
+    out = server.pve_restore("102", "local:backup/vzdump-qemu-102-2026_06_08-02_00_00.vma.zst", "local",
+                             kind="qemu", force=True, confirm=False)
+    assert "stored in the archive" in out["note"].lower()
+
+
 def test_pve_backup_stop_mode_plan_is_high(tmp_path, monkeypatch):
     _wire(tmp_path, monkeypatch)
     out = server.pve_backup("102", "local", mode="stop", confirm=False)

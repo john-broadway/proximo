@@ -24,7 +24,7 @@ import re
 
 import httpx
 
-from .backends import ProximoError, _check_kind, _check_node, _check_vmid
+from .backends import ProximoError, _check_kind, _check_node, _check_vmid, guest_absent
 from .planning import RISK_HIGH, RISK_MEDIUM, RISK_NONE, Plan, _max_risk
 
 # HA rule comments are stored in pmxcfs line-based config — a control char/newline can corrupt it,
@@ -377,8 +377,7 @@ def plan_migrate(
         gs = api.guest_status(vmid, kind, node)
         current = {k: gs[k] for k in ("status", "name", "uptime") if k in gs}
     except Exception as e:
-        resp = getattr(e, "response", None)
-        if resp is not None and getattr(resp, "status_code", None) == 404:
+        if guest_absent(e, api=api, vmid=vmid, kind=kind):  # 404, or 500 "not on this node" + empty cluster roster
             # Confirmed not found — the migrate will fail. Still flag accurately.
             current = {}
         else:

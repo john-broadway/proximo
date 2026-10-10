@@ -210,15 +210,16 @@ Every tool with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · sizing the sur
 
 ## Install & run
 
-> 📦 **`0.44.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.44.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.44.2`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.44.2), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.44.1 (PyJWT and urllib3 move past the October advisories).** Sixteen advisories
-> landed on 2026-10-02 against two packages our own artifacts pin: thirteen on PyJWT, three on
-> urllib3. The lock, the hash-pinned exports, the image and the SBOM move to `pyjwt==2.15.0` and
-> `urllib3==2.8.0`, nothing else moves, and `pip-audit` is clean on the new pins. Neither is named
-> in `pyproject.toml`, so what an adopter pinned does not change. 924 tools.
+> **New in 0.44.2 (a restored guest no longer wears the original's MAC address).** An adopter
+> restored a QEMU backup to a new VMID with `pve_restore` and got a copy with the original's MAC
+> (issue #82). The QEMU call sent PVE nothing but vmid and archive. It now sends `storage` for both
+> guest kinds and asks PVE for a fresh MAC (`unique=1`) by default; only a `force` overwrite of the
+> same VMID the archive came from keeps the archive's MAC, and `unique` is a parameter so an explicit
+> value wins. The plan states the network identity the restored guest will wear before you confirm. 924 tools.
 >
-> Recent: **0.44.0** moved our own artifacts to the newest mcp and stopped every tool leaking an exception's raw text. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.44.1** moved our pinned PyJWT and urllib3 past sixteen advisories; **0.44.0** moved our own artifacts to the newest mcp and stopped every tool leaking an exception's raw text. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -255,13 +256,14 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.44.1**: **PyJWT and urllib3 move past the October advisories.** Thirteen PyJWT and three
-  urllib3 advisories were published on 2026-10-02. The lock, the hash-pinned requirement exports,
-  the container image and the SBOM move to `pyjwt==2.15.0` and `urllib3==2.8.0`, and no other
-  package moves. Hashes match PyPI's own listing, `pip-audit` finds all sixteen on the old pins
-  and none on the new, and the A2A card-signing tests verify with the real library, no mocks.
-  12,497 passed / 12 skipped on the new pins.
-
+- 🩸 **0.44.2**: **A restored guest no longer wears the original's MAC address, and the plan says what it will wear.**
+  Issue #82, from an adopter on PVE 9.2.2: `pve_restore` of a QEMU backup to a new VMID gave the copy the
+  original's MAC, and the plan said only "creates a new guest". `restore_guest` now sends `storage` for both
+  kinds and `unique=1` by default (only a `force` overwrite of the same VMID the archive came from keeps
+  the archive's MAC; an explicit `unique` wins), and the plan names the identity the restored guest will
+  wear, including what PVE cannot change inside the disks (`/etc/machine-id`). Proved live on a PVE 9.2 lab node; the proof also found that
+  PVE answers an absent-guest read with a 500, never a 404, so restore plans had never confirmed a guest absent. Fixed,
+  with the cluster roster consulted so a guest alive on another node is never called absent. Twenty-seven new tests.
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
 **The numbers, honestly:** 924 MCP tools, proved in two deliberate layers. **12,000+ in-process tests** (ruff + pyright clean) pin every tool's shape. A separate **live-smoke harness drives real Proxmox hardware**: a 3-node PVE 9.2 cluster, PBS 4.2, PMG 9.1, PDM 1.1.4, a real cross-datacenter move. The two are kept apart on purpose: passing shape tests never gets to masquerade as "works on a real host." And this workspace administers its own Proxmox estate through Proximo daily (dogfood). The **blast-radius engine** carries the destructive surface: across eleven op-classes it names the specific guests, nodes, principals, or disks at risk. Nothing falls back to a bare confirm.

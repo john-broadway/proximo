@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from urllib.parse import quote
 
-from .backends import ProximoError, _check_kind, _check_node, _check_vmid
+from .backends import ProximoError, _check_kind, _check_node, _check_vmid, guest_absent
 from .doctor import collect_priv_flags, holds
 from .planning import RISK_HIGH, RISK_LOW, RISK_MEDIUM, Plan
 from .storage import _check_storage  # reuse: same regex/rule, no duplication
@@ -194,37 +194,50 @@ def restore_guest(
     node: str | None = None,
     force: bool = False,
     pool: str | None = None,
+    unique: bool | None = None,
 ) -> str:
     """Restore a guest from a backup archive.  Returns a task UPID.
 
-    LXC:  POST /nodes/{node}/lxc   body {vmid, ostemplate: archive, storage, restore: 1}
-    QEMU: POST /nodes/{node}/qemu  body {vmid, archive, force: 1 if force}
+    LXC:  POST /nodes/{node}/lxc   body {vmid, ostemplate: archive, storage, restore: 1, ...}
+    QEMU: POST /nodes/{node}/qemu  body {vmid, archive, storage, ...}
+    Both: force: 1 if force · pool if given · unique: 1 if `restore_unique(force, unique)`.
 
-    Note: QEMU restore does NOT send storage or restore:1 — these are LXC-only params.
-    Endpoint-shape uncertainty: confirm at live smoke whether QEMU needs additional params
-    (e.g. format, pool) for non-trivial configs.
+    `storage` is PVE's "Default storage" for the restored disks on both kinds (QEMU used to get
+    none, so its disks went back to the storages named in the archive; now they land on `storage`).
+    `unique` is PVE's "Assign a unique random ethernet address": the default (None) resolves by
+    `restore_unique`, which asks whose identity the archive carries. Without it a restored copy
+    wore the original's MAC and sat beside it on the same bridge (issue #82).
     """
     vmid = _check_vmid(vmid)
     kind = _check_kind(kind)
     _check_node(node)
     archive = _check_volid(archive)  # the backup source is a volid — validate like backup_delete
+    storage = _check_storage(storage)
     n = node or api.config.node
     # DESTRUCTIVE — confirm-gated + audited at the server layer.
     if kind == "lxc":
-        storage = _check_storage(storage)
         data: dict = {"vmid": vmid, "ostemplate": archive, "storage": storage, "restore": 1}
-        if force:
-            data["force"] = 1
-        if pool is not None:
-            data["pool"] = pool
-        return api._post(f"/nodes/{n}/lxc", data)
     else:  # qemu
-        data = {"vmid": vmid, "archive": archive}
-        if force:
-            data["force"] = 1
-        if pool is not None:
-            data["pool"] = pool
-        return api._post(f"/nodes/{n}/qemu", data)
+        data = {"vmid": vmid, "archive": archive, "storage": storage}
+    if force:
+        data["force"] = 1
+    if pool is not None:
+        data["pool"] = pool
+    if restore_unique(force, unique, archive, vmid):
+        data["unique"] = 1
+    return api._post(f"/nodes/{n}/{kind}", data)
+
+
+def restore_in_place(force: bool, archive: str, vmid: str) -> bool:
+    """A force overwrite of the SAME guest the archive came from: the one restore where wearing
+    the archive's MAC is what the operator means (DHCP reservations, firewall rules keyed on it).
+    A force restore of 102's archive onto 150 is NOT in place: 102 may still be running."""
+    return force and _vmid_from_backup_volid(archive) == vmid
+
+
+def restore_unique(force: bool, unique: bool | None, archive: str, vmid: str) -> bool:
+    """Whether a restore asks PVE for a fresh MAC. Explicit wins; the default is: unless in place."""
+    return (not restore_in_place(force, archive, vmid)) if unique is None else bool(unique)
 
 
 # ── PLAN FUNCTIONS ─────────────────────────────────────────────────────────────
@@ -289,6 +302,8 @@ def plan_restore(
     kind: str = "lxc",
     node: str | None = None,
     force: bool = False,
+    unique: bool | None = None,
+    storage: str | None = None,
 ) -> Plan:
     """Preview a guest restore.  Reads live state (one safe read) to detect existing vmid.
 
@@ -309,12 +324,12 @@ def plan_restore(
         existing = api.guest_status(vmid, kind, node)  # success → vmid exists
     except Exception as e:
         # Only a definitive 404 means "confirmed absent". Timeout / 5xx / permission = UNKNOWN.
-        resp = getattr(e, "response", None)
-        if resp is not None and getattr(resp, "status_code", None) == 404:
+        if guest_absent(e, api=api, vmid=vmid, kind=kind):  # 404, or 500 "not on this node" + empty cluster roster
             existing = None          # confirmed not found
         else:
             check_failed = True      # could not determine — assume nothing
 
+    rejected = existing is not None and not force  # PVE refuses; nothing is restored
     if existing is not None:
         name = existing.get("name") or vmid
         current = {k: existing[k] for k in ("status", "name") if k in existing}
@@ -373,23 +388,63 @@ def plan_restore(
             "new guest is created; no existing guest is overwritten",
         ]
 
+    onto = f" onto storage '{storage}'" if storage is not None else ""
+    hedge = " (if the restore proceeds)" if check_failed else ""
+    if storage is not None and not rejected:
+        blast.append(
+            f"restored disks land on storage '{storage}' (PVE's default storage for the restore){hedge}"
+        )
+
     return Plan(
         action="pve_restore",
         target=f"{kind}/{vmid}",
-        change=f"restore {kind} {vmid} from archive '{archive}' (force={force})",
+        change=f"restore {kind} {vmid} from archive '{archive}'{onto} (force={force})",
         current=current,
         blast_radius=blast,
         risk=risk,
         risk_reasons=reasons,
+        note="" if rejected else _restore_identity_note(kind, force, unique, archive, vmid) + hedge,
     )
 
 
-_BACKUP_VMID_RE = re.compile(r"vzdump-(?:lxc|qemu|openvz)-(\d+)-")
+def _restore_identity_note(kind: str, force: bool, unique: bool | None, archive: str, vmid: str) -> str:
+    """What network identity the restored guest will wear: the part of a restore PVE's task log
+    never states, and the part that puts two identical machines on one bridge (issue #82)."""
+    if restore_unique(force, unique, archive, vmid):
+        test_boot = (
+            " To boot a test restore beside a running original, set link_down=1 on its NIC first "
+            "and read it through the guest agent." if kind == "qemu" else ""
+        )
+        identity = "a NEW MAC address and a new SMBIOS UUID" if kind == "qemu" else "a NEW MAC address"
+        return (
+            f"network identity: PVE assigns the restored guest {identity} (unique=1). "
+            "Everything inside the disks is copied as-is: hostname, keys, certificates, and "
+            "/etc/machine-id. On guests using systemd-networkd the DHCP client id derives from "
+            "machine-id, so the copy can still be handed the archive's lease." + test_boot
+        )
+    why = "unique=false" if unique is False else "a force overwrite of the same vmid the archive came from"
+    stored = "MAC address and SMBIOS UUID" if kind == "qemu" else "MAC address"
+    return (
+        f"network identity: the restored guest wears the {stored} stored in the archive ({why}). "
+        "If the guest that archive came from is running, two machines with one identity share "
+        "the bridge; pass unique=true for a fresh MAC."
+    )
+
+
+# Two archive shapes PVE restores from, each read where its vmid actually lives:
+#   vzdump file archive  '<storage>:backup/vzdump-<kind>-<vmid>-<stamp>.<ext>'  → the BASENAME
+#   PBS snapshot         '<storage>:backup/<vm|ct>/<vmid>/<timestamp>'            → the 2nd path segment
+# Anchored on the path part after the storage id, so a decoy in the storage id or an earlier
+# directory segment cannot name the wrong guest (lens, 2026-10-10).
+_BACKUP_VMID_RE = re.compile(r"(?:^|/)vzdump-(?:lxc|qemu|openvz)-(\d+)-[^/]*\Z")
+_PBS_VMID_RE = re.compile(r"^(?:vm|ct)/(\d+)/")
 
 
 def _vmid_from_backup_volid(volid: str) -> str | None:
-    """The guest vmid embedded in a vzdump backup volid (e.g. '…/vzdump-lxc-102-…' → '102')."""
-    m = _BACKUP_VMID_RE.search(volid)
+    """The guest vmid a backup volid names, or None when the shape carries none."""
+    _, _, path = volid.partition(":")
+    path = path.removeprefix("backup/")
+    m = _BACKUP_VMID_RE.search(path) or _PBS_VMID_RE.match(path)
     return m.group(1) if m else None
 
 

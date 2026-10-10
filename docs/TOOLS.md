@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.44.1**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.44.2**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: read tools return the requested data; every mutating tool first returns a **PLAN** preview (the action and its blast radius) rather than acting, and each call is recorded in the tamper-evident audit ledger. Which tools are registered depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; this reference lists the **full** catalog.
 
@@ -3083,19 +3083,20 @@ pve_replication_create; to remove one use pve_replication_delete.
 #### `pve_restore`
 
 MUTATION (DESTRUCTIVE if it overwrites an existing guest): restore a guest from a backup
-archive. Dry-run by default — the PLAN reads live guest state and states whether it CREATES or
-OVERWRITES. confirm=True to execute. Async — returns a task UPID. Find the archive's volid
-first with pve_backup_list.
+archive. Dry-run by default — the PLAN reads live guest state, states whether it CREATES or
+OVERWRITES, and says what network identity the restored guest will wear. confirm=True to
+execute. Async — returns a task UPID. Find the archive's volid first with pve_backup_list.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `vmid` | string | yes | Numeric ID for the restored guest — new if free, existing to overwrite. |
 | `archive` | string | yes | Volume ID of the backup archive to restore from. |
-| `storage` | string | yes | Storage ID to restore the guest's disks onto (LXC only; ignored for QEMU). |
+| `storage` | string | yes | Storage ID the restored guest's disks go onto (PVE's default storage for the archive, LXC and QEMU alike). |
 | `kind` | string | no | Guest type: lxc or qemu. (default: `"lxc"`) |
 | `node` | string (nullable) | no | Proxmox node to restore onto; defaults to the configured node if omitted. (default: `null`) |
 | `force` | boolean | no | If vmid already exists, overwrite/destroy the existing guest instead of failing. (default: `false`) |
 | `pool` | string (nullable) | no | Resource pool to place the restored guest in. (default: `null`) |
+| `unique` | boolean (nullable) | no | Give the restored guest a new random MAC address (PVE unique=1). Default: true, except a force overwrite of the same vmid the archive came from, which keeps the archive's MAC. The PLAN states which applies. (default: `null`) |
 | `confirm` | boolean | no | Gate: false returns a dry-run PLAN, true executes the restore. (default: `false`) |
 
 #### `pve_role_create`

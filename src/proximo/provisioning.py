@@ -13,7 +13,7 @@ Hard rules mirrored from the codebase:
 
 from __future__ import annotations
 
-from .backends import ProximoError, _check_kind, _check_node, _check_vmid
+from .backends import ProximoError, _check_kind, _check_node, _check_vmid, guest_absent
 from .blast import guest_destroy_blast
 from .cluster_ops import cluster_resources
 from .planning import RISK_HIGH, RISK_MEDIUM, Plan
@@ -432,8 +432,7 @@ def plan_delete(
         # Only a definitive 404 is "confirmed absent". A transient error must NOT be reported as
         # "nothing would be destroyed" — that would be a false-safety claim on the platform's most
         # destructive op.
-        resp = getattr(e, "response", None)
-        if resp is not None and getattr(resp, "status_code", None) == 404:
+        if guest_absent(e, api=api, vmid=vmid, kind=kind):  # 404, or 500 "not on this node" + empty cluster roster
             found = False
         else:
             check_failed = True
