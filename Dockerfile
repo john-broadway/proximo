@@ -19,7 +19,7 @@
 # multi-stage removed the SOURCE tree but the runtime stage still installed with pip and left
 # it there. The strip at the end of the runtime RUN is what makes the sentence true.
 
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS build
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS build
 
 WORKDIR /app
 # Allow-list copy: only what the wheel build needs. The working tree is never copied
@@ -34,7 +34,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
  && python -m build --wheel --no-isolation --outdir dist .
 
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.
