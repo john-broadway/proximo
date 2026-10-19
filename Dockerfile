@@ -30,8 +30,9 @@ COPY requirements/build.txt ./requirements/build.txt
 COPY src/ ./src/
 # Hash-pinned build backend, then build the wheel with NO isolated env — the isolated
 # env would pip-install hatchling unpinned behind our back.
+# One wheel: proximo-proxmox, the governed core (src/proximo/core) and the doors built on it.
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
- && python -m build --wheel --no-isolation
+ && python -m build --wheel --no-isolation --outdir dist .
 
 FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
 

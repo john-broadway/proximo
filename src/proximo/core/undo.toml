@@ -1,0 +1,22 @@
+# UNDO's judged creates: the POSTs at an ITEM path that make the record the path names.
+#
+# `engine._undo_before` reads the GET twin before a mutation and refuses when the read fails, so
+# a create at an item path (a token, a job, a metric server) could never run with UNDO on: its
+# twin 404s (PVE answers 500 for "no such user") until the record exists (live, 2026-10-06).
+# This record is keyed on the ADDRESS, never the shape: of 28 published POSTs at an item path, 13
+# have a GET and a DELETE twin, and several are ACTIONS whose "absent" would make undo delete a
+# record that was there before (pmg `backup/{filename}` RESTORES a backup, pve `content/{volume}`
+# COPIES a volume, the firewall group POST adds a RULE while its DELETE removes the GROUP, the
+# ipset POSTs add an ENTRY while their DELETE removes the SET). A line here means: a failed
+# read-back is recorded `before: absent` with the vendor's status, the create runs, and the restore
+# is the DELETE the vendor publishes at the same path, sent only when the ledger shows the create
+# landed `ok` (every vendor here refuses a duplicate create, so a create that landed is the proof
+# nothing was there). A line needs the POST, its GET and its DELETE published and ungated, and a
+# why quoting the vendor's own sentences; the engine refuses the record otherwise.
+# Opening a sixth line is John's hand, by name.
+[create]
+"pve:POST /access/users/{userid}/token/{tokenid}" = { why = "Vendor: POST 'Generate a new API token for a specific user', GET 'Get specific API token information', DELETE 'Remove API token for a specific user'. A create of the record the path names; a duplicate is refused (live, 2026-10-06). [Claude, 2026-10-08]" }
+"pbs:POST /access/users/{userid}/token/{token-name}" = { why = "Vendor: POST 'Generate a new API token with given metadata', GET 'Read user's API token metadata', DELETE 'Delete a user's API token'. A create of the record the path names; a duplicate is refused (live, 2026-10-06). [Claude, 2026-10-08]" }
+"pdm:POST /access/users/{userid}/token/{token-name}" = { why = "Vendor: POST 'Generate a new API token with given metadata', GET 'Read user's API token metadata', DELETE 'Delete a user's API token'. A create of the record the path names; the same code as PBS's. [Claude, 2026-10-08]" }
+"pve:POST /cluster/jobs/realm-sync/{id}" = { why = "Vendor: POST 'Create new realm-sync job', GET 'Read realm-sync job definition', DELETE 'Delete realm-sync job definition'. A create of the record the path names; a duplicate id is refused by the vendor's section config (not proven live). [Claude, 2026-10-08]" }
+"pve:POST /cluster/metrics/server/{id}" = { why = "Vendor: POST 'Create a new external metric server config', GET 'Read metric server configuration', DELETE 'Remove Metric server'. A create of the record the path names; a duplicate id is refused by the vendor's section config (not proven live). [Claude, 2026-10-08]" }

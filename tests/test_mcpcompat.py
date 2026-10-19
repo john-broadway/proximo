@@ -1,4 +1,4 @@
-"""The mcp major seam (proximo._mcpcompat) — proven against the INSTALLED SDK, both stubs.
+"""The mcp major seam (proximo.core.mcpcompat) — proven against the INSTALLED SDK, both stubs.
 
 Every accessor test has teeth both ways: it passes on the running major's spelling AND
 raises on the other spelling's stub. A major-aware accessor that quietly succeeded on both
@@ -12,7 +12,7 @@ import importlib.metadata
 import pytest
 from packaging.version import Version
 
-from proximo import _mcpcompat as compat
+from proximo.core import mcpcompat as compat
 
 
 class _Stub:
@@ -136,34 +136,7 @@ def test_make_server_tool_decorator_accepts_annotations_kwarg():
     assert "annotations" in inspect.signature(srv.tool).parameters
 
 
-@pytest.mark.skipif(compat.MCP_MAJOR != 2, reason="the subclass H1 hook is the 2.x seam; "
-                    "1.x H1 is the low-level re-registration pinned in test_escape_hatch")
-def test_h1_on_2x_a_non_resident_name_gets_the_pointer_not_the_dead_end():
-    import anyio
 
-    from proximo.backends import ProximoError
-
-    srv = compat.make_server("compat-probe", version="0.0.0")
-
-    @srv.tool()
-    def resident() -> dict:
-        """READ-ONLY probe tool."""
-        return {"ok": True}
-
-    async def go():
-        with pytest.raises(ProximoError) as exc:
-            await srv.call_tool("pve_ghost_tool", {})
-        msg = str(exc.value)
-        assert "unknown tool" in msg  # lowercase — the uniformity contract door.py pins
-        assert "proximo_call" in msg or "proximo_find_tools" in msg  # the recoverable pointer
-        # and a resident tool still dispatches through the SDK unchanged
-        r = await srv.call_tool("resident", {})
-        assert r is not None
-
-    anyio.run(go)
-
-
-@pytest.mark.skipif(compat.MCP_MAJOR != 2, reason="wire-shape check for the 2.x override")
 def test_h1_on_2x_reaches_the_wire_as_an_is_error_result():
     """_handle_call_tool turns a non-MCPError raise into CallToolResult(is_error=True) —
     the property that makes the subclass override equivalent to the 1.x handler swap."""
@@ -191,7 +164,7 @@ def test_the_in_process_unknown_tool_delta_is_the_documented_one():
     same commit."""
     import anyio
 
-    from proximo.backends import ProximoError
+    from proximo.core.errors import ProximoError
 
     srv = compat.make_server("compat-probe", version="0.0.0")
 
@@ -220,7 +193,7 @@ def test_the_in_process_unknown_tool_delta_is_the_documented_one():
 def _probe_server():
     import anyio  # noqa: F401 — asserts the runner is present for the callers below
 
-    from proximo.backends import ProximoError
+    from proximo.core.errors import ProximoError
 
     srv = compat.make_server("compat-probe", version="0.0.0")
 
@@ -240,7 +213,7 @@ def _probe_server():
 def test_proximo_error_text_reaches_the_caller_on_both_majors():
     import anyio
 
-    from proximo.backends import ProximoError
+    from proximo.core.errors import ProximoError
 
     srv = _probe_server()
 
@@ -272,38 +245,6 @@ def test_a_non_proximo_error_stays_sanitized_on_2x_and_wrapped_on_1x():
             assert "inner-detail-sentinel" in str(exc.value)
 
     anyio.run(go)
-
-
-def test_proximo_error_text_survives_the_nested_door():
-    """proximo_call -> tool: the inner refusal rides through two SDK wraps. Pin the REASON, not
-    the prefix shape (1.x carries both tool names, 2.x carries the outer one)."""
-    import anyio
-
-    from proximo import server
-    from proximo.backends import ProximoError
-    from proximo.door import dispatch_tool
-
-    srv = _probe_server()
-
-    @srv.tool()
-    async def door(tool: str, arguments: dict | None = None) -> dict:
-        """MUTATION probe: the escape hatch, minus the catalog."""
-        catalog = {n: t for n, t in srv._tool_manager._tools.items()}  # noqa: SLF001
-        return await dispatch_tool(server_mcp=srv, catalog=catalog, name=tool, arguments=arguments or {})
-
-    async def go():
-        with pytest.raises(compat.ToolError) as exc:
-            await srv.call_tool("door", {"tool": "refuse"})
-        assert "re-arm to continue" in str(exc.value), str(exc.value)
-        cause = exc.value
-        while isinstance(cause, compat.ToolError) and cause.__cause__ is not None:
-            cause = cause.__cause__
-        assert isinstance(cause, ProximoError), type(cause)
-        assert server is not None  # keep the import honest: dispatch_tool is the real funnel
-
-    anyio.run(go)
-
-
 def test_the_cause_walk_follows_proximo_error_rewraps_and_stops_at_a_foreign_one():
     """The seam walks __cause__ through ToolError links only. A tool that re-raises
     `ProximoError(...) from ProximoError` (the two shapes in the tree: vectors.py, pmg_node.py)
@@ -313,7 +254,7 @@ def test_the_cause_walk_follows_proximo_error_rewraps_and_stops_at_a_foreign_one
     choice, not a silent regression of this seam."""
     import anyio
 
-    from proximo.backends import ProximoError
+    from proximo.core.errors import ProximoError
 
     srv = compat.make_server("compat-probe", version="0.0.0")
 

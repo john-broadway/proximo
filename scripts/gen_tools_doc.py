@@ -135,11 +135,11 @@ def main() -> int:
         "[Model Context Protocol](https://modelcontextprotocol.io); each tool is also "
         "self-describing at runtime over the standard `tools/list` method. **Inputs** are "
         "the typed parameters listed per tool below. **Output** is a structured JSON "
-        "result: read tools return the requested data; every mutating tool first returns "
-        "a **PLAN** preview (the action and its blast radius) rather than acting, and each "
-        "call is recorded in the tamper-evident audit ledger. Which tools are registered "
-        "depends on `PROXIMO_SURFACES` and whether the opt-in exec/agent edges are enabled; "
-        "this reference lists the **full** catalog.",
+        "result: reads return the requested data; `proximo_call` without `confirm=true` "
+        "returns the **PLAN** (the verdict, the consent id, the target as it stands, the "
+        "change) rather than acting, and every call is recorded in the tamper-evident audit "
+        "ledger. The six tools are always registered; `target` appears on `proximo_plan`, "
+        "`proximo_read` and `proximo_call` only where `PROXIMO_TARGETS` configures a registry.",
         "",
         f"**{len(tools)} tools** across {sum(1 for t in order if groups[t])} surfaces.",
         "",

@@ -43,7 +43,7 @@ from mcp.client.stdio import stdio_client
 # dispatch of a pre-0.33.0 version fails HERE, by name, not three steps later on a bare
 # ModuleNotFoundError.
 try:
-    from proximo._mcpcompat import init_server_info
+    from proximo.core.mcpcompat import init_server_info
 except ImportError:
     sys.exit("pypi-smoke FAILED: this proximo wheel predates the _mcpcompat seam (0.33.0) — "
              "versions below v0.33.0 cannot be verified by this script")

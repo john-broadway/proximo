@@ -26,12 +26,14 @@ CLI:
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -238,7 +240,7 @@ def cast_visible_text(text: str) -> str:
     A `.cast` is one JSON array per line, and a terminal recording emits ONE EVENT PER KEYSTROKE
     for anything typed. So a hostname the operator typed is spread one character per line, and a
     line-by-line regex scan cannot see it: it matches `p`, then `v`, then `e`. Verified against
-    docs/demo/demo.cast, whose lines 5-38 are single characters.
+    docs/demo/hand-the-keys.cast, whose lines 5-38 are single characters.
 
     That made the denylist scan structurally blind to exactly the thing a live terminal demo is
     most likely to expose — typed infra names — while still reporting the file CLEAN. Found by an
@@ -268,6 +270,7 @@ def scan_text(
     path: str, text: str,
     extra_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (),
     marker_skips: list[tuple[str, int]] | None = None,
+    honour_marker: bool = True,
 ) -> list[Finding]:
     """Leak shapes in one file's content, honoring the documented-example allowlist. *extra_patterns*
     scan alongside the built-ins (e.g. the site-specific internal-identifier denylist). When
@@ -286,7 +289,7 @@ def scan_text(
                 for f in scan_text(path + "::visible", visible, extra_patterns, marker_skips)
             ]
     for lineno, line in enumerate(text.splitlines(), start=1):
-        if ALLOW_MARKER in line:
+        if honour_marker and ALLOW_MARKER in line:
             if marker_skips is not None:
                 marker_skips.append((path, lineno))
             continue
@@ -312,6 +315,12 @@ def _is_allowed_binary(path: str) -> bool:
     return path.startswith("docs/brand/") and path.endswith(".png")
 
 
+def _is_text_in_gzip(path: str) -> bool:
+    """The core's generated records are gzipped JSON (the governance table): a blob only by
+    encoding. It is scanned as the text it holds, whole, never allowed by path."""
+    return path.startswith("src/proximo/core/") and path.endswith(".json.gz")
+
+
 def _extract_strings(blob: bytes) -> str:
     """Everything a shape pattern could match inside a binary: the single-byte-encoded text (latin-1
     is a total 1:1 byte map, so all ASCII survives and nothing raises) plus a UTF-16 decode both
@@ -330,6 +339,23 @@ def scan_binary(
     """Leak shapes inside one binary blob, plus an `unreviewed-binary` finding for any path not on
     the known-clean allowlist. Line numbers are meaningless here, so findings report line 0."""
     findings: list[Finding] = []
+    if _is_text_in_gzip(path):
+        # Scanned twice, no allow-marker honoured (the record is generated; a marker in it would
+        # silence the whole table, which is ONE line): the raw text, which holds every byte that
+        # ships (a duplicate key's first value too), and the JSON re-dumped one value per line,
+        # unescaped, so a `\u`-escaped address meets the pattern.
+        try:
+            raw = gzip.decompress(blob).decode("utf-8")
+            text = raw + "\n" + json.dumps(json.loads(raw), indent=1, ensure_ascii=False)
+        except (OSError, EOFError, zlib.error, UnicodeDecodeError, ValueError, RecursionError) as exc:
+            return [Finding(path, 0, "unreadable-gzip", f"{type(exc).__name__}")]
+        seen: set[tuple[str, str]] = set()
+        out = []
+        for f in scan_text(path + "::gunzip", text, extra_patterns, honour_marker=False):
+            if (f.kind, f.match) not in seen:
+                seen.add((f.kind, f.match))
+                out.append(Finding(path, f.line, f"{f.kind} (in gzip)", f.match))
+        return out
     if not _is_allowed_binary(path):
         findings.append(Finding(path, 0, "unreviewed-binary", path))
     for f in scan_text(path + "::bytes", _extract_strings(blob), extra_patterns):

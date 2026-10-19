@@ -25,8 +25,8 @@ _needs_uv = pytest.mark.skipif(shutil.which("uv") is None, reason="uv not instal
 _needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 
 _EXPORTS = {
-    "runtime.txt": ["--no-dev", "--no-emit-project"],
-    "dev.txt": ["--extra", "dev", "--no-emit-project"],
+    "runtime.txt": ["--no-dev", "--no-emit-workspace"],
+    "dev.txt": ["--extra", "dev", "--no-emit-workspace"],
 }
 
 

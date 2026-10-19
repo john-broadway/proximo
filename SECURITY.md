@@ -1,8 +1,8 @@
 # Security Policy
 
-Proximo gives an AI agent a real control plane over Proxmox VE and PBS. Its whole
-design premise is that mutations are previewable, reversible, and recorded — so taking
-its security seriously is the point, not an afterthought. Reports are genuinely welcome.
+Proximo gives an AI agent a real control plane over Proxmox VE, PBS, PMG and PDM. Its whole
+design premise is that mutations are previewable, reversible, and recorded — so taking its
+security seriously is the point, not an afterthought. Reports are genuinely welcome.
 
 ## The two-deployment trust model (read this first)
 
@@ -17,18 +17,18 @@ Proximo's protection comes from two layers that do not fail the same way. Don't 
    you mean to hand over, and this floor holds no matter what happens above it. It's the
    only layer here that assumes Proximo's own process might be hostile.
 2. **The in-process gates** — PLAN/PROVE/UNDO/DIAGNOSE plus the opt-in CONSENT/CONTAIN/
-   LEASE/SCOPE/ENVELOPE controls (table below). These raise the bar **within** Proximo's
-   own trust domain: previews before mutation, a tamper-evident record, rollback where
-   Proxmox allows it, and (opt-in) independent authorization, a kill-switch, arm-TTL,
-   declared scope, and rate/blast-radius limits. But they're enforced by code running in
-   the *same process, same OS user* as the agent they're meant to constrain. If that agent
-   (or whatever's hijacked it) can also write to a gate's own state — the CONSENT
-   directory, the CONTAIN trip-file path, the SCOPE file, the rate-reservation directory, the caller-keys pin directory —
-   it can potentially clear its own gate. **These become a real boundary, not just a
-   speed bump, only when their state directories live outside the agent's write reach** —
-   a different OS user, a different filesystem mount, a different host entirely. Point
-   every gate's `PROXIMO_*_DIR` / `PROXIMO_*_PATH` somewhere the agent process itself
-   cannot write, or treat them as advisory.
+   ARM/FORBID/RATE/TAINT controls (table below). These raise the bar **within** Proximo's
+   own trust domain: previews before mutation, a tamper-evident record, rollback where the
+   vendor publishes a write to put the record back, and (opt-in) independent authorization,
+   a kill-switch, a write token present only while armed, and rate/blast-radius limits. But
+   they're enforced by code running in the *same process, same OS user* as the agent they're
+   meant to constrain. If that agent (or whatever's hijacked it) can also write to a gate's
+   own state — the CONSENT directory, the CONTAIN trip-file path, the arm source, the
+   rate-reservation directory, the caller-keys pin directory — it can potentially clear its
+   own gate. **These become a real boundary, not just a speed bump, only when their state
+   directories live outside the agent's write reach** — a different OS user, a different
+   filesystem mount, a different host entirely. Point every gate's `PROXIMO_*_DIR` /
+   `PROXIMO_*_PATH` somewhere the agent process itself cannot write, or treat them as advisory.
 
 Layer 1 is why Proximo is safe to hand to an agent at all. Layer 2 is what makes that
 agent *productive* — previews, receipts, budgets — without pretending it's a sandbox.
@@ -38,38 +38,38 @@ agent *productive* — previews, receipts, budgets — without pretending it's a
 The privilege separation you want already exists, server-side, in the product: Proxmox's
 token model. Proximo deliberately does **not** wrap it in a broker, proxy, or signer of its
 own — a local layer would sit in the same trust domain as the agent and add ceremony, not
-enforcement. Use Proxmox's model directly:
+enforcement. Use Proxmox's model directly; `proximo mint <plane>` prints it as the vendor's
+own commands, and makes no API call, holds no credential and writes nothing:
 
 1. **Start read-only.** A privilege-separated token (`--privsep 1`) carries *its own* ACL —
    it inherits nothing from the user's *other* rights. But its effective permissions are the
    *intersection* of the user's ACL and the token's ACL, not the token's ACL alone — grant
    `PVEAuditor` at `/` to **both** the token and the user (a freshly-created user has no ACL
    of its own, so skipping the user grant leaves the intersection empty: a token that
-   authenticates but can do nothing). The click-by-click and CLI versions are in
-   [SETUP.md](docs/SETUP.md) (Step 2); `proximo mint` prints the same runbook for every plane —
-   PVE, PBS, PMG, PDM — each with its read-only and scoped-write role, granted to both.
-2. **Widen deliberately, by path.** Write access is granted where you mean it and nowhere
-   else: `pveum acl modify /vms/100 --tokens 'proximo@pve!readonly' --roles PVEVMAdmin`
-   followed by the matching `--users 'proximo@pve'` grant arms exactly one VM. Never grant
+   authenticates but can do nothing). `proximo mint pve` prints exactly this.
+2. **Widen deliberately, by path, with an expiry.** A write token is minted scoped to the
+   paths you mean (`proximo mint pve --write --scope /vms/100 --expire 8h`): the vendor's ACL
+   is the scope and its own `expire` is the lease, both enforced server-side where no bug of
+   ours can widen them. Proximo keeps no scope file and no arm TTL of its own (0.45 retired
+   both; a door refuses to start while `PROXIMO_SCOPE_PATH` or `PROXIMO_ARM_TTL` is still
+   set, rather than quietly run without the gate you thought you had). Never grant
    `Administrator` at `/` to an agent-facing token.
-3. **Two tokens, not one big one.** The strongest single-box posture: the everyday
-   `PROXIMO_TOKEN_PATH` holds the **read-only** token; a separately-scoped **write** token
-   lives in a file the agent's user cannot read, swapped into place by *you*, out-of-band,
-   when there's work to do — and swapped back (or left to the **LEASE** arm-TTL, which
-   fails closed on a missing token file). The write credential simply does not exist in
-   the agent's world between arms. This is privilege separation done with Proxmox-side
-   objects — two credentials with different server-enforced scopes — rather than with
-   local machinery pretending to be a boundary.
-   **This binds every tool that speaks to the Proxmox API — and only those.**
-   `ct_exec`/`ct_psql` reach containers over `ssh -> pct exec`, a path that never carries
-   the token, so no swap of it can gate them. See "The ssh exec path" below.
-4. **Verify the boundary before any AI sees it.** `proximo doctor` prints the token's
-   `can` / `cannot` lists — the grant, confirmed by Proxmox itself, in writing. When a
-   capability is missing it prints the exact `pveum` command that would grant it, so
-   widening stays a deliberate act.
+3. **Two tokens, not one big one.** The everyday served file holds the **read-only** token;
+   the **write** token lives in its own file, swapped into the served path by *you*
+   (`proximo arm`), out-of-band, when there's work to do — and swapped back
+   (`proximo disarm`) or left to expire at the vendor. Between arms the write credential
+   simply is not what the door dials with. This is privilege separation done with
+   Proxmox-side objects — two credentials with different server-enforced scopes — rather
+   than with local machinery pretending to be a boundary. **This binds every address that
+   speaks to the Proxmox API.** The shell lane (`pct exec` over ssh) carries no token, which
+   is why ARM is checked at the door for it too; see "The shell lane" below.
+4. **Verify the boundary before any AI sees it.** `proximo doctor` reports each plane
+   reached, the vendor's own permission count for the token (counted and sampled by path,
+   never translated into a vocabulary of ours), the ledger's chain, and which pillars stand.
 5. **Protect the file like it's the credential — it is.** `chmod 600`; Proximo refuses at
-   startup if the token or audit-key file is group/other-accessible. Revocation is instant
-   and yours: `pveum user token remove proximo@pve readonly` ends everything, mid-session.
+   startup if a token, credential, bearer, signing-key or audit-key file is group/other-
+   accessible. Revocation is instant and yours: `pveum user token remove proximo@pve read`
+   ends everything, mid-session.
 
 ## Building the boundary: a hardened deployment (Layer 2 in practice)
 
@@ -88,26 +88,24 @@ just don't mistake it for a boundary.
 # a dedicated, unprivileged OS user for the Proximo/agent process (name is an example)
 useradd --system --home-dir /var/lib/proximo --shell /usr/sbin/nologin proximo
 
-# a root-owned directory for gate state: the agent may write INTO it (for the anchor),
-# but the sticky bit stops it removing or replacing the root-owned files (the trip)
+# a root-owned directory for gate state: the sticky bit stops the agent removing or
+# replacing the root-owned files in it (the trip, the consent grants)
 install -d -m 1770 -o root -g proximo /etc/proximo
 ```
 
 Mode `1770` grants the `proximo` group `rwx` plus the sticky bit, and gives the world
-nothing (not `1777`/`1773`). Sticky means the agent cannot delete or rename a file it does
-not own, even in a group-writable directory. That one mode serves both gates below:
-root owns the CONTAIN trip so the agent can't clear it, while the agent can still write
-the audit anchor.
+nothing. Sticky means the agent cannot delete or rename a file it does not own, even in a
+group-writable directory: root owns the CONTAIN trip so the agent can't clear it.
 
 Set the env vars that name these paths from a **root-owned environment**, not the MCP
 client's own config. A systemd unit `EnvironmentFile` (root-owned, `600`) is the right
-home for `PROXIMO_CONTAIN_TRIP_PATH` and `PROXIMO_AUDIT_ANCHOR_*`. Do not set them in the
+home for `PROXIMO_CONTAIN_TRIP_PATH` and `PROXIMO_CONSENT_DIR`. Do not set them in the
 agent's client config (e.g. `~/.claude.json`): the agent can write that file and simply
 repoint or unset the very switch it is meant to be constrained by.
 
 ### CONTAIN: a kill-switch the agent cannot clear
 
-`contain.py` reads `PROXIMO_CONTAIN_TRIP_PATH` fresh on every mutation and fails closed.
+The engine reads `PROXIMO_CONTAIN_TRIP_PATH` fresh on every mutation and fails closed.
 Put the trip file where only you can create or remove it:
 
 ```sh
@@ -122,7 +120,15 @@ rm -f /etc/proximo/CONTAIN
 The agent process can read the trip to surface the reason, but because the file is
 root-owned and the directory is sticky it cannot delete the file to un-contain itself. If
 `PROXIMO_CONTAIN_TRIP_PATH` points inside the agent's own writable home instead, the
-breaker is advisory: a compromised agent clears it.
+breaker is advisory: a compromised agent clears it. A tripped CONTAIN stops every box a
+target registry names, too.
+
+### CONSENT: a second party, out of band
+
+With `PROXIMO_CONSENT_DIR` set, a mutation runs only when a single-use grant file named by
+its plan's `consent_id` exists in that directory, younger than `PROXIMO_CONSENT_TTL_SECONDS`.
+The agent gets the id from the plan; a human writes the file. If the agent can write the
+directory, it can grant itself: the same ownership rule as the trip.
 
 ### ARM: mint the write credential, don't stockpile it
 
@@ -134,11 +140,11 @@ confined agent does not have, so the agent cannot arm itself.
 ```sh
 # ARM: run as root on the PVE host (or over SSH to it from your own workstation):
 umask 177
-pvesh create /access/users/proximo@pve/token/arm --privsep 1 --output-format json \
+pvesh create /access/users/proximo@pve/token/arm --privsep 1 --expire $(( $(date +%s) + 8*3600 )) --output-format json \
   | python3 -c 'import json,sys; print("proximo@pve!arm=" + json.load(sys.stdin)["value"], end="")' \
   > /run/proximo/arm.token          # tmpfs, root-owned, 600 (never a persisted .env)
-pveum acl modify /vms --tokens 'proximo@pve!arm' --roles PVEVMAdmin
-pveum acl modify /vms --users  'proximo@pve'      --roles PVEVMAdmin
+pveum acl modify /vms/100 --tokens 'proximo@pve!arm' --roles PVEVMAdmin
+pveum acl modify /vms/100 --users  'proximo@pve'      --roles PVEVMAdmin
 # then place arm.token into PROXIMO_TOKEN_PATH on the agent box OUT-OF-BAND: paste it over
 # your own terminal, or scp the 600 file. Never through the agent's shell or a chat.
 ```
@@ -152,9 +158,8 @@ pveum user token remove proximo@pve arm    # the write credential ceases to exis
 Two things make this bind. The secret is delivered by paste or stdin over your own
 terminal, never a persisted `.env` and never the agent's shell-passthrough (that lands in
 the transcript; PyPI tokens have leaked exactly this way). And minting requires root on
-Proxmox, which the confined agent lacks. Compose it with LEASE (`PROXIMO_ARM_TTL`) so a
-forgotten disarm still fails closed when the lease lapses, and with SCOPE
-(`PROXIMO_SCOPE_PATH`) to bound the arm to named targets.
+Proxmox, which the confined agent lacks. The token's own `--expire` is the lease: a
+forgotten disarm still fails closed when the vendor stops honouring the credential.
 
 #### `proximo arm` / `proximo disarm` — the swap, for the pre-minted pattern only
 
@@ -164,57 +169,16 @@ For the **pre-minted** pattern — one write token kept at rest, swapped in and 
 swap is mechanical, and two commands do it:
 
 ```sh
-proximo arm     --session ci-7f2a      # install the write token
-proximo disarm  --session ci-7f2a      # put the read-only one back
+proximo arm       # install the write token's bytes at the served path (atomic, 0600, a ledger row)
+proximo disarm    # put the read-only one back
 ```
 
 Point `PROXIMO_ARM_SOURCE` at the write token and `PROXIMO_READONLY_SOURCE` at the
-everyday one. With `PROXIMO_SESSION_DIR` set, each session key gets its own token file, so
-arming one caller leaves the others read-only. The key comes from `--session` or
-`PROXIMO_SESSION_KEY` and is yours to choose — Proximo never infers it from a client's
-environment.
-
-Naming a session **without** `PROXIMO_SESSION_DIR` set is refused rather than served. The
-only place left to install the token would be the shared `PROXIMO_TOKEN_PATH`, which arms
-every caller on the box — wider than what was asked for, and widening authority past the
-operator's stated intent is the failure this whole section exists to prevent. Drop
-`--session` to arm globally on purpose. `disarm` does not mirror that refusal: its fallback
-only ever *removes* authority, so it restores the shared token and says so.
-
-#### The ssh exec path — what the token swap cannot reach
-
-`ct_exec` and `ct_psql` do not use the API. Proxmox exposes no REST endpoint for container
-exec, so they run `ssh <target> pct exec ...` as root on the Proxmox host. That authority
-comes from an ssh key, not from `PROXIMO_TOKEN_PATH` — so **swapping the token has no effect
-on them, and PVE's permission check never sees them.** Until 2026-08-24 that meant a fully
-disarmed caller could still run arbitrary in-container commands with every other gate
-satisfied. `LEASE` did not catch it and could not: it proves the served token is *fresh*,
-never that it is the *write* one, and `disarm` stamps a fresh mtime too.
-
-Proximo now gates that path itself. With `PROXIMO_ARM_SOURCE` set, a confirmed `ct_exec` /
-`ct_psql` is refused unless the served token's bytes equal the arm source's — recorded as
-`blocked:not_armed`. Dry-run plans still work while disarmed, and so do `ct_logs` and
-`ct_diagnose`, whose argv is fixed here (`journalctl` and a read-only probe battery) and cannot
-express a mutation. Keeping DIAGNOSE alive while disarmed is deliberate: you diagnose a box
-precisely when it is broken and you are not armed.
-
-**The gate judges the box the command is aimed at, not the process environment.** If you use the
-target registry, give any exec-enabled target its own `arm_source` in that file. It is never
-inherited from `PROXIMO_ARM_SOURCE`, because that names the *default* box's write token and one
-box's arm must not authorize another. A target with exec enabled and no `arm_source` of its own
-is refused, and the refusal names the field to set. Two related configurations are also refused
-rather than trusted: an unset or unreadable token, and `PROXIMO_ARM_SOURCE` pointing at
-`PROXIMO_TOKEN_PATH` — one file in both roles would make the check compare a file to itself and
-report armed forever.
-
-**Be clear about what kind of boundary this is.** It is local machinery — the thing this
-section otherwise warns you not to mistake for a boundary. It closes *drift*: a caller that
-believes it is disarmed, an agent that forgot, a session that was never armed. It does not
-constrain an attacker who already has code execution in the Proximo process, who can reach
-the ssh key directly and skip Proximo altogether. The honest fix for that case is the same
-shape as mint-and-revoke: **give the exec path its own ssh identity and swap the key, not
-just the token** — key present only while armed, so the authority itself is absent between
-arms. Proximo does not do that for you; it is a deployment posture, and the stronger one.
+everyday one; `PROXIMO_TOKEN_PATH` is the served file the two are installed into, and is
+refused as either source (one file in both roles would make the check compare a file to
+itself and read as armed forever). A symlinked source is refused. Armed is a predicate,
+not a flag: the served file's bytes equal the arm source's. It fails closed by
+construction (a garbled, rotated or truncated token is not armed) and self-heals on rotation.
 
 **These commands grant no authority the caller did not already have.** Anyone who can run
 `proximo arm` can already read `PROXIMO_ARM_SOURCE` and copy it into place; the command is
@@ -225,197 +189,67 @@ owner and mode of the directory holding it**, then tells you which one you have:
 
 ```
 boundary: REAL, conditional on the server not running as uid 0
-   (the arm source (the write token) is mode 0o600, owned by uid 0, in a directory owned by
-   uid 0, and no other uid can read or replace it; …)
-boundary: ADVISORY — the arm source is not protected against a second uid:
-     - the arm source is owned by uid 65534, not the uid running this command (0), so that
-       uid can rewrite it whatever its mode says
+boundary: ADVISORY — the arm source is not protected against a second uid
 ```
 
 `ADVISORY` is not a warning that something broke; it is the accurate description of a
-single-uid box, where the process that reads the token can also replace it.
+single-uid box, where the process that reads the token can also replace it. `disarm`
+resolves every ambiguity toward read-only, and refuses loudly in exactly one case — no
+read-only token to restore — where a false `DISARMED` would be worse than an error.
 
-To get a real boundary the file's mode is **not sufficient on its own**: mode `600` says
-who may open the file, and says nothing about who may delete it and put another one there.
-Whoever owns the containing directory can unlink and replace the entry, and whoever owns
-the file can rewrite it regardless of its mode. So a real boundary needs the arm source
-**and its directory** owned by the uid you arm from, neither group- nor other-writable,
-armed from a root context — or use mint-and-revoke so no write token exists at rest at all.
-`disarm` gets the same disclosure about `PROXIMO_READONLY_SOURCE`, because a read-only
-source a second uid can rewrite is what turns a future `disarm` into a reported success
-that leaves write authority live.
+PBS and PDM carry their own pair (`PROXIMO_PBS_ARM_SOURCE` / `PROXIMO_PBS_READONLY_SOURCE`,
+the same with `PDM_`): a mutation on a plane is refused unless that plane's served token is
+its own arm source, and PVE's pair never arms another plane. PMG's pair holds credential
+files. A target in the registry carries its own `arm_source`; the default box's arm never
+authorizes another box.
 
-`disarm` resolves every ambiguity toward read-only: an unusable session key falls back to
-the global token path rather than refusing, because a refused disarm is the one outcome
-that leaves write authority live. It refuses loudly in exactly one case — no read-only
-token to restore — where it cannot do the safe thing at all and a false `DISARMED` would be
-worse than an error.
+### The shell lane — what the token cannot reach
 
-#### `proximo reap` — the arm that outlived its session
+Proxmox exposes no REST endpoint for container exec, so `pct exec` runs over `ssh` as root
+on the Proxmox host. That authority comes from an ssh key, not from the served token — so a
+token swap alone would not gate it, and PVE's permission check never sees it. The core
+keeps **one** governed path: the three shell calls are rows in the same table as every
+published address, judged by the same verdict (ARM, TIER, CONSENT, FORBID, RATE, TAINT,
+CONTAIN), receipted on the same chain, and only the wire differs. The lane is off until
+opened (`PROXIMO_ENABLE_EXEC` and a CTID allowlist; the in-guest agent behind
+`PROXIMO_ENABLE_AGENT` and a VMID allowlist; the host's read-only battery behind
+`PROXIMO_ENABLE_NODE_SHELL`). The ssh hop is non-interactive (`BatchMode`, a connect
+timeout: a password prompt can never hang a call), and the remote first checks that the
+host it reached **is** the node the path names, so a call aimed at one node never lands in
+a container on another. There is no default target: unset refuses.
 
-An arm is a file on disk, read fresh per call, so it survives the thing that asked for it.
-A session that crashes, is killed, or simply loses its client leaves the write token sitting
-in place with nobody left to disarm it. LEASE closes that by *expiring on time*; `reap`
-closes it by *noticing the session is gone*, which needs no TTL and so does not cut a long
-session short. They compose — use both.
+**Be clear about what kind of boundary this is.** It is local machinery — the thing this
+section otherwise warns you not to mistake for a boundary. It closes *drift*: a caller that
+believes it is disarmed, an agent that forgot. It does not constrain an attacker who already
+has code execution in the Proximo process, who can reach the ssh key directly and skip
+Proximo altogether. The honest fix for that case is the same shape as mint-and-revoke:
+**give the exec path its own ssh identity and swap the key, not just the token** — key
+present only while armed, so the authority itself is absent between arms. Proximo does not
+do that for you; it is a deployment posture, and the stronger one.
 
-```sh
-proximo reap --dry-run     # decide, change nothing
-proximo reap               # restore the read-only token for every ended session
-```
+### PROVE: an off-box head
 
-**The kernel is the liveness oracle, not a heuristic.** A serving process holds a *shared*
-`flock` on a sidecar `<session>.lock` for its whole life, and `reap` tries an *exclusive*
-non-blocking lock: that can only succeed once every holder is gone, and the OS releases
-those on exit, crash and `SIGKILL` alike. Nothing polls, nothing heartbeats, and nothing
-inspects the client — which is what makes it work for any MCP client rather than one
-particular agent harness. A shared lock (not exclusive) means several processes may serve
-one session key while a single exclusive try still detects that all of them died.
+The ledger is keyed, always (HMAC-SHA256 under a key minted 0600 beside the log; 0.45
+retired the unkeyed opt-out, and a door refuses to start while `PROXIMO_AUDIT_KEYED=off`
+is still set). A forward walk catches an edited, inserted, reordered or removed interior
+row. It cannot catch the tail: a truncation, a forged append, a wipe. `audit_verify
+(expected_head=...)` with a head you pinned off-box catches those — and the pin is the
+operator's hand. Copy `head()` somewhere this box cannot write (a root-only append log, a
+different host) and pass it back as `expected_head`: the chain must END there, so a cut tail, a
+forged append and a wipe all fail (and so does any honest row written since you copied it). Or set
+`PROXIMO_AUDIT_EXPECTED_HEAD` once: a standing value, so it is checked as a row the chain must still
+HOLD. Later rows pass; a cut below it or a replaced file fails; a row forged after it does NOT, for
+that you pass a fresh head. `audit_verify` says which it checked (`pinned`) and whether the tail was (`tail_verified`, true only
+for an exact head); an archive (`path=`)
+takes no pin. 0.44's anchor sinks (file, http, syslog, journal) went with it; what
+remains is the honest shape of the guarantee: the pin is only as good as the place you keep
+it. Every serving door (stdio, HTTP, MCP over HTTP, A2A) stamps its arrival and departure on the
+chain, so a door that served while something rewrote the record is itself in the record; the
+`proximo-core` shell door serves one call per process and receipts that call, not a session.
 
-Run it from a timer, or at the start of an operator session. It is safe to run at any
-moment, including while sessions are live: a live holder is simply reported and skipped.
-
-Two behaviours worth knowing before you rely on it:
-
-- **Uncertainty resolves toward reaping.** A missing lock file, a permission error, or a
-  symlinked lock path all read as *dead*. That is deliberate: reaping only ever **removes**
-  write authority, so a wrong "dead" verdict costs one `arm`, while a wrong "live" verdict
-  leaves the write key in place indefinitely. It also means a planted symlink cannot be used
-  to keep an arm alive.
-- **A brand-new arm is protected for `PROXIMO_REAP_GRACE` seconds (default 300).** Between
-  `arm` and the server taking its lock, nobody holds it — without that window `reap` would
-  cut an arm that is seconds old and about to be picked up. It is a startup-race guard, not
-  a TTL: it expires nothing on its own. Set it to `0` only if you arm and connect in one
-  motion, and note that a garbled value falls back to the default rather than to zero, so a
-  typo cannot silently start cutting live arms.
-- **File cleanup is opt-in and can only deny, never grant.** With `PROXIMO_REAP_UNLINK_DAYS`
-  set, `reap` also unlinks session token + lock files that are proven read-only, unheld, and
-  idle past the TTL — the removal happens while holding the file's own exclusive lock, so it
-  cannot race a session that is just starting. A dangling symlink is cleaned on the same
-  terms: it has no target to hold bytes, so it provably is not the write token by shape. Any
-  other unreadable file stays put and is reported as an error — unreadable means unprovable.
-  Note the garbled-value direction is the *opposite* of `PROXIMO_REAP_GRACE`: an unparseable
-  value disables unlinking, because deletion is the destructive verb and a typo must not
-  enable it.
-
-Holding the lock is best-effort and never blocks startup, so the honest limit is this: an
-arm that never gets held (an older server, a read-only session dir) reads as dead once the
-grace window passes and is disarmed. That direction costs an `arm`, never authority.
-
-If revoke-at-disarm is operationally too heavy (it needs root on the Proxmox host every
-cycle), the lighter form keeps one pre-minted write token but seals it at rest with `age`
-or `sops`, so it doesn't exist in cleartext in the agent's world between arms: arm
-decrypts to a tmpfs path with your key, disarm shreds the plaintext. It's weaker than
-mint-and-revoke, since the credential still exists (only encrypted), but it removes the
-standing plaintext secret.
-
-### PROVE: an off-box head anchor
-
-`PROXIMO_AUDIT_EXPECTED_HEAD` pins the ledger head so a tail truncation, a forged append,
-or a full wipe is caught. But **every recorded call advances the head, reads included**,
-so a hand-pinned value goes stale immediately. Prefer the auto-anchor
-(`PROXIMO_AUDIT_ANCHOR_SINK=file` + `PROXIMO_AUDIT_ANCHOR_FILE_PATH`, or
-`PROXIMO_AUDIT_ANCHOR_SINK=http` + `PROXIMO_AUDIT_ANCHOR_URL`): Proximo reads the
-last pin at startup and verifies against it, and the anti-poisoning rule means it never
-re-pins a head that has MOVED (a verify that just caught a truncation cannot overwrite the
-good pin).
-
-Placement is the whole game, because the anchor's value is that it's less compromisable
-than the agent box:
-
-- **The strong form is genuinely off-box.** The `http` sink exists for exactly this: a
-  receiver on a different, less-compromisable host — any endpoint that answers GET with
-  the stored pin (404 when empty) and accepts PUT: a WebDAV location, an object-store
-  gateway, a ten-line receiver that retains every head it is ever handed. TLS verification
-  has no off switch on this channel by design (`PROXIMO_AUDIT_ANCHOR_CA_BUNDLE` for a
-  private CA; a bearer token by file reference via `PROXIMO_AUDIT_ANCHOR_TOKEN_PATH`); a
-  plain `http://` URL works for a genuinely trusted hop but warns loudly, because an
-  on-path attacker who can rewrite the pin in transit defeats the anchor against that
-  attacker. The `file` sink reaches the same posture pointed at a mount or store on such
-  a host, where this box writes the latest head but a separate authority retains and
-  monitors history.
-- **The retained-history arm has its own sinks now.** The paragraph below asks the operator
-  to "independently retain each published head: a root-only append log" — the `syslog` sink
-  (`PROXIMO_AUDIT_ANCHOR_SINK=syslog` + `PROXIMO_AUDIT_ANCHOR_SYSLOG_ADDRESS`), and on a
-  systemd box the `journal` sink (`PROXIMO_AUDIT_ANCHOR_SINK=journal`, no address to
-  configure, read back with `journalctl -t proximo-anchor -o json`), are that
-  sentence mechanized: every clean `audit_verify` appends the head to a collector's
-  append-only trail. The trade is stated as the limit it is: syslog cannot hand a pin back,
-  so this sink alone gives NO automatic tail detection — pair it with
-  `PROXIMO_AUDIT_EXPECTED_HEAD`, a readable sink, or collector-side comparison (Proximo
-  warns at startup when nothing covers it). TCP speaks TLS when the CA bundle is set; UDP
-  is refused by design, because a fire-and-forget publish cannot fail and a publish that
-  cannot fail is not a check.
-- **On a single box, mind the mechanism.** Proximo itself (as the agent user) writes the
-  pin, via `audit_verify`'s on-demand export, so a file the agent literally *cannot* write
-  fails closed and breaks the tool. The property you want is not "the agent can't touch
-  it" but "the agent writes the latest, and can't erase the history you keep." Put the
-  anchor in the root-owned `/etc/proximo` (group-writable, so the atomic publish works)
-  and have root independently retain each published head: a root-only append log, or
-  filesystem snapshots of the file. Without that retained history, a non-root compromise
-  that bothers to rewrite the pin defeats a single-box anchor; it still catches the far
-  more common truncate-or-wipe.
-
-When you're done, verify the boundary you built. `proximo doctor` reports which pillars
-stand and which sockets are empty, and it never echoes the configured paths back (a
-hijacked session shouldn't learn where you put your switch).
-
-### The reach grant is watched
-
-The CT/agent allowlists are the *reach grant* — the perimeter for the one channel PVE's own
-permission model cannot scope (`ssh -> pct exec`). At every serve start, on every door, Proximo
-snapshots the resolved grant (env lane plus every pve target), compares it to the
-`.proximo-reach-grant` sidecar beside the ledger, and records any delta as a `reach_grant`
-PROVE entry naming what was added and removed — so a widened allowlist can no longer pass
-between restarts unrecorded. Unchanged restarts record nothing. A missing or unreadable
-sidecar on a box with prior history records `state_missing`/`state_unreadable` rather than
-posing as a first run. Honest limits: a registry-file edit takes effect mid-run and is only
-witnessed at the next serve start; and like the taint marker, the sidecar is a real witness
-only when its directory sits outside the agent's write reach — though the entries already
-emitted are hash-chained, so erasing history means attacking the PROVE chain itself.
-`proximo doctor` reads the resolved grant back (ids + digest); `--receipt` reduces it to
-counts, since the roster is estate shape. The `pve_doctor` tool serves the same resolved ids
-to authenticated callers — deliberate: those callers can already enumerate guests, and the
-operator reading their own perimeter is the feature.
-
-### MIRROR: the shell channel obeys the token's own map
-
-The allowlist above is Proximo's own vocabulary — a list of ids in an env var. The mirror
-replaces vocabulary with symbiosis: with `PROXIMO_REACH_PRIVILEGE` set to a PVE privilege
-name, the container shell tools (`ct_exec`, `ct_psql`, and the read-only siblings `ct_logs`,
-`ct_diagnose` — reach is reach, and journald from an ungranted guest is disclosure) are
-permitted only where the **served token** holds that privilege at `/vms/<ctid>`. One
-`/access/permissions?path=` query per check; PVE's own permission engine resolves propagation
-and deeper-`NoAccess` revocation server-side. Semantics, deliberately: **dormant** unset
-(zero behavior change); **intersection** — the allowlist is checked first and the mirror only
-ever narrows (a mirror-driven estate sets the allowlist to `*` and lets the token's map be
-the whole boundary); **fail-closed** — no reachable map, no reach, and the break-glass is
-unsetting the privilege to fall back to the allowlist alone, which on a mirror-driven estate
-is a *widening* and is exactly why the flip is a witnessed `reach_grant` change; a
-set-but-blank value is a refused misconfiguration, never silent dormancy. Choose the
-privilege from `proximo reach-audit`'s evidence — it prints what each candidate aliases with
-on *your* cluster and what the privilege means in stock PVE — and prefer a one-privilege
-custom role (`pveum role add`) when you want AI reach granted separately from human role
-grants — the privilege itself still aliases wherever built-in roles carry it (Administrator
-at minimum), which is what `reach-audit`'s table exists to watch. Honest limits: enforcement runs at the tool seam in Proximo's
-own process (the same co-located caveat every Layer-2 gate carries — the Layer-1 token floor
-is the boundary that survives process compromise, and the *served token's* API authority is
-still PVE-enforced either way); and the privilege is env-lane only in this brick — a
-per-target field follows the `arm_source` precedent when multi-target estates need it.
-`proximo doctor` reports the live tri-state at `config.reach_grant.mirror.state`
-(dormant / enforcing / misconfigured), and `proximo harden` prints the erection recipe.
-While enforcing, the reach-grant witness (previous section) also *derives* the served
-token's per-guest reach at serve start — one query per allowlisted guest, a `*` allowlist
-first enumerating the configured node's live containers (`type == "lxc"` only) — so a
-PVE-side `pveum` grant or revoke lands as a witnessed `derived_ct` delta at the next start
-instead of living only in PVE's ACL table. Enforcement is per-check and immediate; the
-witness is serve-start — stated, not hidden. The first derive on an existing sidecar lands
-the whole map as `added` and the entry carries `derived_baseline: true` so a one-time
-upgrade baseline cannot be misread as an overnight mass grant. A derive failure records
-`derived_error` and omits the list — the delta will still show the list emptying beside
-the error, so monitors must key on `derived_error`'s presence, never on `removed` alone.
-A pure-targets box records `derived_absent` (by design, not broken), and a non-numeric
-allowlist token is skipped and reported rather than poisoning the derive.
+A same-user attacker who can write the 0600 log can often read the 0600 key too — so keying
+is a *marginal* hardening, **not** a substitute for the off-box head, which remains the
+strong guarantee. Use both.
 
 ## Supported versions
 
@@ -437,134 +271,103 @@ The way to read the table: the trust spine is **six pillars — four ship standi
 yours to erect.** PLAN·PROVE·UNDO·DIAGNOSE are structural (no configuration removes them).
 CONSENT and CONTAIN can only ever be raised by *you*, because their entire value is that
 their state paths sit **outside the agent's reach** — a pillar Proximo raised for you would
-be a pillar the agent could lower for itself. `proximo doctor` now reports the spine:
-which pillars stand, which sockets are empty, and exactly how to fill them (it never echoes
-the configured paths back — a hijacked session shouldn't learn where you put your switch).
+be a pillar the agent could lower for itself. `proximo doctor` reports the spine: which
+pillars stand, which sockets are empty, and exactly how to fill them (it never echoes the
+configured paths back — a hijacked session shouldn't learn where you put your switch).
 
 | Control | Defends against | Default | Turn on with |
 |---|---|---|---|
-| **PLAN** | A mutation landing with no preview, no blast-radius accounting, no chance to review first | **On**, always | n/a — not optional |
-| **PROVE** | An edited, reordered, or silently truncated mutation history | **On** (keyed HMAC-SHA256 ledger) | `PROXIMO_AUDIT_KEYED` (default `true`; `off` downgrades to unkeyed — not recommended). Catching *tail truncation / full wipe* needs an off-box head anchor — that's opt-in: `PROXIMO_AUDIT_EXPECTED_HEAD` / `PROXIMO_AUDIT_ANCHOR_*`. |
-| **UNDO** | An unrecoverable mistake on a plane Proxmox can snapshot | **On** for the planes it covers (fail-closed) | No env var, but **not uniform**: `pve_guest_config_set` returns `prior_config` on every confirmed call (revertible via `pve_guest_config_revert`) and `pve_rollback` restores a guest snapshot — both always available. The **`ct_exec`/`ct_psql` auto-snapshot is OPT-IN PER CALL** (`snapshot=true`, default `false`); when requested it is fail-closed — the command does not run if the snapshot cannot be taken — but a default exec call takes no snapshot. firewall/SDN/ACL/token have no Proxmox rollback primitive by design, not by configuration. |
-| **DIAGNOSE** | Acting on a guest/node with no read-only evidence gathered first | **On**, always | n/a — read-only, always available |
-| **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS` for grant expiry) |
+| **PLAN** | A mutation landing with no preview of the live target, no blast-radius judgement, no chance to review first | **On**, always | n/a — not optional |
+| **PROVE** | An edited, reordered, or silently truncated mutation history | **On** (keyed HMAC-SHA256 ledger, no unkeyed mode) | n/a — keyed always; `PROXIMO_AUDIT_EXPECTED_HEAD` for the off-box pin |
+| **UNDO** | An unrecoverable mistake where the vendor publishes a write to put the record back | **On** (fail-closed: a mutation whose before-state cannot be read does not run) | `PROXIMO_UNDO=0` opts out |
+| **DIAGNOSE** | Acting on a guest/node with no read-only evidence gathered first | **On**, always | n/a — `diagnose=true` on a node or guest read |
+| **TIER** | A mutation nobody judged | **On**, always: an address with no authored blast-radius tier is refused for mutation, armed or not; 20 are held by sentence | n/a — the record is `tiers.toml`, changed by a release |
+| **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS`) |
 | **CONTAIN** (kill-switch) | Needing to halt *every* mutation immediately, mid-incident, without a redeploy or restart | **Off** | `PROXIMO_CONTAIN_TRIP_PATH` |
-| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` improves the disarmed refusal message; it never enforces). Once set, fail-closed: a confirmed exec while disarmed refuses (`blocked:not_armed`); an exec-enabled registry target needs its *own* `arm_source`, never inherited. Arming is copying the write token into place (`proximo arm`, your shell) — a wall only when that source sits outside the agent's read/write reach; co-located it is a discipline (see "ARM" section above). |
-| **LEASE** (arm-TTL) | A write-armed token staying armed indefinitely after the operator meant to hand it back to read-only | **Off** | `PROXIMO_ARM_TTL` (also requires `PROXIMO_TOKEN_PATH` — an unresolvable path fails closed, never "assume fresh") |
-| **SCOPE / provenance** | An agent mutating a target outside the box(es) the operator authorized at arm-time | **Off** | `PROXIMO_SCOPE_PATH` — a present-but-unreadable/garbled/empty scope file fails **closed**; an **absent** file reads as no-scope (unrestricted) — the transitional armed-not-written window. NB this differs from LEASE, which fails closed on an absent token: set the scope file before relying on SCOPE. |
-| **MIRROR** (reach from the platform's own map) | Shell reach into a guest the operator never granted — the `ssh -> pct exec` channel that answers to no PVE privilege, now made to obey one | **Off** (dormant — allowlist-only reach, zero behavior change) | `PROXIMO_REACH_PRIVILEGE` = a PVE privilege name. Container shell tools (`ct_exec`/`ct_psql`/`ct_logs`/`ct_diagnose`) are then permitted only where the **served token** holds that privilege at `/vms/<ctid>` — one `/access/permissions` query per check, resolved by PVE itself (propagation and deeper-NoAccess included), **fail-closed** when the API cannot answer. Checked AFTER the allowlist: the mirror only ever narrows. Set-but-blank is a refused misconfiguration, never silent dormancy. Choose the privilege from `proximo reach-audit` evidence; a one-privilege custom role decouples AI reach from human role grants (the privilege still aliases via built-in roles carrying it). |
-| **ENVELOPE** (FORBID + RATE) | Blast radius under hijack — unlimited-speed mutation, or an explicitly forbidden action, from an agent that's been compromised or gone off-script | **Off** | `PROXIMO_FORBID` (global floor, always checked once set) + `PROXIMO_RATE_MAX` / `PROXIMO_RATE_WINDOW` (per-box budget) |
-| **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK` (mark + record a sticky taint on an adversarial read) then, once tainted, `PROXIMO_TAINT_FORBID` (actions refused outright — the primary, no consent escape) and/or `PROXIMO_TAINT_REQUIRE_CONSENT` (any mutation now needs an out-of-band grant). `PROXIMO_TAINT_FENCE` adds an advisory content-fence. |
-| **PRINCIPAL** (who-asked) | A PROVE ledger that records *what* happened but not *who asked* — attribution gaps across faces, and (with pins) network callers whose identity is unproven | **Off** | `PROXIMO_PRINCIPAL` stamps a declared name-tag on every entry (the operator's word, like the token). `PROXIMO_CALLER_KEYS_DIR` verifies signed ES256 caller badges against operator-pinned keys and, once set, **refuses an unverifiable caller on the network faces** (fail-closed). Identity, not authority — a verified name changes nothing about what a call may do; the token ACL remains the only authorization boundary. **Two honest limits.** *"Verified" is only as strong as the pin directory's isolation:* an agent that can write `PROXIMO_CALLER_KEYS_DIR` can pin a key it controls and be recorded `via:verified` — keep the pin dir outside the agent's own write reach, the same two-deployment caveat the gates above carry. *A badge is a long-lived bearer credential:* it does not expire unless minted with `--exp`, its only revocation is deleting the caller's pin file (which takes effect on that face's next protected request — the pin store is re-read whenever the directory changes, so revocation does not wait for a restart; rewriting an existing pin file in place is the one edit the directory stamp cannot see, and it requires ownership of that file), and it is not bound to a TLS session — so treat a leaked badge like a leaked bearer token (standing impersonation until unpinned), keep it off disk and out of logs, and rotate it. |
+| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` for the message); per plane `PROXIMO_PBS_*` / `PDM_*` / `PMG_*`; per target `arm_source` |
+| **FORBID** | An explicitly forbidden address being mutated by an agent that has gone off-script | **Off** | `PROXIMO_FORBID` (case-insensitive substrings of `plane:METHOD /path`) |
+| **RATE** | Blast radius under hijack — unlimited-speed mutation | **Off** | `PROXIMO_RATE_MAX` (+ `PROXIMO_RATE_WINDOW`, default 60 s) |
+| **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK`, `PROXIMO_TAINT_FORBID`, `PROXIMO_TAINT_REQUIRE_CONSENT`, `PROXIMO_TAINT_FENCE` |
+| **PRINCIPAL** (who-asked) | A PROVE ledger that records *what* happened but not *who asked* — attribution gaps across doors, and (with pins) network callers whose identity is unproven | **Off** | `PROXIMO_PRINCIPAL`; `PROXIMO_CALLER_KEYS_DIR` for a signed badge at a network door |
 
-Two more flags widen what Proximo can **do**, rather than protect what it's already
+Four more switches widen what Proximo can **do**, rather than protect what it's already
 doing — don't confuse them with the gates above: `PROXIMO_ENABLE_EXEC` (near-root
-`ssh → pct exec`) and `PROXIMO_ENABLE_AGENT` (qemu-guest-agent in-guest ops). Both are
-off by default and, once on, are each bounded by their own fail-closed CTID/VMID
-allowlist.
+`ssh → pct exec`), `PROXIMO_ENABLE_AGENT` (qemu-guest-agent in-guest ops),
+`PROXIMO_ENABLE_NODE_SHELL` (the host's read-only battery) and `PROXIMO_ENABLE_DOWNLOAD`
+(bytes land on this host). All are off by default and, once on, each is bounded by its own
+fail-closed allowlist or cap, and each is judged like any mutation.
 
-Proximo *narrows* what it even offers to the planes in use. By default it **auto-scopes
-to the planes you've configured**: a plane's tools are registered only when its
-`PROXIMO_*_BASE_URL` is set (or a target of that kind exists), so a PVE+PBS-only box
-never puts pmg_/pdm_ tools in the client's context. To pin an exact set, `PROXIMO_SURFACES`
-(e.g. `pve,exec`) registers only the named planes — everything else is removed from the MCP
-registry before serving, so it is not advertised in `tools/list` and does not cost your model
-context. **It is NOT removed from reach.** `proximo_call` is resident in every mode and
-dispatches by exact name from a snapshot taken before any scoping ran, so a scoped-away tool is
-still callable if a caller names it — with every gate intact, because the gates live in each
-tool's own body, not in whether it was registered. Treat surface scoping as CONTEXT SIZING, never
-as a brake: if you need a capability to be unavailable, withhold it in the Proxmox token's ACL or
-disable its call-time flag (`PROXIMO_ENABLE_EXEC` and `PROXIMO_WIKI` are opt-in and off unless
-set; estate memory is on by default and `PROXIMO_MEMORY=0` opts out) — these are enforced at
-call time and `proximo_call` cannot defeat them. `audit_verify` and `proximo_call` are always
-kept. Precedence: `PROXIMO_TOOLS`, then `PROXIMO_TOOLSETS` (including the keywords `dynamic`,
-`catalog`, `all`), then an explicit `PROXIMO_SURFACES` — which scopes *planes* only and leaves
-the door at the default facade (`=all` makes every plane searchable; it does not make the
-catalog resident, and `PROXIMO_TOOLSETS=all` is what serves the full surface);
-`PROXIMO_AUTOSCOPE=off` disables plane auto-scoping; with nothing picked the default is the
-dynamic facade — a small resident door with everything this box serves still callable through
-it, never a surprise-empty server. An unknown surface name refuses startup rather than silently
-serving a surface you didn't pick. This is context hygiene, not attack-surface reduction and not an
-authorization control — the token's ACL remains the real boundary.
-
-*Status note: CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE/TAINT/PRINCIPAL are present in this repository's
-current source. Check `CHANGELOG.md` against the version you actually installed — a
-published package can lag the tree you're reading; these gates land in a release only
-when their changelog entry says so.*
+There is nothing to scope: the door advertises six tools, a plane you have not configured is
+not reachable, a plane you have is reachable whole, and the gates do not shrink with the
+doorway. What a token may do is decided by the vendor; what an address may do is decided by
+its method and its tier; nothing an agent sends changes either.
 
 ## Prompt injection / untrusted tool output
 
-Several of Proximo's read tools pull text off the Proxmox stack straight into an
-agent's context — and some of that text is written by whoever controls the guest, the
-mail traffic, or the log line, not by the operator. That's a prompt-injection channel:
-**no exploit needed, just a persuasive string placed somewhere Proximo will read it
-back to the agent.**
+Several published reads pull text off the Proxmox stack straight into an agent's context —
+and some of that text is written by whoever controls the guest, the mail traffic, or the log
+line, not by the operator. That's a prompt-injection channel: **no exploit needed, just a
+persuasive string placed somewhere Proximo will read it back to the agent.**
 
-Tools worth attention because they can carry attacker- or guest-controlled text:
+Addresses worth attention because they can carry attacker- or guest-controlled text:
 
-- **Node/CT syslog and journal** — `pve_node_syslog`, `pve_node_journal`,
-  `pmg_node_syslog`: anything that can write to the journal (a process inside a guest, a
-  crafted service/unit name) can place text here.
-- **`ct_logs`** — tails a systemd unit's log inside a container; the container's own
-  workload controls that content.
-- **Task logs** — `pve_task_log`: mostly Proxmox's own output, but can echo
-  user-supplied strings from the operation that produced it.
-- **Guest names, notes, and descriptions** — `pve_list_guests`, `pve_guest_config_get`,
-  `pve_cluster_resources`, and free-text `description=` fields on mappings/objects:
-  anyone with guest create/edit rights can set these.
-- **The PMG quarantine tools, especially** — `pmg_quarantine_spam`,
-  `pmg_quarantine_virus`, `pmg_quarantine_attachment`, `pmg_tracker_list` /
-  `pmg_tracker_detail`: these exist specifically to surface **attacker-authored
-  spam/phishing content** — subject lines, sender strings, message bodies written by
-  whoever sent the mail. Handing that straight to an agent's context is, by design,
-  handing it adversarial input.
+- **Node syslog and journal** — `GET /nodes/{node}/syslog`, `GET /nodes/{node}/journal`:
+  anything that can write to the journal (a process inside a guest, a crafted unit name) can
+  place text here.
+- **The shell lane's output** — a container's or a guest's own workload controls what a
+  command prints.
+- **Task logs** — `GET /nodes/{node}/tasks/{upid}/log`: mostly Proxmox's own output, but can
+  echo user-supplied strings from the operation that produced it.
+- **Guest names, notes, and descriptions** — `GET /cluster/resources`, a guest's config, and
+  free-text `description=` fields: anyone with guest create/edit rights can set these.
+- **The PMG quarantine and tracker, especially** — `GET /quarantine/spam`,
+  `GET /quarantine/virus`, `GET /nodes/{node}/tracker`: these exist specifically to surface
+  **attacker-authored spam/phishing content**. Handing that straight to an agent's context
+  is, by design, handing it adversarial input.
 
 **This is a real frontier — not solved, but no longer unmitigated.** An opt-in **TAINT**
-control (`taint.py`, off by default) turns "an untrusted read happened" into something the
-server can act on by construction:
+control turns "an untrusted read happened" into something the engine can act on by
+construction:
 
-- **Classification by channel.** Every tool whose return carries guest- or externally-authored
-  bytes is classified adversarial — the logs and quarantine tools above, *and* the exec-output
-  tools (`ct_exec`, `ct_psql`, `pve_agent_exec`) and in-guest `pve_agent_file_read`, even though
-  those mutate. A completeness test fails CI if a new tool ships unclassified, so the set can't
-  silently fall behind the surface.
-- **Track (by construction).** With `PROXIMO_TAINT_TRACK` (or either coupling below) set, reading
-  adversarial content writes a **sticky** taint marker beside the ledger and stamps `untrusted:true`
-  on the ledger entry — so DIAGNOSE/audit can see a mutation that *followed* adversarial input. The
-  marker clears **only out-of-band** (no tool clears it; a consumed CONSENT grant does **not** clear
-  it — otherwise a hijacked agent could get a sacrificial benign action approved to launder the
-  taint). It survives a process restart.
-- **Forbid (the primary enforcement).** Once tainted, `PROXIMO_TAINT_FORBID` actions are refused
-  outright (`blocked:taint_forbidden`) — **no consent escape**, a hard wall before consent at every
-  seam. Point it at the cross-domain infra actions (firewall/network/access/token/exec/guest-power):
-  "a session that has read quarantine mail cannot then reconfigure the firewall" is enforced by the
+- **Classification by address.** `src/proximo/core/taint.toml` names every address whose
+  response carries guest- or externally-authored bytes, with the sentence that says why,
+  and the engine marks the same sticky marker before serving one. Honest limit: that record
+  is total over what 0.44's curated tools ever classified, not over every read the vendor
+  publishes; an address no tool ever served is unclassified and served untainted.
+- **Track (by construction).** With `PROXIMO_TAINT_TRACK` (or either coupling below) set,
+  reading adversarial content writes a **sticky** taint marker beside the ledger and stamps
+  `untrusted:true` on the row — so DIAGNOSE/audit can see a mutation that *followed*
+  adversarial input. The marker clears **only out-of-band** (no tool clears it; a consumed
+  CONSENT grant does **not** clear it). It survives a process restart.
+- **Forbid (the primary enforcement).** Once tainted, `PROXIMO_TAINT_FORBID` addresses are
+  refused outright — **no consent escape**, a hard wall before consent. Point it at the
+  cross-domain infra addresses (firewall/network/access/token/exec/guest-power): "a session
+  that has read quarantine mail cannot then reconfigure the firewall" is enforced by the
   envelope the operator declared once, not by a human approving each call.
-- **Consent (the in-domain residue).** `PROXIMO_TAINT_REQUIRE_CONSENT` makes CONSENT mandatory for
-  any tainted mutation the forbid set doesn't cover — the case where the legitimate workflow and the
-  attack are the *same* call (read quarantine → act on quarantine). Fail-closed if the consent dir
-  isn't configured.
-- **Fence (advisory).** `PROXIMO_TAINT_FENCE` wraps adversarial output in a labeled envelope. It
-  helps a cooperating agent and the human reading the transcript; a hijacked agent can ignore it.
-  **Advisory only — never a guarantee.**
+- **Consent (the in-domain residue).** `PROXIMO_TAINT_REQUIRE_CONSENT` makes CONSENT
+  mandatory for any tainted mutation the forbid set doesn't cover — the case where the
+  legitimate workflow and the attack are the *same* call (read quarantine → act on
+  quarantine). Fail-closed if the consent dir isn't configured.
+- **Fence (advisory).** `PROXIMO_TAINT_FENCE` wraps adversarial output in a labelled
+  envelope. It helps a cooperating agent and the human reading the transcript; a hijacked
+  agent can ignore it. **Advisory only — never a guarantee.**
 
-**Honest limits (do not over-read this):** TAINT's forbid/consent walls are a real boundary only
-when the marker dir and consent dir sit **outside the agent's own write reach** — the same
-two-deployment condition every gate here carries. Co-located (agent shares the filesystem), a
-compromised agent can `rm` the marker; then it is a speed-bump plus an observability signal, and
-CONTAIN's out-of-band kill is the real backstop. Classification is a curated set — a channel that's
-mis-classified as trusted is a residual gap the module can't self-detect (bias: classify adversarial
-when unsure). And TAINT only guards mutations *after* the untrusted read — which is the whole
-injection vector, but state it plainly.
+**Honest limits (do not over-read this):** TAINT's forbid/consent walls are a real boundary
+only when the marker dir and consent dir sit **outside the agent's own write reach** — the
+same two-deployment condition every gate here carries. Co-located, a compromised agent can
+`rm` the marker; then it is a speed-bump plus an observability signal, and CONTAIN's
+out-of-band kill is the real backstop. Classification is a curated record — a channel
+mis-classified as trusted is a residual gap the engine can't self-detect (bias: classify
+adversarial when unsure). And TAINT only guards mutations *after* the untrusted read — which
+is the whole injection vector, but state it plainly.
 
-**The strongest control is deployment shape, not a runtime gate.** Split the work across **two
-agent contexts**: a read-only "inbox/log reader" (a read-only Proxmox token, mutation tools not on
-its surface) and a mutator (the untrusted-read tools not on its surface). The injection channel and
-the mutation capability never meet in one context, and this survives even a fully compromised Proximo
-process (the Layer-1 token floor). Its load-bearing half — that the two surfaces reach *different*
-agent contexts — is the deployer's to arrange; Proximo can't enforce it server-side. Prefer this for
-any PMG-facing workflow; use the TAINT gate to protect the deployments that won't split. A
-plan-pinning form (only mutations planned *before* the taint event may run) is a stronger future
-direction, not yet built.
+**The strongest control is deployment shape, not a runtime gate.** Split the work across
+**two agent contexts**: a read-only "inbox/log reader" (a read-only Proxmox token) and a
+mutator (the untrusted-read addresses in its FORBID list). The injection channel and the
+mutation capability never meet in one context, and this survives even a fully compromised
+Proximo process (the Layer-1 token floor). Its load-bearing half — that the two reach
+*different* agent contexts — is the deployer's to arrange; Proximo can't enforce it
+server-side.
 
 ## Reporting a vulnerability
 
@@ -588,64 +391,67 @@ ask otherwise.
 The highest-value areas to probe, because they're where the trust model lives or where
 access is broadest:
 
-- **Trust-spine bypass.** Any path that mutates state *without* a PLAN, that escapes a
-  fail-closed UNDO where one is expected, or that writes the PROVE ledger without
-  extending the hash chain. The ledger's strong guarantee is the off-box `head()`
-  anchor (head-pinning via `audit_verify(expected_head=…)`); a way to advance the head
+- **Trust-spine bypass.** Any path that mutates state *without* a PLAN, that runs while
+  disarmed or untiered, that escapes a fail-closed UNDO where one is expected, or that
+  writes the PROVE ledger without extending the hash chain. A way to advance the head
   undetected, or to forge a verifying chain, is in scope.
 - **Independent-gate bypass.** A way for a mutation to proceed while a configured
-  CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE gate would have blocked it — especially by
-  writing to the gate's own state (its trip file, scope file, consent grant, or rate
-  reservation) from within the agent's own reach — is in scope, and is exactly the
+  CONSENT/CONTAIN/FORBID/RATE/TAINT gate would have blocked it — especially by writing to
+  the gate's own state from within the agent's own reach — is in scope, and is exactly the
   Layer-2 failure mode described above.
-- **The in-container exec edge.** `PROXIMO_ENABLE_EXEC=1` enables `ssh → pct exec`,
-  which is near-root on the host. It's opt-in and fail-closed behind a CTID allowlist —
-  any allowlist bypass, or a way to reach exec without the flag, is high severity.
-- **The network faces (A2A, HTTP, and MCP-over-streamable-HTTP).** The three optional network
-  servers — `proximo-a2a` (Agent2Agent), `proximo-http` (HTTP/OpenAPI), and `proximo-mcp-http`
-  (the MCP Streamable HTTP transport) — share one fail-closed perimeter (`proximo.webguard`):
-  all refuse non-localhost binds without a bearer token, and all enforce a Host/DNS-rebind
-  allowlist (`PROXIMO_A2A_ALLOWED_HOSTS` / `PROXIMO_HTTP_ALLOWED_HOSTS` /
-  `PROXIMO_MCP_HTTP_ALLOWED_HOSTS`). All serve the FULL governed tool surface through the SAME
-  spine path an MCP client takes — A2A and HTTP via the shared dispatch
-  (`proximo.governed.call_governed`, the same `mcp.call_tool` path), the MCP-HTTP face by
-  serving the FastMCP instance itself — so PLAN-by-default, PROVE, UNDO, the gates, and the
-  Proxmox token scope apply identically, and there is no second mutate path. What each transport ADVERTISES is
-  scoped by `PROXIMO_TOOLS`/`PROXIMO_TOOLSETS`/`PROXIMO_SURFACES`/autoscope; what any of them can
-  REACH is the full registry via `proximo_call`, uniform for every transport, bounded by the token
-  ACL and the per-tool gates. Auth bypass,
-  header smuggling, rebind escape, a path that invokes a tool bypassing the spine, or a mutation
-  that fires without the tool's own confirm gate are all in scope. One deliberate asymmetry: the
-  A2A/HTTP dispatch sanitizes a failing tool's error text before returning it (the exec plane's
-  raw exceptions can carry a command's argv or an SSH target); the MCP-HTTP face, being MCP
-  itself with no adapter layer, returns tool-error detail at the *stdio* level, unsanitized. It
-  is therefore not a regression over stdio — but a bearer token for the MCP-HTTP face carries the
-  same trust weight as local stdio access, so scope it and reach it accordingly.
-- **Secret handling.** Proximo takes its PVE token by path/env, never as a literal in a
-  shell line. A path where a token, key, or other secret is logged, echoed into the
-  audit ledger, or otherwise persisted in cleartext is in scope. At load time, every
-  secret file referenced by path — the PVE/PBS/PDM tokens, the PMG password, the audit
-  HMAC key, the A2A/HTTP/MCP-HTTP bearer tokens, and the A2A signing key — is refused if
-  group/other can access it (`mode & 0o077`): a mis-deployed `0644` secret fails loud
-  with the `chmod 600` fix, not silently. A way to load a secret past that guard on a
-  POSIX box is in scope.
+- **The held lines.** Twenty published mutations are refused by sentence (`docs/arena.md`):
+  login tickets, the node's `execute`, the cluster join. A way to reach one through the
+  door, or an address with the same shape that is not on the list, is in scope.
+- **The shell lane.** `PROXIMO_ENABLE_EXEC=1` enables `ssh → pct exec`, which is near-root
+  on the host. It's opt-in and fail-closed behind a CTID allowlist and the split-target
+  guard — any allowlist bypass, a way to reach exec without the flag, or a call that lands on
+  a node other than the one its path names, is high severity.
+- **The network doors (A2A, HTTP, and MCP-over-streamable-HTTP).** The three optional
+  network doors share one fail-closed perimeter (`proximo.core.perimeter.guard`): all refuse
+  non-localhost binds without a bearer token, and all enforce a Host/DNS-rebind allowlist
+  (`PROXIMO_A2A_ALLOWED_HOSTS` / `PROXIMO_HTTP_ALLOWED_HOSTS` /
+  `PROXIMO_MCP_HTTP_ALLOWED_HOSTS`). All serve the six tools through the SAME engine the
+  stdio door uses — there is no second mutate path. Auth bypass, header smuggling, rebind
+  escape, a path that reaches the engine bypassing the perimeter, or a mutation that fires
+  without `confirm=true` are all in scope. One deliberate asymmetry: the REST and A2A doors
+  sanitize a failing call's error text before returning it; the MCP-HTTP door, being MCP
+  itself with no adapter layer, returns the error detail at the *stdio* level. A bearer for
+  the MCP-HTTP door therefore carries the same trust weight as local stdio access.
+- **Secret handling.** Proximo takes its tokens by path, never as a literal in a shell
+  line. A path where a token, key, or other secret is logged, echoed into the audit ledger,
+  or otherwise persisted in cleartext is in scope. At load time, every secret file
+  referenced by path — the tokens, the PMG credential, the audit HMAC key, the bearer
+  tokens, the A2A signing key — is refused if group/other can access it (`mode & 0o077`).
+- **Credentials in what a read returns.** Some published reads carry a credential in their
+  response (a PMG fetchmail password, a PBS remote's password, an ACME plugin's DNS-provider
+  keys, an SDN lock token). `src/proximo/core/secrets.toml` names each such address and
+  field; the engine withholds those fields before the response reaches the model and says
+  which in `withheld`, and the ledger fingerprints the same fields when a mutation sends
+  them or UNDO captures them. The record is built from every read 0.44's curated tools
+  stripped plus every field the vendor's return schema declares as a credential; a schema
+  that declares no return shape says nothing either way, so a credential the vendor returns
+  undeclared, on an address no tool ever stripped, is not in it. Such an address is in scope.
 
 ## Honest scope notes
 
-- **Risk ratings are an advisory heuristic, not a sandbox.** A tool rated `LOW` means
-  "no state change," **not** "safe." Proximo previews, undoes, and proves — it does not
-  sandbox the Proxmox API. A report that boils down to "a HIGH-risk op did the dangerous
-  thing it said it would do, with a plan and an audit record" is working as designed.
+- **Tiers are a blast-radius judgement, not a sandbox.** A low tier means "small blast
+  radius", **not** "safe." Proximo previews, undoes, and proves — it does not sandbox the
+  Proxmox API. A report that boils down to "a high-tier op did the dangerous thing it said it
+  would do, with a plan and an audit record" is working as designed.
 - **The token you mint is the hard floor** — see "The two-deployment trust model" above.
   Running Proximo with a broadly-scoped or root-equivalent token against that guidance is
   operator misconfiguration, not a Proximo vulnerability — though reports of Proximo
   *encouraging* such a configuration are welcome.
-- **UNDO is not universal.** Some planes can't be snapshotted by Proxmox (firewall /
-  SDN / ACL / token), so they have no rollback primitive by design. That's documented
-  scope, not a missing feature.
-- **The opt-in gates (CONSENT/CONTAIN/LEASE/SCOPE/ENVELOPE) are inert until configured**
+- **UNDO is not universal.** It covers what the vendor publishes a write to put back. A
+  delete, a collection, a path with no PUT, or a PUT that is a different operation from the
+  POST gets a sentence instead of a restore. That's documented scope, not a missing feature.
+- **The opt-in gates (CONSENT/CONTAIN/ARM/FORBID/RATE/TAINT) are inert until configured**
   — see "Security controls & defaults" above. A report that one of them "didn't stop"
   an action when its env var was never set is expected behavior, not a finding.
+- **Not yet proven:** a small local model finishing a whole task through the door (a stock 1.5B
+  was driven against a real node inside a 4,096-token context: its calls landed, the prompt
+  peaked at 3,074 tokens, and it did not finish the task), hardware-watchdog fencing, and
+  behavior at production scale.
 
 ## Verifying authenticity
 

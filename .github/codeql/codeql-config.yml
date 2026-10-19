@@ -1,11 +1,11 @@
 name: "Proximo CodeQL config"
 
 # Scope CodeQL to the shipped package. `src/` is the product — every @mcp.tool() lives
-# under src/proximo. `tests/` and `scripts/` are dev tooling: the live-smoke + demo
-# scripts print connection metadata (node, API base URL) and operation output derived
-# from the token-bearing config object, which CodeQL's taint tracker flags as
-# "clear-text logging of sensitive data" even though the token secret itself is never
-# logged. Scanning them produced 32 false positives with no shipped impact.
+# under src/proximo. `tests/` and `scripts/` are dev tooling (release and docs generators,
+# the gate round, the cold-start smoke) that print connection metadata and output derived
+# from the token-bearing config object, which CodeQL's taint tracker flags as "clear-text
+# logging of sensitive data" even though the token secret itself is never logged. Scanning
+# them produced 32 false positives with no shipped impact.
 #
 # This matches the existing static-analysis scope (pyright type-checks src/ only, by
 # design — see pyproject) so SAST analyzes exactly what ships.

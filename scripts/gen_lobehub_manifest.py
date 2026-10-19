@@ -16,11 +16,14 @@ the version single-sourced from pyproject.toml. Run at release time, then
 
 from __future__ import annotations
 
+import atexit
 import inspect
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -67,20 +70,18 @@ def list_capabilities(timeout: float = 90.0) -> dict[str, list[dict]]:
     """
     import selectors
 
+    # A cold start on THIS box: nothing of the operator's configuration reaches the child. The
+    # door sources ~/.config/proximo/proximo.env itself (every core door does, before its first
+    # env read), so stripping PROXIMO_* from the environment is not enough: point PROXIMO_ENV_FILE
+    # at a path that does not exist, and the door's arrival row at a ledger under the scratch
+    # directory, never the box's own (the real-home law: a generator that reads the operator's
+    # file dials the operator's estate; a door that stamps the real ledger writes a test row into
+    # the record). The six tools are the whole surface; nothing scopes them.
+    scratch = tempfile.mkdtemp(prefix="proximo-manifest-")
+    atexit.register(shutil.rmtree, scratch, ignore_errors=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("PROXIMO")}
-    # The marketplace listing must declare the FULL catalog, not a surface auto-scoped to this
-    # box. main() re-loads ~/.config/proximo/proximo.env from disk (bypassing the strip above),
-    # so its PROXIMO_API_BASE_URL would trigger auto-scope → a truncated tool list.
-    #
-    # Ask for a DOOR, not a scope. This said PROXIMO_SURFACES=all until 2026-08-02, which meant
-    # "full surface" only while surfaces still picked the door; once they became scope-only it
-    # meant "every plane searchable behind the 6-tool facade", and this generator would have
-    # published a SIX-tool manifest. LobeHub grades a listing that extracts no real tools an F
-    # (recovered F→A on 2026-07-05 by publishing an authoritative array), and docs/TOOLS.md is
-    # regenerated from this same manifest — so the blast radius of a thin extraction is the
-    # public listing AND the published tool reference. Pinned by
-    # tests/test_lobehub_manifest.py::test_generator_env_asks_for_a_door_not_a_scope.
-    env["PROXIMO_TOOLSETS"] = "all"
+    env["PROXIMO_ENV_FILE"] = os.path.join(scratch, "absent.env")
+    env["PROXIMO_AUDIT_LOG"] = os.path.join(scratch, "audit.log")
     proc = subprocess.Popen(
         ["uv", "run", "proximo"],  # noqa: S603, S607  # dev/release helper; fixed argv, uv on PATH
         cwd=ROOT,

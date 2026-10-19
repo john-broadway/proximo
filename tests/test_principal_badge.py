@@ -8,7 +8,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
-from proximo.principal import BadgeError, load_pins, mint_badge, public_jwk, verify_badge
+from proximo.core.perimeter.badge import BadgeError, load_pins, mint_badge, public_jwk, verify_badge
 
 
 def _keypair_pem() -> bytes:
@@ -87,7 +87,7 @@ def test_absent_exp_gets_bounded_default_never_forever(pin_dir):
     # bounded default so a captured badge cannot be replayed indefinitely.
     import json
 
-    from proximo.principal import _b64url_dec
+    from proximo.core.perimeter.badge import _b64url_dec
     d, pem = pin_dir
     now = int(time.time())
     badge = mint_badge(pem, "fleet-7")
@@ -104,7 +104,7 @@ def test_absent_exp_default_is_thirty_days(pin_dir):
     # growing it unbounded) must fail here.
     import json
 
-    from proximo.principal import _DEFAULT_BADGE_TTL_SECONDS, _b64url_dec
+    from proximo.core.perimeter.badge import _DEFAULT_BADGE_TTL_SECONDS, _b64url_dec
     d, pem = pin_dir
     _, p_b64, _ = mint_badge(pem, "fleet-7").split(".")
     payload = json.loads(_b64url_dec(p_b64))

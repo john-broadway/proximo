@@ -8,7 +8,7 @@
 # /etc/systemd/system/proximo.service and enable it yourself if that's your setup.
 
 [Unit]
-Description=Proximo — the ethical Proxmox MCP (daemon mode)
+Description=Proximo — the Proxmox MCP you can hand the keys (daemon mode)
 Documentation=https://github.com/john-broadway/proximo
 After=network-online.target
 Wants=network-online.target

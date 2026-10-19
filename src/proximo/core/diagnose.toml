@@ -1,0 +1,152 @@
+# DIAGNOSE's battery: the authored half of parity row B3.
+#
+# A subject is a published index address (`plane:GET /path`, the table's own spelling, so a
+# concrete path resolves to it through `engine.resolve` like any read). Under it, each probe is
+# a GET the vendor publishes about that subject, bound from the subject's own placeholders, the
+# fields the answer keeps, and the advisory flags: thresholds on the fields the vendor publishes,
+# with the sentence a flag says. A probe whose address the table does not publish as an ungated
+# GET refuses the load (`diagnose.subjects`), never silently does nothing; an opt-in lane's row
+# (the shell lanes' `.../probe`) loads, and a lane its probes cannot reach at run (off, or a
+# registered target, or no ssh target) is one skipped line and an incomplete diagnosis. Flags are signals, not a root cause (0.44's posture); the
+# thresholds are 0.44's own. `shell` names a half that is not here; a subject with none omits it.
+# `exits = 0` on a probe: any other exit code keeps the output and makes the section incomplete.
+# A record that says it was cut (`truncated`, the shell wire's per-stream cap) holds a prefix, not
+# the output: the section keeps it, is not judged for flags, and makes the diagnosis incomplete.
+#
+# Flag shapes (`proximo.core.diagnose`):
+#   { over = [used, total], at = 0.9, says = "..." }   the ratio of two fields past `at`; a
+#                                                       `fraction` field, when the vendor publishes
+#                                                       one, is read instead of dividing
+#   { off = "active", says = "..." }                   a row whose field is 0 is named and its other
+#                                                       flags are not evaluated (an offline storage's
+#                                                       cached usage is stale, not full)
+#   { is = "status", expect = "running", says = "..." } the field is not the expected value
+#   { lines = "stdout", says = "..." }                 the field is text with at least one
+#                                                       non-blank line ({n} = how many)
+#   { failed = true, says = "..." }                    task rows whose outcome is `failed`
+#                                                       (`task_outcome`: endtime present, status
+#                                                       neither OK nor a WARNINGS line)
+# `{pct}` is the percentage, `{value}` the field's value, `{n}` the failed count, `{seen}` the
+# rows read; a row's own fields (`{storage}`) are available to its sentence.
+
+[subject."pve:GET /nodes/{node}"]
+is = "a PVE node"
+
+[subject."pve:GET /nodes/{node}".probe.status]
+path = "/nodes/{node}/status"
+keep = ["uptime", "cpu", "loadavg", "memory"]
+flag = [{ over = ["memory.used", "memory.total"], at = 0.9, says = "node memory at {pct}%" }]
+
+[subject."pve:GET /nodes/{node}".probe.storage]
+path = "/nodes/{node}/storage"
+rows = ["storage", "type", "active", "enabled", "used", "total", "used_fraction"]
+flag = [
+  { off = "active", says = "storage {storage} is inactive (offline); usage not evaluated" },
+  { over = ["used", "total"], fraction = "used_fraction", at = 0.9, says = "storage {storage} at {pct}%" },
+]
+
+[subject."pve:GET /nodes/{node}".probe.tasks]
+path = "/nodes/{node}/tasks"
+params = { limit = 50 }
+rows = ["upid", "type", "id", "status", "starttime", "endtime"]
+flag = [{ failed = true, says = "{n} failed task(s) among the {seen} most recent" }]
+
+# The host's battery (0.44's pve_node_diagnose), on the node shell lane. `pvecm status` exits
+# nonzero on a node that is not in a cluster, so its exit is data, not an incomplete read.
+
+[subject."pve:GET /nodes/{node}".probe.failed_units]
+path = "/nodes/{node}/probe"
+params = { probe = "failed_units" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+flag = [{ lines = "stdout", says = "systemd on the host reports {n} failed unit(s); see battery.failed_units (advisory)" }]
+
+[subject."pve:GET /nodes/{node}".probe.pve_services]
+path = "/nodes/{node}/probe"
+params = { probe = "pve_services" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}".probe.recent_errors]
+path = "/nodes/{node}/probe"
+params = { probe = "recent_errors" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}".probe.disk]
+path = "/nodes/{node}/probe"
+params = { probe = "disk" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}".probe.memory]
+path = "/nodes/{node}/probe"
+params = { probe = "memory" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}".probe.versions]
+path = "/nodes/{node}/probe"
+params = { probe = "versions" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}".probe.cluster]
+path = "/nodes/{node}/probe"
+params = { probe = "cluster" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}"]
+is = "an LXC container"
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.status]
+path = "/nodes/{node}/lxc/{vmid}/status/current"
+keep = ["status", "name", "cpu", "mem", "maxmem", "disk", "maxdisk", "uptime"]
+flag = [
+  { is = "status", expect = "running", says = "guest is {value} (not running)" },
+  { over = ["disk", "maxdisk"], at = 0.9, says = "root disk at {pct}% (API)" },
+]
+
+# The in-container battery (0.44's ct_diagnose): one fixed command per probe on the shell lane.
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.failed_units]
+path = "/nodes/{node}/lxc/{vmid}/probe"
+params = { probe = "failed_units" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+flag = [{ lines = "stdout", says = "systemd reports {n} failed unit(s); see battery.failed_units (advisory)" }]
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.disk]
+path = "/nodes/{node}/lxc/{vmid}/probe"
+params = { probe = "disk" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.recent_errors]
+path = "/nodes/{node}/lxc/{vmid}/probe"
+params = { probe = "recent_errors" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.memory]
+path = "/nodes/{node}/lxc/{vmid}/probe"
+params = { probe = "memory" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}/lxc/{vmid}".probe.listening]
+path = "/nodes/{node}/lxc/{vmid}/probe"
+params = { probe = "listening" }
+keep = ["returncode", "stdout", "stderr", "truncated"]
+exits = 0
+
+[subject."pve:GET /nodes/{node}/qemu/{vmid}"]
+is = "a QEMU virtual machine"
+shell = "a VM has no in-guest battery here; the guest agent's reads are on the agent lane (B5), not in a diagnosis"
+
+[subject."pve:GET /nodes/{node}/qemu/{vmid}".probe.status]
+path = "/nodes/{node}/qemu/{vmid}/status/current"
+keep = ["status", "name", "cpu", "mem", "maxmem", "disk", "maxdisk", "uptime"]
+flag = [
+  { is = "status", expect = "running", says = "guest is {value} (not running)" },
+  { over = ["disk", "maxdisk"], at = 0.9, says = "root disk at {pct}% (API)" },
+]

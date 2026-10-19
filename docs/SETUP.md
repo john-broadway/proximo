@@ -3,24 +3,23 @@
 This guide gets you from nothing to a working, **safe** Proximo install. No prior experience assumed.
 If you can log into your Proxmox web page, you can do this.
 
-Proximo lets an AI assistant operate your Proxmox cluster. The reason it's safe to point at a box you
+Proximo lets an AI assistant operate your Proxmox estate. The reason it's safe to point at a box you
 care about is **one idea**, so read this part first:
 
 > **You create a Proxmox token. Proxmox itself enforces what that token can do. Proximo can never do
 > more than the token allows — no matter what Proximo's code does, and no matter what the AI tries.**
 >
 > So you start with a **read-only** token: the AI can *look* at everything and *change* nothing —
-> enforced by Proxmox, not by us. When you're ready, you grant write access on exactly the guests you
-> choose, and nowhere else. The keys never leave your hand.
+> enforced by Proxmox, not by us. When you're ready, you mint a **write** token scoped to exactly the
+> guests you choose, with an expiry, and nowhere else. The keys never leave your hand.
 
 That's defense in depth, in the right order:
 
 - **The floor — your token's permissions.** Enforced by Proxmox, held by you, impossible for Proximo to exceed.
-- **On top — Proximo's safety net.** Every dangerous op is **planned** (dry-run + blast radius first),
-  **proven** (a tamper-evident log of every move), and **undoable where the platform can snapshot**
-  (a config change returns the exact prior state; a risky in-container command takes a snapshot first when
-  you pass `snapshot=true`, and refuses to run if it can't — firewall/SDN/ACL/token ops have no snapshot to
-  revert to).
+- **On top — Proximo's safety net.** Every mutation is **planned** (the verdict, the live target and the
+  exact change, before anything runs), **proven** (a keyed, tamper-evident record of every move), and
+  **undone where the vendor publishes a write to put the record back** (a mutation captures the record it
+  is about to change; the restore is the vendor's own write with that record).
 
 > 🔒 **Do every step below in YOUR OWN terminal / browser. Never paste your token secret into an AI chat.**
 
@@ -43,62 +42,33 @@ pip install proximo-proxmox
 (`pipx install proximo-proxmox` or `uvx proximo-proxmox` work too.) Confirm it landed:
 
 ```bash
-pip show proximo-proxmox
+proximo --help
 ```
 
 ---
 
-## Step 2 — Create a least-privilege token in Proxmox  ← the important step
-
-> Shortcut: `proximo mint` prints this whole step (and the next three) as an exact,
-> copy-pasteable runbook for your product — `--product pve|pbs|pmg|pdm`, read-only by
-> default, `--write` for the scoped write grant.
+## Step 2 — Mint a least-privilege token in Proxmox  ← the important step
 
 A **token** is an API key with its own permissions, separate from your password, and revocable any time.
-We'll make a **read-only** one first. Pick the GUI *or* the CLI — they do the same thing.
-
-### Option A — Proxmox web UI (click by click)
-
-1. Log into the Proxmox web page as an admin.
-2. **Datacenter → Permissions → Users → Add** → create user `proximo` in realm **`pve`** (Proxmox VE
-   authentication server). A password is required by the form but you'll never use it — the token is separate.
-3. **Datacenter → Permissions → API Tokens → Add** → User `proximo@pve`, Token ID `readonly`, leave
-   **Privilege Separation CHECKED**. Click Add, then **copy the Secret now** — it's shown only once.
-4. **Datacenter → Permissions → Add → API Token Permission** → Path `/`, API Token
-   `proximo@pve!readonly`, Role **`PVEAuditor`**, Propagate checked. This grants **read-only across
-   everything** — to the token.
-5. **Datacenter → Permissions → Add → User Permission** → Path `/`, User `proximo@pve`, Role
-   **`PVEAuditor`**, Propagate checked. **Required, not optional:** a `--privsep`-checked token's
-   effective permissions are the *intersection* of the user's grants and the token's grants — the
-   user you just created has no ACL of its own, so without this step the intersection is empty and
-   the token can do nothing.
-
-### Option B — command line (on the Proxmox host)
+We'll make a **read-only** one first. Proximo prints the exact runbook for your product, and makes no
+API call, holds no credential and writes nothing: minting is your act, on the vendor's host.
 
 ```bash
-pveum user add proximo@pve --comment "Proximo MCP (least-privilege)"
-pveum user token add proximo@pve readonly --privsep 1
-#   ^ copy the printed  value=<secret>  NOW — it is shown only once
-pveum acl modify / --tokens 'proximo@pve!readonly' --roles PVEAuditor
-# A privsep token's effective permissions are the INTERSECTION of the user's ACL and the
-# token's ACL — the freshly-created user above has no ACL of its own, so it needs the role too:
-pveum acl modify / --users 'proximo@pve' --roles PVEAuditor
+proximo mint pve
 ```
 
-`PVEAuditor` = look but never touch. (`--privsep 1` means a token's effective permissions are the
-**intersection** of the user's ACL and the token's ACL, not the token's ACL alone — grant the role
-to *both* the token and the user, and the token never inherits your admin rights either way.)
+What it prints is the vendor's own commands, which you run **on the Proxmox host**: create a service
+user, create a privilege-separated token, grant `PVEAuditor` at `/` to **both** the token and the user,
+save the secret to a 600 file. Read it, then run it. The two things it tells you that people get wrong:
 
-### Save the token to a file
+- A privilege-separated token's effective permissions are the **intersection** of the user's ACL and
+  the token's ACL. A freshly created user has no ACL of its own, so a grant to the token alone leaves
+  the intersection empty: a token that authenticates and can do nothing. Grant the role to both.
+- The secret is shown **once**. The file holds `USER@REALM!TOKENID=SECRET` with no trailing newline,
+  mode 600. Proximo refuses to start on a token file anyone else can read.
 
-Proximo reads the token from a file whose **entire contents** are `USER@REALM!TOKENID=SECRET` (no
-trailing newline):
-
-```bash
-mkdir -p ~/.config/proximo
-printf '%s' 'proximo@pve!readonly=PASTE-THE-SECRET-HERE' > ~/.config/proximo/pve-token
-chmod 600 ~/.config/proximo/pve-token
-```
+The same verb prints the runbook for the other products: `proximo mint pbs`, `proximo mint pmg`
+(a credential file of two lines, PMG has no API tokens), `proximo mint pdm`.
 
 ---
 
@@ -108,55 +78,46 @@ Create `~/.config/proximo/proximo.env`:
 
 ```bash
 PROXIMO_API_BASE_URL=https://YOUR-PVE-HOST:8006/api2/json   # your Proxmox address, port 8006
-PROXIMO_NODE=YOUR-NODE-NAME                                 # the node name shown in the web UI
-PROXIMO_TOKEN_PATH=/home/you/.config/proximo/pve-token      # the file from Step 2
-PROXIMO_VERIFY_TLS=true
+PROXIMO_TOKEN_PATH=/home/you/.config/proximo/pve.served     # the SERVED file: a copy of the read token (mint's step 4)
+PROXIMO_READONLY_SOURCE=/home/you/.config/proximo/pve-read.token  # the read token itself, what `disarm` restores
 # If your Proxmox uses a self-signed certificate, DON'T disable TLS — pin the NODE's cert:
 # PROXIMO_CA_BUNDLE=/home/you/.config/proximo/pve-node.pem
+# or pin its fingerprint (the form the PVE GUI shows); wire-enforced, exact match:
+# PROXIMO_FINGERPRINT=AA:BB:CC:...
 ```
 
-(Container exec is **off** by default — leave `PROXIMO_ENABLE_EXEC` unset. It grants root on the host,
-so it's strictly opt-in. You don't need it for normal use.)
+Every door sources this file before its first env read (`PROXIMO_ENV_FILE` to point elsewhere).
 
-**Which store wins.** Step 5 puts the same variables in your MCP client's `env` block (a daemon
-gets them from its unit's `EnvironmentFile`). The server reads that first and fills in from
-`proximo.env` only the keys it does not set. A key present in both is fed by the process
-environment, and the file's copy of that key is never read. When the two values differ the
-server says so at start (`proximo: 1 key(s) in ... SHADOWED by the process environment`), an
-allowlist refusal names the store it read, and `proximo doctor` flags a shadowed key whose value
-differs. The allowlists (`PROXIMO_CT_ALLOWLIST`, `PROXIMO_AGENT_ALLOWLIST`) are compared as SETS,
-so the same ids in a different order, spacing or with a repeat are the same grant and stay silent.
-Only a change of membership is reported, and `*` alongside explicit ids is the same grant as a
-bare `*`, because that is what the gate enforces. Every other key is compared as text. Every
-`PROXIMO_*` value is fixed when the server is launched: after editing either store, restart the
-server or reconnect the client.
+**Which store wins.** Step 5 puts the same variables in your MCP client's `env` block (a daemon gets
+them from its unit's `EnvironmentFile`). The door reads that first and fills in from `proximo.env`
+only the keys it does not set. A key present in both is fed by the process environment, and the
+file's copy of that key is never read. When the two values differ the door says so at start
+(`1 key(s) in ... SHADOWED by the process environment`, the key, never the value). Every `PROXIMO_*`
+value is fixed when the door starts: after editing either store, restart the server or reconnect
+the client.
 
 ---
 
 ## Step 4 — Verify YOUR boundary, before any AI sees it
 
-This is the safety check. Load the config and run the built-in preflight:
+This is the safety check. Run the doctor:
 
 ```bash
-set -a; . ~/.config/proximo/proximo.env; set +a
 proximo doctor
 ```
 
-(On a PBS/PMG/PDM box instead of PVE: `proximo doctor --product pmg` runs that plane's preflight;
-`pbs`/`pdm` have no doctor tool yet, and the command says so honestly and points at
-`proximo mint --product pbs|pdm`, whose printed runbook carries the verification steps.)
+You'll get JSON. It reports, for each configured plane, whether Proximo reached it and what the
+vendor says the token may do (counted and sampled by path, never translated into a vocabulary of
+ours), whether the ledger's chain is whole, and which of the six pillars stand: PLAN, PROVE, UNDO
+and DIAGNOSE always; CONSENT and CONTAIN only once you have given them a path outside the agent's
+reach. An empty pillar is advice with the exact setting that fills it, never an echo of the paths
+you configured. A retired switch still set in your env is named under `retired`.
 
-You'll get JSON. Look for:
+With the read-only token, the plane is reached and every write the vendor publishes is refused
+by Proxmox itself. That is the guarantee: no matter what the AI asks for, the write simply won't be
+permitted.
 
-- `"reachable": true` — Proximo can talk to your Proxmox.
-- `"token": { "can": [...], "cannot": [...] }` — **this is your safety boundary, in writing.**
-
-With the read-only token, `can` lists only read/inspect, and **everything that changes state is in
-`cannot`.** That is the guarantee, confirmed by Proxmox itself: no matter what the AI asks for, the
-write simply won't be permitted. (If something's missing later, `cannot` even prints the exact `pveum`
-command to grant it.)
-
-If `reachable` is false or you see a TLS error, jump to **Troubleshooting** below.
+If the plane is not reached or you see a TLS error, jump to **Troubleshooting** below.
 
 ---
 
@@ -172,412 +133,189 @@ Example — Claude Desktop (`claude_desktop_config.json`):
       "timeout": 60,
       "env": {
         "PROXIMO_API_BASE_URL": "https://YOUR-PVE-HOST:8006/api2/json",
-        "PROXIMO_NODE": "YOUR-NODE-NAME",
-        "PROXIMO_TOKEN_PATH": "/home/you/.config/proximo/pve-token",
-        "PROXIMO_VERIFY_TLS": "true"
+        "PROXIMO_TOKEN_PATH": "/home/you/.config/proximo/pve.served",
+        "PROXIMO_READONLY_SOURCE": "/home/you/.config/proximo/pve-read.token"
       }
     }
   }
 }
 ```
 
-`timeout` is not optional decoration. Proximo answers `initialize` in about 3.5 seconds because it
-registers its whole tool surface first, and some clients — Cline among them — give up after 3 and
-drop the server **without telling you**: you get a session with no Proximo tools and no error. If
-your client names this setting something else, raise that instead.
+`timeout` is not optional decoration: some clients give up after three seconds and drop a server
+**without telling you**. If your client names this setting something else, raise that instead.
 
-Restart the client, then ask it: **"run pve_doctor."** You'll see the same boundary you verified in
-Step 4 — now the AI can answer questions about your cluster (what's running, is it healthy, is it
-backed up) and **change nothing**, because your token says so.
+Restart the client, then ask it: **"what's running on the cluster?"** It will find the address
+(`proximo_find`), read it (`proximo_read pve /cluster/resources`), and answer with lean rows and a
+total — and **change nothing**, because your token says so. Six tools do everything:
+
+| tool | what it does |
+|---|---|
+| `proximo_find` | words to an address: a verb picks the method, the other words match the path, the vendor's description and the parameter names |
+| `proximo_plan` | the verdict for one address and the vendor's published parameters; a mutation's plan also reads the target as it stands. Mutates nothing |
+| `proximo_read` | any published GET. Lean rows and a total; `fields=all` for the vendor's rows; `since=24h` for what changed, from the door's own snapshots; `diagnose=true` on a node or guest for its health battery |
+| `proximo_call` | a governed POST/PUT/DELETE. Dry-run by default; `confirm=true` runs it, armed and tiered, and waits on the task. `method=undo` puts a captured record back |
+| `audit_entries` | the ledger read back, newest first |
+| `audit_verify` | the chain walked, the first break named |
 
 ---
 
 ## Step 6 — (Optional) Grant scoped write, when you're ready
 
-Say you want the AI to be able to snapshot or restart **one** VM (id `100`) — and nothing else:
+Mint a **second** token: a write token, scoped by the vendor's ACL to the guests you mean, with an
+expiry the vendor enforces. Proximo keeps no scope file and no lease of its own; the token's own
+ACL is the scope and its own `expire` is the lease, enforced server-side where no bug of ours can
+widen them.
 
 ```bash
-pveum acl modify /vms/100 --tokens 'proximo@pve!readonly' --roles PVEVMAdmin
-# same intersection rule as Step 2 — the privsep token needs the user's ACL to match, scoped
-# to this same path, or the write grant to the token alone is a no-op:
-pveum acl modify /vms/100 --users 'proximo@pve' --roles PVEVMAdmin
+proximo mint pve --write --scope /vms/100 --expire 8h
 ```
 
-Run `proximo doctor` again — power/snapshot/rollback now appear, **scoped to `/vms/100`**. Everything
-Proximo does to that VM is planned, undoable, and logged; everything else stays read-only because the
-token still says so. Grant only what you mean to, only where you mean it.
-
-*(The token is named `readonly` — that's just a label. Its real power is whatever roles you grant it.)*
-
-### Seeing backups, and restoring one
-
-The Step 2 token sees **zero** backup archives on every storage, and that is Proxmox, not Proximo:
-PVE hides backup volumes from the content listing unless the token holds `Datastore.AllocateSpace`
-on the storage **and** `VM.Backup` on the guest that owns the archive (or `Datastore.Allocate` on the
-storage). A `PVEAuditor` token gets `200` and an empty list on a storage full of backups.
-`pve_backup_list` now refuses in that state and names the grant, instead of answering "no backups".
-
-To let the AI see (and later restore) backups for your guests, grant a narrow sight role on the
-backup storage and on the guests, to the token **and** its user (Step 2's intersection rule):
+Run the printed commands on the Proxmox host, save the secret to its own 600 file, then tell
+Proximo which file is which:
 
 ```bash
-pveum role add ProximoBackupSight -privs "Datastore.Audit,Datastore.AllocateSpace,VM.Audit,VM.Backup"
-pveum acl modify /storage/pbs --tokens 'proximo@pve!readonly' --roles ProximoBackupSight
-pveum acl modify /storage/pbs --users  'proximo@pve'          --roles ProximoBackupSight
-pveum acl modify /vms/100     --tokens 'proximo@pve!readonly' --roles ProximoBackupSight   # or /vms for all
-pveum acl modify /vms/100     --users  'proximo@pve'          --roles ProximoBackupSight
+PROXIMO_ARM_SOURCE=/home/you/.config/proximo/pve-write.token      # the write token, at rest
+# PROXIMO_READONLY_SOURCE (Step 3) stays the read token; PROXIMO_TOKEN_PATH stays the served copy
 ```
 
-Now `pve_backup_list storage=pbs` returns the archives (a PBS-backed storage's volids look like
-`pbs:backup/ct/100/2026-09-16T02:00:00Z`), `pve_backup_freshness` gives real fresh/stale verdicts
-instead of `unknown`, and `pve_restore` can take one of those volids. A grant on `/vms/100` shows
-that guest's archives only; an empty list then means none for the guests you granted, not none on
-the storage. Restoring needs `Datastore.AllocateSpace` on the storage the guest's disks land on,
-plus `VM.Backup` on the guest when the VMID already exists (an overwrite) or `VM.Allocate` when it
-does not (a create); restoring a *privileged* container also needs `Sys.Modify` on `/`.
-`pve_restore` plans first and says which of the two it is.
-
-The PBS plane has the same trap one level down. A PBS token holding only `Datastore.Backup` (the
-`DatastoreBackup` role PBS's own ACL example gives a backup client) is shown **its own** backup groups and no
-one else's, so `pbs_snapshots_list` and `pbs_groups_list` answer an empty list for every other
-guest. Both now refuse in that state and name the grant: `DatastoreAudit` on `/datastore/<store>`
-(or the namespace path) lets the token list every group without reading the data.
-
-### Restoring one file, not the guest
-
-Two pairs of tools walk INTO a backup and pull a single file or directory out, without restoring
-the guest:
-
-- **PVE side** (a guest's backup on a PBS-backed storage): `pve_file_restore_list storage=pbs
-  volid=pbs:backup/ct/101/2026-09-16T02:00:00Z filepath=/` lists the archive layer; then
-  `filepath=/root.pxar.didx/etc/hosts` walks down. `pve_file_restore_download` with the same
-  arguments returns a PLAN first (source, remote path, destination, size, cap) and pulls the file on
-  `confirm=True`. The same `ProximoBackupSight` grant above is what PVE checks. A VM-image backup
-  needs `proxmox-backup-file-restore` on the node (it boots a small restore VM; the first listing is
-  slow). Container and host archives are read directly.
-- **PBS side** (any snapshot, host backups included): `pbs_catalog_list store=… backup_type=host
-  backup_id=… backup_time=… filepath=/` and `pbs_file_download`. Needs `Datastore.Read`, or
-  `Datastore.Backup` as the group's owner (`DatastoreReader` sees every group's files without
-  being able to change anything).
-
-Where the bytes land: `PROXIMO_RESTORE_DIR` (default `~/.local/state/proximo/restores`), one fresh
-private subdirectory per pull, files `0600`, never overwritten. `PROXIMO_RESTORE_MAX_BYTES` (default
-256 MiB) caps a pull; the PLAN says beforehand when the listed size is over it, and an overrun while
-streaming is refused with the partial removed. A directory arrives as a `.zip`, or `.tar.zst` with
-`tar=True`. The tool result carries the local path, the byte count and the sha256, never the bytes:
-a backup holds guest secrets, and your chat transcript is not where they belong.
-
-What stays outside Proximo today: restoring PBS `host`-type backups as a whole (PBS has no
-"restore host" call; pull files with `pbs_file_download`). Whole-guest restore from PBS goes
-through PVE, as above.
+The served file (`PROXIMO_TOKEN_PATH`) is never one of the two sources: `arm` and `disarm` install
+the write or the read token's bytes **into** it, and a source pointed at the served path would make
+the check compare a file to itself, so Proximo refuses that configuration.
 
 ### Turning write on and off — `proximo arm` / `proximo disarm`
 
-The grant above is permanent until you revoke it. If you'd rather keep write authority *off*
-by default and switch it on for one job, keep two token files and swap between them:
+Armed means one thing: the token the door serves (`PROXIMO_TOKEN_PATH`) is byte-for-byte the write
+token. The two verbs install one or the other at the served path, atomically, mode 600, and write a
+row to the ledger saying so:
 
 ```bash
-proximo arm     --session my-job      # write token in
-proximo disarm  --session my-job      # read-only token back
+proximo arm       # the write token in; a mutation may now run, if its address carries a tier
+proximo disarm    # the read-only token back
 ```
 
-Set `PROXIMO_ARM_SOURCE` (the write token), `PROXIMO_READONLY_SOURCE` (the everyday one), and
-`PROXIMO_SESSION_DIR` so each `--session` key gets its own token file and arming one caller
-leaves the rest read-only. If you name a session without that directory set, `arm` refuses
-rather than quietly arming every caller on the box — drop `--session` to arm globally on purpose.
+`arm` tells you whether the arm is a **real** boundary or only **advisory**: on a single-user box
+the process that reads the token can also replace it, so it says so rather than implying more. The
+stronger pattern keeps no write token at rest at all: mint at arm, revoke at disarm, as root on the
+Proxmox host ([SECURITY.md](../SECURITY.md), "ARM"). A `disarm` that cannot find a read-only token
+to restore refuses loudly, because a reported success that leaves write authority live would be worse.
 
-If you also use the target registry, give any exec-enabled target its own `arm_source` in that
-file. It is not inherited from `PROXIMO_ARM_SOURCE`, which names this box's write token, and a
-target with exec enabled and no `arm_source` is refused rather than armed by proxy. Do not point
-`PROXIMO_ARM_SOURCE` at `PROXIMO_TOKEN_PATH` either: one file in both roles would make the check
-compare a file to itself and read as armed forever, so Proximo refuses that configuration.
+PBS and PDM have their own pair (`PROXIMO_PBS_ARM_SOURCE` / `PROXIMO_PBS_READONLY_SOURCE`, the same
+with `PDM_`): a mutation on a plane is refused unless that plane's served token is its own arm
+source, and PVE's pair never arms another plane. PMG's pair holds credential files (two lines:
+`user@realm`, then the password), swapped by hand. Two files holding the same secret are refused,
+for every plane, because disarming could never change anything.
 
-`arm` prints whether the arm is a **real** boundary or only **advisory** — on a single-user box
-the process that reads the token can also replace it, so it says so rather than implying more.
-Pair it with `PROXIMO_ARM_TTL=3600` and a forgotten `disarm` expires on its own. See
-[SECURITY.md](../SECURITY.md) for the stronger mint-and-revoke pattern, where no write token
-exists at rest at all.
+### What a mutation needs
 
-**Pin the tool surface.** `proximo tools-checksum` prints the sha256 of what this config serves (every tool's name, description and input schema, after scoping and the door choice) and the count. Put it in `PROXIMO_TOOLS_PIN` and the server refuses to start if the surface it would serve is not that one: an upgrade, a scope change or a tampered install all read as a mismatch that names both hashes. The sum is per config and per version (planes, toolsets, surfaces, the door, the `PROXIMO_TARGETS` registry), so read it on the box that will serve it and re-pin after every deliberate change. The pin gates every entrypoint that serves tools, `proximo doctor` included: a drifted pin takes doctor offline too, and its refusal names both hashes so the drift is the diagnosis.
+A `proximo_call` with `confirm=true` runs only when **all** of these hold, and the refusal names the
+one that does not (`needs`): the operator is armed (`arm`); the address carries an authored
+blast-radius tier (`tier`: an unjudged mutation is refused even armed); it is not held by sentence
+(`held`); the CONTAIN trip is not set; it is not in your FORBID list; the RATE window has room; a
+CONSENT grant exists if you configured consent; the session is not tainted past your TAINT policy;
+the UNDO capture was taken (`undo`); a guest or host lane is opened for this id (`agent`, `shell`,
+`node`, `download`). A call can also be refused before any of these: an argument the schema does
+not declare (`arguments`), a path that is not a published address (`path`), a restore whose
+capture does not verify on the ledger (`prove`), a `--since` window that is malformed or has no kept snapshot to answer from (`store`).
+Every refusal is a receipt on the ledger.
 
-If a session dies while armed — crash, kill, a client that just went away — nothing runs its
-`disarm`, and the write token stays in place. `proximo reap` puts it back:
+### Seeing backups
+
+The read token sees **zero** backup archives on every storage, and that is Proxmox, not Proximo:
+PVE hides backup volumes from the content listing unless the token holds `Datastore.AllocateSpace`
+on the storage **and** `VM.Backup` on the guest that owns the archive (or `Datastore.Allocate` on
+the storage). A `PVEAuditor` token gets `200` and an empty list on a storage full of backups. To let
+the AI see them, grant a narrow sight role on the backup storage and on the guests, to the token
+**and** its user:
 
 ```bash
-proximo reap --dry-run      # show what it would do
-proximo reap                # restore the read-only token for every ended session
+pveum role add ProximoBackupSight -privs "Datastore.Audit,Datastore.AllocateSpace,VM.Audit,VM.Backup"
+pveum acl modify /storage/pbs --tokens 'proximo@pve!read' --roles ProximoBackupSight
+pveum acl modify /storage/pbs --users  'proximo@pve'      --roles ProximoBackupSight
+pveum acl modify /vms/100     --tokens 'proximo@pve!read' --roles ProximoBackupSight   # or /vms for all
+pveum acl modify /vms/100     --users  'proximo@pve'      --roles ProximoBackupSight
 ```
 
-It tells a dead session from a live one by asking the operating system, not by guessing: a
-running server holds a lock for as long as it lives, and the OS drops that lock the moment the
-process does. So it is safe to run any time, including from a timer — live sessions are reported
-and skipped. Arms newer than `PROXIMO_REAP_GRACE` (default 300s) are left alone, since a session
-that just armed may not have connected yet.
+A grant on `/vms/100` shows that guest's archives only; an empty list then means none for the guests
+you granted, not none on the storage. The PBS plane has the same trap one level down: a PBS token
+holding only `Datastore.Backup` is shown **its own** backup groups and no one else's; `DatastoreAudit`
+on `/datastore/<store>` lets it list every group without reading the data.
 
-Restoring the key fixes the dangerous half of a dead session; the files are the other half. By
-default nothing removes them, so the session dir accretes one token + one lock per session
-forever — a credential store nobody audits. Set `PROXIMO_REAP_UNLINK_DAYS=7` (any positive
-integer) and `reap` also unlinks session files that are read-only, unheld, and idle past that
-many days, sidecar lock included. Only a proven read-only file is ever unlinked — a dead armed
-session is restored first, which stamps a fresh mtime, so its file becomes eligible only after
-a further full TTL of idleness. A garbled value disables unlinking rather than defaulting: a
-typo must not switch deletion on.
+### The download lane — a file out of a backup, onto this host
 
-### The reach mirror — shell reach from Proxmox's own permission map
-
-The CTID allowlist is a list in an env var; the mirror upgrades that perimeter to Proxmox's
-own vocabulary. With it on, the container shell tools work only where the served token holds
-a privilege *you* chose, at that guest's own ACL path — granted, moved, and revoked with
-`pveum`, resolved by PVE per check. Erect it in four steps, from your own shell:
-
-1. **Choose the privilege from evidence.** `proximo reach-audit` prints, per candidate, what
-   it means in stock PVE and which roles already carry it on *your* cluster (granting any of
-   those roles to the served token — or, privsep, its user — silently extends shell reach).
-   Check the name exists on your PVE first: `pveum role add` refuses unknown privilege
-   names, and older releases predate the granular guest-agent privileges — the audit reads
-   *your* cluster, so what it lists is what exists. To decouple AI reach from human role
-   grants, make a one-privilege custom role:
-   `pveum role add ProximoReach -privs VM.GuestAgent.Unrestricted`
-2. **Grant it where you mean the reach to be — to BOTH sides of a privsep token** (the same
-   intersection rule as Step 2 of this page: effective privileges = user ACL ∩ token ACL,
-   so a token-only grant leaves the mirror refusing):
-   `pveum acl modify /vms/<ctid> --tokens '<user>@<realm>!<token>' --roles ProximoReach`
-   `pveum acl modify /vms/<ctid> --users '<user>@<realm>' --roles ProximoReach`
-3. **Set `PROXIMO_REACH_PRIVILEGE=VM.GuestAgent.Unrestricted`** (the privilege name, not the
-   role name) in the server's env and restart. Unset = dormant, zero behavior change.
-   Set-but-blank refuses loudly rather than guessing.
-4. **Verify the refusal before trusting the grant:** pick an allowlisted guest you did *not*
-   grant — `ct_logs` there must return `blocked:mirror`. Then the granted guest serves.
-   `proximo doctor` shows the live state at `config.reach_grant.mirror.state`.
-
-The allowlist still applies first — the mirror only narrows. Once you trust the mirror
-alone, the allowlist can widen to `*`: the token's own map is then the whole boundary, and
-reach moves only by `pveum`, in PVE's own ACL table — readable back any time with
-`proximo reach-audit`. Be clear about what each record holds: the ledger witnesses the
-*env side* of the perimeter (allowlist, switches, the privilege itself) at serve start and
-every mirror refusal at the door — and while the mirror is enforcing, the serve-start
-snapshot also *derives* the served token's per-guest reach from PVE (a `*` allowlist
-enumerates the configured node's containers first), so a `pveum` grant or revoke lands as
-a witnessed `derived_ct` delta at the next serve start (enforcement sees it
-immediately; the witness sees it at start — that granularity is stated, not hidden).
-Fail-closed by design: if the API cannot answer, shell reach refuses;
-the break-glass is unsetting the privilege — on a `*`-allowlist estate a *widening* — and
-that flip is itself a witnessed `reach_grant` change.
+Five published reads answer bytes, not JSON (a file pulled out of a backup on PVE or PBS, a PBS blob,
+a quarantined mail on PMG). They are a lane, opt-in like every lane that touches this host:
+`PROXIMO_ENABLE_DOWNLOAD=1`. The bytes land under `PROXIMO_RESTORE_DIR` (default
+`~/.local/state/proximo/restores`) in a fresh private directory, files 0600, never overwritten,
+capped by `PROXIMO_RESTORE_MAX_BYTES` (default 256 MiB), named from the argument you sent and never
+from the vendor's `Content-Disposition` (attacker-authored text on a quarantined mail). The answer
+carries the local path, the byte count and the sha256, never the bytes: a backup holds guest
+secrets, and your chat transcript is not where they belong.
 
 ---
 
-## Fitting a smaller model — scoping the tool surface
+## The shell lanes — what the API structurally cannot do
 
-Proximo serves 924 tools, and **the default door is small**: with nothing configured,
-the server serves the dynamic facade — search, schema, read, call, recall and the audit
-trail (~1,740 tokens) — with everything this box serves still callable through it. That is the 0.30
-flip, and the reason is measured: the catalog doors below cost your model context at
-connection time, before you ask anything, and the full surface is ~290k tokens of schema —
-~35x over the 8,192-token default window of a stock local model, which means dead on connect.
-The catalog doors are explicit choices now. Four layers, most specific wins. Every figure
-below was measured on 2026-08-01, at the 0.30 flip, against that day's registry (906 tools; the note
-under the table records the method). The registry is 924 at 0.43.0, so the per-row tool counts read a
-few higher today; the token costs are the measurement:
+Proxmox publishes no REST address for running a command inside a container. Proximo keeps **one**
+governed path: the three shell calls are rows in the same table as every published address,
+judged by the same verdict (armed, tiered, consented, rated, receipted), and only the wire differs.
+Each lane is **off** until you open it, because each is near-root somewhere:
 
-| Set this | Serves | Real cost |
+| lane | opens with | reach |
 |---|---|---|
-| *(nothing — the default)* | the dynamic facade; every tool this box serves still callable | **~1,740 tokens** |
-| `PROXIMO_TOOLS=pve_list_guests,pve_guest_power,pve_rollback` | exactly those, plus the audit trail and `proximo_call` | **~1,704 tokens** |
-| `PROXIMO_TOOLSETS=pve.guests` | one domain (28 tools) | ~9,781 tokens |
-| `PROXIMO_TOOLSETS=pve.guests,pve.storage` | two domains (49 tools) | ~16,825 tokens |
-| `PROXIMO_SURFACES=pve` | the dynamic facade, with the *searchable* catalog scoped to that plane (312 tools). `proximo_recall` is **not** resident here: `memory` is a utility surface, not a plane, so naming planes scopes it away — add it (`PROXIMO_SURFACES=pve,memory`) to keep the one-call estate answer | **~868 tokens** |
-| `PROXIMO_TOOLSETS=catalog` | the pre-0.30 default: full schemas, auto-scoped to your configured planes (~101,398 tokens on a pve-only box) | up to ~289,839 tokens |
-| `PROXIMO_TOOLSETS=all` | the full surface, auto-scope overridden | ~289,839 tokens |
+| container exec (`pct exec` over ssh) | `PROXIMO_ENABLE_EXEC=1` + `PROXIMO_CT_ALLOWLIST=101,102` + `PROXIMO_SSH_TARGET=pve` | root inside the listed containers |
+| the in-guest agent | `PROXIMO_ENABLE_AGENT=1` + `PROXIMO_AGENT_ALLOWLIST=200` | root inside the listed VMs, through the QEMU guest agent |
+| the host battery (read-only) | `PROXIMO_ENABLE_NODE_SHELL=1` | the node's journal and service state, fixed reads, no mutation lane |
 
-> These figures were **revised upward 16-20% on 2026-08-01**, and the surface did not grow.
-> They are now measured from what `tools/list` actually serializes, verified by installing
-> this package into a clean virtualenv and driving the real server over JSON-RPC. The
-> earlier numbers were rebuilt by hand from name + description + input schema, which
-> omitted `outputSchema` — 16.4% of the payload, present on 903 of 905 tools. What you
-> pay has not changed; what we print now matches it.
+The ssh hop is non-interactive and checks that the host it reached **is** the node the path names
+before `pct` runs: a call aimed at one node never lands in a container on another. There is no
+default target: unset is a refusal, never a fallback. A diagnosis (`diagnose=true`) names a closed
+lane in its answer rather than reading it as healthy.
 
-Every "cost" above is UTF-8 payload bytes ÷ 4, a stated conservative heuristic, not a live
-tokenizer for any specific model.
+---
 
-Available toolsets: `pve.guests` `pve.cluster` `pve.storage` `pve.network` `pve.sdn`
-`pve.firewall` `pve.access` `pve.ceph` `pve.maintenance` · `pbs.datastores` `pbs.tape`
-`pbs.access` `pbs.node` `pbs.maintenance` · `pmg.quarantine` `pmg.rules` `pmg.mail`
-`pmg.statistics` `pmg.access` `pmg.node` `pmg.maintenance` · `pdm` · `exec` · `raw` (the GET door).
-
-A typo refuses startup rather than quietly serving a different set than you picked, and
-`audit_verify` and `proximo_call` are never scopeable away — PROVE is not optional at any
-size, and neither is being able to reach a tool by name that scoping left unadvertised.
-
-### `dynamic` — the default: the whole surface on a small model
-
-The default door (also picked explicitly with `PROXIMO_TOOLSETS=dynamic`) loads a facade
-instead of the whole served surface:
-
-- `proximo_find_tools(query)` — search the catalog
-- `proximo_tool_schema(name)` — get one tool's arguments
-- `proximo_read(tool, arguments)` — run a READ-ONLY tool; refuses anything that can mutate,
-  so its `readOnlyHint: true` is an enforced promise your client's permission policy can trust
-- `proximo_call(tool, arguments)` — run anything (`readOnlyHint: false`, honestly)
-- `proximo_recall()` — estate questions (what exists, how many, what changed) in one call
-
-`audit_verify` and `audit_entries` ride alongside these on every surface (PROVE — the write
-proof and the read-back — is never scopeable away), so a raw `tools/list` in this mode shows
-**seven** entries at ~1,740 tokens — six at ~1,166 with `PROXIMO_MEMORY=0`, which removes
-`proximo_recall` rather than leaving a call that could only fail.
-
-The rest stay callable; they stop being *resident*. This is the only mode that fits an ~8k
-context — a single domain toolset is ~8.9k, so toolsets alone reach roughly 32k-class models,
-not the smallest ones.
-
-**It is a smaller doorway, not a looser one.** `proximo_call` dispatches through the same
-internal path a direct tool call uses, so the dry-run PLAN gate, the tamper-evident ledger entry
-and your token's ACL all apply exactly as they would otherwise. The trade is ergonomic, not
-governmental: your model spends two extra round trips discovering a tool, and it must be capable
-enough to drive search-then-call.
-
-#### Memory-first — `proximo_recall`, resident by default
-
-What `dynamic` costs is round trips, and the smallest models are where that bites: every
-question, however small, is search → schema → call. Tier-1 memory is on by default (opt out
-with `PROXIMO_MEMORY=0`; the map is a local, derived, rebuildable SQLite beside the audit
-ledger — nothing leaves the box), and `proximo_recall` sits in the facade, so the commonest
-question class — what exists, how many, what changed, when did this last happen — costs
-**one call with no arguments**, no search and no schema lookup.
-
-It is the same `proximo_recall` you would get on the full surface: kept, not re-declared, with
-its ledger entry, its taint classification and every other control intact. Two things it will
-not do — if memory is off it stays absent rather than sitting there as a call that can only
-fail, and if you scoped it away with `PROXIMO_SURFACES` it stays scoped away.
-
-Note that recall reports what memory has *observed*, age-stamped; on a fresh install it has
-observed nothing and says so rather than reporting an empty estate. And because recalled names
-originate in adversarial-classified reads, a memory-first model trips the taint marker on its
-first call rather than its third — earlier, not different. `proximo doctor` tells you which
-facade you are actually serving.
-
-#### Finding the right tool — the search stack, and what works with no config at all
-
-Search is a stack. Each tier fills only the room the tier above left empty, and marks its
-rows so you can always tell which one answered:
-
-| order | tier | needs | marked |
-|---|---|---|---|
-| 1 | keyword | nothing | *(unmarked — exact matches, always first)* |
-| 2 | semantic | `PROXIMO_EMBED_URL` | `"match": "semantic"` |
-| 3 | lexical | nothing | `"match": "lexical"` |
-
-**The lexical tier ships inside the wheel** — no model, no server, no download, no
-dependency — because a search that needs configuration to work is not much of a search.
-It expands your words into Proxmox's own (memory→mem/ram, container→lxc/ct/guest,
-who/changed→audit/ledger) using a curated table you can read in `lexical.py`, then ranks
-by character-n-gram TF-IDF. On the real ~900-tool catalog the first search builds the index
-(~260 ms, then cached) and later searches take about 7 ms; it finds `audit_verify` for
-"who changed this vm's config". An off-domain query returns nothing, deliberately — a
-result must share a real word with your question, not just a fragment. Set
-`PROXIMO_LEXICAL=off` to disable this tier.
-
-The semantic tier is the optional upgrade in the middle: stronger at crossing vocabulary
-gaps, at the cost of an embedding server you run. When it is configured it takes the room
-below the keyword hits, and lexical fills whatever is left; when it is unreachable, search
-falls back to lexical rather than to bare keyword.
-
-#### Vector search — with `PROXIMO_EMBED_URL`, the drawers find themselves
-
-Keyword search requires the operator's words to appear in a tool's name or description —
-"memory usage of a container" matches nothing, because the tool that answers it says "runtime
-status". Point `PROXIMO_EMBED_URL` at an OpenAI-compatible `/v1/embeddings` server **you run**
-(ollama, llama.cpp and vLLM all serve one; nothing leaves your estate) and semantic matches fill
-in behind the keyword hits — keyword precision stays first and untouched, each vector-ranked row
-is marked `"match": "semantic"` so you can tell which ranking produced it, and `proximo_recall`
-accepts a `query` that narrows entity rows semantically ("the git box" → your gitea container)
-while every count still covers the whole estate.
-
-```bash
-PROXIMO_EMBED_URL=http://localhost:11434          # your embedding server, http(s) only
-PROXIMO_EMBED_MODEL=qwen3-embedding               # optional; single-model servers ignore it
-PROXIMO_EMBED_QUERY_PREFIX=                       # optional, for asymmetric models (see below)
-PROXIMO_VECTORS_PATH=~/.config/proximo/vectors.db # else vectors.db beside the audit log
-```
-
-The index builds itself on the first semantic search and syncs by content hash after that —
-no startup cost, and only new or changed texts ever re-embed. If your embedder is down, search
-degrades to keyword-only with a warning on stderr; the facade never fails because an assist is
-unreachable. Asymmetric embedding models rank better with an instruction prefix on the query
-(e.g. Qwen3-Embedding's `Instruct: ...\nQuery: ` convention) — set `PROXIMO_EMBED_QUERY_PREFIX`
-to your model's convention; it applies to queries only, so changing it never re-indexes.
-
-## The wiki index — `PROXIMO_WIKI=1`, two more tools
-
-`proximo_wiki` searches a local index of Proxmox documentation and `proximo_wiki_read` returns one
-section of it, so a model can cite a real doc instead of recalling one.
-
-**The index is yours, and Proximo does not ship one.** No documentation content is distributed with
-this package: you harvest and index on your own machine, which keeps the forum and wiki licensing
-question out of the picture entirely and means your index is fresher than any frozen pack. Proximo
-ships the **reader** and the **contract**, nothing else. There is no bundled harvester, so if you
-do not build an index these two tools simply refuse and nothing else is affected.
-
-```bash
-PROXIMO_WIKI=1
-PROXIMO_WIKI_PATH=/home/you/.config/proximo/wiki.db   # else wiki.db beside the audit log
-```
-
-### The index contract
-
-Any builder works as long as the SQLite file matches this. Proximo owns and pins the shape, checks
-it **fail-closed in both directions and on a missing pin**, and refuses a drifted index rather than
-answer Proxmox questions out of the wrong bytes:
-
-```sql
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS sections (
-    id      TEXT PRIMARY KEY,   -- stable: sha1(source|url|anchor)
-    source  TEXT NOT NULL,      -- 'forum' | 'wiki' | 'refdocs'
-    title   TEXT NOT NULL,
-    url     TEXT,               -- origin, cited in every response
-    license TEXT,               -- per-source note, surfaced on read
-    body    TEXT NOT NULL
-);
-CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(title, body, content='sections');
-```
-
-Two `meta` rows matter: **`contract_version`** must be `1` (a missing or mismatched value is
-refused), and **`harvested_at`** should be a Unix timestamp, which is what lets every response
-carry an age so a cached doc never passes for a live one. FTS5 ships inside CPython's bundled
-`sqlite3`, so there is no new dependency at either end.
-
-> ⚠️ **Retrieved documentation is third-party-authored text.** A solved forum thread can carry
-> "now run pve_delete_guest" as easily as a fix. Both wiki tools are classified ADVERSARIAL: with
-> the taint control enabled (`PROXIMO_TAINT_TRACK=1`), reading from the index trips the taint
-> marker exactly as an in-guest file read does. Like every additional control, taint is opt-in and
-> inert until its env var is set — the classification alone marks the text, it does not restrain
-> anyone. Treat retrieved text as information, never as instructions, armed or not.
-
-## Many boxes from one Proximo — `proximo_target`
+## Many boxes from one Proximo — `target`
 
 One Proximo can address several Proxmox remotes. Register them in a TOML file (see
 `packaging/targets.example.toml`) and point `PROXIMO_TARGETS` at it:
 
 ```toml
 [targets.backup-dc]
-kind = "pbs"          # pve | pbs | pmg | pdm
-base_url = "https://pbs.example.lan:8007"
+kind       = "pbs"          # pve | pbs | pmg | pdm
+base_url   = "https://pbs.example.lan:8007"
 token_path = "/etc/proximo/backup-dc.token"
 ```
 
-Every tool then accepts an optional **`proximo_target`** parameter naming which registered box to
-run that one call against. Omit it and the call goes to the single default box from your
-environment (`PROXIMO_API_BASE_URL` and friends) — exactly as it does when no registry is
-configured at all. The selection applies to that call only; it does not change any later call.
+`proximo_plan`, `proximo_read` and `proximo_call` then take `target="backup-dc"`, and the shell door
+takes `--target` (`proximo-core pve GET /nodes --target east`). The selector appears in the schema
+only when `PROXIMO_TARGETS` is set, so a one-box install's schemas do not carry it. A target's
+mutations are judged by its **own** arm pair (`arm_source`, `readonly_source` in its entry): the
+default box's arm never authorizes another box. A target's `kind` is enforced: a PBS target on a PVE
+address refuses rather than guessing. Every target records to the same PROVE ledger, with the
+target's name in each row's `remote` field, so a multi-box deployment still has one chain. A tripped
+CONTAIN stops every box. The shell lanes dial only the default box's `PROXIMO_SSH_TARGET`, so they
+refuse a target.
 
-A target's `kind` is enforced: naming a PBS target on a PVE tool refuses rather than guessing. All
-targets record to the same PROVE ledger, with the target name in each entry's `remote` field, so a
-multi-box deployment still has one tamper-evident chain.
+---
 
-The parameter's in-schema description is deliberately one short clause. It is duplicated onto ~900
-tools, so every character there costs a client's context window ~900 times over — the full
-explanation belongs here, read once by a person, rather than in the tool schema read on every
-connection. See `tests/test_schema_budget.py` for the budget that enforces it.
+## No model at all — the shell door
+
+The same install ships `proximo-core`, the engine from a shell or a cron job, with no model, no
+agent and no protocol in the loop. This is the reference door: if the engine is governable from a
+bash script, then MCP, A2A and HTTP are protocol adapters over the same decisions.
+
+```bash
+proximo-core pve GET /nodes/pve1/status
+proximo-core pve GET /cluster/resources --fields name,status
+proximo-core pve POST /nodes/pve1/qemu/100/status/start --plan     # the verdict, the schema, the target as it stands; mutates nothing
+proximo-core pve POST /nodes/pve1/qemu/100/status/start            # runs it, armed and tiered, and waits on the task
+proximo-core pve undo <undo.id>                                     # puts a captured record back
+```
+
+Exit codes are the contract: 0 executed, 2 refused by the spine, 3 the caller's own mistake (bad
+syntax, an unconfigured estate, a retired switch still set), 4 the vendor refused or could not be
+reached. The verbs `mint`, `doctor`, `badge`, `arm` and `disarm` are the same on both commands.
+
+---
 
 ## Remote / multi-client (optional)
 
@@ -587,25 +325,23 @@ listens on the network. That's the default on purpose — daemonless, no open po
 If you want *one* Proximo that several machines or clients reach over the network, start from what
 your client speaks:
 
-| Your client speaks | Use | Extra | Bridge? |
-|---|---|---|---|
-| **REST / OpenAPI** — Open WebUI, dashboards, scripts, `curl` | `proximo-http` | `[http]` | No |
-| **A2A** — agent-to-agent callers | `proximo-a2a` | `[a2a]` | No |
-| **MCP** — Claude Desktop, Claude Code, Cursor | `proximo-mcp-http` | `[mcp-http]` | No |
+| Your client speaks | Use | Extra |
+|---|---|---|
+| **MCP** — Claude Desktop, Claude Code, Cursor | `proximo-mcp-http` | `[mcp-http]` |
+| **REST / OpenAPI** — Open WebUI, dashboards, scripts, `curl` | `proximo-http` | `[http]` |
+| **A2A** — agent-to-agent callers | `proximo-a2a` | `[a2a]` |
 
-All three network faces serve the **full governed surface** through the same spine (PLAN · PROVE ·
-UNDO — and your token's ACL is still the floor). All are opt-in, off unless you start them, and all
-carry the same fail-closed perimeter: a non-localhost bind refuses to start without a bearer token,
-the bearer is checked on every op, plus a Host/DNS-rebind allowlist and a CSRF guard.
+All three are doors over the same engine: the six tools, the same spine, your token's ACL still the
+floor. All are opt-in, off unless you start them, and all carry the same fail-closed perimeter: a
+non-localhost bind refuses to start without a bearer token, the bearer is checked on every call, plus
+a Host/DNS-rebind allowlist and a CSRF guard. Every serving door stamps its arrival and departure on
+the ledger (the one-shot `proximo-core` shell door receipts its call, not a session).
 
 ### MCP over the network — native
 
-`proximo-mcp-http` serves the MCP protocol itself over **Streamable HTTP** — the same FastMCP
-instance the stdio server runs, so there is no adapter layer and nothing to drift: it IS MCP, with
-the spine and your token's ACL inherited by construction. No third-party stdio→HTTP bridge, so the
-perimeter in the request path is **Proximo's own**, not a bridge's. Error surfaces match stdio
-too: a failing tool returns the same MCP error text a stdio client would see (the REST face's
-sanitized `tool failed: <Type>` mapping is a REST-face behavior, not an MCP one).
+`proximo-mcp-http` serves the MCP protocol itself over **Streamable HTTP** — the same door the stdio
+command runs, so there is no adapter layer and nothing to drift. No third-party stdio→HTTP bridge,
+so the perimeter in the request path is **Proximo's own**.
 
 ```bash
 pip install "proximo-proxmox[mcp-http]"
@@ -619,24 +355,28 @@ proximo-mcp-http
 ```
 
 Defaults and knobs (all `PROXIMO_MCP_HTTP_*`): binds loopback `127.0.0.1:41243` with no token
-required; **any non-localhost `_HOST` refuses to start without `_TOKEN_FILE`** — that's the same
-fail-closed rule as the other faces, not a warning. `_PORT` and `_ALLOWED_HOSTS` (comma-separated
-Host allowlist for the DNS-rebind guard — set it to your public hostname behind a reverse proxy)
-work like the sibling faces. Serving is **stateless by default** (multi-client behind a proxy is
-the deployment model; opt out with `_STATELESS=0` for session-stateful serving); `_JSON=1` answers
-POSTs with plain JSON instead of SSE for clients that prefer it. Put a reverse proxy in front for
-TLS, and prefer reaching it over a VPN to exposing it publicly; `GET /healthz` is open for health
-checks. Keep the Proxmox token **read-only** (Step 2) until you've verified the perimeter.
+required; **any non-localhost `_HOST` refuses to start without `_TOKEN_FILE`**. `_PORT` and
+`_ALLOWED_HOSTS` (comma-separated Host allowlist for the DNS-rebind guard — set it to your public
+hostname behind a reverse proxy) work like the sibling doors. Serving is **stateless by default**
+(multi-client behind a proxy is the deployment model; `_STATELESS=0` for session-stateful serving);
+`_JSON=1` answers POSTs with plain JSON instead of SSE for clients that prefer it. Put a reverse
+proxy in front for TLS, and prefer reaching it over a VPN to exposing it publicly; `GET /healthz`
+is open for health checks. Keep the Proxmox token **read-only** (Step 2) until you've verified the
+perimeter.
 
 #### As an LXC on the Proxmox host
 
-One line on the PVE node builds a Debian 13 container running exactly this face, on the community-scripts engine (MIT) pointed at Proximo's own tree:
+One line on the PVE node builds a Debian 13 container running exactly this door, on the
+community-scripts engine (MIT) pointed at Proximo's own tree:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/john-broadway/proximo/main/packaging/lxc/ct/proximo.sh)"
 ```
 
-The install creates a `proximo` system user, mints `/etc/proximo/mcp-bearer.token` (owned by it, mode 600), writes `/etc/proximo/proximo.env` with `PROXIMO_MCP_HTTP_HOST=0.0.0.0`, the token file, the PROVE ledger at `/var/log/proximo/audit.log`, and a Host allowlist carrying the container's own address and name, and enables `proximo-mcp-http.service`, which runs as that user under `ProtectSystem=strict`. The service starts with no Proxmox connection and answers `tools/list`; uncomment `PROXIMO_API_BASE_URL`, `PROXIMO_NODE` and `PROXIMO_TOKEN_PATH` in that file (Step 2's read-only token first), then `systemctl restart proximo-mcp-http`. Updating is the same line run inside the container. Nothing in this path is listed by community-scripts, and the script turns their telemetry off: no prompt, nothing posted, no status or advisory lookups. As in every container the engine builds, root's console password is left empty (auto-login on the Proxmox console; ssh stays key-only): set one with `passwd` if that console is shared. Files: `packaging/lxc/`.
+The install creates a `proximo` system user, mints `/etc/proximo/mcp-bearer.token` (owned by it,
+mode 600), writes `/etc/proximo/proximo.env` with `PROXIMO_MCP_HTTP_HOST=0.0.0.0`, the token file
+and the ledger path, and enables the `proximo-mcp-http` service. Edit the env file with your
+Proxmox address and token path, restart the service, and verify the perimeter below.
 
 **Verify the perimeter before you wire any client** — a request with no bearer must be refused:
 
@@ -680,8 +420,14 @@ closed (it rewrites that file from memory on exit, clobbering edits made while i
 }
 ```
 
-Then ask either client **"run pve_doctor"** — the same boundary you verified in Step 4, now over the
-network.
+### REST and A2A
+
+`proximo-http` serves the six tools as `POST /tools/{name}` with an OpenAPI document at
+`/openapi.json`, for no-code clients and scripts. `proximo-a2a` serves an Agent2Agent card whose
+skills are the six tools, signed when you give it a key (`PROXIMO_A2A_SIGNING_KEY_FILE`). Both read
+`PROXIMO_HTTP_*` / `PROXIMO_A2A_*` (`_HOST`, `_PORT`, `_TOKEN_FILE`, `_ALLOWED_HOSTS`) with the same
+loopback-or-bearer rule. On a network door a caller may also present a signed badge naming **who**
+asked (`proximo badge mint`, pinned under `PROXIMO_CALLER_KEYS_DIR`); identity, never authority.
 
 ---
 
@@ -690,7 +436,7 @@ network.
 Revoke instantly in the GUI (**Datacenter → Permissions → API Tokens → Remove**) or:
 
 ```bash
-pveum user token remove proximo@pve readonly
+pveum user token remove proximo@pve read
 ```
 
 The moment the token is gone, Proximo can do nothing at all.
@@ -701,16 +447,18 @@ The moment the token is gone, Proximo can do nothing at all.
 
 | Symptom | Fix |
 |---|---|
-| **TLS / certificate error** | Your Proxmox uses a self-signed cert. Point `PROXIMO_CA_BUNDLE` at the NODE's certificate, not the cluster CA, and don't disable verification. Proximo pins whatever you give it as a trust anchor in its own right. |
-| **`CA cert does not include key usage extension`** | You pinned the cluster CA. Proxmox issues it with `CA:TRUE` but no `keyUsage`, and a strict-verifying stack (Python 3.13 enables `VERIFY_X509_STRICT` by default) refuses it. Pin the node's own certificate instead; it verifies on every interpreter. |
+| **TLS / certificate error** | Your Proxmox uses a self-signed cert. Point `PROXIMO_CA_BUNDLE` at the NODE's certificate, not the cluster CA, or pin `PROXIMO_FINGERPRINT`; don't disable verification. |
+| **`CA cert does not include key usage extension`** | You pinned the cluster CA. Proxmox issues it with `CA:TRUE` but no `keyUsage`, and a strict-verifying stack (Python 3.13 enables `VERIFY_X509_STRICT` by default) refuses it. Pin the node cert instead. |
 | **401 Unauthorized** | Token secret wrong, or the file isn't exactly `user@realm!tokenid=secret` (no trailing newline). |
-| **`Refusing to start: … group/other-accessible`** | Your token (or audit-key) file is readable by other users on the box. The message names the file — `chmod 600` it, exactly as in Step 2. Proximo won't run with an exposed secret. |
-| **403 / a capability is in `cannot`** | The token lacks that privilege. Run `proximo doctor` — it prints the exact `pveum` command to grant it. For a `--privsep 1` token, effective permissions are the *intersection* of the user's ACL and the token's ACL: a freshly-created user has no ACL of its own, so the user-side grant is **always required**, not situational — `pveum acl modify <path> --users proximo@pve --roles <ROLE>`. |
+| **`refusing ... group/other-accessible`** | Your token (or audit-key) file is readable by other users on the box. The message names the file — `chmod 600` it. |
+| **403 from the vendor** | The token lacks that privilege. Proxmox is the one refusing; grant the role to both the token and its user, scoped to the path you mean. |
+| **`needs: "arm"` / `"tier"` / `"held"`** | Not errors: the refusal names what would change the answer. Arm (Step 6); an untiered address is never mutated; a held one never opens. |
+| **`... is set, and the core no longer reads it`** | A switch of an older release is still in your env (`PROXIMO_SCOPE_PATH`, `PROXIMO_ARM_TTL`, `PROXIMO_AUDIT_KEYED=off`). The door refuses to start rather than quietly run without the gate you thought you had. Unset it; the message says the vendor's way. |
 | **Connection refused / timeout** | Wrong host or port (the Proxmox API is `:8006`), or a firewall in the way. |
-| **`ct_exec` refused** | Exec is off by default (grants host root). It's opt-in via `PROXIMO_ENABLE_EXEC=1` + a CTID allowlist — only if you truly need it. |
-| **A remote MCP client can't connect** | The default `proximo` command serves stdio only — a networked MCP client needs `proximo-mcp-http` (see **Remote / multi-client**). The HTTP face speaks REST, not MCP. Check the bearer header and that `PROXIMO_MCP_HTTP_ALLOWED_HOSTS` includes the Host you're connecting through. |
-| **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. Only the bare, argument-less invocation waits: `proximo --help` prints the usage screen and exits 0, and `proximo --version` or any unrecognised verb prints the usage screen and exits 2 rather than serving. The usage screen itself is the authoritative verb list. Wire it into an MCP client (Step 5) instead of running it directly. |
+| **A shell call refused** | The lane is off by default; open it with its switch and allowlist, and set `PROXIMO_SSH_TARGET`. |
+| **A remote MCP client can't connect** | The default `proximo` command serves stdio only — a networked MCP client needs `proximo-mcp-http`. The HTTP door speaks REST, not MCP. |
+| **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. The verbs (`proximo doctor`, `proximo mint pve`) answer and exit. |
 
 ---
 
-Stuck? `proximo doctor` is the source of truth for what your token can and cannot do — start there.
+Stuck? `proximo doctor` is the source of truth for what stands and what is reached — start there.

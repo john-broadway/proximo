@@ -1,0 +1,3598 @@
+{
+"source": "v0.44.0 (4e78543): every thin wrapper (bucket A/B, one address) with its tool name and the first sentence of its docstring",
+"generated_by": "scratch find_bench2 inputs (prune_wrappers over the v0.44.0 tree + the registry's docstrings), 2026-09-29",
+"cases": [
+{
+"tool": "pbs_acl_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/acl",
+"name": "acl get",
+"line": "list PBS ACL entries"
+},
+{
+"tool": "pbs_acl_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/access/acl",
+"name": "acl update",
+"line": "grant or revoke a PBS ACL entry (PUT /access/acl)"
+},
+{
+"tool": "pbs_acme_account_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/acme/account/{}",
+"name": "acme account get",
+"line": "get one PBS ACME account's full config (account/directory/location/tos)"
+},
+{
+"tool": "pbs_acme_account_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/acme/account",
+"name": "acme account list",
+"line": "list registered PBS ACME account NAMES (the schema's own response item is"
+},
+{
+"tool": "pbs_acme_challenge_schema",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/acme/challenge-schema",
+"name": "acme challenge schema",
+"line": "list the catalog of known ACME challenge plugin types (id/name/schema/type per"
+},
+{
+"tool": "pbs_acme_directories",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/acme/directories",
+"name": "acme directories",
+"line": "list PBS's built-in catalog of known ACME CA directory endpoints (name + URL"
+},
+{
+"tool": "pbs_acme_tos",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/acme/tos",
+"name": "acme tos",
+"line": "get the Terms-of-Service URL for an ACME directory (or None if the CA"
+},
+{
+"tool": "pbs_admin_gc_jobs_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/gc",
+"name": "admin gc jobs list",
+"line": "job-level view of GC (garbage collection) jobs, max one per datastore, across"
+},
+{
+"tool": "pbs_admin_prune_jobs_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/prune",
+"name": "admin prune jobs list",
+"line": "job-level view of prune jobs"
+},
+{
+"tool": "pbs_admin_sync_jobs_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/sync",
+"name": "admin sync jobs list",
+"line": "job-level view of sync jobs"
+},
+{
+"tool": "pbs_admin_traffic_control_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/traffic-control",
+"name": "admin traffic control status",
+"line": "LIVE current traffic (cur-rate-in/cur-rate-out) per traffic-control rule, plus"
+},
+{
+"tool": "pbs_admin_verify_jobs_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/verify",
+"name": "admin verify jobs list",
+"line": "job-level view of verification jobs"
+},
+{
+"tool": "pbs_apt_changelog",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/apt/changelog",
+"name": "apt changelog",
+"line": "get a package's changelog text on a PBS node"
+},
+{
+"tool": "pbs_apt_repositories_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/apt/repositories",
+"name": "apt repositories get",
+"line": "get the current APT repository configuration of a PBS node"
+},
+{
+"tool": "pbs_apt_updates_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/apt/update",
+"name": "apt updates list",
+"line": "list available package updates (cached apt index) on a PBS node"
+},
+{
+"tool": "pbs_apt_versions",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/apt/versions",
+"name": "apt versions",
+"line": "get installed versions of important Proxmox Backup Server packages on a PBS node"
+},
+{
+"tool": "pbs_datastore_active_operations",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/active-operations",
+"name": "datastore active operations",
+"line": "in-flight operation counts for a datastore (expected read/write counters \u2014"
+},
+{
+"tool": "pbs_datastore_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/datastore/{}",
+"name": "datastore get",
+"line": "Get full config of one PBS datastore by name"
+},
+{
+"tool": "pbs_datastore_mount",
+"plane": "pbs",
+"method": "POST",
+"path": "/admin/datastore/{}/mount",
+"name": "datastore mount",
+"line": "mount a removable datastore"
+},
+{
+"tool": "pbs_datastore_rrd",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/rrd",
+"name": "datastore rrd",
+"line": "datastore stats telemetry (I/O, usage over time)"
+},
+{
+"tool": "pbs_datastore_s3_refresh",
+"plane": "pbs",
+"method": "PUT",
+"path": "/admin/datastore/{}/s3-refresh",
+"name": "datastore s3 refresh",
+"line": "refresh a datastore's contents from its S3 backend into the local cache store"
+},
+{
+"tool": "pbs_datastore_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/status",
+"name": "datastore status",
+"line": "Get runtime usage statistics for one PBS datastore"
+},
+{
+"tool": "pbs_datastore_unmount",
+"plane": "pbs",
+"method": "POST",
+"path": "/admin/datastore/{}/unmount",
+"name": "datastore unmount",
+"line": "unmount the removable device backing a datastore"
+},
+{
+"tool": "pbs_datastores_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore",
+"name": "datastores list",
+"line": "List all PBS datastores"
+},
+{
+"tool": "pbs_datastores_usage",
+"plane": "pbs",
+"method": "GET",
+"path": "/status/datastore-usage",
+"name": "datastores usage",
+"line": "capacity usage + estimated-full dates for every datastore (avail, error,"
+},
+{
+"tool": "pbs_encryption_key_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/encryption-keys",
+"name": "encryption key create",
+"line": "create a PBS client encryption key"
+},
+{
+"tool": "pbs_encryption_key_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/encryption-keys/{}",
+"name": "encryption key delete",
+"line": "delete a PBS client encryption key"
+},
+{
+"tool": "pbs_encryption_key_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/encryption-keys",
+"name": "encryption key list",
+"line": "list registered PBS client encryption keys"
+},
+{
+"tool": "pbs_encryption_key_toggle_archive",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/encryption-keys/{}",
+"name": "encryption key toggle archive",
+"line": "toggle a PBS client encryption key's archive flag"
+},
+{
+"tool": "pbs_gc_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/gc",
+"name": "gc status",
+"line": "Get garbage-collection status for one PBS datastore"
+},
+{
+"tool": "pbs_group_move",
+"plane": "pbs",
+"method": "POST",
+"path": "/admin/datastore/{}/move-group",
+"name": "group move",
+"line": "move a backup group to a different namespace within the same datastore"
+},
+{
+"tool": "pbs_group_notes_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/group-notes",
+"name": "group notes get",
+"line": "get the full free-text notes body for a backup GROUP"
+},
+{
+"tool": "pbs_group_notes_set",
+"plane": "pbs",
+"method": "PUT",
+"path": "/admin/datastore/{}/group-notes",
+"name": "group notes set",
+"line": "set the notes body for a backup GROUP (distinct from the snapshot-level"
+},
+{
+"tool": "pbs_metrics_influxdb_http_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/metrics/influxdb-http",
+"name": "metrics influxdb http create",
+"line": "create a PBS InfluxDB http metrics server configuration"
+},
+{
+"tool": "pbs_metrics_influxdb_http_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/metrics/influxdb-http/{}",
+"name": "metrics influxdb http delete",
+"line": "delete a PBS InfluxDB http metrics server configuration"
+},
+{
+"tool": "pbs_metrics_influxdb_http_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/metrics/influxdb-http/{}",
+"name": "metrics influxdb http update",
+"line": "update a PBS InfluxDB http metrics server configuration"
+},
+{
+"tool": "pbs_metrics_influxdb_udp_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/metrics/influxdb-udp",
+"name": "metrics influxdb udp create",
+"line": "create a PBS InfluxDB udp metrics server configuration"
+},
+{
+"tool": "pbs_metrics_influxdb_udp_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/metrics/influxdb-udp/{}",
+"name": "metrics influxdb udp delete",
+"line": "delete a PBS InfluxDB udp metrics server configuration"
+},
+{
+"tool": "pbs_metrics_influxdb_udp_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/metrics/influxdb-udp/{}",
+"name": "metrics influxdb udp get",
+"line": "get one PBS InfluxDB udp metric server's config"
+},
+{
+"tool": "pbs_metrics_influxdb_udp_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/metrics/influxdb-udp",
+"name": "metrics influxdb udp list",
+"line": "list configured PBS InfluxDB udp metric servers"
+},
+{
+"tool": "pbs_metrics_influxdb_udp_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/metrics/influxdb-udp/{}",
+"name": "metrics influxdb udp update",
+"line": "update a PBS InfluxDB udp metrics server configuration"
+},
+{
+"tool": "pbs_metrics_servers_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/metrics",
+"name": "metrics servers list",
+"line": "list ALL configured PBS metric servers (both influxdb-http and influxdb-udp) in"
+},
+{
+"tool": "pbs_metrics_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/status/metrics",
+"name": "metrics status",
+"line": "return PBS backup server metrics"
+},
+{
+"tool": "pbs_namespace_move",
+"plane": "pbs",
+"method": "POST",
+"path": "/admin/datastore/{}/move-namespace",
+"name": "namespace move",
+"line": "move a backup namespace INCLUDING ALL CHILD NAMESPACES AND GROUPS to a new"
+},
+{
+"tool": "pbs_node_cert_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/nodes/{}/certificates/custom",
+"name": "node cert delete",
+"line": "delete the custom TLS certificate on a PBS node;"
+},
+{
+"tool": "pbs_node_cert_upload",
+"plane": "pbs",
+"method": "POST",
+"path": "/nodes/{}/certificates/custom",
+"name": "node cert upload",
+"line": "upload a custom TLS certificate to a PBS node"
+},
+{
+"tool": "pbs_node_certificates_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/certificates/info",
+"name": "node certificates list",
+"line": "list TLS certificates configured on a PBS node"
+},
+{
+"tool": "pbs_node_config_set",
+"plane": "pbs",
+"method": "PUT",
+"path": "/nodes/{}/config",
+"name": "node config set",
+"line": "update PBS node-wide config"
+},
+{
+"tool": "pbs_node_disk_directory_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/nodes/{}/disks/directory",
+"name": "node disk directory create",
+"line": "format a disk and mount it as a directory datastore on a PBS node"
+},
+{
+"tool": "pbs_node_disk_directory_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/nodes/{}/disks/directory/{}",
+"name": "node disk directory delete",
+"line": "remove a directory datastore's mount unit and config mapping on a PBS node"
+},
+{
+"tool": "pbs_node_disk_directory_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/disks/directory",
+"name": "node disk directory list",
+"line": "list systemd datastore mount units (the directory backend) on a PBS node"
+},
+{
+"tool": "pbs_node_disk_initgpt",
+"plane": "pbs",
+"method": "POST",
+"path": "/nodes/{}/disks/initgpt",
+"name": "node disk initgpt",
+"line": "initialize a GPT partition table on a whole PBS disk"
+},
+{
+"tool": "pbs_node_disk_smart",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/disks/smart",
+"name": "node disk smart",
+"line": "get SMART attributes and health for one disk on a PBS node"
+},
+{
+"tool": "pbs_node_disk_wipe",
+"plane": "pbs",
+"method": "PUT",
+"path": "/nodes/{}/disks/wipedisk",
+"name": "node disk wipe",
+"line": "wipe ALL data and the partition table on a PBS disk or partition"
+},
+{
+"tool": "pbs_node_disk_zfs_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/nodes/{}/disks/zfs",
+"name": "node disk zfs create",
+"line": "create a zpool from disks and mount it as a zfs datastore on a PBS node"
+},
+{
+"tool": "pbs_node_disk_zfs_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/disks/zfs/{}",
+"name": "node disk zfs get",
+"line": "get one zpool's status/vdev tree on a PBS node"
+},
+{
+"tool": "pbs_node_disk_zfs_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/disks/zfs",
+"name": "node disk zfs list",
+"line": "list zpools (the zfs backend) on a PBS node"
+},
+{
+"tool": "pbs_node_disks_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/disks/list",
+"name": "node disks list",
+"line": "list physical disks on a PBS node"
+},
+{
+"tool": "pbs_node_dns_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/dns",
+"name": "node dns get",
+"line": "read a PBS node's DNS resolver configuration"
+},
+{
+"tool": "pbs_node_identity",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/identity",
+"name": "node identity",
+"line": "unique server identity derived from /etc/machine-id"
+},
+{
+"tool": "pbs_node_network_iface_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/nodes/{}/network/{}",
+"name": "node network iface delete",
+"line": "remove a network interface's staged configuration on a PBS node (NOT"
+},
+{
+"tool": "pbs_node_network_iface_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/network/{}",
+"name": "node network iface get",
+"line": "read one network interface's configuration on a PBS node"
+},
+{
+"tool": "pbs_node_network_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/network",
+"name": "node network list",
+"line": "list network interfaces on a PBS node (with config digest)"
+},
+{
+"tool": "pbs_node_report",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/report",
+"name": "node report",
+"line": "generate a free-text diagnostic report bundle for the node"
+},
+{
+"tool": "pbs_node_rrd",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/rrd",
+"name": "node rrd",
+"line": "node stats telemetry (host CPU/memory/network, I/O)"
+},
+{
+"tool": "pbs_node_service_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/services/{}/state",
+"name": "node service status",
+"line": "get one systemd service's current state on a PBS node"
+},
+{
+"tool": "pbs_node_services_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/services",
+"name": "node services list",
+"line": "list all systemd services on a PBS node"
+},
+{
+"tool": "pbs_node_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/status",
+"name": "node status",
+"line": "read a PBS node's memory/CPU/(root) disk usage"
+},
+{
+"tool": "pbs_node_subscription_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/subscription",
+"name": "node subscription get",
+"line": "read a PBS node's subscription status"
+},
+{
+"tool": "pbs_node_syslog",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/syslog",
+"name": "node syslog",
+"line": "fetch syslog entries from a PBS node"
+},
+{
+"tool": "pbs_node_task_log",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/tasks/{}/log",
+"name": "node task log",
+"line": "retrieve a PBS task's log output by UPID, paginated via start/limit"
+},
+{
+"tool": "pbs_node_task_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/tasks/{}/status",
+"name": "node task status",
+"line": "get one PBS task's status by UPID (status/exitstatus/pid/starttime/...)"
+},
+{
+"tool": "pbs_node_time_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/nodes/{}/time",
+"name": "node time get",
+"line": "read a PBS node's current time and timezone"
+},
+{
+"tool": "pbs_notification_matcher_field_values",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/notifications/matcher-field-values",
+"name": "notification matcher field values",
+"line": "list all known (field, value) pairs the system currently recognizes for"
+},
+{
+"tool": "pbs_notification_matcher_fields",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/notifications/matcher-fields",
+"name": "notification matcher fields",
+"line": "list all known metadata field NAMES a matcher's match-field rule can target"
+},
+{
+"tool": "pbs_notification_matcher_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/notifications/matchers/{}",
+"name": "notification matcher get",
+"line": "get one PBS notification matcher's full config"
+},
+{
+"tool": "pbs_notification_matchers_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/notifications/matchers",
+"name": "notification matchers list",
+"line": "list all PBS notification matchers (alert routing rules)"
+},
+{
+"tool": "pbs_notification_target_test",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/notifications/targets/{}/test",
+"name": "notification target test",
+"line": "send a REAL test notification to a PBS notification target"
+},
+{
+"tool": "pbs_notification_targets_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/notifications/targets",
+"name": "notification targets list",
+"line": "list all PBS notification targets (the unified list"
+},
+{
+"tool": "pbs_permissions_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/permissions",
+"name": "permissions get",
+"line": "resolve effective privileges for a PBS user/token"
+},
+{
+"tool": "pbs_realm_ad_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/access/ad",
+"name": "realm ad create",
+"line": "create an AD authentication realm"
+},
+{
+"tool": "pbs_realm_ad_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/access/ad/{}",
+"name": "realm ad delete",
+"line": "permanently delete an AD realm"
+},
+{
+"tool": "pbs_realm_ad_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/ad/{}",
+"name": "realm ad get",
+"line": "get one AD realm's config"
+},
+{
+"tool": "pbs_realm_ad_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/ad",
+"name": "realm ad list",
+"line": "list configured AD realms"
+},
+{
+"tool": "pbs_realm_ad_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/access/ad/{}",
+"name": "realm ad update",
+"line": "update an AD realm's config"
+},
+{
+"tool": "pbs_realm_ldap_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/access/ldap",
+"name": "realm ldap create",
+"line": "create an LDAP authentication realm"
+},
+{
+"tool": "pbs_realm_ldap_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/access/ldap/{}",
+"name": "realm ldap delete",
+"line": "permanently delete an LDAP realm"
+},
+{
+"tool": "pbs_realm_ldap_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/ldap/{}",
+"name": "realm ldap get",
+"line": "get one LDAP realm's config"
+},
+{
+"tool": "pbs_realm_ldap_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/ldap",
+"name": "realm ldap list",
+"line": "list configured LDAP realms"
+},
+{
+"tool": "pbs_realm_ldap_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/access/ldap/{}",
+"name": "realm ldap update",
+"line": "update an LDAP realm's config"
+},
+{
+"tool": "pbs_realm_openid_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/access/openid",
+"name": "realm openid create",
+"line": "create an OpenID authentication realm"
+},
+{
+"tool": "pbs_realm_openid_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/access/openid/{}",
+"name": "realm openid delete",
+"line": "permanently delete an OpenID realm"
+},
+{
+"tool": "pbs_realm_openid_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/openid/{}",
+"name": "realm openid get",
+"line": "get one OpenID realm's config (never includes client_key)"
+},
+{
+"tool": "pbs_realm_openid_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/openid",
+"name": "realm openid list",
+"line": "list configured OpenID realms"
+},
+{
+"tool": "pbs_realm_openid_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/access/openid/{}",
+"name": "realm openid update",
+"line": "update an OpenID realm's config"
+},
+{
+"tool": "pbs_realm_pam_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/pam",
+"name": "realm pam get",
+"line": "get the built-in PAM realm's config (comment/default only)"
+},
+{
+"tool": "pbs_realm_pam_set",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/access/pam",
+"name": "realm pam set",
+"line": "update the built-in PAM realm's comment/default-preselect flag"
+},
+{
+"tool": "pbs_realm_pbs_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/pbs",
+"name": "realm pbs get",
+"line": "get the built-in PBS-auth realm's config (comment/default only)"
+},
+{
+"tool": "pbs_realm_pbs_set",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/access/pbs",
+"name": "realm pbs set",
+"line": "update the built-in PBS-auth realm's comment/default-preselect flag"
+},
+{
+"tool": "pbs_remote_scan",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/remote/{}/scan",
+"name": "remote scan",
+"line": "list the datastores accessible on a configured remote PBS"
+},
+{
+"tool": "pbs_remote_scan_groups",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/remote/{}/scan/{}/groups",
+"name": "remote scan groups",
+"line": "list backup groups on a remote's datastore"
+},
+{
+"tool": "pbs_remote_scan_namespaces",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/remote/{}/scan/{}/namespaces",
+"name": "remote scan namespaces",
+"line": "list namespaces on a remote's datastore"
+},
+{
+"tool": "pbs_roles_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/roles",
+"name": "roles list",
+"line": "list PBS's built-in roles"
+},
+{
+"tool": "pbs_s3_check",
+"plane": "pbs",
+"method": "PUT",
+"path": "/admin/s3/{}/check",
+"name": "s3 check",
+"line": "perform a basic sanity check for a PBS S3 client configuration"
+},
+{
+"tool": "pbs_s3_client_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/s3",
+"name": "s3 client create",
+"line": "create a PBS S3 client configuration"
+},
+{
+"tool": "pbs_s3_client_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/s3/{}",
+"name": "s3 client delete",
+"line": "delete a PBS S3 client configuration"
+},
+{
+"tool": "pbs_s3_client_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/s3/{}",
+"name": "s3 client update",
+"line": "update a PBS S3 client configuration"
+},
+{
+"tool": "pbs_s3_list_buckets",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/s3/{}/list-buckets",
+"name": "s3 list buckets",
+"line": "list buckets accessible by the given S3 client configuration"
+},
+{
+"tool": "pbs_s3_reset_counters",
+"plane": "pbs",
+"method": "PUT",
+"path": "/admin/s3/{}/reset-counters",
+"name": "s3 reset counters",
+"line": "reset S3 request counters for a matching endpoint/bucket/prefix"
+},
+{
+"tool": "pbs_snapshot_protected_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/admin/datastore/{}/protected",
+"name": "snapshot protected get",
+"line": "query the protection flag for a specific backup snapshot"
+},
+{
+"tool": "pbs_tape_backup",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/backup",
+"name": "tape backup",
+"line": "one-off tape backup"
+},
+{
+"tool": "pbs_tape_backup_job_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/tape-backup-job",
+"name": "tape backup job create",
+"line": "create a PBS tape backup job"
+},
+{
+"tool": "pbs_tape_backup_job_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/tape-backup-job/{}",
+"name": "tape backup job delete",
+"line": "delete a PBS tape backup job"
+},
+{
+"tool": "pbs_tape_backup_job_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/tape-backup-job/{}",
+"name": "tape backup job get",
+"line": "get one PBS tape backup job's full config"
+},
+{
+"tool": "pbs_tape_backup_job_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/tape-backup-job",
+"name": "tape backup job list",
+"line": "list configured PBS tape backup jobs"
+},
+{
+"tool": "pbs_tape_backup_job_run",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/backup/{}",
+"name": "tape backup job run",
+"line": "manually run a preconfigured tape backup job, right now"
+},
+{
+"tool": "pbs_tape_backup_job_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/tape-backup-job/{}",
+"name": "tape backup job update",
+"line": "update a PBS tape backup job"
+},
+{
+"tool": "pbs_tape_changer_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/changer",
+"name": "tape changer create",
+"line": "create a PBS tape changer config"
+},
+{
+"tool": "pbs_tape_changer_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/changer/{}",
+"name": "tape changer delete",
+"line": "delete a PBS tape changer config"
+},
+{
+"tool": "pbs_tape_changer_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/changer/{}",
+"name": "tape changer get",
+"line": "get one PBS tape changer's config"
+},
+{
+"tool": "pbs_tape_changer_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/changer",
+"name": "tape changer list",
+"line": "list configured PBS SCSI tape changers (with config digest)"
+},
+{
+"tool": "pbs_tape_changer_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/changer/{}/status",
+"name": "tape changer status",
+"line": "one status entry per drive/slot/import-export bay on the changer"
+},
+{
+"tool": "pbs_tape_changer_transfer",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/changer/{}/transfer",
+"name": "tape changer transfer",
+"line": "move media from one changer slot to another"
+},
+{
+"tool": "pbs_tape_changer_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/changer/{}",
+"name": "tape changer update",
+"line": "update a PBS tape changer config"
+},
+{
+"tool": "pbs_tape_drive_barcode_label_media",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/barcode-label-media",
+"name": "tape drive barcode label media",
+"line": "label a drive's mounted media using barcodes read from the changer device"
+},
+{
+"tool": "pbs_tape_drive_cartridge_memory",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/drive/{}/cartridge-memory",
+"name": "tape drive cartridge memory",
+"line": "read the mounted media's LTO cartridge memory (MAM) attributes"
+},
+{
+"tool": "pbs_tape_drive_catalog",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/catalog",
+"name": "tape drive catalog",
+"line": "scan a drive's mounted media and (re)record its content into the local PBS"
+},
+{
+"tool": "pbs_tape_drive_clean",
+"plane": "pbs",
+"method": "PUT",
+"path": "/tape/drive/{}/clean",
+"name": "tape drive clean",
+"line": "run a cleaning cycle on a drive"
+},
+{
+"tool": "pbs_tape_drive_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/drive",
+"name": "tape drive create",
+"line": "create a PBS tape drive config"
+},
+{
+"tool": "pbs_tape_drive_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/drive/{}",
+"name": "tape drive delete",
+"line": "delete a PBS tape drive config"
+},
+{
+"tool": "pbs_tape_drive_eject",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/eject-media",
+"name": "tape drive eject",
+"line": "eject/unload a drive's mounted media"
+},
+{
+"tool": "pbs_tape_drive_format",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/format-media",
+"name": "tape drive format",
+"line": "format (ERASE) a drive's mounted media"
+},
+{
+"tool": "pbs_tape_drive_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/drive/{}",
+"name": "tape drive get",
+"line": "get one PBS tape drive's config"
+},
+{
+"tool": "pbs_tape_drive_inventory",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/drive/{}/inventory",
+"name": "tape drive inventory",
+"line": "list known media labels via the drive's associated changer (this read ALSO"
+},
+{
+"tool": "pbs_tape_drive_inventory_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/tape/drive/{}/inventory",
+"name": "tape drive inventory update",
+"line": "query the changer and load+read any unknown cartridge into this drive, storing"
+},
+{
+"tool": "pbs_tape_drive_label_media",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/label-media",
+"name": "tape drive label media",
+"line": "write a NEW label to a drive's mounted media"
+},
+{
+"tool": "pbs_tape_drive_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/drive",
+"name": "tape drive list",
+"line": "list configured PBS tape drives (LTO SCSI, with config digest)"
+},
+{
+"tool": "pbs_tape_drive_load_media",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/load-media",
+"name": "tape drive load media",
+"line": "mount the cartridge carrying `label_text` into a drive via its associated changer"
+},
+{
+"tool": "pbs_tape_drive_load_slot",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/load-slot",
+"name": "tape drive load slot",
+"line": "mount the cartridge in `source_slot` into a drive via its associated changer"
+},
+{
+"tool": "pbs_tape_drive_read_label",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/drive/{}/read-label",
+"name": "tape drive read label",
+"line": "read the mounted media's label (label-text, media-set uuid/pool/ctime, encryption"
+},
+{
+"tool": "pbs_tape_drive_restore_key",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/restore-key",
+"name": "tape drive restore key",
+"line": "try to restore a tape encryption key from a drive's mounted media"
+},
+{
+"tool": "pbs_tape_drive_rewind",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/rewind",
+"name": "tape drive rewind",
+"line": "rewind a drive's mounted tape to its beginning"
+},
+{
+"tool": "pbs_tape_drive_status",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/drive/{}/status",
+"name": "tape drive status",
+"line": "get one PBS tape drive's status (media-related fields only present if a medium"
+},
+{
+"tool": "pbs_tape_drive_unload",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/drive/{}/unload",
+"name": "tape drive unload",
+"line": "return a drive's mounted media to a changer slot"
+},
+{
+"tool": "pbs_tape_drive_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/drive/{}",
+"name": "tape drive update",
+"line": "update a PBS tape drive config"
+},
+{
+"tool": "pbs_tape_drive_volume_statistics",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/drive/{}/volume-statistics",
+"name": "tape drive volume statistics",
+"line": "read the mounted media's SCSI log-page-17h volume statistics (byte counters,"
+},
+{
+"tool": "pbs_tape_key_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/tape-encryption-keys",
+"name": "tape key create",
+"line": "create a PBS tape encryption key"
+},
+{
+"tool": "pbs_tape_key_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/tape-encryption-keys/{}",
+"name": "tape key delete",
+"line": "delete a PBS tape encryption key"
+},
+{
+"tool": "pbs_tape_key_update_password",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/tape-encryption-keys/{}",
+"name": "tape key update password",
+"line": "change a PBS tape encryption key's password (and hint)"
+},
+{
+"tool": "pbs_tape_media_move",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/media/move",
+"name": "tape media move",
+"line": "change a tape medium's LOCATION bookkeeping (to a vault, or to offline)"
+},
+{
+"tool": "pbs_tape_media_status_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/media/list/{}/status",
+"name": "tape media status get",
+"line": "get one medium's current status"
+},
+{
+"tool": "pbs_tape_media_status_set",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/media/list/{}/status",
+"name": "tape media status set",
+"line": "set (or clear) a tape medium's manual status override"
+},
+{
+"tool": "pbs_tape_pool_create",
+"plane": "pbs",
+"method": "POST",
+"path": "/config/media-pool",
+"name": "tape pool create",
+"line": "create a PBS tape media pool"
+},
+{
+"tool": "pbs_tape_pool_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/config/media-pool/{}",
+"name": "tape pool delete",
+"line": "delete a PBS tape media pool"
+},
+{
+"tool": "pbs_tape_pool_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/media-pool/{}",
+"name": "tape pool get",
+"line": "get one PBS tape media pool's config"
+},
+{
+"tool": "pbs_tape_pool_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/media-pool",
+"name": "tape pool list",
+"line": "list configured PBS tape media pools"
+},
+{
+"tool": "pbs_tape_pool_update",
+"plane": "pbs",
+"method": "PUT",
+"path": "/config/media-pool/{}",
+"name": "tape pool update",
+"line": "update a PBS tape media pool"
+},
+{
+"tool": "pbs_tape_restore",
+"plane": "pbs",
+"method": "POST",
+"path": "/tape/restore",
+"name": "tape restore",
+"line": "restore data from a tape media-set into a datastore"
+},
+{
+"tool": "pbs_tape_scan_changers",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/scan-changers",
+"name": "tape scan changers",
+"line": "autodetect SCSI tape changers attached to the PBS host"
+},
+{
+"tool": "pbs_tape_scan_drives",
+"plane": "pbs",
+"method": "GET",
+"path": "/tape/scan-drives",
+"name": "tape scan drives",
+"line": "autodetect tape drives attached to the PBS host (Linux SCSI-generic device"
+},
+{
+"tool": "pbs_tfa_entry_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/tfa/{}/{}",
+"name": "tfa entry get",
+"line": "get one TFA entry"
+},
+{
+"tool": "pbs_tfa_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/tfa",
+"name": "tfa list",
+"line": "list ALL users' TFA configuration (per-user entries + lock state)"
+},
+{
+"tool": "pbs_tfa_unlock",
+"plane": "pbs",
+"method": "PUT",
+"path": "/access/users/{}/unlock-tfa",
+"name": "tfa unlock",
+"line": "clear a user's TOTP lockout (PUT /access/users/{userid}/unlock-tfa"
+},
+{
+"tool": "pbs_tfa_user_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/tfa/{}",
+"name": "tfa user get",
+"line": "list one user's TFA entries"
+},
+{
+"tool": "pbs_tfa_webauthn_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/access/tfa/webauthn",
+"name": "tfa webauthn get",
+"line": "get the server-wide WebAuthn relying-party config (id/origin/rp/"
+},
+{
+"tool": "pbs_token_delete",
+"plane": "pbs",
+"method": "DELETE",
+"path": "/access/users/{}/token/{}",
+"name": "token delete",
+"line": "permanently revoke a PBS API token"
+},
+{
+"tool": "pbs_traffic_controls_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/config/traffic-control",
+"name": "traffic controls list",
+"line": "list all PBS traffic-control bandwidth-limit rules"
+},
+{
+"tool": "pbs_user_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/users/{}",
+"name": "user get",
+"line": "get a PBS user's config"
+},
+{
+"tool": "pbs_user_token_get",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/users/{}/token/{}",
+"name": "user token get",
+"line": "get one PBS API token's metadata"
+},
+{
+"tool": "pbs_user_tokens_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/users/{}/token",
+"name": "user tokens list",
+"line": "list API tokens for a PBS user"
+},
+{
+"tool": "pbs_users_list",
+"plane": "pbs",
+"method": "GET",
+"path": "/access/users",
+"name": "users list",
+"line": "list all PBS users"
+},
+{
+"tool": "pbs_version",
+"plane": "pbs",
+"method": "GET",
+"path": "/version",
+"name": "version",
+"line": "PBS API version identity (release/repoid/version)"
+},
+{
+"tool": "pdm_acl_list",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/acl",
+"name": "acl list",
+"line": "list PDM's own access control entries (who can use PDM, not a managed remote's ACL)"
+},
+{
+"tool": "pdm_acl_update",
+"plane": "pdm",
+"method": "PUT",
+"path": "/access/acl",
+"name": "acl update",
+"line": "grant or revoke a PDM ACL entry (PUT /access/acl)"
+},
+{
+"tool": "pdm_node_status",
+"plane": "pdm",
+"method": "GET",
+"path": "/nodes/{}/status",
+"name": "node status",
+"line": "get resource stats for the PDM appliance's own node (not a managed remote's node)"
+},
+{
+"tool": "pdm_permissions_get",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/permissions",
+"name": "permissions get",
+"line": "resolved effective privileges for a PDM user/token (path -> privilege ->"
+},
+{
+"tool": "pdm_ping",
+"plane": "pdm",
+"method": "GET",
+"path": "/ping",
+"name": "ping",
+"line": "health check the PDM appliance"
+},
+{
+"tool": "pdm_remote_version",
+"plane": "pdm",
+"method": "GET",
+"path": "/remotes/remote/{}/version",
+"name": "remote version",
+"line": "get version info for one PDM-registered remote, proxied through PDM"
+},
+{
+"tool": "pdm_resources_status",
+"plane": "pdm",
+"method": "GET",
+"path": "/resources/status",
+"name": "resources status",
+"line": "aggregated fleet status counters (running VMs, LXCs, failed remotes, etc.)"
+},
+{
+"tool": "pdm_roles_list",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/roles",
+"name": "roles list",
+"line": "list PDM's own roles and their privileges (not a managed remote's roles)"
+},
+{
+"tool": "pdm_token_delete",
+"plane": "pdm",
+"method": "DELETE",
+"path": "/access/users/{}/token/{}",
+"name": "token delete",
+"line": "permanently revoke a PDM API token;"
+},
+{
+"tool": "pdm_user_get",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/users/{}",
+"name": "user get",
+"line": "get a PDM user's config (userid, enabled flag, expiry, email, comment,"
+},
+{
+"tool": "pdm_user_token_get",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/users/{}/token/{}",
+"name": "user token get",
+"line": "one PDM API token's metadata (comment, expiry, enabled flag, token-name,"
+},
+{
+"tool": "pdm_user_tokens_list",
+"plane": "pdm",
+"method": "GET",
+"path": "/access/users/{}/token",
+"name": "user tokens list",
+"line": "list a PDM user's API tokens (token-name, tokenid, comment, expiry, enabled"
+},
+{
+"tool": "pdm_version",
+"plane": "pdm",
+"method": "GET",
+"path": "/version",
+"name": "version",
+"line": "get the PDM appliance's own version info"
+},
+{
+"tool": "pmg_access_realm_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/access/auth-realm",
+"name": "access realm list",
+"line": "list configured PMG auth realms"
+},
+{
+"tool": "pmg_access_tfa_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/access/tfa/{}/{}",
+"name": "access tfa get",
+"line": "get one TFA entry (created/description/enable/id/type"
+},
+{
+"tool": "pmg_access_tfa_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/access/tfa",
+"name": "access tfa list",
+"line": "list ALL users' TFA configuration"
+},
+{
+"tool": "pmg_access_tfa_user_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/access/tfa/{}",
+"name": "access tfa user list",
+"line": "list one user's TFA entries (created/description/enable/id/type"
+},
+{
+"tool": "pmg_access_user_unlock_tfa",
+"plane": "pmg",
+"method": "PUT",
+"path": "/access/users/{}/unlock-tfa",
+"name": "access user unlock tfa",
+"line": "clear a PMG user's TOTP lockout (PUT /access/users/{userid}/unlock-tfa)"
+},
+{
+"tool": "pmg_acme_challenge_schema",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/acme/challenge-schema",
+"name": "acme challenge schema",
+"line": "list the catalog of known ACME challenge plugin types (id/name/schema/type per"
+},
+{
+"tool": "pmg_acme_directories",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/acme/directories",
+"name": "acme directories",
+"line": "list PMG's built-in catalog of known ACME CA directory endpoints (name + URL"
+},
+{
+"tool": "pmg_acme_meta",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/acme/meta",
+"name": "acme meta",
+"line": "get ACME directory meta information (externalAccountRequired, termsOfService,"
+},
+{
+"tool": "pmg_acme_tos",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/acme/tos",
+"name": "acme tos",
+"line": "get the Terms-of-Service URL for an ACME directory (or None if the CA"
+},
+{
+"tool": "pmg_action_bcc_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/bcc/{}",
+"name": "action bcc get",
+"line": "get a BCC action object's settings from the PMG RuleDB"
+},
+{
+"tool": "pmg_action_disclaimer_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/disclaimer/{}",
+"name": "action disclaimer get",
+"line": "get a disclaimer action object's settings from the PMG RuleDB"
+},
+{
+"tool": "pmg_action_field_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/field/{}",
+"name": "action field get",
+"line": "get a field-modification action object's settings from the PMG RuleDB"
+},
+{
+"tool": "pmg_action_notification_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/notification/{}",
+"name": "action notification get",
+"line": "get a notification action object's settings from the PMG RuleDB"
+},
+{
+"tool": "pmg_action_objects_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/objects",
+"name": "action objects list",
+"line": "list all PMG RuleDB action objects, including non-editable"
+},
+{
+"tool": "pmg_action_removeattachments_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/action/removeattachments/{}",
+"name": "action removeattachments get",
+"line": "get a remove-attachments action object's settings from the PMG RuleDB"
+},
+{
+"tool": "pmg_apt_changelog",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/apt/changelog",
+"name": "apt changelog",
+"line": "get a package's changelog text on a PMG node"
+},
+{
+"tool": "pmg_apt_repositories_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/apt/repositories",
+"name": "apt repositories get",
+"line": "get the current APT repository configuration of a PMG node"
+},
+{
+"tool": "pmg_apt_updates_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/apt/update",
+"name": "apt updates list",
+"line": "list available package updates (cached apt index) on a PMG node"
+},
+{
+"tool": "pmg_apt_versions",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/apt/versions",
+"name": "apt versions",
+"line": "get installed versions of important Proxmox packages on a PMG node"
+},
+{
+"tool": "pmg_cluster_join_info",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/cluster/join",
+"name": "cluster join info",
+"line": "get the information a NEW node needs to join THIS cluster"
+},
+{
+"tool": "pmg_cluster_nodes_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/cluster/nodes",
+"name": "cluster nodes list",
+"line": "list this PMG cluster's member nodes (cid/fingerprint/hostrsapubkey/ip/name/"
+},
+{
+"tool": "pmg_cluster_status",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/cluster/status",
+"name": "cluster status",
+"line": "get PMG cluster node status"
+},
+{
+"tool": "pmg_cluster_update_fingerprints",
+"plane": "pmg",
+"method": "POST",
+"path": "/config/cluster/update-fingerprints",
+"name": "cluster update fingerprints",
+"line": "refresh API certificate fingerprints for every cluster"
+},
+{
+"tool": "pmg_config_clamav_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/clamav",
+"name": "config clamav get",
+"line": "read PMG ClamAV config (archive-scan limits, DB mirror, scripted-updates"
+},
+{
+"tool": "pmg_config_spamquar_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/spamquar",
+"name": "config spamquar get",
+"line": "read PMG spam-quarantine config (auth mode, lifetime, quarantine-link"
+},
+{
+"tool": "pmg_config_tfa_webauthn_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/tfa/webauthn",
+"name": "config tfa webauthn get",
+"line": "read PMG webauthn config (relying-party id/origin/name, subdomain-allow flag)"
+},
+{
+"tool": "pmg_config_virusquar_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/virusquar",
+"name": "config virusquar get",
+"line": "read PMG virus-quarantine config (hyperlink display, lifetime, image display)"
+},
+{
+"tool": "pmg_customscores_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/customscores/{}",
+"name": "customscores get",
+"line": "get a single custom SpamAssassin score"
+},
+{
+"tool": "pmg_customscores_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/customscores",
+"name": "customscores list",
+"line": "list custom SpamAssassin scores"
+},
+{
+"tool": "pmg_dkim_domain_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/dkim/domains/{}",
+"name": "dkim domain get",
+"line": "read a DKIM-sign domain's comment"
+},
+{
+"tool": "pmg_dkim_domains_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/dkim/domains",
+"name": "dkim domains list",
+"line": "list DKIM-sign domains"
+},
+{
+"tool": "pmg_dkim_selectors_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/dkim/selectors",
+"name": "dkim selectors list",
+"line": "get a list of all existing DKIM selectors"
+},
+{
+"tool": "pmg_domain_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/domains/{}",
+"name": "domain get",
+"line": "read a managed mail domain's comment"
+},
+{
+"tool": "pmg_domains_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/domains",
+"name": "domains list",
+"line": "list PMG managed mail domains"
+},
+{
+"tool": "pmg_ldap_group_members_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ldap/{}/groups/{}",
+"name": "ldap group members get",
+"line": "list one LDAP group's members"
+},
+{
+"tool": "pmg_ldap_groups_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ldap/{}/groups",
+"name": "ldap groups list",
+"line": "list LDAP groups cached for one profile"
+},
+{
+"tool": "pmg_ldap_user_emails_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ldap/{}/users/{}",
+"name": "ldap user emails get",
+"line": "get all email addresses for one LDAP user"
+},
+{
+"tool": "pmg_ldap_users_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ldap/{}/users",
+"name": "ldap users list",
+"line": "list LDAP users cached for one profile"
+},
+{
+"tool": "pmg_mimetypes_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/mimetypes",
+"name": "mimetypes list",
+"line": "get PMG's built-in MIME type list"
+},
+{
+"tool": "pmg_mynetworks_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/mynetworks/{}",
+"name": "mynetworks get",
+"line": "read a single mynetworks entry's comment"
+},
+{
+"tool": "pmg_mynetworks_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/mynetworks",
+"name": "mynetworks list",
+"line": "list PMG mynetworks (trusted relay) entries"
+},
+{
+"tool": "pmg_node_certificates_info",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/certificates/info",
+"name": "node certificates info",
+"line": "get information about a PMG node's TLS certificates (pem/fingerprint/subject/"
+},
+{
+"tool": "pmg_node_clamav_database_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/clamav/database",
+"name": "node clamav database get",
+"line": "get ClamAV virus database status (per-DB build_time/nsigs/type/version)"
+},
+{
+"tool": "pmg_node_config_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/config",
+"name": "node config get",
+"line": "read a PMG node's ACME account/domain-mapping config"
+},
+{
+"tool": "pmg_node_dns_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/dns",
+"name": "node dns get",
+"line": "read a PMG node's DNS resolver configuration"
+},
+{
+"tool": "pmg_node_network_delete",
+"plane": "pmg",
+"method": "DELETE",
+"path": "/nodes/{}/network/{}",
+"name": "node network delete",
+"line": "remove a network interface's staged configuration on a PMG node (NOT"
+},
+{
+"tool": "pmg_node_network_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/network/{}",
+"name": "node network get",
+"line": "read one network interface's configuration on a PMG node"
+},
+{
+"tool": "pmg_node_network_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/network",
+"name": "node network list",
+"line": "list network interfaces on a PMG node"
+},
+{
+"tool": "pmg_node_pbs_snapshot_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/pbs/{}/snapshot/{}",
+"name": "node pbs snapshot get",
+"line": "get all snapshots under one backup-id stored on a PBS remote"
+},
+{
+"tool": "pmg_node_pbs_timer_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/pbs/{}/timer",
+"name": "node pbs timer get",
+"line": "get the backup schedule (systemd timer spec) for a PBS remote"
+},
+{
+"tool": "pmg_node_postfix_discard_verify_cache",
+"plane": "pmg",
+"method": "POST",
+"path": "/nodes/{}/postfix/discard_verify_cache",
+"name": "node postfix discard verify cache",
+"line": "discard the Postfix address-verification cache on a PMG node"
+},
+{
+"tool": "pmg_node_postfix_queue_action",
+"plane": "pmg",
+"method": "POST",
+"path": "/nodes/{}/postfix/queue/{}",
+"name": "node postfix queue action",
+"line": "apply delete or deliver to caller-enumerated queue"
+},
+{
+"tool": "pmg_node_postfix_queue_delete_all",
+"plane": "pmg",
+"method": "DELETE",
+"path": "/nodes/{}/postfix/queue",
+"name": "node postfix queue delete all",
+"line": "delete ALL mail in ALL Postfix queues on a PMG node"
+},
+{
+"tool": "pmg_node_postfix_queue_delete_queue",
+"plane": "pmg",
+"method": "DELETE",
+"path": "/nodes/{}/postfix/queue/{}",
+"name": "node postfix queue delete queue",
+"line": "delete ALL mail in one named Postfix queue on a PMG node"
+},
+{
+"tool": "pmg_node_postfix_queue_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/postfix/queue/{}",
+"name": "node postfix queue list",
+"line": "list mail queued in one Postfix queue"
+},
+{
+"tool": "pmg_node_postfix_queue_message_delete",
+"plane": "pmg",
+"method": "DELETE",
+"path": "/nodes/{}/postfix/queue/{}/{}",
+"name": "node postfix queue message delete",
+"line": "delete one queued message by queue ID"
+},
+{
+"tool": "pmg_node_postfix_queue_message_deliver",
+"plane": "pmg",
+"method": "POST",
+"path": "/nodes/{}/postfix/queue/{}/{}",
+"name": "node postfix queue message deliver",
+"line": "schedule immediate delivery of one deferred message by queue ID"
+},
+{
+"tool": "pmg_node_postfix_queue_message_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/postfix/queue/{}/{}",
+"name": "node postfix queue message get",
+"line": "get the contents of one queued mail message"
+},
+{
+"tool": "pmg_node_report",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/report",
+"name": "node report",
+"line": "generate a free-text diagnostic report bundle for a PMG node"
+},
+{
+"tool": "pmg_node_rrddata",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/rrddata",
+"name": "node rrddata",
+"line": "get PMG node RRD performance data"
+},
+{
+"tool": "pmg_node_services_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/services",
+"name": "node services list",
+"line": "list systemd services on a PMG node"
+},
+{
+"tool": "pmg_node_spamassassin_rules_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/spamassassin/rules",
+"name": "node spamassassin rules get",
+"line": "get SpamAssassin rule-channel status (channel/last_updated/update_avail/"
+},
+{
+"tool": "pmg_node_status",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/status",
+"name": "node status",
+"line": "get PMG node cpu/mem/disk/uptime status"
+},
+{
+"tool": "pmg_node_syslog",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/syslog",
+"name": "node syslog",
+"line": "get PMG node syslog entries"
+},
+{
+"tool": "pmg_node_task_log",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/tasks/{}/log",
+"name": "node task log",
+"line": "fetch a PMG task's log lines ({n: line number, t: line text} per entry)"
+},
+{
+"tool": "pmg_node_task_status",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/tasks/{}/status",
+"name": "node task status",
+"line": "get a PMG task's status ({pid, status: running|stopped})"
+},
+{
+"tool": "pmg_node_time_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/time",
+"name": "node time get",
+"line": "read a PMG node's current time and timezone"
+},
+{
+"tool": "pmg_postfix_qshape",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/postfix/qshape",
+"name": "postfix qshape",
+"line": "get PMG Postfix queue shape"
+},
+{
+"tool": "pmg_quarantine_attachments_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/listattachments",
+"name": "quarantine attachments list",
+"line": "list attachments on one quarantined email"
+},
+{
+"tool": "pmg_quarantine_blocklist_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/blocklist",
+"name": "quarantine blocklist list",
+"line": "list PMG quarantine blocklist entries"
+},
+{
+"tool": "pmg_quarantine_content_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/content",
+"name": "quarantine content get",
+"line": "get the full content of one quarantined email"
+},
+{
+"tool": "pmg_quarantine_spamstatus",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/spamstatus",
+"name": "quarantine spamstatus",
+"line": "get spam quarantine status summary"
+},
+{
+"tool": "pmg_quarantine_spamusers",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/spamusers",
+"name": "quarantine spamusers",
+"line": "list users with quarantined mail entries"
+},
+{
+"tool": "pmg_quarantine_users_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/quarusers",
+"name": "quarantine users list",
+"line": "list users with welcomelist/blocklist quarantine settings"
+},
+{
+"tool": "pmg_quarantine_virusstatus",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/virusstatus",
+"name": "quarantine virusstatus",
+"line": "get virus quarantine status summary"
+},
+{
+"tool": "pmg_quarantine_welcomelist_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/quarantine/welcomelist",
+"name": "quarantine welcomelist list",
+"line": "list PMG quarantine welcomelist entries"
+},
+{
+"tool": "pmg_relay_config",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/mail",
+"name": "relay config",
+"line": "get PMG SMTP relay/smarthost configuration"
+},
+{
+"tool": "pmg_ruledb_digest",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/digest",
+"name": "ruledb digest",
+"line": "get the PMG RuleDB digest (change-detection hash)"
+},
+{
+"tool": "pmg_ruledb_rule_action_groups_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/action",
+"name": "ruledb rule action groups list",
+"line": "list the action-group ids DIRECTLY attached to a PMG RuleDB rule"
+},
+{
+"tool": "pmg_ruledb_rule_from_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/from",
+"name": "ruledb rule from list",
+"line": "list the 'from' objects attached to a PMG RuleDB rule"
+},
+{
+"tool": "pmg_ruledb_rule_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/config",
+"name": "ruledb rule get",
+"line": "get a PMG RuleDB rule's configuration"
+},
+{
+"tool": "pmg_ruledb_rule_to_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/to",
+"name": "ruledb rule to list",
+"line": "list the 'to' objects attached to a PMG RuleDB rule"
+},
+{
+"tool": "pmg_ruledb_rule_what_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/what",
+"name": "ruledb rule what list",
+"line": "list the 'what' objects attached to a PMG RuleDB rule"
+},
+{
+"tool": "pmg_ruledb_rule_when_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules/{}/when",
+"name": "ruledb rule when list",
+"line": "list the 'when' objects attached to a PMG RuleDB rule"
+},
+{
+"tool": "pmg_ruledb_rules_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/rules",
+"name": "ruledb rules list",
+"line": "list all PMG RuleDB rules (hydrated rule list)"
+},
+{
+"tool": "pmg_service_status",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/services/{}/state",
+"name": "service status",
+"line": "get the status of a PMG system service"
+},
+{
+"tool": "pmg_spam_config",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/spam",
+"name": "spam config",
+"line": "get PMG spam filter configuration"
+},
+{
+"tool": "pmg_statistics_domains",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/domains",
+"name": "statistics domains",
+"line": "get PMG per-domain mail statistics"
+},
+{
+"tool": "pmg_statistics_mail",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/mail",
+"name": "statistics mail",
+"line": "Get PMG mail delivery statistics"
+},
+{
+"tool": "pmg_statistics_maildistribution",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/maildistribution",
+"name": "statistics maildistribution",
+"line": "get spam-mail counts grouped by spam score"
+},
+{
+"tool": "pmg_statistics_recentreceivers",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/recentreceivers",
+"name": "statistics recentreceivers",
+"line": "get the top recent mail receivers (including spam)"
+},
+{
+"tool": "pmg_statistics_recentsenders",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/recentsenders",
+"name": "statistics recentsenders",
+"line": "get the top recent mail senders (including spam)"
+},
+{
+"tool": "pmg_statistics_spamscores",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/spamscores",
+"name": "statistics spamscores",
+"line": "get PMG spam score distribution statistics"
+},
+{
+"tool": "pmg_statistics_virus",
+"plane": "pmg",
+"method": "GET",
+"path": "/statistics/virus",
+"name": "statistics virus",
+"line": "get PMG virus statistics"
+},
+{
+"tool": "pmg_tls_inbound_domains_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/tls-inbound-domains",
+"name": "tls inbound domains list",
+"line": "list domains for which TLS is enforced on INCOMING connections"
+},
+{
+"tool": "pmg_tlspolicy_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/tlspolicy/{}",
+"name": "tlspolicy get",
+"line": "read a single TLS policy entry"
+},
+{
+"tool": "pmg_tlspolicy_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/tlspolicy",
+"name": "tlspolicy list",
+"line": "list TLS policy entries (per-destination TLS enforcement overrides)"
+},
+{
+"tool": "pmg_tracker_detail",
+"plane": "pmg",
+"method": null,
+"path": "/nodes/{}/tracker/{}",
+"name": "tracker detail",
+"line": "get tracking detail for a specific mail ID"
+},
+{
+"tool": "pmg_tracker_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/nodes/{}/tracker",
+"name": "tracker list",
+"line": "list mail tracking entries"
+},
+{
+"tool": "pmg_transport_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/transport/{}",
+"name": "transport get",
+"line": "read a single mail transport map entry"
+},
+{
+"tool": "pmg_transport_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/transport",
+"name": "transport list",
+"line": "list mail transport map entries"
+},
+{
+"tool": "pmg_welcomelist_object_delete",
+"plane": "pmg",
+"method": "DELETE",
+"path": "/config/welcomelist/objects/{}",
+"name": "welcomelist object delete",
+"line": "delete an object from the PMG GLOBAL welcomelist"
+},
+{
+"tool": "pmg_welcomelist_objects_list",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/welcomelist/objects",
+"name": "welcomelist objects list",
+"line": "list every entry across all 8 PMG global welcomelist typed families"
+},
+{
+"tool": "pmg_when_object_get",
+"plane": "pmg",
+"method": "GET",
+"path": "/config/ruledb/when/{}/timeframe/{}",
+"name": "when object get",
+"line": "get a PMG RuleDB 'when' (timeframe) object's settings"
+},
+{
+"tool": "pve_acl_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/acl",
+"name": "acl list",
+"line": "List all ACL entries on the Proxmox cluster"
+},
+{
+"tool": "pve_acme_cert_revoke",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/certificates/acme/certificate",
+"name": "acme cert revoke",
+"line": "IRREVERSIBLE"
+},
+{
+"tool": "pve_apt_changelog",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/apt/changelog{}",
+"name": "apt changelog",
+"line": "get a package's changelog text on a PVE node"
+},
+{
+"tool": "pve_apt_repositories_get",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/apt/repositories",
+"name": "apt repositories get",
+"line": "get the current APT repository configuration of a PVE node"
+},
+{
+"tool": "pve_apt_updates_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/apt/update",
+"name": "apt updates list",
+"line": "list available package updates (cached apt index) on a PVE node"
+},
+{
+"tool": "pve_apt_versions",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/apt/versions",
+"name": "apt versions",
+"line": "get installed versions of important Proxmox packages on a PVE node"
+},
+{
+"tool": "pve_backup_job_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/backup",
+"name": "backup job create",
+"line": "create a PVE cluster backup job"
+},
+{
+"tool": "pve_backup_job_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/backup/{}",
+"name": "backup job delete",
+"line": "delete a PVE cluster backup job"
+},
+{
+"tool": "pve_backup_job_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/backup/{}",
+"name": "backup job update",
+"line": "update a PVE cluster backup job"
+},
+{
+"tool": "pve_ceph_cfg_raw",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/cfg/raw",
+"name": "ceph cfg raw",
+"line": "the raw ceph.conf file content for a node"
+},
+{
+"tool": "pve_ceph_cfg_value",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/cfg/value",
+"name": "ceph cfg value",
+"line": "configured values for specific ceph.conf / mon-config-db keys"
+},
+{
+"tool": "pve_ceph_cmd_safety",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/cmd-safety",
+"name": "ceph cmd safety",
+"line": "Ceph's own heuristic advisory on whether it is currently safe to stop or"
+},
+{
+"tool": "pve_ceph_crush",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/crush",
+"name": "ceph crush",
+"line": "the OSD CRUSH map, decompiled to text"
+},
+{
+"tool": "pve_ceph_flag_get",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/ceph/flags/{}",
+"name": "ceph flag get",
+"line": "current value of one Ceph cluster flag"
+},
+{
+"tool": "pve_ceph_flag_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/ceph/flags/{}",
+"name": "ceph flag set",
+"line": "set or clear a single Ceph cluster flag"
+},
+{
+"tool": "pve_ceph_flags_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/ceph/flags",
+"name": "ceph flags list",
+"line": "status of all 11 Ceph cluster flags (nobackfill, nodeep-scrub, nodown, noin,"
+},
+{
+"tool": "pve_ceph_flags_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/ceph/flags",
+"name": "ceph flags set",
+"line": "set/unset multiple Ceph cluster flags at once (bulk)"
+},
+{
+"tool": "pve_ceph_fs_create",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/fs/{}",
+"name": "ceph fs create",
+"line": "create a Ceph filesystem (CephFS)"
+},
+{
+"tool": "pve_ceph_fs_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/fs/{}",
+"name": "ceph fs destroy",
+"line": "destroy a Ceph filesystem"
+},
+{
+"tool": "pve_ceph_fs_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/fs",
+"name": "ceph fs list",
+"line": "configured CephFS filesystems"
+},
+{
+"tool": "pve_ceph_init",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/init",
+"name": "ceph init",
+"line": "create the initial Ceph default configuration and set up symlinks on a node"
+},
+{
+"tool": "pve_ceph_mds_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/mds/{}",
+"name": "ceph mds destroy",
+"line": "destroy a Ceph Metadata Server"
+},
+{
+"tool": "pve_ceph_mds_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/mds",
+"name": "ceph mds list",
+"line": "Ceph metadata servers known to this node's view of the MDS map"
+},
+{
+"tool": "pve_ceph_metadata",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/ceph/metadata{}",
+"name": "ceph metadata",
+"line": "per-daemon Ceph metadata (mon/mgr/mds/osd/node), keyed by instance"
+},
+{
+"tool": "pve_ceph_mgr_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/mgr/{}",
+"name": "ceph mgr destroy",
+"line": "destroy a Ceph Manager"
+},
+{
+"tool": "pve_ceph_mgr_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/mgr",
+"name": "ceph mgr list",
+"line": "Ceph managers known to this node's view of the mgrmap"
+},
+{
+"tool": "pve_ceph_mon_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/mon/{}",
+"name": "ceph mon destroy",
+"line": "destroy a Ceph Monitor"
+},
+{
+"tool": "pve_ceph_mon_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/mon",
+"name": "ceph mon list",
+"line": "Ceph monitors known to this node's view of the monmap"
+},
+{
+"tool": "pve_ceph_osd_create",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/osd",
+"name": "ceph osd create",
+"line": "create a new Ceph OSD, consuming and REFORMATTING `dev` as BlueStore storage"
+},
+{
+"tool": "pve_ceph_osd_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/osd/{}",
+"name": "ceph osd destroy",
+"line": "destroy a Ceph OSD"
+},
+{
+"tool": "pve_ceph_osd_in",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/osd/{}/in",
+"name": "ceph osd in",
+"line": "mark a Ceph OSD 'in'"
+},
+{
+"tool": "pve_ceph_osd_lv_info",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/osd/{}/lv-info{}",
+"name": "ceph osd lv info",
+"line": "an OSD's logical-volume details (LVM-reported via `lvs`, on the SAME host"
+},
+{
+"tool": "pve_ceph_osd_metadata",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/osd/{}/metadata",
+"name": "ceph osd metadata",
+"line": "per-OSD details (devices[] + an osd{} identity/address block)"
+},
+{
+"tool": "pve_ceph_osd_out",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/osd/{}/out",
+"name": "ceph osd out",
+"line": "mark a Ceph OSD 'out'"
+},
+{
+"tool": "pve_ceph_osd_scrub",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/osd/{}/scrub",
+"name": "ceph osd scrub",
+"line": "instruct a Ceph OSD to scrub"
+},
+{
+"tool": "pve_ceph_osd_tree",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/osd",
+"name": "ceph osd tree",
+"line": "the Ceph OSD list/tree"
+},
+{
+"tool": "pve_ceph_pool_create",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/pool",
+"name": "ceph pool create",
+"line": "create a Ceph pool"
+},
+{
+"tool": "pve_ceph_pool_destroy",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/ceph/pool/{}",
+"name": "ceph pool destroy",
+"line": "destroy a Ceph pool"
+},
+{
+"tool": "pve_ceph_pool_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/pool",
+"name": "ceph pool list",
+"line": "all Ceph pools + their current settings"
+},
+{
+"tool": "pve_ceph_pool_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/ceph/pool/{}",
+"name": "ceph pool set",
+"line": "change an existing Ceph pool's settings"
+},
+{
+"tool": "pve_ceph_pool_status",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/pool/{}/status{}",
+"name": "ceph pool status",
+"line": "one pool's current settings (+ usage/IO statistics when verbose=True)"
+},
+{
+"tool": "pve_ceph_rules",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/ceph/rules",
+"name": "ceph rules",
+"line": "list configured Ceph CRUSH rules (names only)"
+},
+{
+"tool": "pve_ceph_service_restart",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/restart",
+"name": "ceph service restart",
+"line": "restart Ceph service(s) (systemd unit(s) matching `service`)"
+},
+{
+"tool": "pve_ceph_service_start",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/start",
+"name": "ceph service start",
+"line": "start Ceph service(s) (systemd unit(s) matching `service`)"
+},
+{
+"tool": "pve_ceph_service_stop",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/ceph/stop",
+"name": "ceph service stop",
+"line": "stop Ceph service(s) (systemd unit(s) matching `service`)"
+},
+{
+"tool": "pve_ceph_status",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/ceph/status",
+"name": "ceph status",
+"line": "cluster-wide Ceph health/status"
+},
+{
+"tool": "pve_cluster_status",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/status",
+"name": "cluster status",
+"line": "Retrieve the cluster's overall status: nodes, quorum state, and the corosync"
+},
+{
+"tool": "pve_create_container",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/lxc",
+"name": "create container",
+"line": "create a new LXC container"
+},
+{
+"tool": "pve_create_vm",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/qemu",
+"name": "create vm",
+"line": "create a new QEMU VM"
+},
+{
+"tool": "pve_firewall_security_group_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/firewall/groups",
+"name": "firewall security group create",
+"line": "create an empty cluster security group"
+},
+{
+"tool": "pve_firewall_security_group_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/firewall/groups/{}",
+"name": "firewall security group delete",
+"line": "delete a cluster security group"
+},
+{
+"tool": "pve_group_create",
+"plane": "pve",
+"method": "POST",
+"path": "/access/groups",
+"name": "group create",
+"line": "create an (empty) group"
+},
+{
+"tool": "pve_group_get",
+"plane": "pve",
+"method": "GET",
+"path": "/access/groups/{}",
+"name": "group get",
+"line": "Get a group's full config"
+},
+{
+"tool": "pve_group_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/access/groups/{}",
+"name": "group update",
+"line": "update a group's comment"
+},
+{
+"tool": "pve_groups_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/groups",
+"name": "groups list",
+"line": "List all Proxmox groups"
+},
+{
+"tool": "pve_ha_resource_remove",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/ha/resources/{}",
+"name": "ha resource remove",
+"line": "remove a guest from HA management"
+},
+{
+"tool": "pve_ha_rules_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/ha/rules",
+"name": "ha rules list",
+"line": "list High-Availability rules on the cluster (PVE 9+)"
+},
+{
+"tool": "pve_mapping_pci_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/mapping/pci",
+"name": "mapping pci create",
+"line": "create a PCI cluster passthrough mapping"
+},
+{
+"tool": "pve_mapping_pci_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/mapping/pci/{}",
+"name": "mapping pci delete",
+"line": "delete a PCI cluster mapping"
+},
+{
+"tool": "pve_mapping_pci_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/mapping/pci",
+"name": "mapping pci list",
+"line": "list all PCI device mappings at cluster scope"
+},
+{
+"tool": "pve_mapping_pci_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/mapping/pci/{}",
+"name": "mapping pci update",
+"line": "update a PCI cluster mapping"
+},
+{
+"tool": "pve_mapping_usb_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/mapping/usb",
+"name": "mapping usb create",
+"line": "create a USB cluster passthrough mapping"
+},
+{
+"tool": "pve_mapping_usb_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/mapping/usb/{}",
+"name": "mapping usb delete",
+"line": "delete a USB cluster mapping"
+},
+{
+"tool": "pve_mapping_usb_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/mapping/usb",
+"name": "mapping usb list",
+"line": "list all USB device mappings at cluster scope"
+},
+{
+"tool": "pve_mapping_usb_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/mapping/usb/{}",
+"name": "mapping usb update",
+"line": "update a USB cluster mapping"
+},
+{
+"tool": "pve_metrics_server_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/metrics/server/{}",
+"name": "metrics server delete",
+"line": "delete a PVE metrics server definition"
+},
+{
+"tool": "pve_metrics_server_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/metrics/server",
+"name": "metrics server list",
+"line": "list all PVE metrics server definitions"
+},
+{
+"tool": "pve_metrics_server_set",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/metrics/server/{}",
+"name": "metrics server set",
+"line": "create-or-update a PVE metrics server definition"
+},
+{
+"tool": "pve_network_apply",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/network",
+"name": "network apply",
+"line": "apply staged network config changes to the live network stack"
+},
+{
+"tool": "pve_network_list",
+"plane": "pve",
+"method": null,
+"path": "/nodes/{}/network",
+"name": "network list",
+"line": "list network interfaces (bridges/bonds/VLANs/etc) on a PVE node"
+},
+{
+"tool": "pve_node_acme_domains_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/config",
+"name": "node acme domains set",
+"line": "set a node's ACME account + domains (PUT /nodes/{node}/config)"
+},
+{
+"tool": "pve_node_cert_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/nodes/{}/certificates/custom",
+"name": "node cert delete",
+"line": "delete the custom TLS certificate from a PVE node"
+},
+{
+"tool": "pve_node_cert_upload",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/certificates/custom",
+"name": "node cert upload",
+"line": "upload a custom TLS certificate to a PVE node"
+},
+{
+"tool": "pve_node_certificates",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/certificates/info",
+"name": "node certificates",
+"line": "list TLS certificates configured on a Proxmox node"
+},
+{
+"tool": "pve_node_disk_initgpt",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/disks/initgpt",
+"name": "node disk initgpt",
+"line": "initialize a GPT partition table on a node disk"
+},
+{
+"tool": "pve_node_disk_smart",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/disks/smart",
+"name": "node disk smart",
+"line": "get SMART health data for one disk on a PVE node"
+},
+{
+"tool": "pve_node_disk_wipe",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/disks/wipedisk",
+"name": "node disk wipe",
+"line": "wipe ALL data and the partition table on a node disk"
+},
+{
+"tool": "pve_node_disks_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/disks/list",
+"name": "node disks list",
+"line": "list physical disks on a PVE node"
+},
+{
+"tool": "pve_node_dns",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/dns",
+"name": "node dns",
+"line": "Read a Proxmox node's DNS configuration"
+},
+{
+"tool": "pve_node_dns_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/dns",
+"name": "node dns set",
+"line": "update DNS resolver configuration on a PVE node"
+},
+{
+"tool": "pve_node_hosts_get",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/hosts",
+"name": "node hosts get",
+"line": "get the /etc/hosts content of a PVE node"
+},
+{
+"tool": "pve_node_hosts_set",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/hosts",
+"name": "node hosts set",
+"line": "replace the /etc/hosts file on a PVE node"
+},
+{
+"tool": "pve_node_journal",
+"plane": "pve",
+"method": null,
+"path": "/nodes/{}/journal",
+"name": "node journal",
+"line": "fetch systemd journal lines from a PVE node for log inspection"
+},
+{
+"tool": "pve_node_migrateall",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/migrateall",
+"name": "node migrateall",
+"line": "migrate all (or filtered) guests from a node to a target node"
+},
+{
+"tool": "pve_node_rrddata",
+"plane": "pve",
+"method": null,
+"path": "/nodes/{}/rrddata",
+"name": "node rrddata",
+"line": "fetch RRD (round-robin database) time-series telemetry for a PVE node"
+},
+{
+"tool": "pve_node_service_status",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/services/{}/state",
+"name": "node service status",
+"line": "get one systemd service's current state on a PVE node (e.g"
+},
+{
+"tool": "pve_node_services_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/services",
+"name": "node services list",
+"line": "list all services on a PVE node"
+},
+{
+"tool": "pve_node_startall",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/startall",
+"name": "node startall",
+"line": "start all (or filtered) guests on a PVE node"
+},
+{
+"tool": "pve_node_status",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/status",
+"name": "node status",
+"line": "read Proxmox node health and resource status"
+},
+{
+"tool": "pve_node_stopall",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/stopall",
+"name": "node stopall",
+"line": "stop ALL (or filtered) running guests on a PVE node"
+},
+{
+"tool": "pve_node_subscription",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/subscription",
+"name": "node subscription",
+"line": "read a Proxmox node's subscription status"
+},
+{
+"tool": "pve_node_syslog",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/syslog",
+"name": "node syslog",
+"line": "fetch syslog entries from a PVE node for log inspection"
+},
+{
+"tool": "pve_node_time_get",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/time",
+"name": "node time get",
+"line": "get the current time and timezone of a PVE node"
+},
+{
+"tool": "pve_node_time_set",
+"plane": "pve",
+"method": "PUT",
+"path": "/nodes/{}/time",
+"name": "node time set",
+"line": "set the timezone on a PVE node"
+},
+{
+"tool": "pve_notification_endpoint_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/notifications/endpoints",
+"name": "notification endpoint list",
+"line": "list all PVE notification endpoints"
+},
+{
+"tool": "pve_pool_create",
+"plane": "pve",
+"method": "POST",
+"path": "/pools",
+"name": "pool create",
+"line": "create an (empty) resource pool"
+},
+{
+"tool": "pve_pool_get",
+"plane": "pve",
+"method": "GET",
+"path": "/pools/{}",
+"name": "pool get",
+"line": "Retrieve a single resource pool's configuration and complete member list by pool ID"
+},
+{
+"tool": "pve_pool_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/pools/{}",
+"name": "pool update",
+"line": "add (delete=False) or remove (delete=True) pool members"
+},
+{
+"tool": "pve_pools_list",
+"plane": "pve",
+"method": "GET",
+"path": "/pools",
+"name": "pools list",
+"line": "List all resource pools defined cluster-wide"
+},
+{
+"tool": "pve_realm_get",
+"plane": "pve",
+"method": "GET",
+"path": "/access/domains/{}",
+"name": "realm get",
+"line": "Get a realm's full config"
+},
+{
+"tool": "pve_realms_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/domains",
+"name": "realms list",
+"line": "List authentication realms/domains configured in Proxmox"
+},
+{
+"tool": "pve_replication_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/replication",
+"name": "replication create",
+"line": "create a PVE replication job"
+},
+{
+"tool": "pve_replication_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/replication/{}",
+"name": "replication delete",
+"line": "delete a PVE replication job"
+},
+{
+"tool": "pve_replication_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/replication/{}",
+"name": "replication update",
+"line": "update a PVE replication job"
+},
+{
+"tool": "pve_role_create",
+"plane": "pve",
+"method": "POST",
+"path": "/access/roles",
+"name": "role create",
+"line": "create a custom role with an optional privilege set"
+},
+{
+"tool": "pve_roles_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/roles",
+"name": "roles list",
+"line": "List all Proxmox roles and their privileges"
+},
+{
+"tool": "pve_sdn_controller_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/controllers",
+"name": "sdn controller create",
+"line": "create an SDN controller (PENDING"
+},
+{
+"tool": "pve_sdn_controller_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/controllers/{}",
+"name": "sdn controller update",
+"line": "update an SDN controller (PENDING)"
+},
+{
+"tool": "pve_sdn_controllers_list",
+"plane": "pve",
+"method": null,
+"path": "/cluster/sdn/controllers",
+"name": "sdn controllers list",
+"line": "list SDN controllers (cluster-scoped)"
+},
+{
+"tool": "pve_sdn_dns_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/dns",
+"name": "sdn dns create",
+"line": "create an SDN dns integration (PENDING"
+},
+{
+"tool": "pve_sdn_dns_list",
+"plane": "pve",
+"method": null,
+"path": "/cluster/sdn/dns",
+"name": "sdn dns list",
+"line": "list SDN dns integrations (cluster-scoped)"
+},
+{
+"tool": "pve_sdn_dry_run",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/dry-run",
+"name": "sdn dry run",
+"line": "preview what pve_sdn_apply would change"
+},
+{
+"tool": "pve_sdn_fabric_node_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/fabrics/node/{}",
+"name": "sdn fabric node create",
+"line": "add a node to an SDN fabric (PENDING"
+},
+{
+"tool": "pve_sdn_fabric_node_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/fabrics/node/{}/{}",
+"name": "sdn fabric node update",
+"line": "update a fabric node (PENDING)"
+},
+{
+"tool": "pve_sdn_fabric_status_interfaces",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/fabrics/{}/interfaces",
+"name": "sdn fabric status interfaces",
+"line": "get all interfaces for a fabric on one node (name/state/type"
+},
+{
+"tool": "pve_sdn_fabric_status_neighbors",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/fabrics/{}/neighbors",
+"name": "sdn fabric status neighbors",
+"line": "get all neighbors for a fabric on one node"
+},
+{
+"tool": "pve_sdn_fabric_status_routes",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/fabrics/{}/routes",
+"name": "sdn fabric status routes",
+"line": "get all routes for a fabric on one node"
+},
+{
+"tool": "pve_sdn_ipam_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/ipams",
+"name": "sdn ipam create",
+"line": "create an SDN ipam integration (PENDING"
+},
+{
+"tool": "pve_sdn_ipam_status",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/ipams/{}/status",
+"name": "sdn ipam status",
+"line": "ADVERSARIAL: list the guest IP/MAC/hostname address entries a PVE-managed"
+},
+{
+"tool": "pve_sdn_ipams_list",
+"plane": "pve",
+"method": null,
+"path": "/cluster/sdn/ipams",
+"name": "sdn ipams list",
+"line": "list SDN ipam integrations (cluster-scoped)"
+},
+{
+"tool": "pve_sdn_prefix_list_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/prefix-lists",
+"name": "sdn prefix list create",
+"line": "create an SDN prefix list (PENDING"
+},
+{
+"tool": "pve_sdn_prefix_list_entries_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/prefix-lists/{}/entries",
+"name": "sdn prefix list entries list",
+"line": "list a prefix list's entries"
+},
+{
+"tool": "pve_sdn_prefix_list_entry_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/prefix-lists/{}/entries",
+"name": "sdn prefix list entry create",
+"line": "create a prefix-list entry (PENDING"
+},
+{
+"tool": "pve_sdn_prefix_list_get",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/prefix-lists/{}",
+"name": "sdn prefix list get",
+"line": "read one SDN prefix list's configuration (including its entries)"
+},
+{
+"tool": "pve_sdn_route_map_entry_get",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/route-maps/entries/{}/entry/{}",
+"name": "sdn route map entry get",
+"line": "read a single route-map entry by its (route_map_id, order) pair"
+},
+{
+"tool": "pve_sdn_route_map_entry_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/route-maps/entries/{}/entry/{}",
+"name": "sdn route map entry update",
+"line": "update a route-map entry (PENDING)"
+},
+{
+"tool": "pve_sdn_subnet_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/vnets/{}/subnets",
+"name": "sdn subnet create",
+"line": "create an SDN subnet (PENDING)"
+},
+{
+"tool": "pve_sdn_subnet_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/sdn/vnets/{}/subnets/{}",
+"name": "sdn subnet delete",
+"line": "delete an SDN subnet (PENDING)"
+},
+{
+"tool": "pve_sdn_subnet_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/vnets/{}/subnets",
+"name": "sdn subnet list",
+"line": "list the subnets configured in a vnet"
+},
+{
+"tool": "pve_sdn_subnet_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/vnets/{}/subnets/{}",
+"name": "sdn subnet update",
+"line": "update an SDN subnet (PENDING)"
+},
+{
+"tool": "pve_sdn_vnet_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/vnets",
+"name": "sdn vnet create",
+"line": "create an SDN vnet in a zone (PENDING)"
+},
+{
+"tool": "pve_sdn_vnet_firewall_rule_add",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/vnets/{}/firewall/rules",
+"name": "sdn vnet firewall rule add",
+"line": "add a new vnet firewall rule"
+},
+{
+"tool": "pve_sdn_vnet_firewall_rule_remove",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/sdn/vnets/{}/firewall/rules/{}",
+"name": "sdn vnet firewall rule remove",
+"line": "delete a vnet firewall rule by position"
+},
+{
+"tool": "pve_sdn_vnet_firewall_rule_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/vnets/{}/firewall/rules/{}",
+"name": "sdn vnet firewall rule update",
+"line": "update a vnet firewall rule at position `pos`"
+},
+{
+"tool": "pve_sdn_vnet_ip_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/vnets/{}/ips",
+"name": "sdn vnet ip create",
+"line": "create an IP-to-MAC mapping in a vnet (IPAM record)"
+},
+{
+"tool": "pve_sdn_vnet_ip_delete",
+"plane": "pve",
+"method": "DELETE",
+"path": "/cluster/sdn/vnets/{}/ips",
+"name": "sdn vnet ip delete",
+"line": "delete an IP-to-MAC mapping from a vnet"
+},
+{
+"tool": "pve_sdn_vnet_ip_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/vnets/{}/ips",
+"name": "sdn vnet ip update",
+"line": "update an IP-to-MAC mapping in a vnet"
+},
+{
+"tool": "pve_sdn_vnet_mac_vrf",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/vnets/{}/mac-vrf",
+"name": "sdn vnet mac vrf",
+"line": "get the MAC VRF of a VNet in an EVPN zone on one node (ip/mac/nexthop per"
+},
+{
+"tool": "pve_sdn_vnet_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/vnets/{}",
+"name": "sdn vnet update",
+"line": "update an SDN vnet (PENDING"
+},
+{
+"tool": "pve_sdn_vnets_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/vnets",
+"name": "sdn vnets list",
+"line": "List SDN vnets in the cluster"
+},
+{
+"tool": "pve_sdn_zone_bridges",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/zones/{}/bridges",
+"name": "sdn zone bridges",
+"line": "list the bridges (vnets) that are part of a zone on one node, with their"
+},
+{
+"tool": "pve_sdn_zone_content",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/zones/{}/content",
+"name": "sdn zone content",
+"line": "list the vnets inside a zone with their per-vnet apply status on one node"
+},
+{
+"tool": "pve_sdn_zone_create",
+"plane": "pve",
+"method": "POST",
+"path": "/cluster/sdn/zones",
+"name": "sdn zone create",
+"line": "create an SDN zone (PENDING"
+},
+{
+"tool": "pve_sdn_zone_ip_vrf",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/zones/{}/ip-vrf",
+"name": "sdn zone ip vrf",
+"line": "get the IP VRF routing table of an EVPN zone on one node (CIDR + nexthops +"
+},
+{
+"tool": "pve_sdn_zone_status_list",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/sdn/zones",
+"name": "sdn zone status list",
+"line": "get the per-zone APPLY status (available/pending/error) on one node \u2014"
+},
+{
+"tool": "pve_sdn_zone_update",
+"plane": "pve",
+"method": "PUT",
+"path": "/cluster/sdn/zones/{}",
+"name": "sdn zone update",
+"line": "update an SDN zone (PENDING)"
+},
+{
+"tool": "pve_sdn_zones_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/sdn/zones",
+"name": "sdn zones list",
+"line": "List SDN zones in the cluster"
+},
+{
+"tool": "pve_security_groups_list",
+"plane": "pve",
+"method": "GET",
+"path": "/cluster/firewall/groups",
+"name": "security groups list",
+"line": "List the cluster's firewall security groups"
+},
+{
+"tool": "pve_storage_config_get",
+"plane": "pve",
+"method": "GET",
+"path": "/storage/{}",
+"name": "storage config get",
+"line": "Retrieve a single storage definition from storage.cfg by storage ID"
+},
+{
+"tool": "pve_storage_config_list",
+"plane": "pve",
+"method": "GET",
+"path": "/storage",
+"name": "storage config list",
+"line": "list all storage definitions from storage.cfg cluster-wide"
+},
+{
+"tool": "pve_storage_create",
+"plane": "pve",
+"method": "POST",
+"path": "/storage",
+"name": "storage create",
+"line": "define a new cluster storage entry in storage.cfg (dir / nfs / pbs / cifs / \u2026)"
+},
+{
+"tool": "pve_storage_download",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/storage/{}/download-url",
+"name": "storage download",
+"line": "download an ISO (content=iso) or CT template (content=vztmpl) from a URL into a"
+},
+{
+"tool": "pve_storage_status",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/storage/{}/status",
+"name": "storage status",
+"line": "Read a storage backend's capacity and state"
+},
+{
+"tool": "pve_task_log",
+"plane": "pve",
+"method": "GET",
+"path": "/nodes/{}/tasks/{}/log",
+"name": "task log",
+"line": "Retrieve a task's log output by UPID"
+},
+{
+"tool": "pve_template_convert",
+"plane": "pve",
+"method": "POST",
+"path": "/nodes/{}/qemu/{}/template",
+"name": "template convert",
+"line": "convert a guest into a template"
+},
+{
+"tool": "pve_tfa_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/tfa",
+"name": "tfa list",
+"line": "List all per-user TFA (two-factor) entries across the cluster"
+},
+{
+"tool": "pve_token_revoke",
+"plane": "pve",
+"method": "DELETE",
+"path": "/access/users/{}/token/{}",
+"name": "token revoke",
+"line": "permanently revoke an API token"
+},
+{
+"tool": "pve_tokens_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/users/{}/token",
+"name": "tokens list",
+"line": "List API tokens for a specific user"
+},
+{
+"tool": "pve_user_get",
+"plane": "pve",
+"method": "GET",
+"path": "/access/users/{}",
+"name": "user get",
+"line": "Get a user's full config"
+},
+{
+"tool": "pve_users_list",
+"plane": "pve",
+"method": "GET",
+"path": "/access/users",
+"name": "users list",
+"line": "List all Proxmox users across every realm"
+}
+]
+}

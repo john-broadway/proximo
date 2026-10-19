@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.44.2"
+version = "0.45.0"
 description = "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
   # Official Model Context Protocol SDK — DUAL-MAJOR: one build runs 1.x (FastMCP) and
-  # 2.x (MCPServer) through the src/proximo/_mcpcompat.py seam. The floor is MEASURED, not
+  # 2.x (MCPServer) through the src/proximo/core/mcpcompat.py seam. The floor is MEASURED, not
   # inherited (2026-08-12, per-release import probes): the previously declared 1.2.0 could
   # not import proximo at all — ToolAnnotations is absent from mcp.types through 1.6, and a
   # fastmcp registration crash on union-annotated params blocks import through 1.21.0
@@ -31,7 +31,7 @@ dependencies = [
   # MOST TWO mcp majors at a time — the one our own artifacts RUN (the lock: 2.x since 0.44.0)
   # and the ONE BEHIND IT, as an upgrade window for adopters who pinned. Never three.
   # When 3.0 ships: move the lock to 3.x, move this floor to `mcp>=2,<4`, and DELETE the 1.x
-  # branches — the whole seam is 203 lines in _mcpcompat.py plus 12 MCP_MAJOR branches across
+  # branches — the whole seam is one module, core/mcpcompat.py, plus 12 MCP_MAJOR branches across
   # two files (measured 2026-09-21), so dropping a major is a deletion, not a refactor.
   # Carrying 1.x today is NOT inertia: upstream shipped 1.30.0 and 2.2.0 on the SAME DAY
   # (2026-09-07), so it is a maintained major, and dropping a major the vendor still cuts does
@@ -56,7 +56,7 @@ Changelog = "https://github.com/john-broadway/proximo/blob/main/CHANGELOG.md"
 # The A2A (Agent2Agent) face is OPTIONAL — the MCP core keeps zero extra deps.
 # Install with: pip install 'proximo-proxmox[a2a]'  (adds the official a2a-sdk + an ASGI server).
 # a2a-sdk[signing] pulls PyJWT for the SIGNET card-signing helpers; cryptography is used directly
-# by proximo.a2a.signing — declared explicitly rather than relied on transitively.
+# by proximo.core.perimeter.a2a.signing — declared explicitly rather than relied on transitively.
 # The cryptography FLOOR is a security bound, not a feature floor: GHSA-g6cj-pr64-35w5 (HIGH,
 # 2026-08-03) affects >=44,<50, so >=50 is what keeps an adopter out of the vulnerable range.
 # Don't lower it — and the floor is guarded, not merely asked for: the ceiling test only checks
@@ -66,10 +66,10 @@ a2a = ["a2a-sdk[signing]>=1.1,<2", "uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "c
 # The HTTP/OpenAPI face is OPTIONAL too — the full governed tool surface + trust funnel, the same
 # shared dispatch as A2A, served as plain REST for no-code clients (Open WebUI etc.). ASGI only; no a2a-sdk.
 # Install with: pip install 'proximo-proxmox[http]'
-# cryptography is for caller-badge verification (proximo.principal) — ES256 JWS pins on this face.
+# cryptography is for caller-badge verification (proximo.core.perimeter.badge) — ES256 JWS pins on this face.
 http = ["uvicorn>=0.30,<1", "starlette>=1.3.1,<2", "cryptography>=50.0.0,<51"]
 # The MCP-over-streamable-HTTP face is OPTIONAL — the SAME server instance the stdio door runs,
-# served over the SDK's native Streamable HTTP transport behind the shared webguard perimeter (no
+# served over the SDK's native Streamable HTTP transport behind the shared perimeter guard (no
 # third-party stdio→HTTP bridge needed). This extra used to raise the mcp floor to 1.8 for
 # streamable_http_app(); the base floor (>=1.24, measured) now exceeds that on its own, so the
 # extra carries only the ASGI stack. Install with: pip install 'proximo-proxmox[mcp-http]'
@@ -80,11 +80,18 @@ dev = [
 ]
 
 [project.scripts]
-proximo = "proximo.server:main"            # the MCP server (stdio)
-proximo-proxmox = "proximo.server:main"    # alias matching the PyPI dist name (for `uvx proximo-proxmox`)
-proximo-a2a = "proximo._a2a_entry:main"     # A2A server shim (friendly error without [a2a] extra)
-proximo-http = "proximo._http_entry:main"   # HTTP/OpenAPI face shim (friendly error without [http] extra)
-proximo-mcp-http = "proximo._mcp_http_entry:main"  # MCP-over-streamable-HTTP face shim (friendly error without [mcp-http] extra)
+# THE GOVERNED CORE'S DOORS, and nothing else (the default-command swap, 2026-10-17). `proximo`
+# is the MCP door over stdio: six tools over every address the vendor publishes. The shell door
+# needs no model, no agent and no protocol: `proximo-core pve GET /nodes/pve1/status` from a bash
+# script or a cron job, and it carries the operator's verbs (`mint`, `doctor`, `badge`). The
+# network doors serve the same six tools behind the one perimeter. Same distribution, one
+# dependency graph; the core's import closure stays httpx-only and tests/test_closure.py asserts it.
+proximo = "proximo.core.doors.mcp:main"
+proximo-proxmox = "proximo.core.doors.mcp:main"   # alias matching the PyPI dist name (for `uvx proximo-proxmox`)
+proximo-core = "proximo.core.doors.cli:main"
+proximo-mcp-http = "proximo.core.doors.mcphttp:main"   # MCP over streamable HTTP (needs [mcp-http])
+proximo-http = "proximo.core.doors.http:main"           # REST, with an OpenAPI document (needs [http])
+proximo-a2a = "proximo.core.doors.a2a:main"             # an A2A agent with a signed card (needs [a2a])
 
 # [tool.uv] carried `constraint-dependencies = ["mcp>=1.24,<2"]` from the dual-support port
 # (0.39.0) until 0.44.0: the published metadata admitted 1.x AND 2.x, but our own artifacts
@@ -138,9 +145,7 @@ select = ["E", "F", "I", "UP", "B", "S", "C90"]
 max-complexity = 21
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106"]  # `assert` is how tests assert; placeholder passwords/token_path aren't secrets
-"scripts/live-smoke/**" = ["S101", "S105", "S106", "S603", "S607"]  # live smokes are test-like harnesses (assert-checks, placeholder creds, and the orchestrator execs vetted registry scripts)
-"src/proximo/tools/*.py" = ["E501"]  # thin @tool() wrappers, dense with pydantic Field(description=...) param docs — line length here is documentation, not logic
+"tests/**" = ["S101", "S105", "S106"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

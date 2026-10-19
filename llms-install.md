@@ -59,7 +59,6 @@ MCP client):
       "timeout": 60,
       "env": {
         "PROXIMO_API_BASE_URL": "https://your-pve:8006/api2/json",
-        "PROXIMO_NODE": "your-node",
         "PROXIMO_TOKEN_PATH": "/path/to/token-file"
       }
     }
@@ -88,7 +87,6 @@ a short `initialize` timeout needs this raised, whatever the key is called there
 
    ```bash
    PROXIMO_API_BASE_URL="https://your-pve:8006/api2/json" \
-   PROXIMO_NODE="your-node" \
    PROXIMO_TOKEN_PATH="/path/to/token-file" \
    uvx proximo-proxmox doctor
    ```

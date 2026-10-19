@@ -1,11 +1,11 @@
 # Proximo target registry — copy to e.g. /etc/proximo/targets.toml (chmod 600) and point
-# PROXIMO_TARGETS at it. Then any tool can be aimed at a named remote with proximo_target="name".
+# PROXIMO_TARGETS at it. Then any tool can be aimed at a named remote with target="name" (the shell door: --target name).
 #
-#   - No proximo_target (or it's omitted) => the env-configured box (PROXIMO_* vars), unchanged.
+#   - No target (or it is omitted) => the env-configured box (PROXIMO_* vars), unchanged.
 #   - Each [targets.<name>] is ONE remote of ONE kind: pve | pbs | pmg | pdm.
 #   - Secrets stay BY REFERENCE — token_path / password_path point at a chmod-600 file holding the
 #     secret. The registry NEVER contains a token or password value.
-#   - A tool checks kind: a pbs_* tool given a pve target errors (no silent cross-plane call).
+#   - A call checks kind: plane="pbs" given a pve target errors (no silent cross-plane call).
 #   - Arming (read-only -> operator) stays out-of-band and per-target: it swaps the token at that
 #     target's token_path. Proximo's code only ever reads whatever token is there.
 #   - If you use the arm pattern (PROXIMO_ARM_SOURCE) AND enable exec on a target, give that
@@ -52,6 +52,12 @@ kind          = "pmg"
 base_url      = "https://pmg.example.lan:8006"
 password_path = "/etc/proximo/pmg.pw"          # PMG uses ticket auth (username + password file)
 username      = "root@pam"
+# In this PASSWORD mode PMG takes no arm_source: a swap changes only the password, never the user,
+# so the governed door refuses every PMG mutation on this target, and says why. For an arm pair use
+# CREDENTIAL mode instead of the two lines above (core doors only; one mode, not both):
+#   credential_path = "/etc/proximo/pmg.cred"     # two lines: user@realm, then the password
+#   arm_source      = "/etc/proximo/pmg.cred.write"
+#   readonly_source = "/etc/proximo/pmg.cred.audit"
 node          = "pmg"
 verify_tls    = true
 

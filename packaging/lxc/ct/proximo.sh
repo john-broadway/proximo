@@ -32,12 +32,12 @@ check_breaking_change_guard() { return 0; }
 # terminal and caches a copy on the host; this one lives here, so nothing is fetched or written.
 get_header() {
   cat <<'PROXIMO_BANNER'
- _____         __   ___
-|  __ \        \ \ / (_)
-| |__) | __ ___ \ V / _ _ __ ___   ___
-|  ___/ '__/ _ \ > < | | '_ ` _ \ / _ \
-| |   | | | (_) / . \| | | | | | | (_) |
-|_|   |_|  \___/_/ \_\_|_| |_| |_|\___/
+ ____                _
+|  _ \ _ __ _____  _(_)_ __ ___   ___
+| |_) | '__/ _ \ \/ / | '_ ` _ \ / _ \
+|  __/| | | (_) >  <| | | | | | | (_) |
+|_|   |_|  \___/_/\_\_|_| |_| |_|\___/
+    Win the crowd, Win your freedom
 PROXIMO_BANNER
 }
 # Copyright (c) 2026 John Broadway

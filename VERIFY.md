@@ -12,53 +12,56 @@ tool, from any vendor.** A provenance attestation, a tamper-evident log, a grepp
 egress surface, a published SBOM — you can demand all of it everywhere. Verifiability
 is not a favor a maintainer does you. It's the floor. Hold every tool to it.
 
-> These proofs run against the **trust core**, which is local and file-based — no live
+> These proofs run against the **core**, which is local and file-based — no live
 > Proxmox needed for most of them. Clone the repo and run `uv sync --extra dev` first.
 
 ---
 
-## 1. The tool count is real (924) — introspect it, don't read it
+## 1. The tool count is real (six) — introspect it, don't read it
 
-Claims of "N tools" are cheap. Ask the server itself, cold:
+Claims of "N tools" are cheap. Ask the door itself, cold:
 
 ```bash
-uv run python -c "import asyncio; from proximo import server; \
-print(len(asyncio.run(server.mcp.list_tools())))"
-# => 924
+uv run python -c "import asyncio; from proximo.core.doors.mcp import build_server; \
+print(len(asyncio.run(build_server().list_tools())))"
+# => 6
 ```
 
-That number is the count of `@mcp.tool()` definitions the FastMCP server actually
-registers at startup — not a figure typed into a README.
+That number is what the MCP door registers at startup — not a figure typed into a
+README. The six are `proximo_find`, `proximo_plan`, `proximo_read`, `proximo_call`,
+`audit_entries`, `audit_verify`. Everything else is an address the vendor publishes,
+reached through them; the count of those is generated from the vendor's own schema into
+[`docs/arena.md`](docs/arena.md), and a stale copy fails the test suite.
 
 ## 2. The audit ledger is tamper-evident (PROVE) — forge a byte, watch it refuse
 
-Every mutation lands in a hash-chained ledger. Change one field of one past entry and
-the chain breaks — `verify()` names where:
+Every mutation lands in a keyed, hash-chained ledger. Change one field of one past entry
+and the chain breaks — `verify()` names where:
 
 ```python
 import tempfile
 from pathlib import Path
-from proximo.audit import AuditLedger
+from proximo.core.ledger import LedgerConfig, open_ledger
 
 with tempfile.TemporaryDirectory() as d:
-    led = AuditLedger(str(Path(d) / "audit.log"))
-    led.record("guest_power", target="vm/100", mutation=True)
-    led.record("snapshot_create", target="vm/100", mutation=True)
-    print("clean: ", led.verify().ok)                     # => True
+    path = Path(d) / "audit.log"
+    led = open_ledger(LedgerConfig(audit_log_path=str(path)))   # keyed, always; the key is minted beside it
+    led.record("core.execute", target="pve:POST /nodes/pve1/qemu/100/status/start", mutation=True)
+    led.record("core.execute", target="pve:POST /nodes/pve1/qemu/100/snapshot", mutation=True)
+    print("clean: ", led.verify().ok)                      # => True
 
-    p = Path(led.path)                                     # now forge history:
-    lines = p.read_text().splitlines()
-    lines[0] = lines[0].replace('"vm/100"', '"vm/999"')
-    p.write_text("\n".join(lines) + "\n")
+    lines = path.read_text().splitlines()                   # now forge history:
+    lines[0] = lines[0].replace("qemu/100", "qemu/999")
+    path.write_text("\n".join(lines) + "\n")
 
     v = led.verify()
     print("forged:", v.ok, "| broken_at:", v.broken_at, "|", v.reason)
     # => forged: False | broken_at: 1 | entry_hash mismatch (entry altered)
 ```
 
-With keyed chaining on (the default) an attacker can't recompute the chain without the
-HMAC key, and `audit_verify(expected_head=...)` catches truncation of the *tail* by
-pinning the head off-box. Tamper-evident, not just tamper-logged.
+The chain is keyed (HMAC-SHA256) with no unkeyed mode: an attacker can't recompute it
+without the key, and `audit_verify(expected_head=...)` catches truncation of the *tail*
+by pinning the head off-box. Tamper-evident, not just tamper-logged.
 
 ## 3. No phone-home — the entire outbound surface is greppable
 
@@ -73,10 +76,9 @@ grep -rEoh 'https?://[a-zA-Z0-9._~:/?#@!$&*+,;=-]+' src/proximo --include='*.py'
 Everything it prints is one of: a **placeholder** in a docstring or config sample
 (`example.*`, `localhost`, or a URL-shape stand-in like `http://user:pass@host:port`), a
 **loopback literal** (`127.0.0.1`, `::1`) used as a bind default for the optional A2A,
-HTTP, and MCP-over-streamable-HTTP faces or as a parsing counter-example, an **upstream
-Proxmox documentation citation** in a docstring recording where an API shape was checked,
-or the **print-only** receipt link (`receipt.py`), a string constant Proximo prints for
-you to open yourself. None of them is ever fetched. Nothing here calls out to us.
+HTTP, and MCP-over-streamable-HTTP doors or as a parsing counter-example, or an
+**upstream Proxmox documentation citation** in a docstring recording where an API shape
+was checked. None of them is ever fetched. Nothing here calls out to us.
 
 ## 4. The container image is signed at the source (SLSA provenance)
 
@@ -92,7 +94,7 @@ gh attestation verify oci://ghcr.io/john-broadway/proximo:latest --owner john-br
 // the attestation ties the image to the real repo + release workflow:
 "predicateType": "https://slsa.dev/provenance/v1"
 "sourceRepositoryURI": "https://github.com/john-broadway/proximo"
-"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.44.2"
+"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.45.0"
 ```
 
 The image also ships an **SPDX SBOM** (`release.yml`, `sbom: true`). Inspect it on any
@@ -106,7 +108,7 @@ in the release path to steal. Each artifact has an attached provenance attestati
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://pypi.org/integrity/proximo-proxmox/0.44.2/proximo_proxmox-0.44.2-py3-none-any.whl/provenance
+  https://pypi.org/integrity/proximo-proxmox/0.45.0/proximo_proxmox-0.45.0-py3-none-any.whl/provenance
 # => 200   (the signed provenance PyPI generated at publish time)
 ```
 
@@ -126,56 +128,53 @@ We don't set that score; OpenSSF does. Read the failing checks, not just the num
 ## 7. Disarmed means refused (ARM) — try the write, watch it refuse
 
 Unlike §1–6 this needs your own server and token (it proves *your* boundary, not our
-artifact). With the arm pattern configured (`PROXIMO_ARM_SOURCE`, `SECURITY.md` → "ARM";
-`PROXIMO_READONLY_SOURCE` improves the refusal message but never enforces), while
-**disarmed** any confirmed `ct_exec` refuses — ledger outcome `blocked:not_armed` — before
-anything reaches ssh. Run `proximo doctor` disarmed and read the served token's capability
-set: read-only. Arm from your shell (`proximo arm`), the same doctor read changes; disarm
-and it changes back. Honesty about what this proves: "the agent cannot arm itself" holds
-only in the two-deployment shape where the write token sits on ground the agent cannot
-read or write — on a single-uid co-located box, anyone who can run `proximo arm` can copy
-the source into place, and the gate is a discipline, not a wall (`SECURITY.md`'s ARM
-section says exactly this). The refusal-when-disarmed is what this section proves; the
-boundary strength is your deployment's. If a disarmed confirmed write ever executes,
-that's a report (see `SECURITY.md` → Reporting).
+artifact). Armed means one thing: **the token the door serves is byte-for-byte the write
+token** (`PROXIMO_ARM_SOURCE`; `PROXIMO_READONLY_SOURCE` improves the refusal message but
+never enforces). While **disarmed**, any `proximo_call` of a mutation with `confirm=true`
+is refused before the wire, and the receipt says so: `needs: "arm"`. Run `proximo
+doctor` disarmed and read the plane's `arm` field (`armed: false`, with the reason); arm from
+your shell (`proximo arm`), the same doctor read changes; `proximo disarm` and it changes back. The shell door is the same
+engine: `proximo-core pve POST /nodes/pve1/qemu/100/status/stop` exits 2 (refused by the
+spine) while disarmed.
 
-## 8. The reach mirror fails closed — one env var, one refused read
+Honesty about what this proves: "the agent cannot arm itself" holds only in the
+two-deployment shape where the write token sits on ground the agent cannot read or write.
+On a single-uid co-located box, anyone who can run `proximo arm` can copy the source into
+place, and the gate is a discipline, not a wall (`SECURITY.md`'s ARM section says exactly
+this, and `arm` prints which one you have). The refusal-when-disarmed is what this section
+proves; the boundary strength is your deployment's. If a disarmed confirmed mutation ever
+executes, that's a report (see `SECURITY.md` → Reporting).
 
-Also needs your server, with the exec edge on (`PROXIMO_ENABLE_EXEC=1` and the CT on the
-allowlist — otherwise the call refuses earlier, as `blocked:exec_disabled` or the
-allowlist refusal, and never reaches the mirror). Set the mirror in the **server's** env —
-it is the server process that reads it, so an export in your own shell changes nothing
-until the server restarts with it:
+## 8. An unjudged mutation is refused, armed or not
 
+Also needs your server. Governance here is derived from the vendor's own schema: the HTTP
+method decides read or write, total over every published address. The one human-authored
+column is the blast-radius **tier**, and an address with no tier is refused for mutation
+even when the operator is armed — an untiered address is not "probably fine", it is
+unjudged. Pick any published mutation, ask for its plan, and read the verdict:
+
+```bash
+proximo-core pve POST /nodes/pve1/qemu/100/status/start --plan
 ```
-# in the server's env (e.g. /etc/proximo/proximo.env), then restart:
-PROXIMO_REACH_PRIVILEGE=VM.GuestAgent.Unrestricted   # or your chosen privilege —
-                                                     # one that exists on YOUR PVE
-# any allowlisted CT where the SERVED token holds no such grant:
-#   ct_logs -> blocked:mirror, naming the privilege and the path it asked PVE about
-```
 
-The refusal happens after exactly one `GET /access/permissions?path=/vms/<ctid>` — PVE's
-own resolution, before any ssh. `proximo doctor` reports the tri-state at
-`config.reach_grant.mirror.state` (`dormant` / `enforcing` / `misconfigured`). Unset the
-var (and restart) and the same call serves again — allowlist-only reach, and that flip is
-itself a witnessed `reach_grant` entry at the next serve start, because widening the
-break-glass back open is precisely the moment the ledger must see. Grant the privilege at
-one guest's path with `pveum` — both token and user, for a privsep token — and only that
-guest serves: the platform's own permission table now governs the channel it never
-modeled.
+Disarmed, the plan answers `needs: "arm"` first; armed, it names the tier it found, or
+`needs: "tier"` if there is none. The 20 addresses
+held on purpose (a login ticket, the node's `execute`, the cluster join) answer
+`needs: "held"` with the sentence that says why, and nothing you set opens them: that
+line moves only by a change to `tiers.toml` in a release. The full record, by class and
+by product, is [`docs/arena.md`](docs/arena.md).
 
 ---
 
 ## What we *don't* claim
 
-Honesty is part of the verification. Risk ratings are an **advisory heuristic, not a
-sandbox** — `LOW` means "no state change," not "safe." UNDO covers the snapshottable
-surface (guests, container exec), **not** firewall/SDN/ACL/token planes, which have no
-Proxmox rollback primitive. The opt-in controls (CONSENT, CONTAIN, taint-tracking) only
-become a real boundary when their state lives outside the agent's own write reach — see
-[`SECURITY.md`](./SECURITY.md), "the two-deployment trust model." We'd rather you find
-the edges here than be surprised by them in production.
+Honesty is part of the verification. Tiers are an **advisory blast-radius judgement, not a
+sandbox** — a low tier means "small blast radius", not "safe." UNDO covers what the vendor
+publishes a write to put back; a delete, a collection, or a path with no PUT gets a
+sentence, not a guessed reverse call. The opt-in controls (CONSENT, CONTAIN, TAINT, the
+envelope) only become a real boundary when their state lives outside the agent's own write
+reach — see [`SECURITY.md`](./SECURITY.md), "the two-deployment trust model." We'd rather
+you find the edges here than be surprised by them in production.
 
 Other Proxmox tools are converging on these ideas — some ship an HMAC audit chain, risk
 gates, or undo tokens too, and that's good for everyone who runs an agent on infra. Credit

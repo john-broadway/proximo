@@ -1,42 +1,63 @@
 # Proximo — operating notes for agents
 
 Proximo is a Proxmox MCP server built so a human can hand an agent real keys to
-infrastructure they care about. Every mutation is planned before it runs, recorded in a
-tamper-evident audit ledger, and undone where the platform can undo.
+infrastructure they care about. You get six tools over every address the four Proxmox
+products publish. Every mutation is planned before it runs, recorded in a tamper-evident
+audit ledger, and undone where the vendor publishes a write to put the record back.
 
 Build instructions live in [CONTRIBUTING.md](.github/CONTRIBUTING.md) and
 [SETUP.md](docs/SETUP.md). This page is the operating envelope: what holds, what doesn't,
 and how to check.
 
+## The grammar
+
+- `proximo_find` turns words into an address. A verb picks the method (`list`/`get` are GET,
+  `create`/`start` POST, `update`/`set` PUT, `delete` DELETE); the other words match the
+  path, the vendor's description and the parameter names. A nonsense query returns nothing,
+  not a handful of junk.
+- `proximo_plan` is the verdict for one address, with the vendor's published parameters. For
+  a mutation it also reads the target as it stands (one governed read, receipted) and says
+  `current`, `change` and `noop`. It mutates nothing. Run it before `proximo_call`.
+- `proximo_read` runs any published GET. Rows come back LEAN (names, states, ids) with a
+  total; `fields=all` for the vendor's rows. `since=24h` answers "what changed" from the
+  snapshots this door kept, with no vendor call. `diagnose=true` on a node or guest path runs
+  its health battery. Credentials come back withheld, and the answer says which.
+- `proximo_call` runs a governed POST/PUT/DELETE. Without `confirm=true` it returns the plan
+  and mutates nothing. It is refused unless the operator is armed AND the address carries an
+  authored blast-radius tier. A task-backed call is waited on and reports finished, failed or
+  timed out, never "submitted". `method=undo` with a capture's id puts a record back.
+- `audit_entries` reads the ledger back, newest first, bounded. `audit_verify` walks the chain
+  and names the first break.
+
 ## Sharp edges
 
-- **Risk ratings are an advisory heuristic, not a sandbox.** `LOW` means "no state
-  change," not "safe."
-- **UNDO covers the snapshottable surface, not every mutation.** Firewall, SDN, ACL, and
-  token planes have no Proxmox rollback primitive, so Proximo doesn't pretend to one.
-- **Several controls are opt-in and inert until configured.** CONSENT, CONTAIN, LEASE,
-  SCOPE, ENVELOPE, and TAINT are off unless their env var is set — and they only become
-  a real boundary when their state lives outside your own write reach. Inside a single
-  trust domain they're a discipline, not a wall. The full framing:
+- **A refusal names what would change the answer, and that is the whole message.** `needs`
+  is one of `arm`, `tier`, `held`, `contain`, `consent`, `forbid`, `rate`, `taint`, `config`,
+  `undo`, `prove`, `arguments`, `path`, `store`, or an opt-in lane's own name (`agent`, `shell`,
+  `node`, `download`: the lane is off, or this guest is not on its allowlist). `arm` means a human swaps the token; `held` means the address is refused by design and
+  nothing you send opens it; `consent` means a grant file only the operator writes. Retrying,
+  rewording the arguments, or trying a sibling address is not the fix for any of them.
+- **An argument the schema does not declare is refused, never dropped.** Read the schema the
+  plan hands back; do not guess parameter names.
+- **Tiers are a blast-radius judgement, not a sandbox.** A low tier means a small blast
+  radius, not "safe." An address with no tier is refused for mutation, armed or not.
+- **UNDO covers what the vendor publishes a write to put back.** A delete, a collection, or a
+  path with no PUT gets a sentence instead of a restore. Do not promise an undo the receipt
+  did not give you an `undo.id` for.
+- **Several controls are opt-in and inert until configured.** CONSENT, CONTAIN, the FORBID and
+  RATE envelope, and TAINT are off unless their env var is set — and they only become a real
+  boundary when their state lives outside your own write reach. Inside a single trust domain
+  they're a discipline, not a wall. The full framing:
   [the two-deployment trust model](SECURITY.md#the-two-deployment-trust-model-read-this-first).
-- **The node shell battery is read-only and separately gated.** `pve_node_logs`/`pve_node_diagnose`
-  reach the PVE *host's* journal and service state, not a guest's — off unless
-  `PROXIMO_ENABLE_NODE_SHELL` is set (its own opt-in, not `enable_exec`), and, with the mirror
-  on, gated by the token's reach privilege at `/nodes/<node>`. There is no `node_exec`: the
-  host's mutation lane is deliberately undoored, so don't look for one to run upgrades or edits
-  — that stays a human's hand on the metal.
-- **A `blocked:mirror` refusal is a grant boundary, not an error to route around.** When
-  the reach mirror is on, container shell tools obey the served token's own PVE permission
-  map: `blocked:mirror` means the token holds no reach privilege at that guest's path, and
-  the fix is a human running `pveum` — not retrying, not another tool, not a different
-  CTID. `blocked:mirror_unavailable` means the API could not answer and the door failed
-  closed on purpose; `blocked:mirror_misconfigured` means the privilege env is set but
-  blank, and a human must fix the config. All three are working-as-designed refusals.
-- **The task list is not the whole truth.** Tasks are per-node and `pve_tasks_list`
-  returns a windowed slice — one node, the `limit` most-recent. A task on another node or
-  outside your window is absent without being dead. Never conclude a backup failed from
-  its absence there; `pve_backup_list` / `pbs_snapshots_list` are the ground truth. A
-  production deployment hit this one for real.
+- **The shell lanes are separate opt-ins, each judged like a mutation.** Container exec
+  (`PROXIMO_ENABLE_EXEC` + a CTID allowlist), the in-guest agent (`PROXIMO_ENABLE_AGENT` + a
+  VMID allowlist) and the read-only host battery (`PROXIMO_ENABLE_NODE_SHELL`). A closed lane
+  is named in a diagnosis, never read as healthy. There is no host mutation lane: upgrades and
+  edits on the metal stay a human's hand.
+- **The task list is not the whole truth.** Tasks are per-node and a tasks read is a windowed
+  slice. A task on another node or outside your window is absent without being dead. Never
+  conclude a backup failed from its absence there; the archives on the storage are the ground
+  truth. A production deployment hit this one for real.
 - **What's still unproven, and where the edges are:**
   [honest scope notes](SECURITY.md#honest-scope-notes).
 
@@ -44,10 +65,10 @@ and how to check.
 
 Don't take the above on trust. Check it:
 
-- Run `proximo doctor`. It prints exactly what a given token can and cannot do — before
-  any AI is wired in.
-- Read the ledger. Every mutation lands in a hash-chained audit log; `audit_verify`
-  checks the chain — and the *strong* tail-attack guarantee is the opt-in pinned head
+- Run `proximo doctor`. It reports which pillars stand, which planes are reached, and whether
+  the ledger's chain is whole — before any AI is wired in.
+- Read the ledger. Every call lands in a keyed hash-chained audit log; `audit_verify` checks
+  the chain — and the *strong* tail-attack guarantee is the opt-in pinned head
   (`expected_head`), not the bare check. SECURITY.md states exactly what holds, and where.
 - Read [SECURITY.md](SECURITY.md), including the parts that say what *doesn't* hold.
 - Read [VERIFY.md](VERIFY.md) for the no-telemetry proof you can run yourself.
@@ -56,6 +77,6 @@ Don't take the above on trust. Check it:
 ## No telemetry
 
 Proximo keeps no record of use. No telemetry, no phone-home, no install data. Every URL
-literal in the shipped source is a placeholder, a loopback literal (`127.0.0.1`, `::1`),
-an upstream Proxmox documentation citation, or a string Proximo prints for a human to
-open. None is ever fetched. VERIFY.md carries the one-line grep that proves it.
+literal in the shipped source is a placeholder, a loopback literal (`127.0.0.1`, `::1`), or
+an upstream Proxmox documentation citation. None is ever fetched. VERIFY.md carries the
+one-line grep that proves it.

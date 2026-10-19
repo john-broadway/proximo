@@ -8,9 +8,9 @@ the platform. The fork is usually presented as a safety preference. It is not a 
 It is forced by the architecture of the product, and this page names the force.
 
 This is the design argument behind Proximo. The controls it motivates are specified in
-[`SECURITY.md`](../SECURITY.md) (the mirror and the arm included), threat-modeled in
+[`SECURITY.md`](../SECURITY.md) (the arm and the tiers included), threat-modeled in
 [`THREAT_MODEL.md`](./THREAT_MODEL.md), proven runnable in [`VERIFY.md`](../VERIFY.md)
-(§7–8 are the arm and mirror proofs, on your own server), and erected step by step in
+(§7–8 are the arm and tier proofs, on your own server), and erected step by step in
 [`SETUP.md`](./SETUP.md).
 
 ## Two roots on two planes
@@ -73,44 +73,33 @@ calls it the hard floor); every call runs as that principal, and every mutation 
 Proximo's tamper-evident PROVE ledger beside the product's own records.
 
 **The shell lane gets the law the product cannot extend to it.** Nothing above the metal can
-see this channel, so the discipline is built at the door. Always on: the guest allowlist, a
-dry-run plan before any shell mutation (with an advisory read-vs-write classification, and
-honestly advisory: shell commands get no blast-radius engine), and every act landing in the
-same hash-chained ledger. Opt-in, and stated plainly as opt-in: an explicit arm the agent
-cannot perform for itself, consent as a file the server can read but not mint, a kill-switch,
-a lease on the arm. Each is inert until configured, and each becomes a wall rather than a
-discipline only when its state sits outside the agent's own write reach: the two-deployment
-model [`SECURITY.md`](../SECURITY.md) leads with. Not the API's law, and not pretending to
-be.
+see this channel, so the discipline is built at the door, and the door treats the lane as
+three more rows in the same table: `pct exec`, the in-guest agent and the host's fixed
+battery are addresses, governed by the same verdict as every published mutation (armed, tiered,
+consented, rated, receipted), with only the wire different. Always on once the lane is opened:
+the guest allowlist, a plan before any shell mutation, and every act landing in the same
+hash-chained ledger. The lane itself is opt-in, and stated plainly as opt-in: `pct exec` behind
+`PROXIMO_ENABLE_EXEC` and a CTID allowlist, the agent behind `PROXIMO_ENABLE_AGENT` and a VMID
+allowlist, the host battery behind `PROXIMO_ENABLE_NODE_SHELL`. The ssh hop is non-interactive
+and checks the host it reached IS the node the path names before `pct` runs: a call aimed at one
+node never lands in a container on another. Each gate becomes a wall rather than a discipline
+only when its state sits outside the agent's own write reach: the two-deployment model
+[`SECURITY.md`](../SECURITY.md) leads with. Not the API's law, and not pretending to be.
 
-**The mirror makes plane 2 govern the part of plane 1 it can name.** For shell reach into
-guests, the shell tools Proximo serves ask Proxmox itself: does the served token hold the
-operator's chosen reach privilege at `/vms/<ctid>`? One GET per check, resolved by PVE's
-own permission engine, propagation and revocation included. A natural reach privilege is the
-privilege PVE uses for root-level command execution inside VM guests through the agent,
-extended over the container channel the platform never modeled. Choose it from evidence:
-PVE has custom roles but no custom privileges, so the reach privilege aliases with every
-role that carries it, and any grant of such a role to the served principal silently
-becomes shell reach; `proximo reach-audit` prints exactly what any candidate aliases with
-on your cluster. An operator who wants AI reach granted separately from human rights
-builds a one-privilege custom role with `pveum` and grants it per path — the built-in
-roles still carry the privilege, which is what the audit table is for watching. Either way the vocabulary is Proxmox's and the grants are Proxmox's: reach moves
-by `pveum`, the live map is consulted on every check, and the reach privilege itself
-is part of the witnessed reach grant the ledger records at serve start.
+**What plane 2 can name, plane 2 governs.** The API lane's scope and lease are not Proximo's:
+the write token's own ACL is the scope and its own `expire` is the lease, both enforced by
+Proxmox server-side, and `proximo mint` prints the vendor's commands that make such a token.
+The shell lane has no such token to lean on, which is exactly why its allowlist and its arm
+live at the door and are witnessed in the ledger.
 
 ## The honest limit
 
 Root cannot be caged by anything it runs. A node root that wants to ignore its own leash
 can. What Proximo builds is not a cage and does not claim to be one: it is self-governance
 made auditable. Obedience is the only path through the tools this door serves, refusals are
-ledgered, and the reach configuration (allowlist, switches, reach privilege — and, while
-enforcing, the derived per-guest map itself, so a `pveum` change lands as a delta too) is
-witnessed at every serve start, so switching the mirror off is itself a recorded reach
-change. When the API is
-unreachable the mirror fails closed: no reachable map, no reach. The break-glass is
-unsetting the reach privilege to fall back to the allowlist alone, and on a mirror-driven estate
-whose allowlist is wide open that is a widening, which is exactly why the flip is the thing
-the witness records. The residue keeps its honest name, and the record keeps the receipts.
+ledgered with the one word that would change the answer, and every serving door stamps its
+arrival and departure on the same chain. The residue keeps its honest name, and the record keeps the
+receipts.
 
 If you are an agent reading this: [`AGENTS.md`](../AGENTS.md) states the sharp edges first.
 The short version of this page is one sentence. You are being handed two roots on two

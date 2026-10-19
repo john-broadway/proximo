@@ -5,10 +5,9 @@
 # a loopback port nothing listens on, so the connection is refused
 # immediately -- `proximo doctor` is designed to treat that as a reported
 # preflight finding, not a crash, and still print its full JSON report. The
-# assertion here is only that the report comes out: the bundled dh-virtualenv
-# venv actually starts, the interpreter/imports resolve, and `doctor` runs
-# its real code path -- not that any particular exit status comes back, and
-# not that the fake target is reachable (it deliberately isn't).
+# assertion is that the bundled dh-virtualenv venv starts, the imports
+# resolve, and `doctor` runs its real code path: the report comes out, names
+# the unreachable plane, and exits 4, the shell door's status for it.
 set -e
 
 WORKDIR="$(mktemp -d)"
@@ -20,6 +19,7 @@ trap 'rm -rf "$WORKDIR"' EXIT
 printf '%s\n' \
     'smoke@pve!autopkgtest=0000000000000000000000000000000000000000000000000000000000000000' \
     > "$WORKDIR/token"
+chmod 600 "$WORKDIR/token"   # the core refuses a token file anything else on the box can read
 
 OUT="$WORKDIR/stdout"
 ERR="$WORKDIR/stderr"
@@ -29,8 +29,8 @@ ERR="$WORKDIR/stderr"
 set +e
 env \
     PROXIMO_ENV_FILE=/nonexistent \
+    PROXIMO_AUDIT_LOG="$WORKDIR/audit.log" \
     PROXIMO_API_BASE_URL='https://127.0.0.1:1/api2/json' \
-    PROXIMO_NODE='autopkgtest' \
     PROXIMO_TOKEN_PATH="$WORKDIR/token" \
     /usr/bin/proximo doctor >"$OUT" 2>"$ERR"
 rc=$?
@@ -42,25 +42,29 @@ cat "$OUT"
 echo "== stderr =="
 cat "$ERR"
 
-# The real assertion: doctor's JSON preflight report actually came out on
-# stdout (first line is the opening brace; the "note" field is doctor's
-# fixed report header -- see src/proximo/doctor.py). Exit status is not
-# asserted: doctor exits 0 for a reported-but-handled preflight failure
-# (this test's case) and 1 for a hard config error -- both are "the binary
-# ran"; only silence or a traceback instead of JSON would mean it didn't.
+# The real assertion: doctor's JSON report came out on stdout and names the
+# unreachable plane (the core doctor, src/proximo/core/doctor.py: the vendor's
+# own GET /version, failed with the connection error). The exit status is the
+# shell door's contract: 4 = a configured plane unreachable. Silence, a
+# traceback, or any other status means the binary did not do its job.
 head -n 1 "$OUT" | grep -q '^{$' || {
     echo "FAIL: proximo doctor did not print a JSON report (no opening '{')" >&2
     exit 1
 }
 
-grep -q '"note"' "$OUT" || {
-    echo "FAIL: proximo doctor's JSON report is missing the expected \"note\" header field" >&2
+grep -q '"doctor": "proximo-core"' "$OUT" || {
+    echo "FAIL: proximo doctor's JSON report is missing its \"doctor\" header field" >&2
     exit 1
 }
 
-grep -q '"reachable": false' "$OUT" || {
-    echo "FAIL: proximo doctor did not report the (expected) unreachable target" >&2
+grep -q '"error": "ConnectError"' "$OUT" || {
+    echo "FAIL: proximo doctor did not report the (expected) unreachable plane" >&2
     exit 1
 }
 
-echo "PASS: proximo doctor ran the real code path against an unreachable target and printed its JSON preflight report"
+[ "$rc" -eq 4 ] || {
+    echo "FAIL: proximo doctor exited $rc, not 4 (a configured plane unreachable)" >&2
+    exit 1
+}
+
+echo "PASS: proximo doctor ran the real code path against an unreachable plane and printed its JSON report"

@@ -1,3 +1,18 @@
+proximo (0.45.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.45.0 (minor: Proximo is the core. The 924 named wrappers
+    are cut; six MCP tools reach every address PVE, PBS, PMG and PDM publish,
+    with plan, consent (once configured), the keyed ledger, undo, diagnose and
+    contain at the one seam every call passes, through every door: stdio MCP,
+    MCP over HTTP, REST, A2A and the proximo-core shell. PROXIMO_SCOPE_PATH and
+    PROXIMO_ARM_TTL are retired for the write token's own ACL and expire
+    (proximo-core mint); the ledger is keyed, always. Cut with the wrappers:
+    the runbook prompts, memory and wiki, the reach mirror and proximo doctor
+    --receipt. The man page and the autopkgtest smoke are rewritten to the
+    core's doctor.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Mon, 19 Oct 2026 03:30:00 +0000
+
 proximo (0.44.2-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.44.2 (patch: a restored guest no longer wears the original's MAC address.

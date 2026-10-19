@@ -1,6 +1,16 @@
 proximo for Debian
 ==================
 
+0.45.0: `proximo` is the governed core now. The man page and the smoke test
+were rewritten to it: `proximo doctor` takes no arguments, prints the core's
+JSON report (`"doctor": "proximo-core"`), and exits 4 when a configured plane
+is unreachable, 3 when nothing is configured. The smoke test asserts that
+status and writes its token file chmod 600, which the core requires. Checked
+against the installed venv's `proximo` with a planted control; the .deb was
+not rebuilt and autopkgtest not re-run for 0.45.0. The record below is the
+0.16 packaging pass and names that era's files (`server.py`, `doctor_check()`,
+`--target`); where it and this paragraph disagree, this paragraph holds.
+
 STATUS: first working build, now tracking 0.16.0-1, now with a man page, a clean
 `lintian --pedantic --info` pass, and a real autopkgtest smoke test.
 `dpkg-buildpackage -us -uc -b` produces an installable .deb; `dpkg -i` +

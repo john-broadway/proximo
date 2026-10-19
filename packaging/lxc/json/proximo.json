@@ -40,7 +40,7 @@
   },
   "notes": [
     {
-      "text": "The service starts with no Proxmox connection and answers tools/list. To manage your hosts, fill in PROXIMO_API_BASE_URL, PROXIMO_NODE and PROXIMO_TOKEN_PATH in /etc/proximo/proximo.env (an API token file owned by the proximo user, mode 600; start with a read-only token), then: systemctl restart proximo-mcp-http.",
+      "text": "The service starts with no Proxmox connection and answers tools/list. To manage your hosts, fill in PROXIMO_API_BASE_URL and PROXIMO_TOKEN_PATH in /etc/proximo/proximo.env (an API token file owned by the proximo user, mode 600; start with a read-only token), then: systemctl restart proximo-mcp-http.",
       "type": "info"
     },
     {

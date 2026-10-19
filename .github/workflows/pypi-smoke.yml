@@ -114,4 +114,4 @@ jobs:
         # via mcp itself, so "missing" can't happen for those two — this still catches a
         # fresh-resolved release of any of them that breaks at import. a2a (a2a-sdk) and jwt
         # (PyJWT via a2a-sdk[signing]) are genuinely extras-only.
-        run: /tmp/smoke-env/bin/python -c "import proximo.a2a.app, proximo.httpface, proximo.mcphttp, uvicorn, starlette, cryptography, a2a, jwt; print('faces + declared extra deps import clean')"
+        run: /tmp/smoke-env/bin/python -c "import proximo.core.perimeter.a2a.app, proximo.core.perimeter.rest, proximo.core.perimeter.mcp_http, uvicorn, starlette, cryptography, a2a, jwt; print('faces + declared extra deps import clean')"

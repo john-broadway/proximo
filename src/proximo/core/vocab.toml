@@ -1,0 +1,14 @@
+# THE FIND VOCABULARY. Hand-authored; a why on every line, and the why quotes the vendor.
+#
+# proximo_find matches the words of a question against three things the vendor publishes: the
+# path's segments, the operation's own description (apidoc/*.desc.json) and its parameter names.
+# The words below are the ones an operator says that no path spells: a guest is `qemu` or `lxc`,
+# never `guest`. Each line maps a word to the path words it means, and is admitted only because
+# the vendor's own text uses the word that way. A synonym written because a search missed is a
+# guess; tests/test_search.py holds every line to a path segment the table really carries.
+
+[synonym]
+guest = { means = ["qemu", "lxc"], why = "PVE: 'Bulk shutdown all guests on the cluster.'; PDM: 'Get the status of an LXC guest', 'reverts the guest's disk' (a qemu vm)" }
+vm = { means = ["qemu"], why = "PVE: 'List of available VM-specific CPU flags.' (capabilities/qemu); PDM: 'Roll back a remote qemu vm to a snapshot.'" }
+container = { means = ["lxc"], why = "PVE: 'LXC container index (per node).' (/nodes/{node}/lxc)" }
+ct = { means = ["lxc"], why = "PVE: 'Migration tunnel endpoint - only for internal use by CT migration.' (/nodes/{node}/lxc/{vmid}/mtunnel)" }

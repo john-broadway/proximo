@@ -1,75 +1,86 @@
-.TH PROXIMO 1 "September 2026" "proximo 0.44.2" "User Commands"
+.TH PROXIMO 1 "October 2026" "proximo 0.45.0" "User Commands"
 .SH NAME
-proximo \- Model Context Protocol server for Proxmox VE
+proximo \- Model Context Protocol server for the Proxmox products
 .SH SYNOPSIS
 .B proximo
 .br
-.B proximo doctor
-[\fB\-\-target\fR \fINAME\fR]
+.B proximo
+.BR mint | doctor | badge | arm | disarm
+.RI [ ARGS ]
+.br
+.B proximo \-\-help
 .SH DESCRIPTION
 .B proximo
-is a Model Context Protocol (MCP) server that exposes Proxmox VE management
-\(em and, optionally, Proxmox Backup Server, Proxmox Mail Gateway, and
-Proxmox Datacenter Manager \(em as a tool surface for MCP clients (AI
-agents, IDE integrations, and similar). It manages Proxmox over its REST
-API using a scoped API token, plus an opt-in in-container execution edge
-(\fBssh\fR followed by \fBpct exec\fR) that is off by default.
+is a Model Context Protocol (MCP) server for Proxmox VE, Proxmox Backup
+Server, Proxmox Mail Gateway and Proxmox Datacenter Manager. It serves six
+tools (\fBproximo_find\fR, \fBproximo_plan\fR, \fBproximo_read\fR,
+\fBproximo_call\fR, \fBaudit_entries\fR, \fBaudit_verify\fR) over every
+REST address those products publish, using the vendor's own API token. An
+in-container command edge (\fBssh\fR to the host, then \fBpct exec\fR) and
+an in-guest QEMU guest-agent edge are off by default.
 .PP
 .B proximo
-speaks MCP over standard input/output only. It is meant to be launched
-on demand by an MCP client (for example, entered into that client's MCP
-server configuration), not started as an always-on network daemon and not
-run interactively at a shell prompt. With no arguments it starts the
-stdio server and blocks, reading MCP protocol frames from stdin and
-writing responses to stdout, until the client closes the stream.
+speaks MCP over standard input/output. It is meant to be launched on
+demand by an MCP client, not started as a daemon or run interactively.
+With no arguments it starts the stdio server and blocks until the client
+closes the stream. The same install ships \fBproximo-core\fR, the shell
+door to the same engine, and the optional network doors
+\fBproximo-mcp-http\fR, \fBproximo-http\fR and \fBproximo-a2a\fR.
 .PP
-Every mutating tool call is governed by a trust spine that is on by
-default and cannot be disabled by configuration:
+Every call passes one seam, the same for every door:
 .RS
 .IP \(bu 2
 .B PLAN
-\(em a dry-run preview is generated before any mutating call is allowed
-to take effect; nothing mutates without a preceding plan.
+: a mutation without confirmation returns its verdict and the target as
+it stands, and changes nothing. A mutation runs only when the operator is
+armed and the address carries an authored blast-radius tier.
+.IP \(bu 2
+.B CONSENT
+: off until \fBPROXIMO_CONSENT_DIR\fR is set; then a mutation needs a
+per-plan consent id.
 .IP \(bu 2
 .B PROVE
-\(em a hash-chained, tamper-evident audit ledger records every plan and
-every confirmed action (HMAC-keyed by default).
+: a hash-chained, HMAC-keyed audit ledger records every call. It is keyed
+always; \fBaudit_verify\fR walks the chain.
 .IP \(bu 2
 .B UNDO
-\(em snapshot, config-revert, or rollback primitives are used wherever
-the targeted Proxmox plane supports them.
+: on by default (\fBPROXIMO_UNDO\fR); a mutation with a published read at
+the same address captures the record first, so the vendor's own write can
+put it back.
 .IP \(bu 2
 .B DIAGNOSE
-\(em a read-only evidence battery, always available, independent of the
-other three.
+: read-only batteries of the vendor's own reads.
+.IP \(bu 2
+.B CONTAIN
+: a trip file (\fBPROXIMO_CONTAIN_TRIP_PATH\fR), a rate cap
+(\fBPROXIMO_RATE_MAX\fR), a forbid list (\fBPROXIMO_FORBID\fR) and taint
+tracking on content a guest or a stranger wrote.
 .RE
 .PP
-A further set of controls (per-plan CONSENT, a CONTAIN kill-switch, an
-arm-lease TTL, target SCOPE/provenance checks, a FORBID+RATE ENVELOPE, and
-content TAINT tracking) is entirely opt-in: each is inert until its
-corresponding \fBPROXIMO_*\fR environment variable is set. Risk ratings
-reported by proximo's tools are an advisory heuristic, not a sandbox.
-.SH THE DOCTOR SUBCOMMAND
+SCOPE and LEASE belong to the Proxmox token itself: its ACL and its
+\fBexpire\fR. \fBproximo mint\fR prints the vendor's commands to make that
+token. A set \fBPROXIMO_SCOPE_PATH\fR, or a \fBPROXIMO_ARM_TTL\fR above 0,
+stops every door at start and names what to set instead.
+.SH THE OPERATOR'S VERBS
+The verbs run on the shell door, the same as \fBproximo-core\fR \fIverb\fR.
 .TP
-.B proximo doctor \fR[\fB\-\-target\fR \fINAME\fR]
-Read-only preflight check. Verifies that the configured Proxmox API is
-reachable and reports what the configured token CAN and CANNOT do;
-each capability gap lists the missing privilege and a role that would
-grant it. Never starts the MCP server. Prints a single JSON report to
-standard output and exits 0 whether or not the target turned out to be
-reachable \(em an unreachable host or an insufficiently-privileged token
-is a reported finding, not a failure of \fBdoctor\fR itself. A hard
-configuration problem (for example a required \fBPROXIMO_*\fR variable
-that is missing) is instead printed as a short message on standard error
-and exits with status 1.
-.IP
-Run \fBproximo doctor\fR once right after install, and again after any
-configuration change, before wiring \fBproximo\fR into an MCP client.
+.B proximo doctor
+Read-only: the gate diagnoses itself. It reads the record, each configured
+plane (the vendor's own \fBGET /version\fR and \fBGET
+/access/permissions\fR, run and receipted like any read), the ledger's
+chain, and which of the six pillars stand, with the one line that would
+raise an empty one. Takes no arguments; prints one JSON report. It reports
+that a switch is set, never where it points.
 .TP
-.BI \-\-target\ NAME
-Probe a named remote from the \fBPROXIMO_TARGETS\fR registry (see
-\fBENVIRONMENT\fR below) instead of the default single-target
-\fBPROXIMO_*\fR environment.
+.B proximo mint \fIPLANE\fR
+Prints the vendor's commands to make the write token, bounded by its own
+ACL and expiry. Runs nothing.
+.TP
+.B proximo arm\fR | \fBdisarm
+Grant or withdraw write authority for this operator.
+.TP
+.B proximo badge
+Mint or inspect a caller badge for the network doors.
 .SH ENVIRONMENT
 Proximo is configured entirely through environment variables; there is no
 separate configuration-file syntax of its own (see \fBFILES\fR below for
@@ -81,9 +92,6 @@ Required for the default single-target setup:
 .TP
 .B PROXIMO_API_BASE_URL
 Proxmox VE API base URL, e.g. \fIhttps://pve.example.lan:8006/api2/json\fR.
-.TP
-.B PROXIMO_NODE
-Default Proxmox node name.
 .TP
 .B PROXIMO_TOKEN_PATH
 Path to a file containing exactly \fIUSER@REALM!TOKENID=SECRET\fR. The
@@ -124,15 +132,18 @@ symlink into it. Not meant to be activated or modified directly.
 .SH EXIT STATUS
 .TP
 .B 0
-Normal exit: the MCP client closed the stdio stream, or \fBdoctor\fR
-completed its preflight report (regardless of whether the target was
-reachable or fully privileged).
+Normal exit: the MCP client closed the stdio stream, \fB\-\-help\fR, or
+\fBdoctor\fR ran whole.
 .TP
-.B 1
-Configuration error: an unknown \fBPROXIMO_SURFACES\fR entry was given, a
-required \fBPROXIMO_*\fR variable was missing when \fBdoctor\fR tried to
-build its report, or another preflight error occurred. A short message is
-printed to standard error in place of a traceback.
+.B 3
+Refused at start: an unknown argument, a retired switch still set
+(\fBPROXIMO_SURFACES\fR, \fBPROXIMO_SCOPE_PATH\fR, \fBPROXIMO_ARM_TTL\fR),
+or a configuration the server cannot build from. For \fBdoctor\fR, nothing
+is configured. A short message goes to standard error.
+.TP
+.B 4
+\fBdoctor\fR only: a configured plane is unreachable, or the ledger's chain
+cannot be judged.
 .SH SEE ALSO
 Full documentation, the complete environment variable reference, and the
 trust-spine design: \fIhttps://github.com/john-broadway/proximo\fR

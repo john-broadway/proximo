@@ -1,0 +1,122 @@
+# shell.toml -- the container shell lane's rows (B5, 2026-10-03; the probe row B3, 2026-10-04)
+#
+# The vendor publishes no REST address for `pct exec`, so these rows are AUTHORED, not
+# generated. `engine.table()` adds them beside the vendor's table with `wire = "ssh"` and the
+# gate below; from there they are governed like every other row (opt-in, arm, tier, ledger,
+# taint, withhold, the doors). Their tiers, taint and secret lines live in tiers.toml,
+# taint.toml and secrets.toml, one source per record, keyed on the same `plane:METHOD /path`.
+#
+# The paths sit in the vendor's own container tree so `find` reaches them where a model looks.
+# THE LOAD REFUSES a row the vendor's table also publishes: if a future PVE ships one of these
+# addresses, the authored row must move; it never shadows the vendor.
+#
+# params use the vendor schema's shape (type / optional / description); the path placeholders
+# are published like the vendor publishes them.
+
+gate = "the container shell lane: opt-in, PROXIMO_ENABLE_EXEC and PROXIMO_CT_ALLOWLIST (0.44's ct_exec, ct_psql, ct_logs)"
+
+[[row]]
+method = "POST"
+path = "/nodes/{node}/lxc/{vmid}/exec"
+access = "mutate"
+description = "Run a command inside a container (pct exec over ssh): an argv list, run as root; answers returncode, stdout and stderr. Opt-in: PROXIMO_ENABLE_EXEC and PROXIMO_CT_ALLOWLIST."
+[row.params.node]
+type = "string"
+optional = false
+description = "The node that runs the container. The ssh target must BE this node: a host answering as another node is refused before pct runs."
+[row.params.vmid]
+type = "integer"
+optional = false
+description = "The container's id (CTID); it must be on PROXIMO_CT_ALLOWLIST."
+[row.params.command]
+type = "array"
+optional = false
+description = "The command as an argv list (not a shell string), run as root inside the container with `pct exec`. Answers returncode, stdout, stderr; a nonzero exit is data."
+[row.params.snapshot]
+type = "boolean"
+optional = true
+description = "Take a snapshot of the container first (the vendor's own snapshot, waited to completion). If it does not land, the command is not run. The receipt names it, and `undo <id>` rolls back to it."
+
+[[row]]
+method = "POST"
+path = "/nodes/{node}/lxc/{vmid}/psql"
+access = "mutate"
+description = "Run SQL with psql inside a container, as the postgres OS user, stopping on the first error. Opt-in: PROXIMO_ENABLE_EXEC and PROXIMO_CT_ALLOWLIST."
+[row.params.node]
+type = "string"
+optional = false
+description = "The node that runs the container. The ssh target must BE this node."
+[row.params.vmid]
+type = "integer"
+optional = false
+description = "The container's id (CTID); it must be on PROXIMO_CT_ALLOWLIST."
+[row.params.sql]
+type = "string"
+optional = false
+description = "SQL run by psql as the postgres OS user, ON_ERROR_STOP on, as one quoted argument."
+[row.params.db]
+type = "string"
+optional = true
+description = "The database to connect to (default postgres)."
+[row.params.snapshot]
+type = "boolean"
+optional = true
+description = "Take a snapshot of the container first (the vendor's own snapshot, waited to completion). If it does not land, the command is not run. The receipt names it, and `undo <id>` rolls back to it."
+
+[[row]]
+method = "GET"
+path = "/nodes/{node}/lxc/{vmid}/logs"
+access = "read"
+description = "Read the recent journal lines of one systemd unit inside a container (journalctl -u). Opt-in: PROXIMO_ENABLE_EXEC and PROXIMO_CT_ALLOWLIST."
+[row.params.node]
+type = "string"
+optional = false
+description = "The node that runs the container. The ssh target must BE this node."
+[row.params.vmid]
+type = "integer"
+optional = false
+description = "The container's id (CTID); it must be on PROXIMO_CT_ALLOWLIST."
+[row.params.unit]
+type = "string"
+optional = false
+description = "The systemd unit whose journal to read (journalctl -u)."
+[row.params.lines]
+type = "integer"
+optional = true
+description = "How many of the most recent lines (default 50, at most 1000)."
+
+[[row]]
+method = "GET"
+path = "/nodes/{node}/lxc/{vmid}/probe"
+access = "read"
+description = "Run one probe of DIAGNOSE's fixed in-container battery (0.44's ct_diagnose): failed_units, disk, recent_errors, memory or listening; answers returncode, stdout and stderr. The command is fixed; the caller names the probe. Opt-in: PROXIMO_ENABLE_EXEC and PROXIMO_CT_ALLOWLIST."
+[row.params.node]
+type = "string"
+optional = false
+description = "The node that runs the container. The ssh target must BE this node."
+[row.params.vmid]
+type = "integer"
+optional = false
+description = "The container's id (CTID); it must be on PROXIMO_CT_ALLOWLIST."
+[row.params.probe]
+type = "string"
+optional = false
+description = "Which probe: failed_units (systemctl --failed), disk (df -h), recent_errors (journalctl -p err -n 40), memory (free -m) or listening (ss -tlnp)."
+
+# THE NODE SHELL LANE: the host's own fixed battery (0.44's pve_node_diagnose). Its own gate, its
+# own switch: the host's journal is a different disclosure grade than one container's. There is no
+# host exec row, by design (0.44 left the metal's mutation lane undoored too).
+[[row]]
+method = "GET"
+path = "/nodes/{node}/probe"
+access = "read"
+gate = "the node shell lane: opt-in, PROXIMO_ENABLE_NODE_SHELL (0.44's pve_node_diagnose shell battery)"
+description = "Run one probe of DIAGNOSE's fixed battery on the PVE host itself (0.44's pve_node_diagnose): failed_units, pve_services, recent_errors, disk, memory, versions or cluster; answers returncode, stdout and stderr. The command is fixed; the caller names the probe. Opt-in: PROXIMO_ENABLE_NODE_SHELL."
+[row.params.node]
+type = "string"
+optional = false
+description = "The node to read. The ssh target must BE this node: a host answering as another node is refused before anything runs."
+[row.params.probe]
+type = "string"
+optional = false
+description = "Which probe: failed_units (systemctl --failed), pve_services (the five PVE units' states), recent_errors (journalctl -p err -n 40), disk (df -h), memory (free -m), versions (pveversion -v) or cluster (pvecm status)."

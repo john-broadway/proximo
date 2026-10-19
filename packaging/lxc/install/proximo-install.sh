@@ -41,7 +41,6 @@ cat <<EOF >/etc/proximo/proximo.env
 # until they are set. The token file holds exactly USER@REALM!TOKENID=SECRET, owned by the
 # proximo user, mode 600. Start with a read-only token; docs/SETUP.md in the repo walks the role.
 #PROXIMO_API_BASE_URL=https://pve.example.com:8006/api2/json
-#PROXIMO_NODE=pve
 #PROXIMO_TOKEN_PATH=/etc/proximo/pve-token
 #
 # --- PROVE ledger --------------------------------------------------------------------

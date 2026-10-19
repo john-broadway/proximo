@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""The gate round: neuter each core gate, one at a time, and let the CORE-ONLY tests catch it.
+
+Parity row B13 asked for a core-only test that goes red for every gate; this is the harness that
+proves it, run 2026-10-16 on the tree it ships with. A gate is a line in `engine.py` or
+`ledger.py` where the spine refuses, spends or records; each mutation below turns one of them
+off (an `if False:`, a `None` in the refusal tuple, a dropped record) and the core-only tests
+(the files under tests/ that import nothing of 0.44, listed in CORE) run with `-x`. KILLED means
+a test went red; SURVIVED means the neutered gate passed every core-only test and the gate is a
+decoration until a test drives it. The round stops if a restore does not hash back.
+
+Bytes, never git: each file is copied aside and restored by `cp` and a sha256 compare, so a run
+that dies mid-mutation is put back by hand from the `.bak` beside the log, and the working tree
+is never asked to `checkout` anything (that eats uncommitted work).
+
+    uv run python scripts/gate_mutations.py [--out DIR] [NAME ...]
+
+`tests/test_gate_mutations_inventory.py` holds every target string to exactly one site, so a
+refactor that moves a gate turns that test red instead of this round printing SKIP.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+E = "src/proximo/core/engine.py"
+L = "src/proximo/core/ledger.py"
+
+#: (name, file, the gate as written, the gate neutered)
+M = [
+    ('M01-ARM', E,
+     '    if not state.armed:\n        return Verdict(',
+     '    if False:\n        return Verdict('),
+    ('M02-TIER', E,
+     '    if not isinstance(row.tier, str) or row.tier not in TIERS:',
+     '    if False:'),
+    ('M03-GATED', E,
+     '            return Verdict(False, f"{row.address} is gated: {row.gate}", None)',
+     '            pass'),
+    ('M04-HELD', E,
+     '    if row.held:\n',
+     '    if False:\n'),
+    ('M05-CROSSPLANE', E,
+     '    if cfg is not None and getattr(cfg, "product", row.product) != row.product:',
+     '    if False:'),
+    ('M06-CONTAIN', E,
+     '        spine.contain_refusal(),\n',
+     '        None,\n'),
+    ('M07-RETIRED', E,
+     '        spine.retired_refusal(),\n',
+     '        None,\n'),
+    ('M08-FORBID', E,
+     '        spine.forbid_refusal(row.product, row.method, called, args,\n                            '
+     ' extra=cfg.forbid if cfg is not None else ()),',
+     '        None,'),
+    ('M09-TAINT-FORBID', E,
+     '        spine.taint_refusal(audit_dir, row.product, row.method, called, args),',
+     '        None,'),
+    ('M10-TAINT-CONSENT', E,
+     '        None if consent_covered else spine.taint_consent_refusal(audit_dir),',
+     '        None,'),
+    ('M11-CONSENT-CHECK', E,
+     '        None if consent_covered else spine.consent_refusal(cid),',
+     '        None,'),
+    ('M12-CONSENT-SPEND', E,
+     '        None if net_of is not None else spine.consume_consent(verdict.consent_id or ""),',
+     '        None,'),
+    ('M13-RATE', E,
+     '        spine.reserve_rate(base_url, os.path.dirname(lcfg.audit_log_path) or ".",\n              '
+     '             cap=(cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)),',
+     '        None,'),
+    ('M14-TAINT-MARK', E,
+     '    if not (row.untrusted and spine.taint_tracking_on()):\n        return',
+     '    if True:\n        return'),
+    ('M15-PROVE-CHAIN', L,
+     '\n        if entry.get("prev_hash") != prev:',
+     '\n        if False:'),
+    ('M24-PROVE-KEYED', L,
+     '            if entry_alg != _KEY_ALG:',
+     '            if False:'),
+    ('M25-PROVE-HASH', L,
+     '        if not hmac.compare_digest(expected, found_hash):',
+     '        if False:'),
+    ('M26-PROVE-HEAD', L,
+     '    if expected_head is not None and prev != expected_head:',
+     '    if False:'),
+    ('M16-WITHHOLD', E,
+     '    if rule is None or rule == _NO_RULE:\n        return data, []',
+     '    if True:\n        return data, []'),
+    ('M17-PLACEHOLDERS', E,
+     '    if placeholders(called):\n        raise ProximoError(',
+     '    if False:\n        raise ProximoError('),
+    ('M18-CHECK-ARGS', E,
+     '        check_args(row, args)\n    except ProximoError as exc:',
+     '        pass\n    except ProximoError as exc:'),
+    ('M19-UNDO-BEFORE', E,
+     '    undo = _undo_before(row, args, client, called, cfg, ledger_cfg, intent, remote, verdict.cons'
+     'ent_id)',
+     '    undo = {"state": "off"}'),
+    ('M20-EXECUTING-ROW', E,
+     '    _record(ledger_cfg, "core.execute", row, outcome=EXECUTING, detail=preview, called=called,\n '
+     '           required=True, remote=remote)',
+     '    pass'),
+    ('M21-REFUSE-RECEIPT', E,
+     '        _record(ledger_cfg, "core.refuse", row, outcome="refused",\n                detail={"reas'
+     'on": verdict.reason, "needs": verdict.needs, **verdict.detail},\n                called=rawdoor.c'
+     'anonical(path) if path else None, remote=remote)\n        raise ProximoError(verdict.reason)',
+     '        raise ProximoError(verdict.reason)'),
+    ('M22-SPELLING', E,
+     '    if path is not None:\n        rawdoor.reject_malformed(path, allow_placeholders=True)',
+     '    if False:\n        rawdoor.reject_malformed(path, allow_placeholders=True)'),
+    ('M23-EXCLUDED', E,
+     '    if row.excluded:\n',
+     '    if False:\n'),
+]
+
+#: The round's test set: the whole suite. Until the cut (2026-10-18) this was a hand-kept list of
+#: the tests that imported nothing of 0.44; 0.44 is gone, so a new test file joins the round by
+#: existing.
+CORE = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "tests").glob("test_*.py")
+              if p.name != "test_gate_mutations_inventory.py")
+              # it asserts each gate's text is AT its site: red on every mutant, a false KILL
+
+
+def _sha(p: pathlib.Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def _clear_pyc(root: pathlib.Path) -> None:
+    # a .pyc is keyed on (mtime, size): a neutered source of the same size can outlive itself
+    for d in (root / "src").rglob("__pycache__"):
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _pytest(root: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["uv", "run", "pytest", "-q", "-x", "-p", "no:cacheprovider", *CORE], cwd=root,  # noqa: S603,S607 -- our own runner, fixed argv
+                          capture_output=True, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+
+
+def run(root: pathlib.Path, out: pathlib.Path, only: list[str]) -> int:
+    out.mkdir(parents=True, exist_ok=True)
+    log = open(out / "log.txt", "a", encoding="utf-8")
+
+    def say(s: str) -> None:
+        print(s, flush=True)
+        log.write(s + "\n")
+        log.flush()
+
+    say(f"== gate round on {root} at {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}")
+    # THE BASELINE: the core-only set must be green UNMUTATED, or every mutation below reads as a
+    # kill for a reason that has nothing to do with the gate (a red test, a broken venv).
+    base = _pytest(root)
+    base_line = [x for x in base.stdout.splitlines() if x.strip()][-1:]
+    say(f"baseline: rc={base.returncode} | {base_line[0] if base_line else ''}")
+    if base.returncode != 0:
+        say("!!! the unmutated set is not green; no mutation can be judged. STOPPING")
+        return 2
+    survived = 0
+    for name, rel, old, new in M:
+        if only and name not in only:
+            continue
+        f = root / rel
+        bak = out / (name + ".bak")
+        shutil.copy2(f, bak)
+        s0 = _sha(f)
+        src = f.read_text(encoding="utf-8")
+        if src.count(old) != 1:
+            say(f"{name}: SKIP target found {src.count(old)} times")
+            survived += 1
+            continue
+        t = time.time()
+        try:
+            f.write_text(src.replace(old, new), encoding="utf-8")
+            _clear_pyc(root)
+            r = _pytest(root)
+        finally:
+            # whatever happened above (a raise, a signal), the gate goes back before anything else
+            shutil.copy2(bak, f)
+            _clear_pyc(root)
+        lines = [x for x in r.stdout.splitlines() if x.strip()]
+        fails = [x for x in lines if x.startswith(("FAILED", "ERROR"))][:3]
+        ok = _sha(f) == s0
+        # A KILL IS A FAILED TEST. A collection error, a missing plugin or an empty set also exit
+        # nonzero, and the first run of this round called those kills (a readback that cannot fail).
+        summary = lines[-1] if lines else ""
+        killed = r.returncode in (1, 2) and bool(fails) and " failed" in summary
+        verdict = "KILLED" if killed else ("SURVIVED" if r.returncode == 0 else f"ERROR(rc={r.returncode})")
+        say(f"{name}: rc={r.returncode} {verdict} in {time.time() - t:.0f}s restored={ok} | {summary}")
+        for x in fails:
+            say("    " + x[:200])
+        if not ok:
+            say("!!! RESTORE FAILED, STOPPING")
+            return 2
+        survived += 0 if killed else 1
+    say(f"== done, {survived} survived")
+    return 1 if survived else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--out", type=pathlib.Path, default=None,
+                    help="where the log and the .bak copies go (default: a fresh mkdtemp)")
+    ap.add_argument("names", nargs="*")
+    a = ap.parse_args(argv)
+    out = a.out if a.out is not None else pathlib.Path(tempfile.mkdtemp(prefix="gate-round-"))
+    print(f"gate round: log and .bak copies in {out}")
+    return run(ROOT, out, a.names)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

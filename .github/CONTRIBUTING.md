@@ -29,14 +29,13 @@ uv sync --extra dev
 Run the same checks CI runs — a PR that doesn't pass all three won't merge:
 
 ```bash
-uv run python -m pytest -q          # full suite — must be green (only the 3 by-design wrapper-sweep skips)
+uv run pytest -q                    # full suite — must be green
 uv run ruff check .                 # lint — the full repo, exactly what CI runs
 uv run pyright                      # types (src is the typed scope)
 ```
 
 The tests are mock / in-process: you do **not** need a real Proxmox host to
-develop. (There is a separate live-smoke harness that exercises a throwaway
-VMID/CTID against a real host; you won't normally need to touch it.)
+develop.
 
 ## The trust spine — please don't weaken it
 

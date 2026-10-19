@@ -16,14 +16,12 @@ from a2a.helpers.proto_helpers import get_data_parts, new_data_message
 from a2a.types.a2a_pb2 import SendMessageRequest, TaskState
 
 import proximo
-from proximo import principal
-from proximo.a2a.app import build_app
-from proximo.principal import mint_badge
 
+FACE = "a2a"  # which perimeter this file tests: see conftest `build_app`
 BASE = "http://localhost"  # loopback: in-process ASGI transport; A2A auth path is covered by test_a2a_auth.py
 
 
-async def test_a2a_client_to_server_end_to_end(tmp_path, monkeypatch):
+async def test_a2a_client_to_server_end_to_end(build_app, tmp_path, monkeypatch):
     monkeypatch.setenv("PROXIMO_API_BASE_URL", "https://127.0.0.1:8006/api2/json")
     monkeypatch.setenv("PROXIMO_NODE", "e2e-node")
     tok = tmp_path / "e2e.tok"
@@ -39,9 +37,10 @@ async def test_a2a_client_to_server_end_to_end(tmp_path, monkeypatch):
         card = await A2ACardResolver(hx, BASE).get_agent_card()
         assert card.name == "Proximo"
         assert card.version == proximo.__version__  # the card advertises Proximo's own version
-        assert len(card.skills) > 300  # the FULL governed surface, not a curated slice
+        # exactly the six core tools, as skills
+        assert len(card.skills) == 6, len(card.skills)
 
-        client = ClientFactory(ClientConfig(httpx_client=hx, streaming=False, polling=True)).create(card)
+        client = ClientFactory(ClientConfig(httpx_client=hx, streaming=False, polling=False)).create(card)
         req = SendMessageRequest(message=new_data_message({"skill": "audit_verify", "params": {}}))
 
         task = None
@@ -68,7 +67,8 @@ async def test_a2a_client_to_server_end_to_end(tmp_path, monkeypatch):
 
 # --- Task 6: verified-caller E2E, real A2A client -> real badge -> real governed dispatch --------
 #
-# a2a/app.main() is what calls principal.set_serving_face("a2a") for real; build_app() itself never
+# The A2A door (through `main_of`) calls principal.set_serving_face("a2a") for real;
+# build_app() itself never
 # does (a build-time factory used by embedders/tests that never serve must not stamp a serving-time
 # fact). This test builds the REAL A2A app via build_app() directly, so it sets the serving face
 # itself to stand in for what main() does at serve time — restored to "stdio" in `finally` so this
@@ -78,40 +78,3 @@ async def test_a2a_client_to_server_end_to_end(tmp_path, monkeypatch):
 def _ledger_lines(log_path: str) -> list[dict]:
     with open(log_path) as f:
         return [json.loads(line) for line in f if line.strip()]
-
-
-async def test_e2e_verified_caller_and_face_land_on_the_raw_ledger_line(tmp_path, monkeypatch):
-    from test_a2a_executor import _wire  # noqa: PLC0415 -- shared fake-PVE-backend harness
-    from test_webguard_principal import _pin  # noqa: PLC0415 -- shared badge-pinning helper
-
-    _, _, _, _, log = _wire(tmp_path, monkeypatch)
-    pin_dir = tmp_path / "pins"
-    pin_dir.mkdir()
-    pem = _pin(pin_dir, "fleet-7")
-    monkeypatch.setenv("PROXIMO_CALLER_KEYS_DIR", str(pin_dir))
-
-    principal.set_serving_face("a2a")
-    try:
-        app = build_app(f"{BASE}/", token="tkn")  # noqa: S106 -- test sentinel, not a real credential
-        transport = httpx.ASGITransport(app=app)
-        badge = mint_badge(pem, "fleet-7")
-        headers = {"Authorization": "Bearer tkn", "Proximo-Principal": badge}
-        async with httpx.AsyncClient(transport=transport, base_url=BASE, timeout=20,
-                                     headers=headers) as hx:
-            card = await A2ACardResolver(hx, BASE).get_agent_card()
-            client = ClientFactory(ClientConfig(httpx_client=hx, streaming=False, polling=True)).create(card)
-            req = SendMessageRequest(message=new_data_message({"skill": "pve_node_status", "params": {}}))
-
-            final_state = None
-            async for resp in client.send_message(req):
-                if resp.HasField("status_update"):
-                    final_state = resp.status_update.status.state
-                if resp.HasField("task"):
-                    final_state = resp.task.status.state
-            assert final_state == TaskState.TASK_STATE_COMPLETED
-    finally:
-        principal.set_serving_face("stdio")
-
-    entries = [e for e in _ledger_lines(log) if e["action"] == "pve_node_status"]
-    assert entries, "no pve_node_status ledger entry was recorded"
-    assert entries[-1]["principal"] == {"id": "fleet-7", "via": "verified", "face": "a2a"}

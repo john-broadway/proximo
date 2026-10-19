@@ -58,3 +58,7 @@ htmlcov/
 # Untracked is not the same as ignored: `git add -A` would stage it, and this session used
 # exactly that. Ignore it before a successful login can create it.
 .mcpregistry_token
+
+# Vendor api-viewer sources for scripts/build_governance_table.py (15.7 MB, refetchable
+# with --fetch). The repo carries the generated table, not its inputs.
+.apidoc-cache/

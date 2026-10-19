@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
 import os
-import sys
 
 import pytest
 
@@ -11,8 +11,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def _no_real_proximo_env_file(tmp_path_factory):
     """Never let ``load_env_file()`` source the OPERATOR'S real ``~/.config/proximo/proximo.env``
-    during tests. It is invoked by ``server.main()`` / ``proximo-a2a`` (exercised by
-    ``test_main_module`` / ``test_doctor`` / ``test_a2a_entry``); on a real deployment box that file
+    during tests. Every door's ``main`` sources it (exercised by ``test_core_envfile`` /
+    ``test_entrypoint_help``); on a real deployment box that file
     exists and carries this box's ``PROXIMO_*`` settings (e.g. ``PROXIMO_ENABLE_EXEC``), which would
     leak into ``os.environ`` and pollute every later test's config warnings.
 
@@ -33,89 +33,20 @@ def _no_real_proximo_env_file(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def _restore_the_shared_registry():
-    """The 0.30 flip made the DEFAULT `_apply_surfaces` path prune the live registry — pre-flip,
-    nothing-configured was a no-op, so entry-point tests (main(), the faces) could run it on the
-    shared module singleton without a trace. The suite is many productions in one process:
-    without restore, the first main()-shaped test narrows every later registry-wide structural
-    test (tool counts, taint classification, wrapper sweeps) to the 4-tool facade. Snapshot the
-    registry and the two catalog globals, restore after every test. Production narrows once per
-    process BY DESIGN; that design assumption is exactly what a shared-process suite violates.
-
-    Degrades to a NO-OP when `proximo` is not importable: the `requirements-drift` CI job runs
-    ONLY the lockfile tests in a dependency-light env (`uv run --no-project --with pytest`),
-    where an unconditional import here errored every collected test — caught by the v0.30.0
-    release CI, invisible locally because this box always has the package importable. Repro the
-    real condition with: `env -u VIRTUAL_ENV uv run --isolated --no-project --with pytest
-    pytest tests/test_requirements_lock.py -q`."""
-    try:
-        import proximo.door as _door
-        import proximo.server as _server
-    except ImportError:   # the dependency-light job — nothing to snapshot, nothing to restore
-        yield
-        return
-    tools = dict(_server.mcp._tool_manager._tools)
-    lean_catalog = _door.LEAN_CATALOG
-    full_catalog = _door.FULL_CATALOG
-    try:
-        yield
-    finally:
-        _server.mcp._tool_manager._tools.clear()
-        _server.mcp._tool_manager._tools.update(tools)
-        # apply_lean/_snapshot_full_catalog REBIND these module globals (not in-place mutation),
-        # so restore is assignment of the saved reference, not .update() on a stale object.
-        # door OWNS the catalogs (A11 3a/3b): server.py no longer exposes them at all.
-        _door.LEAN_CATALOG = lean_catalog
-        _door.FULL_CATALOG = full_catalog
-
-
-@pytest.fixture(autouse=True)
 def _audit_log_in_tmp(tmp_path):
-    """The instance PROVE ledger's default path is the REAL one (``~/.local/state/proximo/
-    audit.log``) — and unlike ``_record_session`` (a no-op without the principal feature),
-    ``_reach_grant_check`` writes at every door serve-start unconditionally. Caught live
-    2026-08-26: the a2a door-main tests redirect ``server._svc`` but not ``_instance_ledger``,
-    so a suite run wrote an env-absent ``reach_grant`` entry into the dev box's real ledger
-    AND seeded the real sidecar with a test snapshot (which then misframed the estate's first
-    genuine serve-start as ``changed``). Same class and same cure as ``_memory_db_in_tmp``
-    below. The ``_instance_ledger`` lru_cache is cleared both sides so no test inherits
-    another test's tmp ledger, and cleared after so the SESSION never keeps a tmp one."""
+    """The PROVE ledger's default path is the REAL one (``~/.local/state/proximo/audit.log``), and
+    every core door stamps its arrival there on start. Point every test's ledger at its own tmp
+    file. Managed via ``os.environ`` directly (NOT ``monkeypatch``) for the same fixture-ordering
+    reason as above; a test asserting path RESOLUTION overrides it with its own ``monkeypatch``."""
     prev = os.environ.get("PROXIMO_AUDIT_LOG")
     os.environ["PROXIMO_AUDIT_LOG"] = str(tmp_path / "proximo-test-audit.log")
-
-    def _clear_cached_ledger():
-        srv = sys.modules.get("proximo.server")
-        if srv is not None:
-            srv._instance_ledger.cache_clear()
-
-    _clear_cached_ledger()
     try:
         yield
     finally:
-        _clear_cached_ledger()
         if prev is None:
             os.environ.pop("PROXIMO_AUDIT_LOG", None)
         else:
             os.environ["PROXIMO_AUDIT_LOG"] = prev
-
-
-@pytest.fixture(autouse=True)
-def _memory_db_in_tmp(tmp_path):
-    """Estate memory is DEFAULT-ON since the 0.30 flip, and its default db path sits beside the
-    real audit log (``~/.local/state/proximo``). A suite running with that default would write
-    real files on the dev box — which dogfoods Proximo, so it would write into the LIVE map.
-    Point every test's memory at its own tmp file. Managed via ``os.environ`` directly for the
-    same fixture-ordering reason as above; tests asserting path RESOLUTION or opt-in/out
-    semantics override or delete this with their own ``monkeypatch``."""
-    prev = os.environ.get("PROXIMO_MEMORY_PATH")
-    os.environ["PROXIMO_MEMORY_PATH"] = str(tmp_path / "proximo-test-memory.db")
-    try:
-        yield
-    finally:
-        if prev is None:
-            os.environ.pop("PROXIMO_MEMORY_PATH", None)
-        else:
-            os.environ["PROXIMO_MEMORY_PATH"] = prev
 
 
 @pytest.fixture(autouse=True)
@@ -129,10 +60,51 @@ def _clear_secret_registry():
     collection time errors every test in that job before it starts (public PR #73 on the 0.43.0
     curated sha, 2026-09-20)."""
     try:
-        from proximo import _secretfile
+        from proximo.core import secretfile as _secretfile
     except ImportError:  # a no-project job (requirements-drift) has no registry to clear
         yield
         return
     _secretfile.clear_registered_secrets()
     yield
     _secretfile.clear_registered_secrets()
+
+
+@pytest.fixture
+def armed_plane(monkeypatch, tmp_path):
+    """An armed pve box with a token file, every pillar unset, receipts to the tmp ledger the
+    autouse fixture points at; the test wires its own answers with `engine._client`. Shared by
+    the core's seam tests (task wait, plan live state), which cannot import `tests.test_spine`
+    because CI's bare pytest has no `tests.` package. Imports lazily for the no-project job."""
+    from proximo.core import engine, wire
+    tok = tmp_path / "token"
+    tok.write_text("secret-token")
+    monkeypatch.setattr(engine.arm, "arm_state",
+                        lambda cfg=None: engine.arm.ArmGateState(True, True, "armed"))
+    for var in ("PROXIMO_CONTAIN_TRIP_PATH", "PROXIMO_SCOPE_PATH", "PROXIMO_ARM_TTL",
+                "PROXIMO_FORBID", "PROXIMO_CONSENT_DIR", "PROXIMO_CONSENT_TTL_SECONDS",
+                "PROXIMO_RATE_MAX", "PROXIMO_RATE_WINDOW", "PROXIMO_UNDO",
+                "PROXIMO_TAINT_TRACK", "PROXIMO_TAINT_FORBID", "PROXIMO_TAINT_REQUIRE_CONSENT",
+                "PROXIMO_TAINT_FENCE", "PROXIMO_ENABLE_AGENT", "PROXIMO_AGENT_ALLOWLIST",
+                "PROXIMO_ENABLE_EXEC", "PROXIMO_CT_ALLOWLIST", "PROXIMO_SSH_TARGET",
+                "PROXIMO_ENABLE_NODE_SHELL", "PROXIMO_ENABLE_DOWNLOAD"):
+        monkeypatch.delenv(var, raising=False)
+    return wire.Plane("pve", "https://pve.invalid:8006/api2/json", str(tok))
+
+
+# --- the perimeter has ONE caller, the core door ---------------------------------------------------
+
+#: face name (a test module's `FACE`) -> the core door that mounts that perimeter. Each door's
+#: `build_app(url, *, token, allowed_hosts, ...)` supplies its own dispatch, instance and recorder.
+_DOORS = {
+    "http": "proximo.core.doors.http",
+    "mcp-http": "proximo.core.doors.mcphttp",
+    "a2a": "proximo.core.doors.a2a",
+}
+
+
+@pytest.fixture
+def build_app(request):
+    """The core door's `build_app` for the face the module names in `FACE`. Until the cut
+    (2026-10-18) this fixture ran every perimeter test twice, once with the 0.44 server behind the
+    perimeter and once with the core door; the 0.44 caller went with the 0.44 server."""
+    return importlib.import_module(_DOORS[request.module.FACE]).build_app

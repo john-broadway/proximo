@@ -12,68 +12,67 @@ from __future__ import annotations
 
 from starlette.testclient import TestClient
 
-from proximo.mcphttp import build_app
-
+FACE = "mcp-http"  # which perimeter this file tests: see conftest `build_app`
 LOCAL = "http://localhost"
 
 _RPC = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": "pve_guest_power", "arguments": {"vmid": "102", "action": "stop"}}}
 
 
-def _client() -> TestClient:
+def _client(build_app) -> TestClient:
     return TestClient(build_app(), base_url=LOCAL)
 
 
-def test_text_plain_post_is_refused():
+def test_text_plain_post_is_refused(build_app):
     # The CORS-safelisted Content-Type a forged cross-origin fetch() can carry with no preflight.
-    r = _client().post("/mcp", content=b"{}", headers={"content-type": "text/plain"})
+    r = _client(build_app).post("/mcp", content=b"{}", headers={"content-type": "text/plain"})
     assert r.status_code == 415
 
 
-def test_form_urlencoded_post_is_refused():
-    r = _client().post("/mcp", content=b"{}",
+def test_form_urlencoded_post_is_refused(build_app):
+    r = _client(build_app).post("/mcp", content=b"{}",
                        headers={"content-type": "application/x-www-form-urlencoded"})
     assert r.status_code == 415
 
 
-def test_sec_fetch_site_cross_site_is_refused_even_with_json():
-    r = _client().post("/mcp", json=_RPC, headers={"sec-fetch-site": "cross-site"})
+def test_sec_fetch_site_cross_site_is_refused_even_with_json(build_app):
+    r = _client(build_app).post("/mcp", json=_RPC, headers={"sec-fetch-site": "cross-site"})
     assert r.status_code == 403
 
 
-def test_sec_fetch_site_same_site_is_refused():
-    r = _client().post("/mcp", json=_RPC, headers={"sec-fetch-site": "same-site"})
+def test_sec_fetch_site_same_site_is_refused(build_app):
+    r = _client(build_app).post("/mcp", json=_RPC, headers={"sec-fetch-site": "same-site"})
     assert r.status_code == 403
 
 
-def test_cross_origin_header_without_sec_fetch_is_refused():
+def test_cross_origin_header_without_sec_fetch_is_refused(build_app):
     # A browser that omits Fetch-Metadata still sends Origin on a cross-origin POST.
-    r = _client().post("/mcp", headers={"origin": "http://evil.example"})
+    r = _client(build_app).post("/mcp", headers={"origin": "http://evil.example"})
     assert r.status_code == 403
 
 
-def test_origin_null_is_refused():
+def test_origin_null_is_refused(build_app):
     # Sandboxed iframe / file:// pages send `Origin: null` — never same-origin, so refuse.
-    r = _client().post("/mcp", headers={"origin": "null"})
+    r = _client(build_app).post("/mcp", headers={"origin": "null"})
     assert r.status_code == 403
 
 
-def test_oversized_body_is_refused():
+def test_oversized_body_is_refused(build_app):
     big = b'{"x":"' + b"a" * 200_000 + b'"}'
-    r = _client().post("/mcp", content=big, headers={"content-type": "application/json"})
+    r = _client(build_app).post("/mcp", content=big, headers={"content-type": "application/json"})
     assert r.status_code == 413
 
 
-def test_health_get_is_never_csrf_checked():
-    assert _client().get("/healthz", headers={"sec-fetch-site": "cross-site"}).status_code == 200
+def test_health_get_is_never_csrf_checked(build_app):
+    assert _client(build_app).get("/healthz", headers={"sec-fetch-site": "cross-site"}).status_code == 200
 
 
-def test_chunked_body_without_content_length_is_refused():
+def test_chunked_body_without_content_length_is_refused(build_app):
     # A Transfer-Encoding: chunked body carries no Content-Length, so the pre-buffer size cap
     # (MAX_BODY_BYTES) cannot fire. The guard must refuse it (411) rather than let the downstream
     # handler buffer it unbounded — the memory-DoS gap the size cap claims to close.
     def _gen():
         yield b"{}"
 
-    r = _client().post("/mcp", content=_gen(), headers={"content-type": "application/json"})
+    r = _client(build_app).post("/mcp", content=_gen(), headers={"content-type": "application/json"})
     assert r.status_code == 411

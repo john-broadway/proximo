@@ -31,11 +31,6 @@ VSCODE_INPUTS = [
         "description": "PVE API base URL, e.g. https://your-pve:8006/api2/json",
     },
     {
-        "id": "proximo_node",
-        "type": "promptString",
-        "description": "Default PVE node name",
-    },
-    {
         "id": "proximo_token_path",
         "type": "promptString",
         "description": (
@@ -50,7 +45,6 @@ VSCODE_CONFIG = {
     "args": ["proximo-proxmox"],
     "env": {
         "PROXIMO_API_BASE_URL": "${input:proximo_api_base_url}",
-        "PROXIMO_NODE": "${input:proximo_node}",
         "PROXIMO_TOKEN_PATH": "${input:proximo_token_path}",
     },
 }
@@ -62,7 +56,6 @@ CURSOR_CONFIG = {
     "args": ["proximo-proxmox"],
     "env": {
         "PROXIMO_API_BASE_URL": "https://your-pve:8006/api2/json",
-        "PROXIMO_NODE": "your-node",
         "PROXIMO_TOKEN_PATH": "/path/to/token-file",
     },
 }

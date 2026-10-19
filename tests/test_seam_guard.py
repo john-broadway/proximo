@@ -40,7 +40,7 @@ CODE_SUFFIXES = {".py", ".yml", ".yaml", ".sh"}
 # The ONLY places a spelled read may live, with the exact number of matching lines and why.
 ALLOWLIST: dict[str, tuple[int, str]] = {
     # The seam itself: every accessor's implementation is here by definition.
-    "src/proximo/_mcpcompat.py": (-1, "the seam — spelled reads are its whole job"),
+    "src/proximo/core/mcpcompat.py": (-1, "the seam — spelled reads are its whole job"),
     # This file: the pattern text above matches itself.
     "tests/test_seam_guard.py": (-1, "the guard — carries the pattern it hunts"),
     # (release-pypi.yml's inline verify script held the third entry until 2026-08-20: its
@@ -52,7 +52,7 @@ ALLOWLIST: dict[str, tuple[int, str]] = {
 
 def _tracked_code_files() -> list[Path]:
     # S603/S607 suppressed deliberately: fixed literal argv, no interpolation (house pattern,
-    # same as test_receipt.py / test_release_leak_audit.py).
+    # same as test_release_leak_audit.py).
     out = subprocess.run(
         ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True  # noqa: S603, S607
     ).stdout
@@ -73,7 +73,7 @@ def test_no_spelled_sdk_reads_outside_the_seam() -> None:
     problems = []
     for rel, n in sorted(hits.items()):
         if rel not in ALLOWLIST:
-            problems.append(f"{rel}: {n} spelled SDK read(s) outside the seam — route through _mcpcompat")
+            problems.append(f"{rel}: {n} spelled SDK read(s) outside the seam — route through proximo.core.mcpcompat")
         else:
             want = ALLOWLIST[rel][0]
             if want != -1 and n != want:
