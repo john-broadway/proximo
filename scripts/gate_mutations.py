@@ -33,6 +33,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 E = "src/proximo/core/engine.py"
 L = "src/proximo/core/ledger.py"
+SP = "src/proximo/core/spine.py"
 
 #: (name, file, the gate as written, the gate neutered)
 M = [
@@ -68,21 +69,28 @@ M = [
      '        None if consent_covered else spine.taint_consent_refusal(audit_dir),',
      '        None,'),
     ('M11-CONSENT-CHECK', E,
-     '        None if consent_covered else spine.consent_refusal(cid),',
+     '        None if consent_covered else spine.consent_refusal(cid, audit_dir or "."),',
      '        None,'),
     ('M12-CONSENT-SPEND', E,
-     '        None if net_of is not None else spine.consume_consent(verdict.consent_id or ""),',
+     '        spent if isinstance(spent, spine.Refusal) else None,',
      '        None,'),
     ('M13-RATE', E,
-     '        spine.reserve_rate(base_url, os.path.dirname(lcfg.audit_log_path) or ".",\n              '
+     '        spine.reserve_rate(base_url, audit_dir,\n              '
      '             cap=(cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)),',
      '        None,'),
     ('M14-TAINT-MARK', E,
      '    if not (row.untrusted and spine.taint_tracking_on()):\n        return',
      '    if True:\n        return'),
     ('M15-PROVE-CHAIN', L,
-     '\n        if entry.get("prev_hash") != prev:',
-     '\n        if False:'),
+     '        if entry.get("prev_hash") != prev:\n            return LedgerVerification(False, count, lineno,\n'
+     '                                      "prev_hash mismatch (entry inserted, removed, or reordered)")',
+     '        if False:\n            return LedgerVerification(False, count, lineno,\n'
+     '                                      "prev_hash mismatch (entry inserted, removed, or reordered)")'),
+    ('M32-PROVE-CHAIN-ARCHIVE', L,
+     '        if entry.get("prev_hash") != prev:\n            return LedgerVerification(False, count, lineno,\n'
+     '                                      "prev_hash mismatch (entry inserted, removed, or reordered)",',
+     '        if False:\n            return LedgerVerification(False, count, lineno,\n'
+     '                                      "prev_hash mismatch (entry inserted, removed, or reordered)",'),
     ('M24-PROVE-KEYED', L,
      '            if entry_alg != _KEY_ALG:',
      '            if False:'),
@@ -120,6 +128,33 @@ M = [
     ('M23-EXCLUDED', E,
      '    if row.excluded:\n',
      '    if False:\n'),
+    ('M27-CONSENT-OWNER', SP,
+     '    if st.st_uid == _euid():\n',
+     '    if False:\n'),
+    ('M28-CONSENT-ONCE', SP,
+     '                     os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)',
+     '                     os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)'),
+    ('M29-CONSENT-RECEIPT', E,
+     '                    called=called, required=True, remote=remote)\n        except BaseException:',
+     '                    called=called, required=False, remote=remote)\n        except BaseException:'),
+    ('M30-CONSENT-UNSPEND', E,
+     '            spine.unspend(spent)\n',
+     '            pass\n'),
+    ('M31-CONSENT-RETIRE-JUDGED', SP,
+     '        if (st.st_ino, st.st_mtime_ns) == (spend.inode, spend.mtime_ns):\n',
+     '        if True:\n'),
+    ('M34-CONSENT-SAME-USER-OPT-IN', SP,
+     '        if os.environ.get(SAME_USER_ENV) != "advisory":\n',
+     '        if False:\n'),
+    ('M35-CONSENT-ADVISORY-RECEIPT', SP,
+     'advisory=state == "advisory")',
+     'advisory=False)'),
+    ('M36-CONSENT-SAME-USER-VALUE', SP,
+     '    if not _env_set_nonempty(SAME_USER_ENV) or value == "advisory":   # blank is unset: inert\n',
+     '    if True:\n'),
+    ('M33-CONSENT-ONE-STAT', SP,
+     '    try:\n        os.makedirs(os.path.join(spent_dir, SPENT_DIR)',
+     '    try:\n        st = os.lstat(grant_path(cid) or "")\n        os.makedirs(os.path.join(spent_dir, SPENT_DIR)'),
 ]
 
 #: The round's test set: the whole suite. Until the cut (2026-10-18) this was a hand-kept list of

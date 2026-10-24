@@ -284,11 +284,12 @@ def govern(row: Row, *, cfg: wire.Plane | None = None, path: str | None = None,
     for refusal in (
         spine.contain_refusal(),
         spine.retired_refusal(),
+        spine.same_user_refusal(),
         spine.forbid_refusal(row.product, row.method, called, args,
                              extra=cfg.forbid if cfg is not None else ()),
         spine.taint_refusal(audit_dir, row.product, row.method, called, args),
         None if consent_covered else spine.taint_consent_refusal(audit_dir),
-        None if consent_covered else spine.consent_refusal(cid),
+        None if consent_covered else spine.consent_refusal(cid, audit_dir or "."),
     ):
         if refusal is not None:
             detail = dict(refusal.detail)
@@ -333,7 +334,10 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
     }
     if verdict.consent_id:
         out["consent_id"] = verdict.consent_id
-        out["consent"] = spine.consent_state(verdict.consent_id)
+        out["consent"] = spine.consent_state(verdict.consent_id, _audit_dir(ledger_cfg) or ".")
+        if out["consent"] == "advisory":
+            out["reason"] = (f"{out['reason']}; consent is advisory: a grant the agent's own user owns, "
+                             "a speed bump, not a lock")
         gp = spine.grant_path(verdict.consent_id)
         if gp:
             out["grant_path"] = gp
@@ -834,9 +838,26 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # like every other, before anything is touched.
     base_url = cfg.base_url if cfg is not None else wire.env_base_url(row.product)
     lcfg = ledger_cfg or LedgerConfig.from_env()
+    audit_dir = os.path.dirname(lcfg.audit_log_path) or "."
+    spent = None if net_of is not None else spine.spend_consent(verdict.consent_id or "", audit_dir)
+    if isinstance(spent, spine.Spend):
+        # The evidence beside the marker: an agent that deletes its marker to spend one grant
+        # again leaves one more of these rows in the chain each time. REQUIRED, and a failed
+        # write rolls the marker back: a spend PROVE can't hold is no spend, and it must not
+        # burn the operator's approval either. The grant goes only once the row is down.
+        try:
+            _record(ledger_cfg, "core.consent_spent", row, outcome="ok",
+                    detail={"consent_id": verdict.consent_id,
+                            "grant": {"inode": spent.inode, "mtime_ns": spent.mtime_ns},
+                            **({"advisory": True} if spent.advisory else {})},
+                    called=called, required=True, remote=remote)
+        except BaseException:
+            spine.unspend(spent)
+            raise
+        spine.retire_grant(verdict.consent_id or "", spent)
     for refusal in (
-        None if net_of is not None else spine.consume_consent(verdict.consent_id or ""),
-        spine.reserve_rate(base_url, os.path.dirname(lcfg.audit_log_path) or ".",
+        spent if isinstance(spent, spine.Refusal) else None,
+        spine.reserve_rate(base_url, audit_dir,
                            cap=(cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)),
     ):
         if refusal is not None:

@@ -32,7 +32,8 @@ HARVESTED = ROOT / "records" / "tiers.toml"
 #: (read-back: a POST that reads). pbs 89 · pmg 17.
 #: 179 on 2026-10-04 (lens 1): +3 address lines sharper than their family (the subscription,
 #: installation-record and remote DELETEs).
-EXACT_GRANT = 180   # +1 2026-10-04 lens 2 N3: the subscription PUT
+#: 191 on 2026-10-24: +11 qemu/lxc power and snapshot lines (John, "all as proposed").
+EXACT_GRANT = 191   # +1 2026-10-04 lens 2 N3: the subscription PUT
 
 
 # --- the harvested tier file: address-level only, and honest about what it opens ---------------

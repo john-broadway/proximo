@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -320,6 +321,302 @@ def test_consent_expired_grant_is_refused(armed, monkeypatch):
     with pytest.raises(ProximoError, match="expired"):
         engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
     assert rec.calls == [] and g.exists(), "an expired grant is not consumed"
+
+
+def test_a_grant_owned_by_the_agents_own_user_is_refused(armed, monkeypatch):
+    cfg, rec, tmp = armed
+    grants = tmp / "grants"
+    grants.mkdir()
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", str(grants))
+    monkeypatch.setattr(spine, "_euid", os.geteuid)            # the grant's owner IS the agent
+    row = _config_row(monkeypatch)
+    cid = engine.govern(row, cfg=cfg, path=CFG_PATH, args={}).consent_id
+    (grants / cid).write_text("")
+    with pytest.raises(ProximoError, match="agent's own user"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+    assert (grants / cid).exists(), "a refused grant is not consumed"
+    assert _refusals()[-1]["detail"]["consent"] == "self"
+
+
+def test_a_symlinked_grant_to_another_users_file_is_still_refused(armed, monkeypatch):
+    # lstat + S_ISREG runs before the owner look: a link is refused, never admitted as its target
+    cfg, rec, tmp = armed
+    grants = tmp / "grants"
+    grants.mkdir()
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", str(grants))
+    row = _config_row(monkeypatch)
+    cid = engine.govern(row, cfg=cfg, path=CFG_PATH, args={}).consent_id
+    (tmp / "other").write_text("")
+    (grants / cid).symlink_to(tmp / "other")
+    with pytest.raises(ProximoError, match="consent"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+
+
+def _grant_cannot_be_unlinked(monkeypatch, grants):
+    """A root-placed grant in a dir the agent's user can't unlink in: `remove` refuses inside the
+    grant dir only, so every other removal (rate, taint markers) behaves as it really does."""
+    real = os.remove
+
+    def remove(path, *a, **kw):
+        if os.path.dirname(os.path.abspath(path)) == str(grants):
+            raise PermissionError(13, "Operation not permitted", path)
+        return real(path, *a, **kw)
+    monkeypatch.setattr(spine.os, "remove", remove)
+
+
+def _consent_box(armed, monkeypatch):
+    cfg, rec, tmp = armed
+    grants = tmp / "grants"
+    grants.mkdir()
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", str(grants))
+    row = _config_row(monkeypatch)
+    cid = engine.govern(row, cfg=cfg, path=CFG_PATH, args={}).consent_id
+    return cfg, rec, tmp, grants, row, cid
+
+
+def _puts(rec):
+    return [c for c in rec.calls if c[0] == "PUT"]
+
+
+def test_a_grant_the_agent_cannot_delete_spends_exactly_once(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    (grants / cid).write_text("")
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 1
+    with pytest.raises(ProximoError, match="spent"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 1, "one approval bought two writes"
+    assert (grants / cid).exists()
+    spends = [r for r in _rows() if r["action"] == "core.consent_spent"]
+    assert len(spends) == 1
+    assert spends[0]["detail"]["consent_id"] == cid
+    assert set(spends[0]["detail"]["grant"]) == {"inode", "mtime_ns"}
+
+
+def test_a_fresh_regrant_of_the_same_plan_is_admitted_once_more(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    g = grants / cid
+    g.write_text("")
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    later = time.time() + 5
+    os.utime(g, (later, later))                                  # the operator approves again
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 2
+    with pytest.raises(ProximoError, match="spent"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 2
+
+
+def test_a_spent_marker_dir_that_cannot_be_made_refuses(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    audit_dir = os.path.dirname(os.environ["PROXIMO_AUDIT_LOG"])
+    with open(os.path.join(audit_dir, ".proximo-consent-spent"), "w"):
+        pass                                                    # a FILE where the marker dir goes
+    (grants / cid).write_text("")
+    with pytest.raises(ProximoError, match="consent"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+
+
+def test_a_rate_refusal_after_the_spend_leaves_the_grant_spent(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    monkeypatch.setenv("PROXIMO_RATE_MAX", "0")                  # 0 = refuse everything
+    (grants / cid).write_text("")
+    with pytest.raises(ProximoError, match="rate"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    monkeypatch.delenv("PROXIMO_RATE_MAX")
+    with pytest.raises(ProximoError, match="spent"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert _puts(rec) == []
+    actions = [r["action"] for r in _rows()]
+    assert "core.consent_spent" in actions
+    assert any(r["detail"].get("needs") == "rate" for r in _refusals())
+
+
+def test_two_racing_spends_of_one_grant_one_wins(armed, monkeypatch, tmp_path):
+    # The racer that passed its look before the other's marker existed: only O_EXCL stops it
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    (grants / cid).write_text("")
+    first = spine.spend_consent(cid, str(tmp_path))
+    assert isinstance(first, spine.Spend)
+    monkeypatch.setattr(spine, "_refusal_for", lambda c, state: None)       # its look said clear
+    second = spine.spend_consent(cid, str(tmp_path))
+    assert isinstance(second, spine.Refusal) and second.detail["consent"] == "spent"
+
+
+def test_a_spend_the_ledger_cannot_hold_touches_nothing_and_keeps_the_grant(armed, monkeypatch):
+    # A full disk or a lost key at the spend row: the write is REQUIRED, so nothing reaches the
+    # wire, and the marker is rolled back so the operator's one approval is not burned unreceipted
+    from proximo.core import ledger
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    (grants / cid).write_text("")
+    real = ledger.AuditLedger.record
+
+    def record(self, action, **kw):
+        if action == "core.consent_spent":
+            raise OSError(28, "No space left on device")
+        return real(self, action, **kw)
+    monkeypatch.setattr(ledger.AuditLedger, "record", record)
+    with pytest.raises(ProximoError):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == [], "the spend PROVE could not hold reached the wire"
+    assert (grants / cid).exists(), "the grant was removed before its spend was receipted"
+    monkeypatch.setattr(ledger.AuditLedger, "record", real)
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)               # the same approval, once
+    assert len(_puts(rec)) == 1
+
+
+def _swap_after_the_look(monkeypatch, then):
+    """Run `then()` the moment the look returns: any later stat of the grant path sees the swap."""
+    real = spine._look
+
+    def look(cid, spent_dir):
+        out = real(cid, spent_dir)
+        if sys._getframe(1).f_code.co_name == "spend_consent":   # the spend's look, not govern's
+            then()
+        return out
+    monkeypatch.setattr(spine, "_look", look)
+
+
+def test_a_grant_swapped_between_the_look_and_the_spend_spends_what_was_judged(armed, monkeypatch):
+    # One stat, judged and spent: the marker is keyed on the file the checks passed, and the core
+    # never removes a file it did not judge (security review, 2026-10-24: a second lstat in the
+    # spend read whatever had been put at the path since the look)
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    g = grants / cid
+    g.write_text("")
+    judged = os.lstat(g).st_ino
+    swapped = []
+
+    def swap():
+        if not swapped:
+            g.rename(tmp / "judged-grant")
+            g.write_text("swapped in")
+            swapped.append(True)
+    _swap_after_the_look(monkeypatch, swap)
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert swapped, "the swap never ran: the case proves nothing"
+    spend = [r for r in _rows() if r["action"] == "core.consent_spent"][-1]
+    assert spend["detail"]["grant"]["inode"] == judged
+    assert g.read_text() == "swapped in", "the core removed a file it never judged"
+    monkeypatch.undo()
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", str(grants))
+    g.unlink()
+    (tmp / "judged-grant").rename(g)                     # the judged grant comes back
+    audit_dir = os.path.dirname(os.environ["PROXIMO_AUDIT_LOG"])
+    assert spine.consent_state(cid, audit_dir) == "spent", "one approval, a second write"
+
+
+def test_a_re_approval_touched_onto_the_same_file_is_not_removed(armed, monkeypatch):
+    # same inode, new mtime: the operator approved again after the look; retire must leave it
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    g = grants / cid
+    g.write_text("")
+    later = time.time() + 5
+    _swap_after_the_look(monkeypatch, lambda: os.utime(g, (later, later)))
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert g.exists(), "retire removed a re-approval it never judged"
+
+
+def test_one_grant_renamed_onto_another_plan_spends_once_across_both(armed, monkeypatch, tmp_path):
+    # a dir the agent can rename in (outside the recipe): the marker is the FILE's, not the plan's
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    (grants / cid).write_text("")
+    first = spine.spend_consent(cid, str(tmp_path))
+    assert isinstance(first, spine.Spend)
+    other = "f" * 64
+    (grants / cid).rename(grants / other)
+    second = spine.spend_consent(other, str(tmp_path))
+    assert isinstance(second, spine.Refusal) and second.detail["consent"] == "spent"
+
+
+def test_plan_shows_a_spent_grant_as_spent(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    (grants / cid).write_text("")
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert engine.plan(row, {}, cfg=cfg, path=CFG_PATH)["consent"] == "spent"
+
+
+# --- the same-user opt-in: a speed bump, said to be one ----------------------------------------------
+
+def _self_owned_grant(armed, monkeypatch, mode=None):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    monkeypatch.setattr(spine, "_euid", os.geteuid)            # the grant's owner IS the agent's user
+    if mode is not None:
+        monkeypatch.setenv("PROXIMO_CONSENT_SAME_USER", mode)
+    (grants / cid).write_text("")
+    return cfg, rec, tmp, grants, row, cid
+
+
+def test_a_self_owned_grant_refusal_names_the_opt_in(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch)
+    with pytest.raises(ProximoError, match="PROXIMO_CONSENT_SAME_USER=advisory"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+
+
+def test_advisory_admits_a_self_owned_grant_once_and_says_so(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch, "advisory")
+    _grant_cannot_be_unlinked(monkeypatch, grants)
+    assert engine.plan(row, {}, cfg=cfg, path=CFG_PATH)["consent"] == "advisory"
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 1
+    spend = [r for r in _rows() if r["action"] == "core.consent_spent"][-1]
+    assert spend["detail"]["advisory"] is True
+    with pytest.raises(ProximoError, match="spent"):              # still one approval, one write
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert len(_puts(rec)) == 1
+
+
+def test_advisory_still_honours_the_ttl(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch, "advisory")
+    monkeypatch.setenv("PROXIMO_CONSENT_TTL_SECONDS", "10")
+    old = time.time() - 100
+    os.utime(grants / cid, (old, old))
+    with pytest.raises(ProximoError, match="expired"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+
+
+def test_an_operator_owned_grant_is_not_marked_advisory(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)    # owner is "another user"
+    monkeypatch.setenv("PROXIMO_CONSENT_SAME_USER", "advisory")
+    (grants / cid).write_text("")
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    spend = [r for r in _rows() if r["action"] == "core.consent_spent"][-1]
+    assert "advisory" not in spend["detail"]
+
+
+@pytest.mark.parametrize("value", ["yes", "Advisory", "1", " advisory"])
+def test_a_bad_same_user_value_refuses_mutations_and_leaves_reads_alone(armed, monkeypatch, value):
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch, value)
+    with pytest.raises(ProximoError, match="PROXIMO_CONSENT_SAME_USER"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert rec.calls == []
+    assert _refusals()[-1]["detail"]["needs"] == "config"
+
+
+@pytest.mark.parametrize("value", ["", "  "])
+def test_an_empty_same_user_value_is_unset_not_a_config_error(armed, monkeypatch, value):
+    # "env unset = inert": a blank KEY= in an EnvironmentFile is unset, so a self grant is
+    # refused as "self" (the default), and nothing else is refused for it
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch, value)
+    with pytest.raises(ProximoError, match="agent's own user"):
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert _refusals()[-1]["detail"]["needs"] == "consent"
+
+
+def test_an_advisory_plan_says_so_in_its_reason(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _self_owned_grant(armed, monkeypatch, "advisory")
+    out = engine.plan(row, {}, cfg=cfg, path=CFG_PATH)
+    assert out["allowed"] and "advisory" in out["reason"] and "not a lock" in out["reason"]
 
 
 def test_consent_grant_dir_unreadable_fails_closed(armed, monkeypatch):

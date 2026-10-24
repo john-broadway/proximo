@@ -60,6 +60,13 @@ is expected behavior (see `SECURITY.md` → "Honest scope notes"):
   clear it. Real boundary ⇢ put that state out of the agent's reach, or rely on Layer 1.
   The runbook for building that reach is `SECURITY.md` → "Building the boundary: a
   hardened deployment (Layer 2 in practice)".
+- **A consent grant spends once by a marker the agent could delete.** The grant itself must
+  not be the agent's (one it owns is refused); the spent marker beside the ledger is
+  agent-writable, so a compromised agent could re-spend one grant for the same exact plan
+  inside its TTL. Each spend is a `core.consent_spent` row, so it shows in the chain.
+- **`PROXIMO_CONSENT_SAME_USER=advisory` trusts the agent.** On a one-user box it accepts grants
+  the agent's own user owns, which that agent could write itself; it is off by default, and
+  each such spend is marked `advisory` in the ledger so the record never claims a lock.
 - **Risk ratings are not a sandbox.** `LOW` means "no state change," not "safe." Proximo
   previews/undoes/proves; it does not sandbox the Proxmox API.
 - **UNDO is not universal.** Firewall / SDN / ACL / token planes have no Proxmox rollback

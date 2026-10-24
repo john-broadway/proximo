@@ -428,3 +428,14 @@ def test_a_located_spine_refusal_of_a_read_is_repeated_without_the_locator(box, 
     assert MARK not in json.dumps(r)
     assert r["planes"]["pve"]["reach"]["version"] == {"error": "refused",
                                                       "reason": "refused: <path> is not readable, see <path> and <url>"}
+
+
+def test_an_advisory_consent_box_says_so_in_the_health_report(box, monkeypatch, tmp_path):
+    # the exception is visible everywhere it could be mistaken for a lock, DIAGNOSE included
+    consent = tmp_path / f"{MARK}-consent"
+    consent.mkdir()
+    monkeypatch.setenv("PROXIMO_CONSENT_DIR", str(consent))
+    monkeypatch.setenv("PROXIMO_CONSENT_SAME_USER", "advisory")
+    r = _report()
+    assert r["pillars"]["CONSENT"]["advisory"] is True
+    assert any("advisory" in f and "speed bump" in f for f in r["flags"]), r["flags"]

@@ -70,6 +70,11 @@ from proximo.core.tls import PinMismatch
 TRIP_ENV = "PROXIMO_CONTAIN_TRIP_PATH"
 FORBID_ENV = "PROXIMO_FORBID"
 CONSENT_DIR_ENV = "PROXIMO_CONSENT_DIR"
+#: The one exception to "a grant the agent's own user owns is the agent granting itself": an
+#: operator on a one-user box may accept such grants as a SPEED BUMP, said to be one. Off unless
+#: set to exactly "advisory"; any other value refuses mutations; every such grant is marked
+#: "advisory" in the plan and in its spend receipt. Set it from the root-owned environment.
+SAME_USER_ENV = "PROXIMO_CONSENT_SAME_USER"
 CONSENT_TTL_ENV = "PROXIMO_CONSENT_TTL_SECONDS"
 RATE_MAX_ENV = "PROXIMO_RATE_MAX"
 RATE_WINDOW_ENV = "PROXIMO_RATE_WINDOW"
@@ -472,28 +477,90 @@ def grant_path(cid: str) -> str | None:
     return os.path.join(d, cid) if d else None
 
 
-def consent_state(cid: str) -> str:
-    """"inert" (dir unset) | "granted" | "required" (absent) | "expired" | "error" -- a PURE look."""
+def _euid() -> int:
+    """The process's effective uid: the one owner a grant must NOT have. A seam so the suite (which
+    owns every file it writes) can play the operator; never patched outside tests."""
+    return os.geteuid()
+
+
+SPENT_DIR = ".proximo-consent-spent"   # beside the ledger, like RATE's reservations
+
+
+@dataclass(frozen=True)
+class Spend:
+    """One grant, spent: which file (inode + mtime, so the operator re-approving the same plan is a
+    NEW grant) and the marker that spends it, so a spend PROVE cannot receipt can be rolled back."""
+    inode: int
+    mtime_ns: int
+    marker: str
+    advisory: bool = False
+
+
+def _spent_marker(spent_dir: str, st: os.stat_result) -> str:
+    """The FILE's mark (device, inode, mtime), not the plan's. Keyed on the plan id too, one
+    operator grant renamed onto another plan's id spent once for each name (lens, 2026-10-24, in
+    a grant dir the agent may rename in, outside the documented recipe)."""
+    return os.path.join(spent_dir, SPENT_DIR, f"{st.st_dev}.{st.st_ino}.{st.st_mtime_ns}")
+
+
+def same_user_refusal() -> Refusal | None:
+    """A value other than "advisory" is a typo nobody should find out about by being loosened."""
+    value = os.environ.get(SAME_USER_ENV)
+    if not _env_set_nonempty(SAME_USER_ENV) or value == "advisory":   # blank is unset: inert
+        return None
+    return Refusal("config", f"{SAME_USER_ENV}={value!r} is not a value the core reads; set it to "
+                             f"'advisory' or unset it", {"env": SAME_USER_ENV})
+
+
+def consent_state(cid: str, spent_dir: str | None = None) -> str:
+    """"inert" (dir unset) | "granted" | "advisory" (granted, but the agent's own user owns it and
+    PROXIMO_CONSENT_SAME_USER=advisory accepts that) | "required" (absent) | "expired" | "self"
+    (the agent owns it) | "spent" (this very grant was used; looked for only when `spent_dir` is
+    given) | "error" -- a PURE look."""
+    return _look(cid, spent_dir)[0]
+
+
+def _look(cid: str, spent_dir: str | None) -> tuple[str, os.stat_result | None]:
+    """The state AND the one stat it was judged on. The spend keys its marker on this same stat:
+    a second `lstat` in the spend read whatever had been put at the path since the look, so a
+    swap between them spent a file no check had passed (security review, 2026-10-24)."""
     path = grant_path(cid)
     if path is None:
-        return "inert"
+        return "inert", None
     try:
         st = os.lstat(path)
     except FileNotFoundError:
-        return "required"
+        return "required", None
     except (OSError, ValueError):
-        return "error"
+        return "error", None
     if not stat.S_ISREG(st.st_mode):
         # A grant is a REGULAR file the operator placed. A symlink to any fresh file, or a
         # directory, read as a grant under a bare stat (lens, 2026-09-22); lstat + S_ISREG
         # refuses both, and the consume below never removes what this did not accept.
-        return "error"
-    return "expired" if (time.time() - st.st_mtime) > _consent_ttl() else "granted"
+        return "error", st
+    advisory = False
+    if st.st_uid == _euid():
+        # The hardened recipe once put grants in a dir the agent's GROUP could create in, and
+        # nothing here asked who placed the file: the agent wrote its own grant and it was
+        # accepted (lens, 2026-10-24). A grant is the OPERATOR's act; one the agent owns is not,
+        # unless the operator said in writing that this box takes one as a speed bump; even then
+        # it is spent once and expires like any grant, and it is never called "granted".
+        if os.environ.get(SAME_USER_ENV) != "advisory":
+            return "self", st
+        advisory = True
+    if spent_dir is not None and os.path.lexists(_spent_marker(spent_dir, st)):
+        return "spent", st
+    if (time.time() - st.st_mtime) > _consent_ttl():
+        return "expired", st
+    return ("advisory" if advisory else "granted"), st
 
 
-def consent_refusal(cid: str) -> Refusal | None:
-    state = consent_state(cid)
-    if state in ("inert", "granted"):
+def consent_refusal(cid: str, spent_dir: str | None = None) -> Refusal | None:
+    return _refusal_for(cid, consent_state(cid, spent_dir))
+
+
+def _refusal_for(cid: str, state: str) -> Refusal | None:
+    if state in ("inert", "granted", "advisory"):
         return None
     path = grant_path(cid)
     why = {
@@ -501,28 +568,71 @@ def consent_refusal(cid: str) -> Refusal | None:
                     f"an empty file at {path!r} from OUTSIDE this agent",
         "expired": "grant present but older than the consent TTL; re-approve",
         "error": "consent directory unreadable or path invalid (fail-closed)",
+        "spent": "this grant was already used once; one approval buys one write, so re-approve",
+        "self": "the grant file is owned by the agent's own user, which is the agent granting "
+                "itself; an operator places it from an account the agent does not run as (or, on "
+                f"a one-user box, sets {SAME_USER_ENV}=advisory to take such grants as a speed bump, "
+                "not a lock)",
     }[state]
     return Refusal("consent", f"consent {state}: {why}", {"consent_id": cid, "consent": state})
 
 
-def consume_consent(cid: str) -> Refusal | None:
-    """The SPENDING half: `os.remove` IS the authoritative "did I hold this grant" check, so the
-    grant is single-use and race-safe with no lock -- only one racing caller wins the remove."""
-    refusal = consent_refusal(cid)
+def spend_consent(cid: str, spent_dir: str) -> Refusal | Spend | None:
+    """The SPENDING half. None = consent is inert. Single use is an `O_EXCL` marker beside the
+    ledger, keyed by the grant's inode and mtime: only one racing caller creates it, and it needs
+    no unlink in the grant dir, which a hardened install does not let the agent's user do. (The
+    spend WAS `os.remove`, so a root-placed grant in a sticky dir could never be spent: the
+    agent's own grants worked and the operator's did not; lens, 2026-10-24.) The caller writes the
+    spend's receipt, then `retire_grant`, or `unspend` when the receipt fails. Anything that
+    prevents proving the spend refuses."""
+    state, st = _look(cid, spent_dir)
+    refusal = _refusal_for(cid, state)
     if refusal is not None:
         return refusal
+    if st is None:                      # inert: no grant dir, nothing to spend
+        return None
+    fail = Refusal("consent", "consent error: grant present but could not be consumed (fail-closed)",
+                   {"consent_id": cid, "consent": "error"})
+    try:
+        os.makedirs(os.path.join(spent_dir, SPENT_DIR), mode=0o700, exist_ok=True)
+    except (OSError, ValueError):       # a FILE where the dir goes raises FileExistsError: not "spent"
+        return fail
+    try:
+        fd = os.open(_spent_marker(spent_dir, st),
+                     os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        return Refusal("consent", "consent spent: grant consumed concurrently (single-use)",
+                       {"consent_id": cid, "consent": "spent"})
+    except (OSError, ValueError):
+        return fail
+    os.close(fd)
+    return Spend(st.st_ino, st.st_mtime_ns, _spent_marker(spent_dir, st), advisory=state == "advisory")
+
+
+def unspend(spend: Spend) -> None:
+    """Roll a spend back when its receipt could not be written: the operator's one approval must
+    not be burned with no trace (lens, 2026-10-24). The marker is in the agent's own dir, so this
+    can only fail if something else removed it first."""
+    try:
+        os.remove(spend.marker)
+    except OSError:
+        pass
+
+
+def retire_grant(cid: str, spend: Spend) -> None:
+    """After the spend is receipted: remove the grant when the dir allows it, and only if the path
+    still holds the very file that was judged and spent (same inode and mtime); a file put there
+    since is not the core's to remove. A hardened dir refuses the remove, and the marker already
+    makes the grant single-use, so a refusal here changes nothing."""
     path = grant_path(cid)
     if path is None:
-        return None
+        return
     try:
-        os.remove(path)
-    except FileNotFoundError:
-        return Refusal("consent", "consent race: grant consumed concurrently (single-use)",
-                       {"consent_id": cid, "consent": "race"})
-    except (OSError, ValueError):
-        return Refusal("consent", "consent error: grant present but could not be consumed (fail-closed)",
-                       {"consent_id": cid, "consent": "error"})
-    return None
+        st = os.lstat(path)
+        if (st.st_ino, st.st_mtime_ns) == (spend.inode, spend.mtime_ns):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 # ---- RATE ---------------------------------------------------------------------------------------

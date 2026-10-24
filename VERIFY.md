@@ -63,6 +63,15 @@ The chain is keyed (HMAC-SHA256) with no unkeyed mode: an attacker can't recompu
 without the key, and `audit_verify(expected_head=...)` catches truncation of the *tail*
 by pinning the head off-box. Tamper-evident, not just tamper-logged.
 
+**Without Proximo installed.** The format is written down in
+[`docs/ledger-format.md`](docs/ledger-format.md), and `scripts/verify_ledger.py` checks a log
+from it with the standard library alone, so whoever you hand the log and its key to can run:
+
+```sh
+python3 scripts/verify_ledger.py audit.log --key audit.key
+# => ok 2 <head>
+```
+
 ## 3. No phone-home — the entire outbound surface is greppable
 
 Proximo talks to exactly one place: the Proxmox endpoint **you** configure. There is no
@@ -94,7 +103,7 @@ gh attestation verify oci://ghcr.io/john-broadway/proximo:latest --owner john-br
 // the attestation ties the image to the real repo + release workflow:
 "predicateType": "https://slsa.dev/provenance/v1"
 "sourceRepositoryURI": "https://github.com/john-broadway/proximo"
-"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.46.2"
+"buildSignerURI": ".github/workflows/release.yml@refs/tags/v0.47.0"
 ```
 
 The image also ships an **SPDX SBOM** (`release.yml`, `sbom: true`). Inspect it on any
@@ -108,7 +117,7 @@ in the release path to steal. Each artifact has an attached provenance attestati
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://pypi.org/integrity/proximo-proxmox/0.46.2/proximo_proxmox-0.46.2-py3-none-any.whl/provenance
+  https://pypi.org/integrity/proximo-proxmox/0.47.0/proximo_proxmox-0.47.0-py3-none-any.whl/provenance
 # => 200   (the signed provenance PyPI generated at publish time)
 ```
 

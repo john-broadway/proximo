@@ -444,10 +444,7 @@ class AuditLedger:
         rows pass and a cut below it or a replaced file fails; a row forged after it does not.
         """
         self._refuse_if_symlinked_dir()
-        lines: list[str] = []
-        if os.path.exists(self.path):
-            with open(self.path, encoding="utf-8") as f:
-                lines = _rows_of(f.read())
+        lines = _read_rows(self.path) if os.path.exists(self.path) else []
         return verify_lines(lines, self.key, expected_head, pinned_row)
 
 
@@ -457,6 +454,30 @@ def _rows_of(text: str) -> list[str]:
     inside a string, so one genuine row (a pasted description) became two unparseable fragments
     and a clean ledger read as tampered (lens 3)."""
     return text.split("\n")
+
+
+#: A row the writer cannot have produced: bytes that are not UTF-8 (read back as lone surrogates)
+#: or an escaped lone surrogate, either of which leaves no canonical body to hash.
+UNENCODABLE = "row holds characters the writer cannot produce (not UTF-8, or a lone surrogate)"
+
+
+def _read_rows(path: str) -> list[str]:
+    """The file's rows the way the WRITER joined them, for every check that gives a verdict.
+    Text mode's universal newlines read a lone `\r` as a row break the writer never wrote, so
+    Proximo's own check and a checker that splits on `\n` gave opposite answers on one file
+    (lens 3a, 2026-10-24). `surrogateescape` turns a byte that is not UTF-8 into a broken ROW
+    at its line, not a crash of the whole check."""
+    with open(path, "rb") as f:
+        return _rows_of(f.read().decode("utf-8", errors="surrogateescape"))
+
+
+def _parse_row(raw: str) -> Any:
+    """json.loads, with every way a planted row can make it RAISE read as unparseable: a 5,000
+    digit int (ValueError) and deep nesting (RecursionError) crashed audit_verify (lens 3a)."""
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):
+        raise json.JSONDecodeError("unparseable", raw, 0) from None
 
 
 def verify_lines(lines: list[str], key: bytes | None, expected_head: str | None = None,
@@ -478,7 +499,7 @@ def verify_lines(lines: list[str], key: bytes | None, expected_head: str | None 
             # stale fd held across rotation) — flag it (detection is the guarantee).
             return LedgerVerification(False, count, lineno, "entry recorded after ledger seal")
         try:
-            entry = json.loads(raw)
+            entry = _parse_row(raw)
         except json.JSONDecodeError:
             return LedgerVerification(False, count, lineno, "unparseable line")
         if not isinstance(entry, dict):
@@ -494,14 +515,20 @@ def verify_lines(lines: list[str], key: bytes | None, expected_head: str | None 
             if entry_alg != _KEY_ALG:
                 return LedgerVerification(False, count, lineno,
                                           "expected an HMAC-keyed entry but found none (possible downgrade)")
-            expected = _hash(body, prev, key)
+            try:
+                expected = _hash(body, prev, key)
+            except UnicodeEncodeError:
+                return LedgerVerification(False, count, lineno, UNENCODABLE)
         else:
             # Unkeyed ledger: a keyed entry can't be verified without the key — say so.
             if entry_alg == _KEY_ALG:
                 return LedgerVerification(False, count, lineno, "chain is HMAC-keyed but verify() has no key")
             if entry_alg is not None:
                 return LedgerVerification(False, count, lineno, f"unknown chain alg {entry_alg!r}")
-            expected = _hash(body, prev, None)
+            try:
+                expected = _hash(body, prev, None)
+            except UnicodeEncodeError:
+                return LedgerVerification(False, count, lineno, UNENCODABLE)
         found_hash = entry.get("entry_hash")
         if not isinstance(found_hash, str):
             # A truthy non-string entry_hash (42, [..], {..}) would crash compare_digest; treat
@@ -561,8 +588,7 @@ def read_log(log_path: str) -> list[str]:
     are different facts and only the first is knowable."""
     if not os.path.exists(log_path):
         raise ProximoError(f"no ledger at {log_path}; nothing can be found on it")
-    with open(log_path, encoding="utf-8") as f:
-        return _rows_of(f.read())
+    return _read_rows(log_path)
 
 
 def parse_lines(lines: list[str]) -> list[dict]:
@@ -659,49 +685,51 @@ def verify_chain(path: str, key: bytes | None) -> LedgerVerification:
     prev, count, segments, sealed_seen = GENESIS_HASH, 0, [], False
     if not os.path.exists(path):
         return LedgerVerification(False, 0, None, "no such file")
-    with open(path, encoding="utf-8") as f:
-        for lineno, raw in enumerate(f, start=1):
-            raw = raw.strip()
-            if not raw:
-                continue
-            if sealed_seen:
-                # THE SEAL IS TERMINAL, here as in verify(). A lens appended a valid row after
-                # the archive's `audit_rotate{sealed:true}` and this walk said ok: the one
-                # verifier built for sealed archives was not checking the seal held.
-                return LedgerVerification(False, count, lineno, "entry recorded after ledger seal",
-                                          tuple(segments))
-            try:
-                entry = json.loads(raw)
-            except json.JSONDecodeError:
-                return LedgerVerification(False, count, lineno, "unparseable line", tuple(segments))
-            if not isinstance(entry, dict):
-                return LedgerVerification(False, count, lineno, "non-object line", tuple(segments))
-            if entry.get("prev_hash") != prev:
-                return LedgerVerification(False, count, lineno,
-                                          "prev_hash mismatch (entry inserted, removed, or reordered)",
-                                          tuple(segments))
-            alg = entry.get("alg") or "sha256"
-            if alg == _KEY_ALG and key is None:
-                return LedgerVerification(False, count, lineno,
-                                          "keyed entry but no key was given to verify it", tuple(segments))
-            if alg not in (_KEY_ALG, "sha256"):
-                return LedgerVerification(False, count, lineno, f"unknown chain alg {alg!r}", tuple(segments))
-            body = {k: v for k, v in entry.items() if k not in _CHAIN_FIELDS}
+    for lineno, raw in enumerate(_read_rows(path), start=1):  # split as the writer joined it
+        raw = raw.strip()
+        if not raw:
+            continue
+        if sealed_seen:
+            # THE SEAL IS TERMINAL, here as in verify(). A lens appended a valid row after
+            # the archive's `audit_rotate{sealed:true}` and this walk said ok: the one
+            # verifier built for sealed archives was not checking the seal held.
+            return LedgerVerification(False, count, lineno, "entry recorded after ledger seal",
+                                      tuple(segments))
+        try:
+            entry = _parse_row(raw)
+        except json.JSONDecodeError:
+            return LedgerVerification(False, count, lineno, "unparseable line", tuple(segments))
+        if not isinstance(entry, dict):
+            return LedgerVerification(False, count, lineno, "non-object line", tuple(segments))
+        if entry.get("prev_hash") != prev:
+            return LedgerVerification(False, count, lineno,
+                                      "prev_hash mismatch (entry inserted, removed, or reordered)",
+                                      tuple(segments))
+        alg = entry.get("alg") or "sha256"
+        if alg == _KEY_ALG and key is None:
+            return LedgerVerification(False, count, lineno,
+                                      "keyed entry but no key was given to verify it", tuple(segments))
+        if alg not in (_KEY_ALG, "sha256"):
+            return LedgerVerification(False, count, lineno, f"unknown chain alg {alg!r}", tuple(segments))
+        body = {k: v for k, v in entry.items() if k not in _CHAIN_FIELDS}
+        try:
             expected = _hash(body, prev, key if alg == _KEY_ALG else None)
-            found = entry.get("entry_hash")
-            if not isinstance(found, str) or not hmac.compare_digest(expected, found):
-                return LedgerVerification(False, count, lineno, "entry_hash mismatch (entry altered)",
-                                          tuple(segments))
-            prev = found
-            count += 1
-            detail = entry.get("detail")
-            if entry.get("action") == "audit_rotate" and isinstance(detail, dict) \
-                    and detail.get("sealed") is True:
-                sealed_seen = True
-            if segments and segments[-1][0] == alg:
-                segments[-1] = (alg, segments[-1][1] + 1)
-            else:
-                segments.append((alg, 1))
+        except UnicodeEncodeError:
+            return LedgerVerification(False, count, lineno, UNENCODABLE, tuple(segments))
+        found = entry.get("entry_hash")
+        if not isinstance(found, str) or not hmac.compare_digest(expected, found):
+            return LedgerVerification(False, count, lineno, "entry_hash mismatch (entry altered)",
+                                      tuple(segments))
+        prev = found
+        count += 1
+        detail = entry.get("detail")
+        if entry.get("action") == "audit_rotate" and isinstance(detail, dict) \
+                and detail.get("sealed") is True:
+            sealed_seen = True
+        if segments and segments[-1][0] == alg:
+            segments[-1] = (alg, segments[-1][1] + 1)
+        else:
+            segments.append((alg, 1))
     return LedgerVerification(True, count, None, None, tuple(segments), prev)
 
 

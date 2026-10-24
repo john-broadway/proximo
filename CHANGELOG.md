@@ -2,6 +2,24 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.47.0] — 2026-10-24
+
+**Self-owned grants refused; a stdlib ledger checker.** A minor: it refuses consent grants that worked before, adds an opt-in for one-user boxes, and adds a checker and a written ledger format.
+
+**Changed (refuses what worked before).** SECURITY.md's hardened recipe put consent grants in `/etc/proximo`, mode `1770 root:proximo`: the agent's group could create files there, and the gate never asked who placed a grant, so the agent could write its own and it was accepted. A grant owned by the agent's own user is now refused (`consent: "self"`). On an install where the human and the agent are one user, root included, consent refuses every mutation it guards until the agent runs as its own account. The recipe now gives grants their own directory, owned by the operator's account, that the agent can read and not create in; `packaging/proximo.env.example` shows it.
+
+**New: `PROXIMO_CONSENT_SAME_USER=advisory`.** For a one-user box where consent is the agent stopping to ask, not a lock: same-user grants are accepted, still spent once and still bound by the TTL, and never called granted. The plan shows `consent: "advisory"` and says so in its reason, every such spend receipt carries `"advisory": true`, and DIAGNOSE flags the box. It trusts the agent not to write its own grant, which the default refuses to trust. Off unless exactly `advisory`; any other value refuses mutations; a blank value is unset.
+
+**Fixed: the spend.** It was `os.remove`, so a root-placed grant in that sticky directory could never be spent: the agent's grants worked and the operator's did not. A grant now spends once by a marker beside the ledger (`.proximo-consent-spent/`), with a `core.consent_spent` row as the evidence. The grant is judged and spent on one `lstat`, the marker is keyed on that file (device, inode, mtime; re-writing the grant is a new approval, renaming it onto another plan is not), and the core removes the grant only if the path still holds that file. If the spend's receipt cannot be written, nothing reaches the wire and the grant is not used up. `proximo_plan` shows a used grant as `consent: "spent"`.
+
+**New: the ledger format, written down, and a checker that needs no Proximo.** `docs/ledger-format.md` (format `ledger: 1`) and `scripts/verify_ledger.py`, one file of standard-library Python: whoever is handed a log and its key can check it. Its tests hold it to the core on every planted break, file by file.
+
+**Fixed: Proximo's own ledger check.** It read the log in text mode, so a lone `\r` the writer never writes was read as a row break, and the checker and `audit_verify` could give opposite verdicts on one file; every check that gives a verdict now reads the rows as the writer joined them. A row with a 5,000-digit number, deep nesting, a lone surrogate or bytes that are not UTF-8 crashed `audit_verify`; each is now a broken row at its line.
+
+**Tiers: the re-cut.** VM start, shutdown, resume, snapshot create and snapshot description are `restorable` on their own lines (they shared the `destructive` qemu family with destroy); VM and container reboot and VM suspend are `disruptive`; container resume, snapshot create and snapshot description are `restorable`. `vzdump`, PBS sync jobs, PBS realm sync and `pve:/access/users` are `destructive`; the PBS notification test and S3 check are `disruptive`. Severity still gates nothing on its own: a tier is what a plan and its receipt say.
+
+**1,858 tests** on Python 3.13.
+
 ## [0.46.2] — 2026-10-22
 
 **Six columns derived; two dead example keys removed.** A patch: a stricter loader, a corrected example file, and tests. No new capability; door contract 1 is unchanged and `proximo.json.gz` is byte-for-byte 0.46.0's.

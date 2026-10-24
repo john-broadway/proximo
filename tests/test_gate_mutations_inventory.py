@@ -255,3 +255,10 @@ def test_the_perimeter_has_no_default_caller(mod, params):
     sig = inspect.signature(importlib.import_module(mod).build_app)
     for name in params:
         assert sig.parameters[name].default is inspect.Parameter.empty, f"{mod}.build_app({name}=...) has a default"
+
+
+def test_every_mutant_has_its_own_id():
+    """The round reports by id: two mutants sharing `M24` read as one line in a report a human
+    scans for survivors (it happened, 2026-10-24: M24/M25 named a PROVE mutant and a CONSENT one)."""
+    ids = [m[0].split("-", 1)[0] for m in gm.M]
+    assert len(ids) == len(set(ids)), sorted({i for i in ids if ids.count(i) > 1})

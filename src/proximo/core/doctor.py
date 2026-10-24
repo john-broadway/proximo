@@ -222,6 +222,11 @@ def _pillars(report: dict[str, Any], chain_ok: bool, flags: list[str]) -> dict[s
     p["PLAN"] = {"standing": True, "how": "every mutation is planned and its executing row carries the plan"}
     if spine._env_set_nonempty(spine.CONSENT_DIR_ENV):
         p["CONSENT"] = {"standing": True, "ttl_seconds": spine._consent_ttl()}
+        if os.environ.get(spine.SAME_USER_ENV) == "advisory":
+            # The one exception to zero trust in CONSENT, shown where a lock would be read.
+            p["CONSENT"]["advisory"] = True
+            flags.append(f"CONSENT is advisory ({spine.SAME_USER_ENV}=advisory): a grant the agent's "
+                         "own user owns is accepted, so it is a speed bump, not a lock")
     else:
         p["CONSENT"] = {"standing": False, "raise": f"{spine.CONSENT_DIR_ENV}=<a directory only the operator's hand "
                         "writes>: every mutation then needs a single-use grant file named by its plan's consent_id"}

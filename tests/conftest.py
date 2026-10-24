@@ -70,6 +70,25 @@ def _clear_secret_registry():
     _secretfile.clear_registered_secrets()
 
 
+@pytest.fixture(autouse=True)
+def _grants_are_written_by_another_user():
+    """Every grant a test writes is owned by the suite's own uid, which is exactly the owner the
+    CONSENT gate refuses (a grant owned by the agent's own user is the agent granting itself). So
+    the suite plays the operator: `spine._euid` answers a uid no test file carries. A test of the
+    owner check itself patches it back to `os.geteuid`. Same lazy import as above."""
+    try:
+        from proximo.core import spine as _spine
+    except ImportError:
+        yield
+        return
+    real = _spine._euid
+    _spine._euid = lambda: os.geteuid() + 1
+    try:
+        yield
+    finally:
+        _spine._euid = real
+
+
 @pytest.fixture
 def armed_plane(monkeypatch, tmp_path):
     """An armed pve box with a token file, every pillar unset, receipts to the tmp ledger the

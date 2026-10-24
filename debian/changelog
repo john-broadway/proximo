@@ -1,3 +1,19 @@
+proximo (0.47.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.47.0 (minor: a consent grant owned by the agent's own
+    user is refused, so an agent running as its own account cannot approve
+    itself; on a one-user box PROXIMO_CONSENT_SAME_USER=advisory accepts such
+    grants as a speed bump, marked advisory in the plan, the receipt and
+    DIAGNOSE. A grant spends once by a marker beside the ledger, judged on one
+    lstat; the marker, not an unlink, makes it single-use.
+    docs/ledger-format.md writes the ledger down and scripts/verify_ledger.py
+    checks a log, given its key, with the standard library alone; audit_verify
+    reads rows as the writer joined them and no longer crashes on a planted
+    row. Tier re-cut: VM snapshot, start and shutdown have their own lines.
+    1,858 tests. Door contract 1 unchanged.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sat, 24 Oct 2026 19:52:44 +0000
+
 proximo (0.46.2-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.46.2 (patch: the loader derives access, twin, state,

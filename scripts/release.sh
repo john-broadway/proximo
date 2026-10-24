@@ -53,6 +53,9 @@ git diff --exit-code --stat lhm.plugin.json || { printf 'release: lhm.plugin.jso
 # (Redteam catch on v0.21.1: the banner shipped one release stale; nothing gated it.)
 uv run python scripts/gen_tools_doc.py >/dev/null 2>&1 || { printf 'release: gen_tools_doc.py failed\n' >&2; RC=1; }
 git diff --exit-code --stat docs/TOOLS.md || { printf 'release: docs/TOOLS.md drifted — commit the regenerated file.\n' >&2; RC=1; }
+# The copy gate. It lived only in the suite, and the suite is not in this gate, so 0.47.0's first
+# green gate shipped a VERIFY.md example still naming 0.46.2 (found by the full suite after).
+uv run python scripts/copy_ripple_check.py check || RC=1
 uv run ruff check . || RC=1   # full repo — match CI's `ruff check .` (src+tests+scripts), not a subset
 # pyright over src ([tool.pyright]), against the lock's mcp major. No CI ran it, and README's
 # "pyright clean" rotted to 23 errors unseen (10-18); a release is the gate that always runs.

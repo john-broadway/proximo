@@ -89,13 +89,20 @@ just don't mistake it for a boundary.
 useradd --system --home-dir /var/lib/proximo --shell /usr/sbin/nologin proximo
 
 # a root-owned directory for gate state: the sticky bit stops the agent removing or
-# replacing the root-owned files in it (the trip, the consent grants)
+# replacing the root-owned files in it (the CONTAIN trip)
 install -d -m 1770 -o root -g proximo /etc/proximo
+
+# the consent grants get their OWN directory, owned by the operator's account: the agent
+# reads it and cannot create in it (the operator's account name is an example)
+install -d -m 0755 -o operator -g operator /etc/proximo-consent
 ```
 
 Mode `1770` grants the `proximo` group `rwx` plus the sticky bit, and gives the world
 nothing. Sticky means the agent cannot delete or rename a file it does not own, even in a
-group-writable directory: root owns the CONTAIN trip so the agent can't clear it.
+group-writable directory: root owns the CONTAIN trip so the agent can't clear it. It is
+the wrong home for consent grants: the group can **create** there, and a grant the agent
+creates is the agent approving itself. Earlier releases documented grants in
+`/etc/proximo`; move them to a directory like the second one above.
 
 Set the env vars that name these paths from a **root-owned environment**, not the MCP
 client's own config. A systemd unit `EnvironmentFile` (root-owned, `600`) is the right
@@ -127,8 +134,35 @@ target registry names, too.
 
 With `PROXIMO_CONSENT_DIR` set, a mutation runs only when a single-use grant file named by
 its plan's `consent_id` exists in that directory, younger than `PROXIMO_CONSENT_TTL_SECONDS`.
-The agent gets the id from the plan; a human writes the file. If the agent can write the
-directory, it can grant itself: the same ownership rule as the trip.
+The agent gets the id from the plan; a human writes the file, from an account the agent
+does not run as. If the agent can write the directory, it can grant itself: the same
+ownership rule as the trip.
+
+The gate checks the owner itself: **a grant owned by the agent's own user is refused**, as
+the agent granting itself. On an install where the human and the agent are one user, root
+included, every grant is that user's, so consent refuses every mutation it guards. The fix
+is a second account for the agent, as above; a root agent can `chown` a file to any owner,
+so for it no owner proves anything.
+
+If a one-user box is what you have, and what you want from consent is the agent stopping to
+ask rather than a lock against an agent that turns on you, set
+`PROXIMO_CONSENT_SAME_USER=advisory` in the root-owned environment. Same-user grants are then
+accepted, still spent once and still bound by the TTL, and never called "granted": the plan
+shows `consent: "advisory"` and every spend receipt carries `"advisory": true`, so the record
+says what kind of approval it was. This trusts the agent not to write its own grant, which
+is exactly what the default refuses to trust. Any other value refuses every mutation.
+
+A grant is spent once without being deleted, so a grant the agent cannot remove still
+works. The spend is a marker beside the ledger (`.proximo-consent-spent/`), keyed by the
+grant file's inode and mtime: writing the grant again is a new approval. Each spend also
+writes a `core.consent_spent` row. The seam, stated: the marker sits where the agent can
+write, so an agent that deletes it could spend one grant again, as often as it deletes it,
+for the same exact plan, inside its TTL; every spend is its own `core.consent_spent` row in
+the chain, and an off-box `expected_head` shows a chain rewritten to hide them.
+
+Write each grant so the agent cannot write it either (the default umask gives `0644`;
+`0600` is fine too, since the gate only needs to `lstat` it). A grant the agent can write
+it can re-touch, and a new mtime is a new approval with a fresh TTL.
 
 ### ARM: mint the write credential, don't stockpile it
 
