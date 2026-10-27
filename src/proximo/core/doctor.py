@@ -251,8 +251,10 @@ def _pillars(report: dict[str, Any], chain_ok: bool, flags: list[str]) -> dict[s
             lanes[name]["allowlist"] = "*" if allow_all else len(entries)
             if garbled:
                 flags.append(f"the {name} lane's allowlist is garbled: it denies every id")
+    shell_wait, garbled = shell.timeout_report()
+    flags.extend(garbled)
     p["DIAGNOSE"] = {"standing": True, "lanes": lanes,
-                     "ssh_target_configured": spine._env_set_nonempty(shell.TARGET_ENV)}
+                     "ssh_target_configured": spine._env_set_nonempty(shell.TARGET_ENV), "shell_timeout": shell_wait}
     trip = spine.contain_state()
     trip_section: dict[str, Any] = {"configured": spine._env_set_nonempty(spine.TRIP_ENV), "tripped": trip.contained}
     if trip.contained and trip.reason:

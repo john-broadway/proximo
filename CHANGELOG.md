@@ -2,6 +2,23 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.49.1] — 2026-10-27
+
+**Shell calls across a cluster, and the operator's wait.** A patch: one new registry table and one new variable, both off until set; nothing an existing setup sends changes.
+
+**Route PVE shell rows by target and node.** From RavenLiao, PR #107 (the node-routing half of #98). A named PVE target may map concrete path node names to
+OpenSSH destinations. The existing five SSH rows use that mapping for plan checks, execution and
+diagnosis; missing routes refuse before consent, rate reservation and snapshots. The default box
+continues to use `PROXIMO_SSH_TARGET`, and the remote hostname guard still runs before `pct`.
+
+**The shell wait is the operator's.** `PROXIMO_SHELL_TIMEOUT` sets how long one shell call waits for its command, in whole seconds from 1 to 600; unset is the 60 it always was. Any other value refuses every shell call before anything dials, names the variable and never echoes the value, and `proximo doctor` reports the effective wait (`shell_timeout`) or flags it garbled. No argument a model sends moves it. Issue #106.
+
+**CI actions bumped.** setup-python 7.1.0, setup-uv 10.3.2, codeql-action 4.39.1 and pypi-publish at the head of `release/v1`, each pinned by the SHA of its release (Dependabot #105).
+
+**A shell path's vmid is ASCII digits.** `\d` also read Arabic-Indic and full-width digits as a container id; pct reads only ASCII, so nothing ran, and now the address is refused as not a shell address.
+
+**4,186 tests.**
+
 ## [0.49.0] — 2026-10-27
 
 **A small model can drive the doors.** A lab run put a 1.7B model on the MCP door and it failed at the door, not the estate; then the owner ruled that the door, not the model, carries the token budget, and that an answer is data, a verdict and the next concrete path, in as few words as it can be. All of it is inside door contract 3.

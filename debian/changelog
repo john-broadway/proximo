@@ -1,3 +1,13 @@
+proximo (0.49.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.49.1 (patch: a named PVE target may map node names to
+    ssh destinations so the shell rows reach every node of a cluster,
+    from PR #107; PROXIMO_SHELL_TIMEOUT sets one shell call's wait, 1 to
+    600 seconds, issue #106; CI actions bumped; a vmid is ASCII digits.
+    4,186 tests.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Tue, 27 Oct 2026 07:00:00 +0000
+
 proximo (0.49.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.49.0 (minor: every answer a model is handed fits under

@@ -309,6 +309,13 @@ before `pct` runs: a call aimed at one node never lands in a container on anothe
 default target: unset is a refusal, never a fallback. A diagnosis (`diagnose=true`) names a closed
 lane in its answer rather than reading it as healthy.
 
+One shell call waits 60 seconds for its command. `PROXIMO_SHELL_TIMEOUT` sets that wait in whole
+seconds from 1 to 600 (a `docker compose pull` or a package upgrade inside a container can need
+more). Set to anything else, every shell call refuses and `proximo doctor` flags it; no argument a
+model sends changes it. When the wait runs out only the local ssh client stops: the command may
+still be running on the node, and the answer says so. A client may have its own limit per tool
+call, shorter than yours.
+
 ---
 
 ## Many boxes from one Proximo — `target`
@@ -330,8 +337,25 @@ mutations are judged by its **own** arm pair (`arm_source`, `readonly_source` in
 default box's arm never authorizes another box. A target's `kind` is enforced: a PBS target on a PVE
 address refuses rather than guessing. Every target records to the same PROVE ledger, with the
 target's name in each row's `remote` field, so a multi-box deployment still has one chain. A tripped
-CONTAIN stops every box. The shell lanes dial only the default box's `PROXIMO_SSH_TARGET`, so they
-refuse a target.
+CONTAIN stops every box. A PVE target can route shell calls by the concrete node in the request
+path:
+
+```toml
+[targets.home-pve.nodes]
+pve-01 = "home-pve01"  # an OpenSSH destination or alias from ssh_config
+pve-02 = "home-pve02"
+```
+
+Each mapped destination uses the normal SSH client configuration for its user, key, port and host
+key policy. A target without `nodes` remains usable through the API, while its SSH rows are refused
+with `needs=config`. A concrete SSH plan checks that the node has a configured destination; it does
+not connect or check the remote hostname. Execution resolves the route again before consent, rate
+or snapshot work. Named targets never fall back to `PROXIMO_SSH_TARGET`. Before `pct` runs, the
+remote hostname must still equal the node in the path. This catches a wrong SSH destination but does
+not prove that the API and SSH endpoints belong to the same cluster; use distinct SSH keys,
+known_hosts entries and correct mappings for each estate. A template path with no concrete node
+keeps its existing preview behavior; only concrete SSH plans check a node mapping. `proximo doctor`
+continues to report `ssh_target_configured` for the default box's `PROXIMO_SSH_TARGET` setting only.
 
 ---
 
@@ -496,7 +520,7 @@ The moment the token is gone, Proximo can do nothing at all.
 | **`needs: "arm"` / `"tier"` / `"held"`** | Not errors: the refusal names what would change the answer. Arm (Step 6); an untiered address is never mutated; a held one never opens. |
 | **`... is set, and the core no longer reads it`** | A switch of an older release is still in your env (`PROXIMO_SCOPE_PATH`, `PROXIMO_ARM_TTL`, `PROXIMO_AUDIT_KEYED=off`). The door refuses to start rather than quietly run without the gate you thought you had. Unset it; the message says the vendor's way. |
 | **Connection refused / timeout** | Wrong host or port (the Proxmox API is `:8006`), or a firewall in the way. |
-| **A shell call refused** | The lane is off by default; open it with its switch and allowlist, and set `PROXIMO_SSH_TARGET`. |
+| **A shell call refused** | The lane is off by default; open it with its switch and allowlist. The default box needs `PROXIMO_SSH_TARGET`; a named PVE target needs a matching `[targets.<name>.nodes]` entry. |
 | **A remote MCP client can't connect** | The default `proximo` command serves stdio only — a networked MCP client needs `proximo-mcp-http`. The HTTP door speaks REST, not MCP. |
 | **Running bare `proximo` in a terminal just sits there** | That's correct, not a hang: it's an MCP stdio server waiting for a client to speak the protocol over stdin. The verbs (`proximo doctor`, `proximo mint pve`) answer and exit. |
 

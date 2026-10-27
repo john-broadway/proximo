@@ -329,7 +329,8 @@ def test_the_module_stays_small():
     """The 0.45 bar sorted doctor as "keep, small". 0.44's was 676 lines + 167 of harden."""
     import inspect
     # 252: PROVE's anchor station added two lines here; its words and logic live in core/anchor.py.
-    assert len([x for x in inspect.getsource(doctor).splitlines() if x.strip()]) <= 252
+    # 254: the shell wait (#106) added two; its words and logic live in core/shell.py (timeout_report).
+    assert len([x for x in inspect.getsource(doctor).splitlines() if x.strip()]) <= 254
 
 
 def test_the_wires_own_refusal_of_a_readable_secret_is_said_without_its_path(box, monkeypatch, tmp_path):

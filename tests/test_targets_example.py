@@ -24,8 +24,12 @@ EXAMPLE = Path(__file__).resolve().parents[1] / "packaging" / "targets.example.t
 
 
 def _toml(targets: dict[str, dict]) -> str:
-    # json.dumps writes strings and booleans the way TOML reads them.
-    return "".join(f"[targets.{n}]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in t.items()) + "\n"
+    def value(v: object) -> str:
+        if isinstance(v, dict):
+            return "{ " + ", ".join(f"{json.dumps(k)} = {value(x)}" for k, x in v.items()) + " }"
+        return json.dumps(v)
+
+    return "".join(f"[targets.{n}]\n" + "".join(f"{k} = {value(v)}\n" for k, v in t.items()) + "\n"
                    for n, t in targets.items())
 
 
@@ -34,6 +38,8 @@ def _other(v: object) -> object:
         return not v
     if isinstance(v, int):
         return v + 1
+    if isinstance(v, dict):
+        return {k: _other(x) for k, x in v.items()}
     return f"{v}x"
 
 
@@ -74,3 +80,22 @@ def test_the_check_sees_a_dead_key_when_one_is_planted(example, monkeypatch, tmp
     planted["home-pve"]["ssh_target"] = "pve"
     planted["edge-pve"]["node"] = "edge"
     assert dead_keys(planted, monkeypatch, tmp_path) == [("home-pve", "ssh_target"), ("edge-pve", "node")]
+
+
+@pytest.mark.parametrize("target,node,destination", [
+    ("home-pve", "pve-01", "home-pve01"), ("home-pve", "pve-02", "home-pve02"),
+    ("edge-pve", "edge-01", "root@edge-01.example.com"),
+])
+def test_each_example_node_destination_is_loaded(target, node, destination, example, monkeypatch, tmp_path):
+    reg = tmp_path / "targets.toml"
+    reg.write_text(_toml(example))
+    monkeypatch.setenv(registry.ENV, str(reg))
+    registry._parse_registry.cache_clear()
+    before = registry.plane("pve", target)
+    assert dict(before.nodes)[node] == destination
+    changed = {name: dict(fields) for name, fields in example.items()}
+    changed[target]["nodes"] = {**changed[target]["nodes"], node: destination + "-changed"}
+    reg.write_text(_toml(changed))
+    registry._parse_registry.cache_clear()
+    after = registry.plane("pve", target)
+    assert dict(after.nodes)[node] == destination + "-changed"

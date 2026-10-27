@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install (hash-pinned lockfiles; the project itself --no-deps)
@@ -51,7 +51,7 @@ jobs:
       attestations: write  # record the build-provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -129,7 +129,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -145,7 +145,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
 
   # Prove the PUBLISHED wheel actually runs: install it from PyPI into a clean venv and drive a
   # real MCP `initialize` + `tools/list` over stdio. Until now read-back was manual ("6/6 by
@@ -188,7 +188,7 @@ jobs:
       # same code and this release-day path can no longer rot unexecuted between releases. On a
       # release event this ref IS the tag, so the script matches the release being verified.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Refuse a dispatch that names nothing to verify

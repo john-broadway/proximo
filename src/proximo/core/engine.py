@@ -361,6 +361,18 @@ def govern(row: Row, *, cfg: wire.Plane | None = None, path: str | None = None,
     return Verdict(True, f"mutate, tier {row.tier}", consent_id=cid)
 
 
+def _route_refusal(row: Row, path: str | None, cfg: wire.Plane | None, verdict: Verdict) -> Verdict | None:
+    """A shell row on a named target needs its path's node mapped to an ssh destination; the refusal
+    when it is not (needs=config), else None. A template path is a preview and has no node to route."""
+    if row.wire != "ssh" or not path or "{" in path or not (verdict.allowed or verdict.needs in ("arm", "consent")):
+        return None
+    try:
+        shell.resolve_target(cfg, rawdoor.canonical(path))
+    except ProximoError as exc:
+        return Verdict(False, str(exc), "config", consent_id=verdict.consent_id)
+    return None
+
+
 def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
          cfg: wire.Plane | None = None, ledger_cfg: Any = None, env: dict[str, Any] | None = None,
          detail: str | None = None) -> dict[str, Any]:
@@ -392,6 +404,7 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
     verdict = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=_has_api_net(row))
     if unnamed is not None:
         verdict = Verdict(False, str(unnamed), "config")
+    route_refused = False
     if path and "{" not in path and row.access != READ and (verdict.allowed or verdict.needs in ("arm", "consent")):
         # (a tunnel, a gate, a wall keeps its own words: those refusals name what no argument
         # can fix, lens 12)
@@ -406,12 +419,15 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         # THE SAME ORDER AS THE CALL: arguments before arm. An empty call is not a no-op on an
         # unarmed box either; the one thing the caller can fix without an operator is the call.
         verdict = Verdict(False, none_of, "arguments", consent_id=verdict.consent_id)
+    # The route is judged BEFORE the net's reads and the live state: a call that cannot be dialled reads nothing.
+    if (unrouted := _route_refusal(row, path, cfg, verdict)) is not None:
+        verdict, route_refused = unrouted, True
     # a rollback's net reads come BEFORE the consent look: the grant binds what the plan says about
     # the net, and the reads may taint the session
     view = _plan_net_view(row, args, path, cfg, ledger_cfg, verdict) if _has_api_net(row) else None
     if view is not None:
         verdict = _net_verdict(row, path, args, cfg, ledger_cfg, verdict, view)
-    else:
+    elif not route_refused:
         verdict = _shell_net_verdict(row, args, path, cfg, ledger_cfg, verdict)
     out = {
         "address": row.address, "plane": row.product, "access": row.access, "tier": row.tier,
@@ -447,7 +463,7 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
                               "the command is not run"}
     # A HELD address is never read for its live state: the plan's answer is the sentence, and a
     # read of its twin (a login's GET) would dial the vendor for a call that will not run.
-    if row.access != READ and verdict.needs not in ("arguments", "held"):
+    if row.access != READ and verdict.needs not in ("arguments", "held") and not route_refused:
         out.update(_live_state(row, args, path, cfg, ledger_cfg, env))
         if row.consult:
             _plan_consult(row, verdict, out, path, args, cfg, ledger_cfg)
@@ -1161,11 +1177,11 @@ def _built_client(row: Row, cfg: wire.Plane | None, ledger_cfg: Any, called: str
     """`_client`, with a build that fails (a missing or conflicting variable, a secret file
     group or other can read) receipted as a refusal naming what is wrong, never its content."""
     try:
-        return shell.client(cfg) if row.wire == "ssh" else _client(row.product, cfg)
+        return shell.client(cfg, path=called) if row.wire == "ssh" else _client(row.product, cfg)
     except Exception as exc:
         reason = f"{row.product} is not configured to be called: {safe_exception_text(exc, paths=True)}"
         _record(ledger_cfg, "core.refuse", row, outcome="refused",
-                detail={"reason": reason, "needs": "config", **wire_error(exc)},
+                detail={"reason": reason, "needs": "config", "called_path": called, **wire_error(exc)},
                 called=called, remote=remote)
         raise ProximoError(reason) from exc
 

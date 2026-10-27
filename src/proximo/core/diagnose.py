@@ -322,9 +322,9 @@ def _closed_lanes(plane: str, sub: Subject, bound: dict[str, str], plane_cfg: wi
     """Each opt-in lane the subject's probes ride, judged ONCE, and the ones whose probes would all
     be refused, with the refusal's own words: govern's (for a read the lane is the whole verdict,
     and a path the lane cannot address raises there), then, for a shell lane, the wire's own
-    build (`shell.client`: a registered target, no ssh target). Every probe of a lane shares one
-    template, so one judgement holds for all of them. Lanes that are open are absent: their probes
-    run through execute like any other."""
+    build (`shell.client`: its path must resolve to a configured SSH destination). Every probe of a
+    lane shares one template, so one judgement holds for all of them. Lanes that are open are absent:
+    their probes run through execute like any other."""
     closed: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
     for probe in sub.probes.values():
@@ -339,10 +339,10 @@ def _closed_lanes(plane: str, sub: Subject, bound: dict[str, str], plane_cfg: wi
             if not verdict.allowed and verdict.needs == lane:
                 closed[lane] = {"reason": verdict.reason, "probes": []}
             elif prow.wire == "ssh":
-                shell.client(plane_cfg)            # the build that would refuse each probe, asked once
+                shell.client(plane_cfg, path=_concrete(probe, bound))
                 if not shell.dialable(_concrete(probe, bound)):
                     raise ProximoError(f"{_concrete(probe, bound)} is not an address the shell wire can dial")
-        except ProximoError as exc:                # a decoded `/` in the node, a registered target, no target
+        except ProximoError as exc:                # a malformed path, an unmapped node, or no default target
             closed[lane] = {"reason": safe_text(str(exc)), "probes": []}   # bounded, redacted, no class prefix
     return closed
 

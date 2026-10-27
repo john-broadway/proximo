@@ -30,12 +30,19 @@ from proximo.core.errors import ProximoError
 
 TARGET_ENV = "PROXIMO_SSH_TARGET"
 TIMEOUT = 60
+# The operator's wait for one shell call (#106): whole seconds, 1 to MAX_TIMEOUT (the task wait's own cap).
+TIMEOUT_ENV = "PROXIMO_SHELL_TIMEOUT"
+MAX_TIMEOUT = 600
+_SECONDS = re.compile(r"[0-9]{1,4}\Z", re.ASCII)
 SPLIT_EXIT = 254                        # ours: the host is not the path's node, nothing ran
 SSH_EXIT = 255                          # ssh's own failure, never the command's
 SSH_OPTS = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=10")
 # An ssh destination, never an option: a leading `-` would be read as `-oProxyCommand=...`.
 _TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*\Z")
-_PATH = re.compile(r"/nodes/(?P<node>[A-Za-z0-9][A-Za-z0-9.-]*)(?:/lxc/(?P<vmid>\d+))?/(?P<op>exec|psql|logs|probe)\Z")
+_NODE_PATTERN = r"[A-Za-z0-9][A-Za-z0-9.-]*"
+_NODE = re.compile(_NODE_PATTERN + r"\Z")
+_PATH = re.compile(r"/nodes/(?P<node>" + _NODE_PATTERN
+                   + r")(?:/lxc/(?P<vmid>[0-9]+))?/(?P<op>exec|psql|logs|probe)\Z")   # ASCII digits, as pct reads
 _HOST_OPS = frozenset({"probe"})         # the host lane reads its fixed battery; it runs nothing else
 _UNIT = re.compile(r"[A-Za-z0-9@_:.][A-Za-z0-9@_:.-]*\Z")
 MAX_LINES = 1000
@@ -75,23 +82,67 @@ def target() -> str:
     if not t:
         raise ProximoError(f"{TARGET_ENV} is not set; the shell lanes have no host to reach "
                            "(there is no default: name the ssh alias of the node)")
-    if not _TARGET.match(t):
+    if not valid_destination(t):
         raise ProximoError(f"{TARGET_ENV} is not an ssh destination (letters, digits, . _ @ -, not "
                            "starting with -); refused before anything dials")
     return t
 
 
-def client(cfg: Any = None) -> ShellClient:
-    """Built like `wire.client`: from the environment, refusing a missing or unsafe target.
+def valid_destination(value: str) -> bool:
+    """A plain OpenSSH destination, never an option or shell fragment."""
+    return _TARGET.fullmatch(value) is not None
 
-    ONE BOX ONLY. The ssh target is the env's; a registered target's Plane names another
-    estate's API, and the lens showed the split: the snapshot landed on THAT box while the
-    command ran on this one, and the receipt said `captured: true` (lens B5c-2). A named
-    target is refused until the lane can be aimed by the target itself."""
-    if getattr(cfg, "name", None):
-        raise ProximoError(f"the shell lanes dial only this box's {TARGET_ENV}, not the "
-                           f"registered target {cfg.name!r}; refused before anything dials")
-    return ShellClient(target())
+
+def valid_node(value: str) -> bool:
+    """A node component accepted by the concrete shell path grammar."""
+    return _NODE.fullmatch(value) is not None
+
+
+def resolve_target(cfg: Any = None, path: str | None = None) -> str:
+    """Resolve a shell path to its SSH destination without creating a client or dialing."""
+    name = getattr(cfg, "name", None)
+    if not name:
+        return target()
+    match = _match(path or "")
+    if match is None:
+        raise ProximoError(f"target {name!r} needs a concrete shell path with a PVE node")
+    node = match["node"]
+    nodes = dict(getattr(cfg, "nodes", ()))
+    if node not in nodes:
+        raise ProximoError(f"target {name!r} has no SSH destination mapped for node {node!r}; "
+                           "add it under [targets.<name>.nodes]")
+    destination = nodes[node]
+    if not valid_destination(destination):
+        # Plane is frozen, but fail closed if a caller constructed one outside the registry loader.
+        raise ProximoError(f"target {name!r} has an unsafe SSH destination for node {node!r}")
+    return destination
+
+
+def timeout() -> int:
+    """The wait `PROXIMO_SHELL_TIMEOUT` names, or TIMEOUT when it is unset or empty. Set to anything but whole
+    seconds from 1 to MAX_TIMEOUT, every shell call refuses: a wait the operator did not mean is never guessed,
+    and the value is not echoed."""
+    raw = os.environ.get(TIMEOUT_ENV, "").strip()
+    if not raw:
+        return TIMEOUT
+    if not _SECONDS.match(raw) or not 1 <= int(raw) <= MAX_TIMEOUT:
+        raise ProximoError(f"{TIMEOUT_ENV} must be whole seconds from 1 to {MAX_TIMEOUT}; "
+                           "refused before anything dials")
+    return int(raw)
+
+
+def timeout_report() -> tuple[int | None, list[str]]:
+    """For the doctor: the effective wait and no flag, or None and the one flag sentence (never the value)."""
+    try:
+        return timeout(), []
+    except ProximoError:
+        return None, [f"the shell timeout is garbled: {TIMEOUT_ENV} is not whole seconds from 1 to "
+                      f"{MAX_TIMEOUT}, so every shell call refuses"]
+
+
+def client(cfg: Any = None, *, path: str | None = None) -> ShellClient:
+    """Build the existing single-destination SSH client for this concrete path, with the operator's wait."""
+    return ShellClient(resolve_target(cfg, path), timeout())
 
 
 def _match(path: str) -> re.Match | None:

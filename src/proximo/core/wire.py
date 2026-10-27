@@ -83,6 +83,8 @@ class Plane:
     # logs in, and pmg has an arm pair. In password mode (a password file + a username from env)
     # a swap changes only the password, and arm.py refuses every pmg mutation.
     credential: bool = False
+    # PVE node name to plain SSH destination, copied from the target registry and never shared mutable.
+    nodes: tuple[tuple[str, str], ...] = ()
 
     @classmethod
     def from_env(cls, product: str) -> Plane:
@@ -194,6 +196,22 @@ def plane_from_target(product: str, name: str, fields: dict[str, Any]) -> Plane:
     fingerprint, arm_source, readonly_source; plus the envelope. A missing base_url or secret
     path fails loud."""
     cred = product == "pmg" and bool(fields.get("credential_path"))
+    nodes: tuple[tuple[str, str], ...] = ()
+    if "nodes" in fields:
+        if product != "pve":
+            raise ProximoError(f"target {name!r}: nodes is supported only for pve targets")
+        raw_nodes = fields["nodes"]
+        if not isinstance(raw_nodes, dict):
+            raise ProximoError(f"target {name!r}: nodes must be a table of node to SSH destination mappings")
+        from proximo.core import shell
+        checked: list[tuple[str, str]] = []
+        for node, destination in raw_nodes.items():
+            if not isinstance(node, str) or not shell.valid_node(node):
+                raise ProximoError(f"target {name!r}: nodes keys must be valid PVE node names")
+            if not isinstance(destination, str) or not shell.valid_destination(destination):
+                raise ProximoError(f"target {name!r}: nodes values must be safe SSH destinations")
+            checked.append((node, destination))
+        nodes = tuple(checked)
     if cred and fields.get("password_path"):
         raise ProximoError(f"target {name!r} sets credential_path and password_path: one way to log in")
     secret_key = "credential_path" if cred else "password_path" if product == "pmg" else "token_path"
@@ -222,6 +240,7 @@ def plane_from_target(product: str, name: str, fields: dict[str, Any]) -> Plane:
         rate_max=rate_max,
         rate_window=rate_window,
         credential=cred,
+        nodes=nodes,
     )
 
 

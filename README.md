@@ -210,11 +210,11 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 **The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing). Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.49.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.49.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.49.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.49.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.49.0 (a small model can drive the doors).** Every answer a model is handed, on MCP, REST and A2A, is measured at one exit and fits a hard byte ceiling (reads 1,152, plans 2,048, a diagnosis 3,072, a refusal 512); over it, the answer is replaced by a short fixed shape. A model's plan names its arguments and hashes long values; the operator reads the whole proposal with `proximo-core consent show <id>`. A rollback takes a safety snapshot first, on by default: each rollback leaves a `proximo_<time>` snapshot on the guest's storage, never pruned by Proximo, so delete old ones yourself. `PROXIMO_UNDO=off` turns off every before-state capture, this snapshot included. Consult, the plan's second look, reads past the target before a change. Capabilities the 0.45 cut took come back, each on a record with its proofs. Door contract 3.
+> **New in 0.49.1 (shell calls across a cluster, and the operator's wait).** A named PVE target can map each node name to an ssh destination (`[targets.<name>.nodes]`), so the shell rows reach every node of a cluster; a missing mapping refuses before anything is read or spent, and the far end must still answer as the path's node. `PROXIMO_SHELL_TIMEOUT` sets how long one shell call waits, 1 to 600 seconds. Node routing from RavenLiao (PR #107).
 >
-> Recent: **0.48.1** made a pool-scoped PVE write recipe grant `PVEAuditor` on the pool, so neither token loses the pool read. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -251,13 +251,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.49.0**: **A small model can drive the doors.** Every model-facing answer fits a hard
-  byte ceiling at one exit on every door; a plan names its arguments and the operator reads the whole
-  proposal with `consent show`; a rollback snapshots first by default; consult reads past the target;
-  restored capabilities stand on a record with their proofs. 4,126 tests.
+- 🩸 **0.49.1**: **Shell calls across a cluster, and the operator's wait.** A named PVE target maps
+  node names to ssh destinations, so the shell rows reach every node (from PR #107); `PROXIMO_SHELL_TIMEOUT`
+  sets one shell call's wait, 1 to 600 seconds (issue #106). 4,186 tests.
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
-**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,126 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
+**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,186 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
 
 **Proven live** (not mocks): the governed path end to end against a real PVE 9 node through this door, plans reading the live target, receipts on the keyed chain, before-state captures and their restore. The 0.44 wrappers' live record (a 3-node cluster, PBS, PMG, PDM, a real cross-datacenter move) stays in [`CHANGELOG.md`](./CHANGELOG.md) where it was earned; it is not re-claimed for the core.
 **Not yet proven — said plainly:** a small local model finishing a whole task through this door. Measured and driven on 0.45: a stock 1.5B behind llama.cpp with a 4,096-token context the server enforces, against a real PVE node, read-only. Its calls landed and the door's refusals named the fix each time (an invented field, the real ones listed); the prompt peaked at 3,074 tokens; the model did not finish the task, it invented a number. The window holds; a 1.5B does not. *Hardware*-watchdog fencing (needs physical iTCO/IPMI), and behavior at production scale. The 20 held addresses are never fired: refused by sentence, by design, not a gap.

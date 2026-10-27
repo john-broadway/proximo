@@ -12,11 +12,11 @@
 #     target its own `arm_source` (and optionally `readonly_source`). They are NOT inherited from
 #     the env: the env pair belongs to the default box, and one box's arm must never authorize
 #     another. A target with exec enabled and no arm_source is REFUSED, not permitted.
-#   - A target is its API. The ssh lanes (container exec, node shell) dial only the env's
-#     PROXIMO_SSH_TARGET and refuse a named target; the guest-agent lane is an API call and takes
-#     one. The node a call means is in its path (/nodes/<node>/...), never a registry key. `node`
-#     and `ssh_target` were read by the loader the 0.45.0 cut removed; the core reads neither, and
-#     0.45.0 through 0.46.1 shipped this file still showing them. It no longer does.
+#   - PVE targets may map path node names to SSH destinations under [targets.<name>.nodes].
+#     A missing mapping refuses before consent, rate, snapshot or SSH; it never falls back to
+#     PROXIMO_SSH_TARGET. API calls do not need a map.
+#   - Before pct runs, the remote hostname must equal the node in the path. This operational guard
+#     does not prove that the API and SSH endpoints belong to the same cluster.
 #   - This file is runtime config, like the env — keep it untracked.
 #   - Audit/PROVE settings (audit_key_path, audit_keyed, audit_expected_head, audit_log) are
 #     INSTANCE-level — the PROVE ledger is ONE chain built from the env. They have NO effect
@@ -33,6 +33,10 @@ ca_bundle  = "/etc/proximo/home-pve-ca.pem"   # preferred over disabling TLS ver
 # arm_source      = "/etc/proximo/home-pve.operator-token"   # THIS box's write token (armgate)
 # readonly_source = "/etc/proximo/home-pve.token.readonly"   # its read-only counterpart
 
+[targets.home-pve.nodes]
+pve-01 = "home-pve01"   # OpenSSH alias; SSH config holds user, key, port and host key policy
+pve-02 = "home-pve02"
+
 # --- external PVE (public FQDN, e.g. a colocated or partner cluster) ---
 [targets.edge-pve]
 kind       = "pve"
@@ -40,6 +44,9 @@ base_url   = "https://edge.example.com:8006/api2/json"
 token_path = "/etc/proximo/edge-pve.token"
 verify_tls = true
 ca_bundle  = "/etc/proximo/edge-pve-ca.pem"
+
+[targets.edge-pve.nodes]
+edge-01 = "root@edge-01.example.com"
 
 # --- Proxmox Backup Server ---
 [targets.home-pbs]

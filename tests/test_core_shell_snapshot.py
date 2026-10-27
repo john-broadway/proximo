@@ -180,10 +180,10 @@ def test_a_snapshot_flag_that_is_not_a_boolean_refuses_before_anything(box, monk
     assert _rows()[-1]["action"] == "core.refuse" and _rows()[-1]["detail"]["needs"] == "arguments"
 
 
-def test_a_registered_target_is_refused_the_shell_lane_so_the_net_and_the_act_share_a_box(box, monkeypatch):
+def test_a_named_target_without_a_node_route_is_refused_before_snapshot_or_shell(box, monkeypatch):
     import dataclasses
-    api, sh = _wire(monkeypatch)                    # snapshot on its API, command on the env box
-    with pytest.raises(ProximoError, match="registered target"):
+    api, sh = _wire(monkeypatch)
+    with pytest.raises(ProximoError, match="no SSH destination mapped"):
         _exec(dataclasses.replace(box, name="other-estate"), snapshot=True)
     assert api.calls == [] and sh.calls == []
 
