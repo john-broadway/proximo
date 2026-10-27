@@ -59,7 +59,7 @@ import ssl
 import stat
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote
@@ -287,7 +287,7 @@ def retired_refusal() -> Refusal | None:
     for env, instead in RETIRED_ENV.items():
         value = os.environ.get(env, "").strip()
         # `PROXIMO_ARM_TTL=0` (or below) was LEASE's own "off": no gate was expected, none is lost.
-        if env == "PROXIMO_ARM_TTL" and re.fullmatch(r"-?\d+", value) and int(value) <= 0:
+        if env == "PROXIMO_ARM_TTL" and re.fullmatch(r"-?[0-9]+", value) and int(value) <= 0:
             continue
         # `PROXIMO_AUDIT_KEYED=true` asked for what the core always does: nothing is lost.
         if env == "PROXIMO_AUDIT_KEYED" and value.lower() not in _KEYED_OFF:
@@ -410,6 +410,15 @@ _LANES = {
 }
 
 
+def _allowlist_remedy(var: str) -> str:
+    """Where the allowlist's value came from and that only a restart applies an edit (2026-09-02: the
+    refusal named the variable, the operator edited the store that was shadowed, and the repeat was
+    verbatim). Names the store by kind, never its path or a value."""
+    from proximo.core import envfile  # noqa: PLC0415
+    return (f"{var} is fixed when the server starts and its value came from {envfile.source(var)}. "
+            "Change it there, then restart the server (an MCP client: reconnect).")
+
+
 def agent_refusal(vmid: str | None) -> Refusal | None:
     """The guest-agent lane's opt-in (kept by name: the lane predates the shell lane)."""
     return opt_in_refusal("agent", vmid)
@@ -438,13 +447,25 @@ def opt_in_refusal(lane: str, vmid: str | None) -> Refusal | None:
     if allow_all or vmid in vmids:
         return None
     return Refusal(lane, f"{noun} {vmid} is not on {allow} (fail-closed: empty or non-matching "
-                         f"denies; comma-separated {idname}s, or '*' for all)", {"vmid": vmid})
+                         f"denies; comma-separated {idname}s, or '*' for all). {_allowlist_remedy(allow)}",
+                   {"vmid": vmid})
 
 
 # ---- CONSENT ------------------------------------------------------------------------------------
 
+def consent_binding(proposal: Mapping[str, Any]) -> str:
+    """THE PROPOSAL AS STORED, bound to its id: a hash over the refused call's `proposed` record exactly
+    as the ledger row keeps it (the consent id, the address, the box, the net, the arguments with every
+    secret already a fingerprint), the `binding` key itself left out. `consent_id` is over the values
+    submitted, which a fingerprint hides, so it alone cannot vouch for a row whose arguments carry one;
+    this can, and the row's place on the keyed chain vouches for the hash."""
+    body = {k: v for k, v in proposal.items() if k != "binding"}
+    canon = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=True)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
 def consent_id(product: str, method: str, published: str, called: str, args: dict[str, Any],
-               box: str = "") -> str:
+               box: str = "", net: str = "") -> str:
     """A content hash over exactly what the plan showed and the call will send: plane, method,
     the published address, the concrete path, the arguments AS SUBMITTED (before coercion, so
     the id the door computes from a plan equals the id the engine checks on the call) and the
@@ -457,6 +478,10 @@ def consent_id(product: str, method: str, published: str, called: str, args: dic
             "args": {k: args[k] for k in sorted(args)}}
     if box:
         body["box"] = box.rstrip("/")
+    if net:
+        # What the plan said about the rollback's safety net (taken, skipped, off): a grant covers
+        # the plan as it was shown, so a net that changed since is a different plan.
+        body["net"] = net
     canon = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
@@ -672,13 +697,20 @@ def _box_key(base_url: str) -> str:
     return hashlib.sha256(base_url.encode("utf-8")).hexdigest()[:16]
 
 
-def _rewrite_rate_file(rate_path: str, slots: list[float]) -> None:
+#: A bound on the reservation file (a runaway garbled file), NOT on the budget: it was `rate_max`, which
+#: made a caller with a tight cap rewrite the file without the slots a looser caller had reserved.
+_RATE_FILE_MAX = 10_000
+
+
+def _rewrite_rate_file(rate_path: str, slots: list[tuple[float, float]]) -> None:
+    """Write the slots, each as `stamp window`: a slot is in force for ITS OWN window, whichever caller
+    next reads the file."""
     directory = os.path.dirname(rate_path)
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".proximo-rate-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tf:
-            for slot in slots:
-                tf.write(f"{slot!r}\n")
+            for slot, win in slots:
+                tf.write(f"{slot!r} {win!r}\n")
         os.replace(tmp, rate_path)
     except BaseException:
         try:
@@ -688,9 +720,41 @@ def _rewrite_rate_file(rate_path: str, slots: list[float]) -> None:
         raise
 
 
-def _rate_reserve(reservation_dir: str, base_url: str, rate_max: int, window: int) -> bool:
-    """The 0.44 reservation limiter, unchanged: one atomic read-prune-check-append under a flock
-    on a stable SIDECAR lock, temp+replace rewrites, corrupt or non-finite slots count as USED."""
+def _read_slots(rate_path: str, now: float, window: float) -> list[tuple[float, float]]:
+    """The slots still in force, each with the window it was taken under (a line from before windows
+    were stored takes the reader's). Pruning is by a slot's OWN window, never the reader's: a caller
+    with a short window must not erase the slots a caller with a long one holds. A garbled slot, or a
+    non-finite one, counts as taken NOW (USED), as it always did."""
+    try:
+        with open(rate_path, encoding="utf-8", errors="replace") as rf:
+            raw_lines = rf.readlines()
+    except FileNotFoundError:
+        return []
+    slots: list[tuple[float, float]] = []
+    for line in raw_lines:
+        parts = line.split()
+        if not parts:
+            continue
+        try:
+            slot = float(parts[0])
+            win = float(parts[1]) if len(parts) > 1 else float(window)
+        except ValueError:
+            slots.append((now, float(window)))
+            continue
+        if not (math.isfinite(slot) and math.isfinite(win)) or win <= 0:
+            slots.append((now, float(window)))
+        elif slot >= now - win:
+            slots.append((slot, win))
+    return slots
+
+
+def _rate_reserve(reservation_dir: str, base_url: str, rate_max: int, window: int, count: int = 1,
+                  stamp: list[float] | None = None) -> bool:
+    """The 0.44 reservation limiter: one atomic read-prune-check-append under a flock on a stable
+    SIDECAR lock, temp+replace rewrites, corrupt or non-finite slots count as USED. `count` slots are
+    taken together or none: a call that costs two (a rollback and its safety snapshot) never takes
+    one and is refused for the other. The check counts the slots inside THIS caller's window; the
+    file keeps every slot until its own window has passed."""
     rate_dir = os.path.join(reservation_dir, _RESERVATION_SUBDIR)
     if os.path.islink(rate_dir):
         raise OSError(f"refusing to use a symlinked reservation directory: {rate_dir!r}")
@@ -702,32 +766,15 @@ def _rate_reserve(reservation_dir: str, base_url: str, rate_max: int, window: in
         fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
         try:
             now = time.time()
-            cutoff = now - window
-            try:
-                with open(rate_path, encoding="utf-8", errors="replace") as rf:
-                    raw_lines = rf.readlines()
-            except FileNotFoundError:
-                raw_lines = []
-            kept: list[float] = []
-            for line in raw_lines:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    slot = float(line)
-                except ValueError:
-                    kept.append(now)
-                    continue
-                if not math.isfinite(slot):
-                    kept.append(now)
-                    continue
-                if slot >= cutoff:
-                    kept.append(slot)
-            if len(kept) >= rate_max:
-                _rewrite_rate_file(rate_path, sorted(kept)[-rate_max:])
+            kept = sorted(_read_slots(rate_path, now, window))
+            used = sum(1 for slot, _ in kept if slot >= now - window)
+            if used + count > rate_max:
+                _rewrite_rate_file(rate_path, kept[-_RATE_FILE_MAX:])
                 return False
-            kept.append(now)
-            _rewrite_rate_file(rate_path, sorted(kept)[-rate_max:])
+            kept.extend([(now, float(window))] * count)
+            if stamp is not None:
+                stamp.append(now)           # what `release_rate` hands back
+            _rewrite_rate_file(rate_path, kept[-_RATE_FILE_MAX:])
             return True
         finally:
             fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
@@ -753,8 +800,39 @@ def tightest(env: tuple[int | None, int], target: tuple[int | None, int | None])
     return min((e_max, e_win), (t_max, t_win), key=lambda c: (c[0] / c[1], -c[1]))
 
 
+def release_rate(base_url: str | None, reservation_dir: str, stamp: float, count: int = 1) -> None:
+    """Give back `count` slots `reserve_rate(..., stamp=[...])` took at `stamp`, for a call that was
+    refused after its reservation (the grant it needed was spent by another caller, the receipt
+    of the spend could not be written, the rollback was never dialled): a doomed attempt spends
+    nothing. Only slots carrying that stamp are touched. Best effort and quiet: a slot that cannot be
+    given back stays used, which is the fail-closed side."""
+    if not base_url or count <= 0:
+        return
+    rate_dir = os.path.join(reservation_dir, _RESERVATION_SUBDIR)
+    rate_path = os.path.join(rate_dir, f"{_box_key(base_url.rstrip('/'))}.rate")
+    try:
+        with open(rate_path + ".lock", "a+", encoding="utf-8",
+                  opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW, 0o600)) as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            try:
+                slots = _read_slots(rate_path, time.time(), 86400.0)
+                keep, gone = [], 0
+                for slot, win in slots:
+                    if gone < count and slot == stamp:
+                        gone += 1
+                    else:
+                        keep.append((slot, win))
+                if gone:
+                    _rewrite_rate_file(rate_path, keep)
+            finally:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        return
+
+
 def reserve_rate(base_url: str | None, reservation_dir: str,
-                 cap: tuple[int | None, int | None] = (None, None)) -> Refusal | None:
+                 cap: tuple[int | None, int | None] = (None, None), count: int = 1,
+                 stamp: list[float] | None = None) -> Refusal | None:
     """The SPENDING half. Keyed on the plane's own base_url, so a pbs-only box has a budget.
     `cap` is a target's own (rate_max, rate_window); against the env cap the TIGHTEST wins."""
     rate_max, window = tightest(rate_cap(), cap)
@@ -765,13 +843,14 @@ def reserve_rate(base_url: str | None, reservation_dir: str,
         return Refusal("rate", "rate refused: the cap is garbled or the box identity is unknown (fail-closed)",
                        detail)
     try:
-        ok = _rate_reserve(reservation_dir, base_url.rstrip("/"), rate_max, window)
+        ok = _rate_reserve(reservation_dir, base_url.rstrip("/"), rate_max, window, count, stamp)
     except Exception as e:  # noqa: BLE001 -- a reservation-file error is a refusal, receipted
         return Refusal("rate", f"rate error: the reservation could not be taken ({type(e).__name__})",
                        {**detail, **wire_error(e)})
     if not ok:
-        return Refusal("rate", f"rate refused: over the budget of {rate_max} mutations per {window}s on this box",
-                       {**detail, "box": _box_key(base_url)})
+        costs = f"; this call costs {count}, a rollback with a safety net costs two" if count > 1 else ""
+        return Refusal("rate", f"rate refused: over the budget of {rate_max} mutations per {window}s on this "
+                               f"box{costs}", {**detail, "box": _box_key(base_url)})
     return None
 
 

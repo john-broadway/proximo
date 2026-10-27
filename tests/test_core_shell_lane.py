@@ -435,3 +435,13 @@ def test_the_raw_get_door_refuses_every_ssh_row_the_engine_serves():
         if row.method == "GET":       # a POST row's path has no GET anyway; only here does the refusal say something
             with pytest.raises(ProximoError, match="publishes no GET"):
                 rawdoor.validate(row.product, concrete)
+
+
+def test_the_whole_answer_of_an_over_the_cap_command_is_under_the_default_cap(box, monkeypatch):
+    """The streams share the cap LESS the envelope (header, undo, intent), so the answer is not cut twice."""
+    from proximo.core import rawdoor
+    _on(monkeypatch)
+    _runner(monkeypatch, rc=0, out="x" * 50_000, err="e" * 50_000)
+    out = engine.execute(engine.resolve("pve", "POST", EXEC), {"command": ["cat"]}, cfg=box, path=EXEC)
+    assert "data" in out and out["data"]["truncated"] == {"stdout": 50_000, "stderr": 50_000}
+    assert len(json.dumps(out, separators=(",", ":")).encode()) <= rawdoor.DEFAULT_MAX_BYTES

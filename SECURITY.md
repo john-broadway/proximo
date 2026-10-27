@@ -267,19 +267,45 @@ The ledger is keyed, always (HMAC-SHA256 under a key minted 0600 beside the log;
 retired the unkeyed opt-out, and a door refuses to start while `PROXIMO_AUDIT_KEYED=off`
 is still set). A forward walk catches an edited, inserted, reordered or removed interior
 row. It cannot catch the tail: a truncation, a forged append, a wipe. `audit_verify
-(expected_head=...)` with a head you pinned off-box catches those — and the pin is the
-operator's hand. Copy `head()` somewhere this box cannot write (a root-only append log, a
+(expected_head=...)` with a head you pinned off-box catches those, and the pin is the operator's
+hand, or the anchor's. Copy `head()` somewhere this box cannot write (a root-only append log, a
 different host) and pass it back as `expected_head`: the chain must END there, so a cut tail, a
 forged append and a wipe all fail (and so does any honest row written since you copied it). Or set
 `PROXIMO_AUDIT_EXPECTED_HEAD` once: a standing value, so it is checked as a row the chain must still
 HOLD. Later rows pass; a cut below it or a replaced file fails; a row forged after it does NOT, for
-that you pass a fresh head. `audit_verify` says which it checked (`pinned`) and whether the tail was (`tail_verified`, true only
-for an exact head); an archive (`path=`)
-takes no pin. 0.44's anchor sinks (file, http, syslog, journal) went with it; what
-remains is the honest shape of the guarantee: the pin is only as good as the place you keep
-it. Every serving door (stdio, HTTP, MCP over HTTP, A2A) stamps its arrival and departure on the
-chain, so a door that served while something rewrote the record is itself in the record; the
-`proximo-core` shell door serves one call per process and receipts that call, not a session.
+that you pass a fresh head. `audit_verify` says which it checked (`pinned`) and whether the tail was
+(`tail_verified`, true only for an exact head); an archive (`path=`) takes no pin.
+
+**The anchor (opt-in) does the copying.** Set `PROXIMO_AUDIT_ANCHOR_SINK=file` with
+`PROXIMO_AUDIT_ANCHOR_FILE_PATH` (a path you keep out of the agent's reach: a mount this box writes
+but cannot rewrite) or `=http` with `PROXIMO_AUDIT_ANCHOR_URL` (https, or plain http only to this
+machine's loopback; `..._TOKEN_PATH` and `..._CA_BUNDLE` by path), and the ledger's head is
+published after a write, at most once per `PROXIMO_AUDIT_ANCHOR_INTERVAL` seconds (default 60).
+`audit_verify` reads it back and treats it as a row the chain must still hold, exactly like the env
+pin: a cut below it, a wipe or a replaced file fails, later rows pass, and `tail_verified` is true
+only when the anchored head IS the chain's head. A pin only ever moves forward along a chain that
+still holds it, so a cut tail followed by an honest write cannot re-pin the anchor to the cut
+chain; re-anchoring after a deliberate rotation is your act on the sink (remove the pin). Once the
+anchor is set, anything that keeps it from proving the tail (unreachable, empty, diverged,
+misconfigured) reads as `ok: false`. A publish failure never fails the call that wrote the row; it
+shows as the anchor being `unreachable`, `empty` or `stale` in `audit_verify` and in doctor's PROVE
+station, and no path, URL or token is in any answer. Rows after the anchored head are not
+verified: `audit_verify` says how many (`anchor.unwatched_rows`) and says so in `anchor.note`, since a
+cut that stays above the anchored row still reads `ok` (the same is true of `stale`). The first
+publish writes an `audit_anchor` row into the ledger, and a ledger that holds one never publishes
+into an EMPTY sink (a transient 404, a wiped store, an attacker's delete): the anchor reads `empty`
+(`ok: false`) until you set `PROXIMO_AUDIT_ANCHOR_REARM=1` for one write and unset it again. Every
+sink call has a total deadline and a 4 KB read cap; the http client honours no proxy variable and
+follows no redirect; the file sink writes the pin 0600, atomically, and syncs its directory;
+`PROXIMO_AUDIT_ANCHOR_FILE_PATH` must be absolute. `PROXIMO_AUDIT_ANCHOR_INTERVAL=0` publishes on
+every write and so reads the sink and walks the whole chain each time (O(N) per write): use it for
+a small ledger or a test. Not restored from 0.44: the syslog and journal
+sinks (write-only witnesses that could never be read back). The limits are named: rows inside the
+publish interval are unwatched until the next publish, and the anchor is only as good as the sink,
+which must be less compromisable than this box. Every serving door (stdio, HTTP, MCP over HTTP,
+A2A) stamps its arrival and departure on the chain, so a door that served while something rewrote
+the record is itself in the record; the `proximo-core` shell door serves one call per process and
+receipts that call, not a session.
 
 A same-user attacker who can write the 0600 log can often read the 0600 key too — so keying
 is a *marginal* hardening, **not** a substitute for the off-box head, which remains the

@@ -104,7 +104,9 @@ def test_a_word_the_table_spells_is_never_filler():
 
 def test_the_descriptions_never_ship_in_the_answer():
     m = door.find("list datastores", plane="pbs")["matches"][0]
-    assert set(m) == {"plane", "method", "path", "access", "tier", "why", "params"}
+    assert {"plane", "method", "path", "access"} <= set(m)
+    assert set(m) <= {"plane", "method", "path", "access", "tier", "why", "params"}
+    assert "description" not in m
 
 
 def test_every_row_of_the_table_has_the_vendors_sentence_or_none_published():

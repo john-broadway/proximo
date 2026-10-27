@@ -29,14 +29,22 @@ class Api:
     `exitstatus` (OK unless told otherwise), a rollback POST answers a task id too."""
 
     def __init__(self, exitstatus="OK", fail=None):
-        self.exitstatus, self.fail, self.calls = exitstatus, fail, []
+        self.exitstatus, self.fail, self.calls, self.snaps = exitstatus, fail, [], []
+        self.rollback_exitstatus = None        # when set, the task of the last ROLLBACK ends this way
 
     def call(self, method, path, params=None):
         self.calls.append((method, path, dict(params or {})))
+        if method == "GET" and path.endswith("/snapshot"):       # the rollback's own net checks its target is there
+            return [{"name": n} for n in self.snaps]
+        if method == "POST" and path.endswith("/snapshot"):
+            self.snaps.append((params or {}).get("snapname"))
         if self.fail is not None and method == "POST":
             raise self.fail
         if method == "GET" and path.endswith("/status"):
-            return {"status": "stopped", "exitstatus": self.exitstatus, "upid": UPID}
+            posts = [p for m, p, _ in self.calls if m == "POST"]
+            ended = self.rollback_exitstatus if self.rollback_exitstatus and posts[-1].endswith("/rollback") \
+                else self.exitstatus
+            return {"status": "stopped", "exitstatus": ended, "upid": UPID}
         return UPID
 
 
@@ -156,7 +164,7 @@ def test_undo_by_receipt_plans_the_rollback_then_runs_it(box, monkeypatch):
 def test_a_rollback_whose_task_fails_says_failed_not_restored(box, monkeypatch):
     api, _ = _wire(monkeypatch)
     ref = _exec(box, snapshot=True)["undo"]["id"]
-    api.exitstatus = "rollback failed: snapshot is locked"
+    api.rollback_exitstatus = "rollback failed: snapshot is locked"
     done = undo.restore(ref, cfg=box, confirm=True)
     assert done["status"] == "failed"
 

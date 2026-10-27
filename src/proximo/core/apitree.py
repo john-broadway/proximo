@@ -27,9 +27,12 @@ _COLUMNS: dict[str, tuple[type, ...]] = {
     "product": (str,), "method": (str,), "path": (str,), "params": (dict,), "access": (str,),
     "excluded": (bool,), "gate": (str, type(None)), "tier": (str, type(None)), "why": (str, type(None)),
     "held": (str, type(None)), "untrusted": (bool,), "channel": (str, type(None)), "wire": (str,),
-    "description": (str,), "secret": (dict, type(None)), "arg_secrets": (list,), "creates": (str, type(None)),
+    "description": (str,), "secret": (dict, type(None)), "arg_secrets": (list,), "arg_public": (list,),
+    "creates": (str, type(None)),
     "lane": (str, type(None)), "twin": (str, type(None)), "state": (str, type(None)), "expect": (dict, type(None)),
-    "net": (dict, type(None)), "task_status": (str, type(None)), "notes": (list,),
+    "net": (dict, type(None)), "task_status": (str, type(None)), "notes": (list,), "raises": (list,),
+    "sight": (dict, type(None)), "one_of": (dict, type(None)),
+    "consult": (str, type(None)),
 }
 _SECRET = {"drop": list, "userinfo": list, "rows": list, "text": bool, "bearer": (str, type(None))}
 #: The opt-in lanes a gated row may be served on (spine.opt_in_refusal); None is ungated or a hard gate.
@@ -140,38 +143,59 @@ def _wrong_column(r: dict[str, Any], index: dict[tuple[str, str, str], dict[str,
         return "carries a create that is not an ungated POST with ungated GET and DELETE twins at its path"
     if wrong := notes_problem(r["notes"], r):
         return f"carries a note the build would not write: it {wrong}"
+    if wrong := raises_problem(r["raises"], r):
+        return f"carries a raise the build would not write: it {wrong}"
+    if r["sight"] is not None and (wrong := sight_problem(r["sight"], r, index)):
+        return f"carries a sight line the build would not write: it {wrong}"
+    if r["consult"] is not None and (wrong := consult_problem(r["consult"], r, index)):
+        return f"carries a consult the build would not write: it {wrong}"
+    if r["one_of"] is not None and (wrong := one_of_problem(r["one_of"], r)):
+        return f"carries a rule the build would not write: it {wrong}"
     return _wrong_net(r, index)
 
 
-#: The four keys a note carries (records/notes.toml), no more.
+#: The four keys a conditional note carries (records/notes.toml), no more.
 NOTE_KEYS = ("given", "not_given", "says", "why")
+#: The three keys an ALWAYS-ON note carries: no condition, and `always = true` written out. A note
+#: that holds for every call to its address cannot happen by leaving a condition empty.
+ALWAYS_KEYS = ("always", "says", "why")
+
+
+def note_keys(n: dict[str, Any]) -> tuple[str, ...]:
+    """The keys a note is held to: the always-on shape when it says `always`, else the conditional."""
+    return ALWAYS_KEYS if "always" in n else NOTE_KEYS
 
 
 def note_problem(n: Any, r: dict[str, Any]) -> str | None:
     """Why a note on row `r` would do nothing or mislead, in the words the build and the loader
     both refuse with; None when it is a note the engine can judge. A note rides only a mutation
-    the door serves, names only parameters the address publishes, has a condition, and says
-    something with a reason. The build refuses the record line; the loader refuses the file."""
-    if not isinstance(n, dict) or set(n) != set(NOTE_KEYS):
-        return "takes exactly given, not_given, says and why"
+    the door serves, names only parameters the address publishes, has a condition (or says
+    `always = true`, written out), and says something with a reason. The build refuses the record
+    line; the loader refuses the file."""
+    if not isinstance(n, dict) or set(n) != set(note_keys(n) if isinstance(n, dict) else NOTE_KEYS):
+        return "takes exactly given, not_given, says and why, or exactly always, says and why"
     if r["access"] != "mutate" or r["gate"] or r["excluded"]:
         return "is not a mutation the door serves"
-    given, not_given = n["given"], n["not_given"]
-    if not (isinstance(given, list) and isinstance(not_given, list)
-            and all(isinstance(k, str) for k in (*given, *not_given))):
-        return "given and not_given are lists of parameter names"
-    if not given and not not_given:
-        return "has no condition; a note that is always on is the tier's sentence"
-    for k in (*given, *not_given):
-        if k not in r["params"]:
-            return f"names {k}, which the address does not publish"
-    if both := sorted(set(given) & set(not_given)):
-        return f"names {both[0]} in both given and not_given"
-    if len(set(given)) != len(given) or len(set(not_given)) != len(not_given):
-        return "names a parameter twice"
-    for k in (*given, *not_given):
-        if f"{{{k}}}" in r["path"]:
-            return f"names {k}, which the path binds; it is never an argument"
+    if "always" in n:
+        if n["always"] is not True:
+            return "says always but not `always = true`"
+    else:
+        given, not_given = n["given"], n["not_given"]
+        if not (isinstance(given, list) and isinstance(not_given, list)
+                and all(isinstance(k, str) for k in (*given, *not_given))):
+            return "given and not_given are lists of parameter names"
+        if not given and not not_given:
+            return "has no condition; a note that holds for every call says `always = true`, written out"
+        for k in (*given, *not_given):
+            if k not in r["params"]:
+                return f"names {k}, which the address does not publish"
+        if both := sorted(set(given) & set(not_given)):
+            return f"names {both[0]} in both given and not_given"
+        if len(set(given)) != len(given) or len(set(not_given)) != len(not_given):
+            return "names a parameter twice"
+        for k in (*given, *not_given):
+            if f"{{{k}}}" in r["path"]:
+                return f"names {k}, which the path binds; it is never an argument"
     for k in ("says", "why"):
         if not isinstance(n[k], str) or len(n[k].split()) < 4:
             return f"is without a {k}; the sentence is the judgement"
@@ -185,10 +209,147 @@ def notes_problem(notes: list[Any], r: dict[str, Any]) -> str | None:
     for n in notes:
         if wrong := note_problem(n, r):
             return wrong
-    conds = [(tuple(sorted(n["given"])), tuple(sorted(n["not_given"]))) for n in notes]
+    conds = [("always",) if "always" in n else (tuple(sorted(n["given"])), tuple(sorted(n["not_given"])))
+             for n in notes]
     if len(set(conds)) != len(conds):
         return "carries two notes with one condition"
     return None
+
+
+#: The two keys an at-least-one rule carries (records/args.toml), no more.
+ONE_OF_KEYS = ("names", "why")
+
+
+def one_of_problem(x: Any, r: dict[str, Any]) -> str | None:
+    """Why an at-least-one rule on row `r` would do nothing or mislead, in the words the build and
+    the loader both refuse with; None when the engine can judge it. A rule rides only a mutation
+    the door serves, names only parameters the address publishes (and never one the path binds,
+    which is no argument), each once, and says why with the sentence that is the judgement."""
+    if not isinstance(x, dict) or set(x) != set(ONE_OF_KEYS):
+        return "takes exactly names and why"
+    if r["access"] != "mutate" or r["gate"] or r["excluded"]:
+        return "is not a mutation the door serves"
+    names = x["names"]
+    if not (isinstance(names, list) and all(isinstance(k, str) for k in names)):
+        return "names are a list of parameter names"
+    if not names:
+        return "names no parameter; a rule over nothing refuses nothing"
+    if len(set(names)) != len(names):
+        return "names a parameter twice"
+    for k in names:
+        if k not in r["params"]:
+            return f"names {k}, which the address does not publish"
+        if f"{{{k}}}" in r["path"]:
+            return f"names {k}, which the path binds; it is never an argument"
+    if not isinstance(x["why"], str) or len(x["why"].split()) < 4:
+        return "is without a why; the sentence is the judgement"
+    if x["why"] != x["why"].strip():
+        return "carries a why with space around it"
+    return None
+
+
+#: Severity order of the tier vocabulary (engine.TIERS), least to most. A raise moves up it only.
+TIER_RANK = {"read-back": 0, "restorable": 1, "disruptive": 2, "destructive": 3}
+#: The keys a raise carries on a row (records/tiers.toml [raise]), no more.
+RAISE_KEYS = ("when", "tier", "why")
+
+
+def raise_value(value: Any) -> str:
+    """A value as a raise compares it: stripped, lower case, a trailing `.service` dropped (a
+    systemd unit and its service name are one service; `SSHD` and `sshd.service` are `sshd`)."""
+    v = str(value).strip().lower()
+    return v[: -len(".service")] if v.endswith(".service") else v
+
+
+def raise_problem(x: Any, r: dict[str, Any]) -> str | None:
+    """Why a raise on row `r` would do nothing or mislead; None when the engine can judge it. A
+    raise rides only a mutation the door serves that ALREADY carries a tier (a raise never opens),
+    moves to a tier strictly above it, keys on names the path binds or the address publishes,
+    lists the values it raises on (already in `raise_value`'s spelling), and says why."""
+    if not isinstance(x, dict) or set(x) != set(RAISE_KEYS):
+        return "takes exactly when, tier and why"
+    if r["access"] != "mutate" or r["gate"] or r["excluded"]:
+        return "is not a mutation the door serves"
+    if r["tier"] not in TIER_RANK:
+        return "sits on an address with no authored tier to raise; a raise never opens"
+    if x["tier"] not in TIER_RANK:
+        return f"names tier {x['tier']!r}, outside the vocabulary"
+    if TIER_RANK[x["tier"]] <= TIER_RANK[r["tier"]]:
+        return f"does not raise: {x['tier']} is not above the authored {r['tier']}"
+    when = x["when"]
+    if not isinstance(when, dict) or not when:
+        return "has no condition; a raise that is always on is the address's own tier"
+    for k, vals in when.items():
+        if f"{{{k}}}" not in r["path"] and k not in r["params"]:
+            return f"names {k}, which the address neither binds nor publishes"
+        if not (isinstance(vals, list) and vals and all(isinstance(v, str) and v and v == raise_value(v)
+                                                           for v in vals)):
+            return f"lists no values for {k}, or a value not in the compared spelling"
+    if not isinstance(x["why"], str) or len(x["why"].split()) < 4 or x["why"] != x["why"].strip():
+        return "is without a why; the sentence is the judgement"
+    return None
+
+
+def raises_problem(raises: list[Any], r: dict[str, Any]) -> str | None:
+    """`raise_problem` for each raise on a row."""
+    for x in raises:
+        if wrong := raise_problem(x, r):
+            return wrong
+    return None
+
+
+#: The four keys a sight line carries (records/sight.toml), no more.
+SIGHT_KEYS = ("when", "sighted", "what", "why")
+#: One requirement of a sight line: a privilege, `@`, and the path it must be held at (`*` = anywhere,
+#: `{name}` = a placeholder the path binds or a parameter the address publishes).
+_REQUIREMENT = re.compile(r"^[A-Za-z]+(?:\.[A-Za-z]+)+@(?:\*|/[^\s{}]*(?:\{[^{}\s]+\}[^\s{}]*)*)$")
+
+
+def sight_problem(s: Any, r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, Any]]) -> str | None:
+    """Why a sight line on row `r` would do nothing or mislead, in the words the build and the
+    loader both refuse with; None when it is a line the engine can judge. A line rides only a read
+    the door serves, on a plane that publishes the read of what the token holds (without it every
+    empty list would be refused for good), names only parameters the address publishes, and says
+    what is hidden and why with the sentence that is the judgement."""
+    if not isinstance(s, dict) or set(s) != set(SIGHT_KEYS):
+        return "takes exactly when, sighted, what and why"
+    if r["access"] != "read" or r["gate"] or r["excluded"]:
+        return "is not a read the door serves"
+    perms = index.get((r["product"], "GET", "/access/permissions"))
+    if perms is None or perms["gate"] or perms["excluded"]:
+        return f"is on {r['product']}, which publishes no GET /access/permissions to judge it by"
+    when = s["when"]
+    if not (isinstance(when, dict) and all(isinstance(k, str) and isinstance(v, list) and v
+                                           and all(isinstance(x, str) and x for x in v) for k, v in when.items())):
+        return "when takes parameter names and lists of values"
+    for k in when:
+        if k not in r["params"]:
+            return f"names {k}, which the address does not publish"
+        if f"{{{k}}}" in r["path"]:
+            return f"names {k}, which the path binds; it is never an argument"
+    alts = s["sighted"]
+    if not (isinstance(alts, list) and alts and all(isinstance(a, list) and a for a in alts)):
+        return "sighted is a non-empty list of alternatives, each a non-empty list of requirements"
+    for req in (x for a in alts for x in a):
+        if not isinstance(req, str) or not _REQUIREMENT.match(req):
+            return f"requires {req!r}, which is not privilege@path"
+        for name in re.findall(r"\{([^{}]+)\}", req):
+            if name not in r["params"] and f"{{{name}}}" not in r["path"]:
+                return f"requires {req!r}, which names {{{name}}}, a name the address neither binds nor publishes"
+    for k, least in (("what", 2), ("why", 4)):
+        if not isinstance(s[k], str) or len(s[k].split()) < least:
+            return f"is without a {k}; the sentence is the judgement"
+        if s[k] != s[k].strip():
+            return f"carries a {k} with space around it"
+    return None
+def consult_problem(name: Any, r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, Any]]) -> str | None:
+    """Why a consult (records/consult.toml) naming judge `name` on row `r` would do nothing or could
+    not run; None when the engine can run it. The judge's reads are declared by the judge in code
+    (`proximo.core.consult.JUDGES`), so the rule lives there and is asked here; the build refuses
+    the record line, the loader refuses the file."""
+    from proximo.core import consult  # consult imports this module; bound at call time, not import time
+
+    return consult.problem(name, r, index)
 
 
 def _is_create(r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, Any]]) -> bool:
@@ -205,18 +366,37 @@ def _is_create(r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, An
     return True
 
 
+def rollback_net(r: dict[str, Any]) -> dict[str, str] | None:
+    """The net a snapshot rollback on the API wire carries (records/undo.toml [net]), derived from
+    the row's own address: the guest's own snapshot create, and this very rollback (a safety
+    snapshot is put back by the vendor's rollback of it). None for any other address, so a record
+    line cannot name a net the address does not support."""
+    snap, _, name = r["path"].rpartition("/")[0].rpartition("/")
+    if r["method"] != "POST" or not r["path"].endswith("/rollback") or name != "{snapname}" \
+            or not snap.endswith("/snapshot"):
+        return None
+    return {"snapshot": f"POST {snap}", "rollback": f"POST {r['path']}"}
+
+
 def _wrong_net(r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, Any]]) -> str | None:
-    """A net (the build's `refuse_bad_net`): on the ssh wire a boolean `snapshot` parameter and a
-    net come together; both addresses are ungated, unexcluded POSTs on the command's own container;
-    the snapshot publishes `snapname` without naming one; the rollback names it."""
+    """A net (the build's `refuse_bad_net`). On the ssh wire a boolean `snapshot` parameter and a
+    net come together, and both addresses are ungated, unexcluded POSTs on the command's own
+    container; on the API wire a net is exactly a rollback's own (`rollback_net`). Either way the
+    snapshot publishes `snapname` without naming one, and the rollback names it."""
     net, snap = r["net"], r["params"].get("snapshot")
-    if r["wire"] == "ssh" and (net is None) != (snap is None):
+    ssh = r["wire"] == "ssh"
+    if ssh and (net is None) != (snap is None):
         return "carries a snapshot parameter without a net, or a net without the parameter"
     if net is None:
         return None
-    if r["wire"] != "ssh" or not isinstance(snap, dict) or snap.get("type") != "boolean":
-        return "carries a net beside no boolean snapshot parameter on the ssh wire"
-    own = r["path"].rpartition("/")[0] + "/"
+    if ssh:
+        if not isinstance(snap, dict) or snap.get("type") != "boolean":
+            return "carries a net beside no boolean snapshot parameter on the ssh wire"
+        own = r["path"].rpartition("/")[0] + "/"
+    else:
+        if net != rollback_net(r):
+            return "carries a net that is not the snapshot and rollback of its own guest"
+        own = r["path"].partition("/snapshot/")[0] + "/"
     for what, address in net.items():
         method, _, path = address.partition(" ")
         t = index[(r["product"], method, path)]        # present: the named-row check ran first
@@ -225,6 +405,7 @@ def _wrong_net(r: dict[str, Any], index: dict[tuple[str, str, str], dict[str, An
                 or (what == "rollback" and "{snapname}" not in path)):
             return f"carries a net {what} that is not a mutation the door serves on its own container"
     return None
+
 
 PRODUCTS = ("pve", "pbs", "pmg", "pdm")
 SOURCES = {

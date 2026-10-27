@@ -21,10 +21,11 @@ import argparse
 import json
 import os
 import sys
+from typing import Any
 
 import httpx
 
-from proximo.core import diagnose, doctor, engine, envfile, registry, undo
+from proximo.core import diagnose, doctor, engine, envfile, rawdoor, reach, registry, undo
 from proximo.core.doors import BANNER
 from proximo.core.errors import ProximoError
 from proximo.core.secretfile import safe_exception_text, safe_text
@@ -65,14 +66,35 @@ def mint_main(argv: list[str]) -> int:
 
 
 def doctor_main(argv: list[str]) -> int:
-    """`proximo-core doctor`: the gate diagnoses itself (the record, the planes, the chain, the
-    pillars). Vendor reads only, each receipted like any read; JSON out; the exit is the door's
-    contract and the flags move it not."""
-    if argv:
-        print("usage: doctor takes no arguments", file=sys.stderr)
+    """`proximo-core doctor [--receipt [--deny NAME]...]`: the gate diagnoses itself (the record,
+    the planes, the chain, the pillars). Vendor reads only, each receipted like any read; JSON
+    out; the exit is the door's contract and the flags move it not. `--receipt` prints the same
+    report as one estate-redacted, fingerprinted text to paste (`core.receipt`); it sends nothing,
+    and `--deny NAME` (repeatable) names a bare estate word the redactor cannot see."""
+    receipt_out, deny, rest = False, [], list(argv)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--receipt":
+            receipt_out = True
+        elif arg == "--deny" and rest:
+            deny.append(rest.pop(0))
+        else:
+            print("usage: doctor takes no arguments but --receipt [--deny NAME]...", file=sys.stderr)
+            return EXIT_USAGE
+    if deny and not receipt_out:
+        print("usage: --deny belongs to --receipt", file=sys.stderr)
         return EXIT_USAGE
     report = doctor.run()
     code = report.pop("exit")
+    if receipt_out:
+        from datetime import UTC, datetime  # noqa: PLC0415 -- the clock is the door's; the receipt takes it in
+
+        from proximo import __version__  # noqa: PLC0415
+        from proximo.core import receipt  # noqa: PLC0415
+
+        print(receipt.render(report, version=__version__, deny=receipt.compile_denylist(deny),
+                             generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")), end="")
+        return code
     print(json.dumps(report, indent=2, sort_keys=True, default=str))
     return code
 
@@ -228,6 +250,84 @@ def arm_main(verb: str, argv: list[str]) -> int:
     return EXIT_OK
 
 
+def _greeted(mutates: bool) -> bool:
+    """A call that can mutate greets the ledger with the reach grant first (`reach.greet`); a read,
+    a plan and a verb that only prints do not: this door has no start, and a read cannot use a lane."""
+    return not mutates or reach.greet("proximo-core", "cli")
+
+
+def _fingerprinted(value: Any, path: str = "") -> list[str]:
+    """The names of the arguments the ledger kept only as a fingerprint (a secret), at any depth."""
+    if isinstance(value, str):
+        return [path or "?"] if value.startswith("[redacted sha256:") else []
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    return [n for k, v in items for n in _fingerprinted(v, f"{path}.{k}" if path else str(k))]
+
+
+def consent_show(argv: list[str]) -> int:
+    """`proximo-core consent show <consent_id>`: what a refused mutation proposed, every argument whole, as typed
+    JSON, from the ledger row the refusal wrote. A secret stays a fingerprint (secrets.toml judges which). The
+    operator's view: no model reads it, so nothing is capped; what could reorder or hide text on a terminal
+    (bidi marks, zero-width and control characters: rawdoor's escape rule) is shown as its escape.
+
+    NOTHING IS PRINTED FROM A ROW THAT DOES NOT PROVE ITSELF (the ledger is same-uid writable). The row must
+    be the only proposal for its id (the same proposal written twice is one); its `binding` must reproduce over
+    the stored proposal, fingerprints included (`spine.consent_binding`); with no fingerprint in it, the id
+    must be recomputed from what is shown, box and net included; and the ledger's keyed chain must verify
+    (to `PROXIMO_AUDIT_EXPECTED_HEAD` when it is pinned), so a row rewritten with its binding recomputed is
+    caught by the chain. Any of those failing exits refused with the arguments unprinted."""
+    from proximo.core import rawdoor, spine  # noqa: PLC0415
+    from proximo.core.ledger import LedgerConfig, ledger_key, parse_lines, read_log, verify_lines  # noqa: PLC0415
+    if len(argv) != 1 or not argv[0].strip():
+        print("usage: proximo-core consent show <consent_id>", file=sys.stderr)
+        return EXIT_USAGE
+    want = argv[0].strip().lower()
+    cfg = LedgerConfig.from_env()
+
+    def refuse(why: str) -> int:
+        print(f"refused: {rawdoor.echo(why, 400)}", file=sys.stderr)
+        return EXIT_REFUSED
+    try:
+        lines = read_log(cfg.audit_log_path)
+    except ProximoError as exc:
+        return refuse(str(exc))
+    rows = [e for e in parse_lines(lines)
+            if e.get("action") == "core.refuse" and isinstance((e.get("detail") or {}).get("proposed"), dict)
+            and str(e["detail"]["proposed"].get("consent_id", "")).startswith(want)]
+    if not rows or len(want) < 8:
+        return refuse(f"no refused call carries consent id {rawdoor.quote(want, 20)} (at least 8 characters)")
+    ids = {str(e["detail"]["proposed"].get("consent_id")) for e in rows}
+    if len(ids) > 1:
+        return refuse(f"{rawdoor.quote(want, 20)} is the start of {len(ids)} consent ids; give more of it")
+    proposals = {json.dumps(e["detail"]["proposed"], sort_keys=True, default=str) for e in rows}
+    if len(proposals) > 1:
+        return refuse(f"more than one different proposal carries consent id {next(iter(ids))[:12]}: "
+                      "a forged ledger row; nothing is shown")
+    row = rows[-1]
+    p = row["detail"]["proposed"]
+    cid = str(p.get("consent_id"))
+    need = ("plane", "method", "published", "called", "args", "box", "binding")
+    if any(k not in p for k in need) or not isinstance(p["args"], dict):
+        return refuse(f"the row for consent id {cid[:12]} is not a whole proposal: a forged ledger row")
+    if p["binding"] != spine.consent_binding(p):
+        return refuse(f"the row does not reproduce the binding of consent id {cid[:12]}: a forged ledger row")
+    held = _fingerprinted(p["args"])
+    recomputed = spine.consent_id(p["plane"], p["method"], p["published"], p["called"], p["args"], p["box"],
+                                  net=str(p.get("net") or ""))
+    if not held and recomputed != cid:
+        return refuse(f"the row does not reproduce consent id {cid[:12]}: a forged ledger row")
+    chain = verify_lines(lines, ledger_key(cfg), pinned_row=os.environ.get("PROXIMO_AUDIT_EXPECTED_HEAD") or None)
+    if not chain.ok:
+        return refuse(f"the ledger chain does not verify (row {chain.broken_at}: {chain.reason}); "
+                      "a proposal on it proves nothing, so nothing is shown")
+    shown = {"consent_id": cid, "at": row.get("ts"), "address": f"{p['method']} {p['published']}",
+             "called": p["called"], "plane": p["plane"], "box": p["box"], **({"net": p["net"]} if p.get("net") else {}),
+             "args": p["args"], "fingerprinted": held, "reproduces_id": not held and recomputed == cid,
+             "binding_verified": True, "reason": (row.get("detail") or {}).get("reason")}
+    print(json.dumps(rawdoor.plain_deep(shown), indent=2, ensure_ascii=False))
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     envfile.load(announce=False, prog="proximo-core")   # the operator's file; quiet: stderr is a contract here
@@ -241,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         return badge_main(argv[1:])
     if argv[:1] == ["disarm"]:
         return arm_main("disarm", argv[1:])
+    if argv[:2] == ["consent", "show"]:
+        return consent_show(argv[2:])
     from proximo.core.doors.network import refuse_surfaces  # noqa: PLC0415
     if refuse_surfaces("proximo-core"):                   # a retired switch still set: told here, not served past
         return EXIT_USAGE
@@ -281,12 +383,23 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as e:
         return EXIT_OK if e.code == 0 else EXIT_USAGE
 
+    token = rawdoor.OPERATOR_VIEW.set(True)    # no model reads this door: a plan prints every argument in full
+    try:
+        return _run(ns)
+    finally:
+        rawdoor.OPERATOR_VIEW.reset(token)
+
+
+def _run(ns: argparse.Namespace) -> int:
+    """The verb `main` parsed, run under the operator's view of a plan."""
     try:
         # The box is resolved BEFORE anything is judged: an unknown name, a target of another
         # kind or an unreadable registry is the caller's configuration (3), never a verdict (2).
         cfg = registry.plane(ns.plane, ns.target)
     except ProximoError as e:
         print(f"unconfigured: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    if not _greeted(ns.method.upper() != "GET" and not ns.plan and not ns.diagnose):   # `undo` is not a GET
         return EXIT_USAGE
     try:
         if ns.diagnose:
@@ -299,23 +412,23 @@ def main(argv: list[str] | None = None) -> int:
                       file=sys.stderr)
                 return EXIT_USAGE
             out = diagnose.run(ns.plane, ns.path, cfg=cfg)
-            print(json.dumps(out, indent=2, sort_keys=True, default=str))
+            print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
             return EXIT_OK
         if ns.method.lower() == "undo":
             # The restore (B2): plan with --plan, run without; the id is the path argument.
             if ns.args:
                 raise ProximoError("undo takes no arguments: the capture is the argument; drop k=v")
             out = undo.restore(ns.path, plane=ns.plane, cfg=cfg, confirm=not ns.plan, wait=ns.wait)
-            print(json.dumps(out, indent=2, sort_keys=True, default=str))
+            print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
             return EXIT_OK if out.get("allowed", True) else EXIT_REFUSED
         row = engine.resolve(ns.plane, ns.method, ns.path)
         args = parse_args(ns.args)
         if ns.plan:
-            out = engine.plan(row, args, ns.path, cfg=cfg)  # published_parameters is a plain dict: JSON-able
-            print(json.dumps(out, indent=2, sort_keys=True))
+            out = engine.plan(row, args, ns.path, cfg=cfg, detail=ns.fields)   # --fields: the full schema of those
+            print(json.dumps(out, separators=(",", ":"), sort_keys=True))
             return EXIT_OK if out["allowed"] else EXIT_REFUSED
         out = engine.execute(row, args, path=ns.path, cfg=cfg, fields=ns.fields, since=ns.since, wait=ns.wait)
-        print(json.dumps(out, indent=2, sort_keys=True, default=str))
+        print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
         return EXIT_OK
     except ProximoError as e:
         print(f"refused: {e}", file=sys.stderr)

@@ -89,7 +89,8 @@ def keep(base: str, plane: str, box: str, called: str, args: dict[str, Any], row
     day = datetime.datetime.fromtimestamp(now, datetime.UTC).strftime("%Y-%m-%d") + ".json.gz"
     if not os.path.exists(os.path.join(d, day)):
         _write(os.path.join(d, day), blob)
-    for old in sorted(f for f in os.listdir(d) if re.fullmatch(r"\d{4}-\d\d-\d\d\.json\.gz", f))[:-KEEP_DAYS]:
+    days = (f for f in os.listdir(d) if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\.json\.gz", f))
+    for old in sorted(days)[:-KEEP_DAYS]:
         os.unlink(os.path.join(d, old))
 
 
@@ -136,9 +137,10 @@ def latest(base: str, plane: str, box: str, called: str, args: dict[str, Any]) -
 
 
 def parse_since(since: str) -> int:
-    m = re.fullmatch(r"\s*(\d+)\s*([mhd])\s*", since or "")
+    m = re.fullmatch(r"\s*([0-9]+)\s*([mhd])\s*", since or "", re.ASCII)
     if not m or int(m.group(1)) == 0:
-        raise ProximoError(f"since={since!r} is not a window: say 30m, 24h or 7d")
+        shown = repr(since) if len(since or "") <= 40 else f"{since[:40]!r}... ({len(since)} chars)"
+        raise ProximoError(f"since={shown} is not a window: say 30m, 24h or 7d")
     return int(m.group(1)) * {"m": 60, "h": 3600, "d": 86400}[m.group(2)]
 
 

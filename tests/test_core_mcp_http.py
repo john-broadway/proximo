@@ -90,8 +90,8 @@ async def test_the_network_face_serves_the_six_core_tools_and_governs(env, monke
     principal.set_serving_face(face.FACE)
     tools, prompts, refused = await _session(face.build_app(token="t0k"), {"Authorization": "Bearer t0k"})
     assert tools == SIX
-    # The five runbooks ride the same instance (B15): one registration, every door.
-    assert prompts == []            # the five 0.44 runbooks went at the cut (2026-10-18): six tools, nothing else
+    # The five runbooks ride the same instance: one registration, every door; tools stay six.
+    assert prompts == ["diagnose_cluster", "provision_container", "review_receipts", "safe_backup", "safe_migration"]
     assert result_is_error(refused) is True and "not armed" in refused.content[0].text
     row = _rows(env)[-1]
     assert row["action"] == "core.refuse" and row["principal"]["face"] == "mcp-http"
@@ -129,7 +129,7 @@ def test_session_rows_land_even_when_serving_crashes(env, monkeypatch):
     monkeypatch.setattr(uvicorn, "run", boom)
     with pytest.raises(RuntimeError, match="bind failed"):
         face.main([])
-    kinds = [(r["action"], r["detail"].get("face")) for r in _rows(env)]
+    kinds = [(r["action"], r["detail"].get("face")) for r in _rows(env) if r["action"].startswith("session_")]
     assert kinds == [("session_start", "mcp-http"), ("session_end", "mcp-http")]
 
 

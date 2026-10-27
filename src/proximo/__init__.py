@@ -5,4 +5,4 @@ is: planned, proven on a keyed ledger, undone where the vendor publishes a write
 back. The package is the core (`proximo.core`); every console script is one of its doors.
 """
 
-__version__ = "0.48.1"
+__version__ = "0.49.0"

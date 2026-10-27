@@ -13,3 +13,15 @@ guest = { means = ["qemu", "lxc"], why = "PVE: 'Bulk shutdown all guests on the 
 vm = { means = ["qemu"], why = "PVE: 'List of available VM-specific CPU flags.' (capabilities/qemu); PDM: 'Roll back a remote qemu vm to a snapshot.'" }
 container = { means = ["lxc"], why = "PVE: 'LXC container index (per node).' (/nodes/{node}/lxc)" }
 ct = { means = ["lxc"], why = "PVE: 'Migration tunnel endpoint - only for internal use by CT migration.' (/nodes/{node}/lxc/{vmid}/mtunnel)" }
+memory = { means = ["status"], why = "PBS: 'Read node memory, CPU and (root) disk usage' (/nodes/{node}/status)" }
+cpu = { means = ["status"], why = "PBS: 'Read node memory, CPU and (root) disk usage' (/nodes/{node}/status)" }
+usage = { means = ["status"], why = "PBS: 'Read node memory, CPU and (root) disk usage' (/nodes/{node}/status)" }
+ram = { means = ["memory"], why = "PVE: 'Amount of RAM for the container in MB.' (the `memory` parameter of POST /nodes/{node}/lxc); 'RAM usage target for ballooning (in percent of total memory)'" }
+disk = { means = ["storage", "volume"], why = "PVE: 'Use volume as IDE hard disk or CD-ROM'; 'Configure a disk for storing EFI vars. Use the special syntax STORAGE_ID:SIZE_IN_GiB to allocate a new volume.'" }
+health = { means = ["status", "smart"], why = "PMG: 'Read server status. This is used by the cluster manager to test the node health.'; PBS: 'Get SMART attributes and health of a disk.'" }
+log = { means = ["syslog", "journal"], why = "PMG: 'Read system log' (/nodes/{node}/syslog); 'Read Journal' (/nodes/{node}/journal)" }
+backup = { means = ["vzdump"], why = "PVE: 'Create backup.' (POST /nodes/{node}/vzdump); 'Extract configuration from vzdump backup archive.'" }
+permission = { means = ["acl"], why = "PVE: 'Update Access Control List (add or remove permissions).' (/access/acl)" }
+machine = { means = ["qemu"], why = "PVE: 'Virtual machine index (per node).' (/nodes/{node}/qemu)" }
+stats = { means = ["rrd", "rrddata"], why = "PBS: 'Read node stats' (/nodes/{node}/rrd); PDM: 'Read qemu stats' (.../rrddata)" }
+ssl = { means = ["certificate"], why = "PVE: 'Verify SSL certificates'; 'If false, no SSL/TLS certificates will be verified.'" }

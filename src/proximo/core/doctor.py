@@ -11,22 +11,21 @@ words (bar 4). Here the reach section is the vendor's own `GET /version` and `GE
 /access/permissions`, run through the engine like any read (receipted, bounded), and the
 permissions are counted and sampled by path, never translated; being reads through the engine,
 they land as rows on the ledger (two per configured plane) and on a fresh box the first one
-mints the audit key, which is why the ledger section is read after them. 0.44's `harden` printed four
-stations with recipes; two (the reach MIRROR and the off-box PROVE anchor) have no mechanism in
-the core and are not here. The kept stations are the six pillars on the core's own switches,
-each read through the spine's own reader, with the line that would raise an empty one.
+mints the audit key, which is why the ledger section is read after them. Of 0.44's `harden` stations
+the off-box anchor is PROVE's own station (`pillars.PROVE.anchor`); the reach grant (with its advisory
+mirror) is `reach.report`; the six pillars are kept, each with the line that would raise an empty one.
 
 Stations report yes, NEVER where: no switch's path, no secret's path, no token byte lands in the
 answer (a hijacked session must not learn the way to the operator's switch). Flags are advisory
 and move no exit code. The exit is the shell door's contract: 0 ran whole, 3 nothing configured,
-4 a configured plane unreachable or the chain unjudgeable; never 2, the spine's own refusal.
+4 a configured plane unreachable, the chain unjudgeable or its anchor diverged; never 2 (the spine's).
 """
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from proximo.core import arm, engine, registry, shell, spine, wire
+from proximo.core import anchor, arm, engine, rawdoor, reach, registry, shell, spine, wire
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import (
     LedgerConfig,
@@ -53,7 +52,10 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
     report["record"] = _record(flags)
     report["planes"], configured, unreachable = _planes(lcfg, flags)
     report["targets"] = _targets(flags)
+    report["reach"] = reach.report(lcfg, flags)   # before the ledger: its mirror reads are receipted rows
     report["ledger"], chain_ok = _ledger(lcfg, flags)
+    report["anchor"] = anchor.station(lcfg, flags)           # PROVE's off-box station (core/anchor.py)
+    chain_ok = chain_ok and report["anchor"]["state"] != "diverged"   # a chain that lost its pin is not whole
     report["pillars"] = _pillars(report, chain_ok, flags)
     retired = spine.retired_refusal()
     report["retired"] = [retired.reason] if retired else []
@@ -64,16 +66,16 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
         flags.append("PROXIMO_SURFACES is set: every core door refuses to start while it is; unset it")
     if not configured:
         flags.append("no plane is configured: set a plane's base URL and credential path (each plane names its own)")
-    report["flags"] = flags
+    report["flags"] = flags = [*flags, *rawdoor.cap_problems()]   # a junk cap variable never stands the cap down
     report["complete"] = not flags or all(f.startswith(_ADVISORY) for f in flags)
     report["exit"] = EXIT_USAGE if not configured else EXIT_VENDOR if (unreachable or not chain_ok) else EXIT_OK
     return report
 
 
 #: An EMPTY pillar is advice, not incompleteness; a TRIPPED one is neither (every mutation is refused
-#: and the report must say it is not whole). Each prefix is one flag's exact opening.
+#: and the report must say it is not whole). Each prefix opens one flag.
 _ADVISORY = ("CONSENT is inert", "CONTAIN has no trip path", "CONTAIN: no rate cap", "UNDO is off",
-             "a sealed rotation archive sits beside the ledger")
+             "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY
 
 
 def _said(exc: ProximoError) -> str:
@@ -150,7 +152,7 @@ def _read(product: str, path: str, cfg: wire.Plane, lcfg: Any) -> dict[str, Any]
     """One vendor read through the engine: receipted, bounded; the error as a receipt would carry it."""
     try:
         env = engine.execute(engine.resolve(product, "GET", path), {}, cfg=cfg, path=path, ledger_cfg=lcfg,
-                             fields="all")
+                             fields="all", evaluating=True)       # the report keeps verdicts, not these bytes
     except Exception as exc:  # noqa: BLE001 -- the vendor's or the spine's; the type is the report
         return wire_error(exc) if not isinstance(exc, ProximoError) else {"error": "refused", "reason": _said(exc)}
     # A CUT IS NOT A READ. The size law hands back `truncated` with the byte count and no `data`;
@@ -234,7 +236,7 @@ def _pillars(report: dict[str, Any], chain_ok: bool, flags: list[str]) -> dict[s
     led = report["ledger"]
     # An empty keyed ledger has no key yet (the first write mints it): standing until a row says otherwise.
     key_ok = led.get("key_readable", True) or not led.get("rows")
-    p["PROVE"] = {"standing": bool(led.get("keyed")) and chain_ok and key_ok}
+    p["PROVE"] = {"standing": bool(led.get("keyed")) and chain_ok and key_ok, "anchor": report["anchor"]}
     creates = report["record"].get("creates") if isinstance(report["record"], dict) else None
     p["UNDO"] = {"standing": spine.undo_enabled(), "creates_judged": creates}
     if not spine.undo_enabled():

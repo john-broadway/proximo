@@ -17,20 +17,21 @@ enables something the absence of a tier would have allowed.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import time
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import cache
 from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import unquote
 
-from proximo.core import apitree, arm, download, rawdoor, shell, spine, store, wire
+from proximo.core import apitree, arm, consult, download, rawdoor, risk, safetynet, shell, sight, spine, store, wire
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import EXECUTING, LedgerConfig, open_ledger
 from proximo.core.principal import ledger_principal
@@ -85,8 +86,13 @@ class Row:
     task_status: str | None = None            # where the plane reports a task this mutation submits
     secret: Rule = _NO_RULE      # what the answer withholds: the own line merged with the read twin's
     arg_secrets: frozenset[str] = frozenset()   # argument names the ledger fingerprints (a secret the caller sends)
+    arg_public: frozenset[str] = frozenset()    # names the name rule would hide that are not secrets (secrets.toml)
     creates: str | None = None   # a judged create (undo.toml): a failed read-back is absence, the restore its DELETE
     notes: tuple[Mapping[str, Any], ...] = ()   # what the plan says when the arguments meet a condition (notes.toml)
+    raises: tuple[Mapping[str, Any], ...] = ()  # a tier raised by a value the call names (tiers.toml [raise])
+    sight: Mapping[str, Any] | None = None      # an empty answer here is judged by what the token holds (sight.toml)
+    consult: str | None = None   # the judge the plan consults before the change (consult.toml; proximo.core.consult)
+    one_of: Mapping[str, Any] | None = None     # a call must name at least one of these parameters (args.toml)
 
     @property
     def address(self) -> str:
@@ -103,7 +109,7 @@ class Verdict:
     """Allowed or not, and the reason in the operator's terms.
 
     `needs` names what would change the answer ("arm", "tier", "held", "contain", "config",
-    "forbid", "consent", "rate", "taint", "undo", "prove", "arguments", "path", "store", or an
+    "forbid", "consent", "rate", "taint", "undo", "prove", "arguments", "path", "store", "sight", or an
     opt-in lane: "agent", "shell", "node", "download"), so a refusal tells the caller what to DO
     rather than only what failed. "held" is a judgement with a sentence, not an absence: John opens it by name.
     `consent_id` is on every mutation verdict, allowed or not: it is what an operator grants.
@@ -126,9 +132,18 @@ def row_of(r: Mapping[str, Any]) -> Row:
                expect=MappingProxyType(r["expect"]) if r["expect"] else None,
                net=MappingProxyType(r["net"]) if r["net"] else None, task_status=r["task_status"],
                secret=(frozenset(x["drop"]), frozenset(x["userinfo"]), frozenset(x["rows"]), x["text"], x["bearer"])
-               if x else _NO_RULE, arg_secrets=frozenset(r["arg_secrets"]), creates=r["creates"],
-               notes=tuple(MappingProxyType({**n, "given": tuple(n["given"]), "not_given": tuple(n["not_given"])})
-                           for n in r["notes"]))
+               if x else _NO_RULE, arg_secrets=frozenset(r["arg_secrets"]), arg_public=frozenset(r["arg_public"]),
+               creates=r["creates"],
+               notes=tuple(MappingProxyType({**n, "given": tuple(n.get("given", ())),
+                                             "not_given": tuple(n.get("not_given", ()))})
+                           for n in r["notes"]),
+               raises=tuple(MappingProxyType({**x, "when": MappingProxyType(
+                   {k: tuple(v) for k, v in x["when"].items()})}) for x in r["raises"]),
+               sight=MappingProxyType({**r["sight"], "sighted": tuple(tuple(a) for a in r["sight"]["sighted"]),
+                                       "when": MappingProxyType({k: tuple(v) for k, v in r["sight"]["when"].items()})})
+               if r["sight"] else None,
+               consult=r["consult"],
+               one_of=MappingProxyType({**r["one_of"], "names": tuple(r["one_of"]["names"])}) if r["one_of"] else None)
 
 
 @cache
@@ -150,13 +165,19 @@ def untrusted_addresses() -> frozenset[str]:
     return frozenset(r.key for r in table().values() if r.untrusted)
 
 
+def _NOT_SECRET_MARK(row: Row) -> frozenset[str]:  # noqa: N802 -- a marker set, read like a constant
+    """The names a row's `public` line (secrets.toml) judges NOT secret, as `!name` markers beside the
+    rule's drop set: `ledgered` reads a marker as 'the name rule does not apply to this name here'."""
+    return frozenset("!" + n for n in row.arg_public)
+
+
 def arg_rule(row: Row) -> Rule:
     """The rule for ledgering a mutation's ARGUMENTS: the response rule's drops (a PUT that echoes
     its resource) UNION the arg-secret names for this row's own address, so a guest exec's argv and
     a file-write's content are fingerprinted in the executing row, never written raw."""
     # Arguments are never "a bearer": a token mint's own line labels its ANSWER the credential;
     # its arguments (a comment, an expiry) are receipted by name like any other.
-    return (row.secret[0] | row.arg_secrets, *row.secret[1:4], None)
+    return (row.secret[0] | row.arg_secrets | _NOT_SECRET_MARK(row), *row.secret[1:4], None)
 
 
 def resolve(product: str, method: str, path: str) -> Row:
@@ -166,7 +187,9 @@ def resolve(product: str, method: str, path: str) -> Row:
     a typo must cost nothing and reveal nothing.
     """
     if product not in apitree.PRODUCTS:
-        raise ProximoError(f"unknown plane {product!r}; known planes: {', '.join(apitree.PRODUCTS)}")
+        raise ProximoError(f"unknown plane {rawdoor.quote(product)}; known planes: {', '.join(apitree.PRODUCTS)}")
+    rawdoor.check_input("method", method)          # absurd input is refused here, never echoed below
+    rawdoor.check_input("path", path)
     method = method.upper()
     # A CONCRETE path ("/nodes/pve1/status") and a TEMPLATE ("/nodes/{node}/status") must reach
     # the same row: `find` maps either onto the published spelling, which is the table's key.
@@ -179,12 +202,48 @@ def resolve(product: str, method: str, path: str) -> Row:
     row = table().get((product, method, published)) if published else None
     if row is None:
         nearest = apitree.nearest(product, path, method)[:5]
-        near = ", ".join(nearest) or "none"
         raise ProximoError(
-            f"{product} publishes no {method} {path}. Nearest published {method} paths: {near}."
-            + _split_value_hint(path, nearest)
+            f"{product} publishes no {method} {rawdoor.shorten(path)}. "
+            + _where_instead(product, method, path, nearest) + _split_value_hint(path, nearest)
         )
     return row
+
+
+def _suggestible(product: str, method: str, path: str) -> bool:
+    """A path worth naming to a caller: a published row of THIS method that is not gated or held
+    to a lane the caller did not open (a console tunnel, a vnc proxy) and not an ssh row."""
+    row = table().get((product, method, path))
+    return row is not None and not row.gate and not row.excluded and not row.held and row.wire != "ssh"
+
+
+def _where_instead(product: str, method: str, path: str, nearest: list[str]) -> str:
+    """The sentence after a refusal that says where to go. Paths that share leading segments come
+    first (a typo past a real prefix). A path that shares none (`/containers/105`, `/snapshot`) is
+    read as WORDS, the way `proximo_plan` reads them: its alphabetic segments through the same
+    search the door's find uses, so `containers` reaches `lxc`. A found path is named only when
+    one of the words (or its vocabulary synonym) is a segment of it: filler like `no` or `such`
+    reaches addresses by their descriptions, which is not near. Never "none": a model that is
+    told there is nothing nearby stops, and there is always `proximo_find` to ask."""
+    nearest = [p for p in nearest if _suggestible(product, method, p)]
+    if nearest:
+        return f"Nearest published {method} paths: {', '.join(nearest)}."
+    from proximo.core import search  # noqa: PLC0415 -- search imports this module
+    words = [w.lower() for seg in path.split("/") for w in re.split(r"[^A-Za-z]+", seg) if len(w) > 1]
+    if words:
+        try:
+            found = search.find(" ".join(words), plane=product, limit=20, method=method)["matches"]
+        except ProximoError:
+            found = []
+        alts = {search.stem(w) for w in words}
+        for w in words:
+            for key in (w, search.stem(w)):
+                alts |= {search.stem(m) for m in search.synonyms().get(key, ())}
+        close = [m["path"] for m in found if _suggestible(product, method, m["path"]) and alts & {
+            t for seg in m["path"].strip("/").split("/") if not seg.startswith("{") for t in search.tokens(seg)}]
+        if close:
+            return f"Nearest published {method} paths: {', '.join(close[:5])}."
+    return (f"No published {method} path is close to it. Ask proximo_find with a verb and a noun "
+            f"('list datastores') to see what {product} publishes.")
 
 
 def _split_value_hint(path: str, nearest: list[str]) -> str:
@@ -303,7 +362,8 @@ def govern(row: Row, *, cfg: wire.Plane | None = None, path: str | None = None,
 
 
 def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
-         cfg: wire.Plane | None = None, ledger_cfg: Any = None, env: dict[str, Any] | None = None) -> dict[str, Any]:
+         cfg: wire.Plane | None = None, ledger_cfg: Any = None, env: dict[str, Any] | None = None,
+         detail: str | None = None) -> dict[str, Any]:
     """The governed decision, the published schema and, for a mutation, THE TARGET AS IT STANDS.
 
     Writes no receipt of its own: the receipt of a mutation is the `executing` row `execute`
@@ -315,9 +375,23 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
     the grant file an operator would create, because the id is only useful with a path.
     `env` is the twin's envelope when the caller holds it already (a restore read the target to
     build its arguments moments ago); the plan diffs that record instead of reading twice.
+
+    THE PLAN IS CAPPED LIKE ANY ANSWER (the 4K window is the door's to keep, not the model's). The
+    vendor publishes up to 93 parameters for one address (a qemu create plan was 3,201 real tokens),
+    so `published_parameters` carries the ones the caller GAVE and the required ones it LACKS, each
+    by type, and `parameters_more` counts the rest. `detail` is the full schema on request: a list of
+    names ('name,memory') for those, or 'all'; asked for, it is still capped, with a `next`. Every
+    key that carries the verdict (rawdoor.PROTECTED) stays whole whatever the size.
     """
     args = dict(args or {})
-    verdict = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg)
+    unnamed: ProximoError | None = None
+    try:
+        path, node = default_node(row, path, args, cfg)
+    except ProximoError as exc:
+        path, node, unnamed = path, None, exc
+    verdict = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=_has_api_net(row))
+    if unnamed is not None:
+        verdict = Verdict(False, str(unnamed), "config")
     if path and "{" not in path and row.access != READ and (verdict.allowed or verdict.needs in ("arm", "consent")):
         # (a tunnel, a gate, a wall keeps its own words: those refusals name what no argument
         # can fix, lens 12)
@@ -327,16 +401,33 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         # thing the caller can fix without an operator.
         if (twice := _given_twice(row, bind(row, path), args)) is not None:
             verdict = Verdict(False, twice, "arguments", consent_id=verdict.consent_id)
+    if row.access != READ and (verdict.allowed or verdict.needs in ("arm", "consent")) \
+            and (none_of := one_of_refusal(row, args)):
+        # THE SAME ORDER AS THE CALL: arguments before arm. An empty call is not a no-op on an
+        # unarmed box either; the one thing the caller can fix without an operator is the call.
+        verdict = Verdict(False, none_of, "arguments", consent_id=verdict.consent_id)
+    # a rollback's net reads come BEFORE the consent look: the grant binds what the plan says about
+    # the net, and the reads may taint the session
+    view = _plan_net_view(row, args, path, cfg, ledger_cfg, verdict) if _has_api_net(row) else None
+    if view is not None:
+        verdict = _net_verdict(row, path, args, cfg, ledger_cfg, verdict, view)
+    else:
+        verdict = _shell_net_verdict(row, args, path, cfg, ledger_cfg, verdict)
     out = {
         "address": row.address, "plane": row.product, "access": row.access, "tier": row.tier,
         "why": row.why, "untrusted": row.untrusted, "channel": row.channel,
         "allowed": verdict.allowed, "reason": verdict.reason, "needs": verdict.needs,
         # Echoed as the receipt holds them: a secret-named argument fingerprinted, never raw.
         "arguments": ledgered(args, None, _plan_rule(row)) if args else args,
-        "published_parameters": dict(row.params),
+        **_parameters_of(row, args, path, detail),
     }
+    if node:
+        out["default_node"] = {"node": node, "from": NODE_ENV, "path": path}
+    if reading := risk.hint(row, args):
+        out["risk_hint"] = reading        # advice: a word and a closed list of labels, never the command
     if held := notes_held(row, args):
         out["notes"] = held
+    out.update(_tier_fields(row, path, args))
     if verdict.consent_id:
         out["consent_id"] = verdict.consent_id
         out["consent"] = spine.consent_state(verdict.consent_id, _audit_dir(ledger_cfg) or ".")
@@ -346,7 +437,9 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         gp = spine.grant_path(verdict.consent_id)
         if gp:
             out["grant_path"] = gp
-    if row.net and _snapshot_on(row, args):
+    if view is not None:
+        out.update(_safety_net_plan(row, view))
+    elif row.net and _snapshot_on(row, args):
         # ONE GRANT, TWO VENDOR MUTATIONS: the plan the operator approves says so (lens B5c-3).
         snap = _at(row.product, row.net["snapshot"])
         out["also"] = {"address": snap.address, "tier": snap.tier, "consent": "covered by this plan's grant",
@@ -356,6 +449,8 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
     # read of its twin (a login's GET) would dial the vendor for a call that will not run.
     if row.access != READ and verdict.needs not in ("arguments", "held"):
         out.update(_live_state(row, args, path, cfg, ledger_cfg, env))
+        if row.consult:
+            _plan_consult(row, verdict, out, path, args, cfg, ledger_cfg)
     if row.lane == "download" and verdict.allowed:
         # where the bytes would land; nothing is dialled, and a refused lane learns no path (lens 3)
         try:
@@ -363,7 +458,205 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
             out["download"] = {"lands_under": lands_under, "cap_bytes": cap}
         except ProximoError as exc:
             out["download"] = {"refused": str(exc)}
+    return _displayed(out, row)
+
+
+_PLAN_ENTRIES = (10, 6, 4, 3, 2, 1)
+
+
+#: A MUTATION PLAN to a model is the verdict and the NAMES of what it sent: the model wrote the values, so they
+#: are not echoed back. A short value (up to SHORT_VALUE characters) is shown; a longer one is a length and a
+#: hash, in place. Every argument name is shown (cut by echo) up to NAMES_SHOWN, and the rest counted. The whole
+#: of it, every value, is the operator's: `proximo-core consent show <consent_id>`.
+SHORT_VALUE = 48
+NAMES_SHOWN = 48
+
+
+def _echoed_entries(out: dict[str, Any], n: int, arguments: bool = True) -> dict[str, Any]:
+    """`out` with the caller's `arguments` (when `arguments`) and the diff's `change` shown as at most `n`
+    entries each, every key and value through the shared echo rule (rawdoor.echo), and the count of the rest.
+    DISPLAY ONLY: the consent id and the wire arguments were fixed from the full values before this runs."""
+    shown = dict(out)
+    if arguments and isinstance(out.get("arguments"), dict) and out["arguments"]:
+        shown["arguments"], more = rawdoor.echo_map(out["arguments"], n, 64)
+        if more:
+            shown["arguments_more"] = more
+    if isinstance(out.get("change"), dict) and out["change"]:
+        items = list(out["change"].items())
+        rows = {}
+        for k, v in items[:n]:
+            both = isinstance(v, dict) and set(v) <= {"from", "to"}
+            rows[rawdoor.echo(str(k), 40)] = ({a: rawdoor.echo_value(b, 64) for a, b in v.items()} if both
+                                               else rawdoor.echo_value(v, 64))
+        shown["change"] = rows
+        if len(items) > n:
+            shown["change_more"] = len(items) - n
+    return shown
+
+
+def _mutation_arguments(args: dict[str, Any], consent_id: str | None) -> dict[str, Any]:
+    """The `arguments` of a mutation plan for a model: every name (up to NAMES_SHOWN), a short value whole, a
+    long one as `[N chars sha256:<12 hex>]` in place, and the operator's command with the id."""
+    shown: dict[str, Any] = {}
+    long_ones: list[str] = []
+    for k, v in list(args.items())[:NAMES_SHOWN]:
+        key = rawdoor.echo(str(k), 64)
+        text = v if isinstance(v, str) else json.dumps(v, separators=(",", ":"), default=str)
+        if v is None or isinstance(v, (bool, int, float)) or len(text) <= SHORT_VALUE:
+            shown[key] = rawdoor.plain_deep(v)
+        else:
+            shown[key] = f"[{len(text)} chars sha256:{rawdoor.fingerprint(text)}]"
+            long_ones.append(key)
+    out: dict[str, Any] = {"arguments": shown}
+    if len(args) > NAMES_SHOWN:
+        out["arguments_more"] = len(args) - NAMES_SHOWN
+    if long_ones:
+        out["not_shown_whole"] = long_ones
+    if long_ones or len(args) > NAMES_SHOWN:
+        out["operator_view"] = f"proximo-core consent show {consent_id}" if consent_id else "proximo-core --plan"
     return out
+
+
+def _displayed(out: dict[str, Any], row: Row | None = None) -> dict[str, Any]:
+    """The plan as it is handed out. THE OPERATOR'S VIEW (the shell door, no model) is whole. A MODEL is
+    handed the capped answer: for a read, the echoed entries bounded by the shared echo rule; for a
+    MUTATION, every argument NAME and a short value (`_mutation_arguments`; a long one is its length and hash),
+    and only the diff and the live record shrink to fit the plan's cap. The model wrote its values, so they
+    are not echoed back; the operator's whole view is `proximo-core consent show`."""
+    if rawdoor.operator_view():
+        return out
+    cap = rawdoor.plan_cap()
+    mutation = row is not None and row.access != READ
+    base = out
+    if isinstance(out.get("why"), str):          # the authored tier sentence: its first sentence to a model
+        base = {**out, "why": rawdoor.first_sentence(out["why"])}
+    if mutation and row is not None and isinstance(out.get("arguments"), dict):
+        base = {**base, **_mutation_arguments(out["arguments"], out.get("consent_id"))}
+    n_args, n_change = len(out.get("arguments") or {}), len(out.get("change") or {})
+    sizes = n_change if mutation else max(n_args, n_change)
+    tries = [n for n in _PLAN_ENTRIES if n < sizes] or [_PLAN_ENTRIES[-1]]
+    if sizes <= _PLAN_ENTRIES[0]:
+        tries = [sizes] + [n for n in tries if n < sizes]
+    answer = base
+    for n in tries:
+        answer = rawdoor.fit_answer(_echoed_entries(base, n, arguments=not mutation), cap=cap)
+        body = json.dumps(answer, separators=(",", ":"), default=str)
+        if rawdoor.fits(len(body.encode()), body, cap=cap):
+            break
+    return answer
+
+
+def _brief(spec: Mapping[str, Any]) -> Any:
+    """A parameter by what a caller needs to send it right: its type ("string"), and with its enum or
+    default where the vendor published one. The vendor's sentence about it is `detail`."""
+    extra = {k: spec[k] for k in ("enum", "default") if k in spec}
+    return {"type": spec.get("type"), **extra} if extra else spec.get("type")
+
+
+def _parameters_of(row: Row, args: dict[str, Any], path: str | None, detail: str | None) -> dict[str, Any]:
+    """The plan's `published_parameters` (see `plan`): name -> type for the ones given and the required
+    ones lacking (`required_missing` names those), or the full schema of the ones asked for."""
+    if detail is not None:
+        want = [n.strip() for n in detail.split(",") if n.strip()]
+        if detail.strip().lower() == "all":
+            return {"published_parameters": {n: dict(s) for n, s in row.params.items()}}
+        shown = {n: dict(row.params[n]) for n in want if n in row.params}
+        out: dict[str, Any] = {"published_parameters": shown}
+        if missing := [n for n in want if n not in row.params]:
+            out["unknown_parameters"] = [rawdoor.echo(n, 40) for n in missing[:10]]
+        if len(row.params) > len(shown):
+            out["parameters_more"] = len(row.params) - len(shown)
+        return out
+    given = {_published(row, k) or k for k in args}
+    bound = set(placeholders(row.path)) if path and "{" not in path else set()
+    lacking = [n for n, sp in row.params.items() if sp.get("optional") is False and n not in bound and n not in given]
+    shown = {n: _brief(sp) for n, sp in row.params.items() if n in given or n in lacking}
+    out = {"published_parameters": shown}
+    if lacking:
+        out["required_missing"] = lacking
+    if (more := len(row.params) - len(shown)) > 0:
+        out["parameters_more"] = more
+        out["next"] = f"{more} more: fields='a,b' or 'all'"
+    return out
+
+
+def _plan_consult(row: Row, verdict: Verdict, out: dict[str, Any], path: str | None, args: dict[str, Any],
+                  cfg: wire.Plane | None, ledger_cfg: Any) -> None:
+    """The plan's `consult` section, the tier it raises, and the verdict the consult's own reads
+    leave (see `plan`); writes into `out`."""
+    # THE SECOND LOOK (consult.toml): the judge's reads, through `execute` like the twin's,
+    # and the tier it raises to. On a template or a bare box it says why it could not
+    # look and raises to the judge's worst case: a plan is never quieter for knowing less.
+    # A plan refused for a reason the operator does not lift by arming or granting (a
+    # forbid, a taint wall, no tier) dials nothing for advice on a call that will not run.
+    marked_before = _marked(ledger_cfg)
+    if verdict.allowed or verdict.needs in ("arm", "consent"):
+        section = consult.run(row, path, args, cfg, ledger_cfg)
+    else:
+        section = consult.not_read(row, f"the plan is refused (needs: {verdict.needs}); the estate was not read")
+    section = {**section, "seen_at": "plan"}
+    tier, raised = with_consult(out["tier"], out.get("tier_raised"), section)
+    if tier != out["tier"]:
+        out.update(tier=tier, tier_authored=row.tier, tier_raised=raised)
+    if spine.taint_tracking_on():
+        # The consult's reads may have marked the session (design rule 7): judge the call again,
+        # so the plan says what execute will meet, whichever ran first. The marker is the
+        # evidence (govern re-stats it), not the section's flag: a read that failed at the wire
+        # marked the session before it failed.
+        again = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=_has_api_net(row))
+        marked_here = not marked_before and _marked(ledger_cfg)
+        if not again.allowed and (verdict.allowed, verdict.needs) != (again.allowed, again.needs):
+            out.update(allowed=False, needs=again.needs,
+                       reason=f"{again.reason} ({_why_again(again.needs, marked_here, 'plan')})")
+        elif (wall := _taint_wall(row, path, args, ledger_cfg)) is not None and out.get("needs") != wall.needs:
+            # refused first for a pillar checked before taint (an unarmed plan is the workflow):
+            # say the wall too, or arming would meet a refusal the plan never named
+            said = (f"{wall.reason} (" + ("this plan's own consult reads marked the session" if marked_here
+                                           else "the session was marked before this plan") + ")")
+            # The wall is said ONCE, whole, in `also_refused` (protected: never clipped); the plan's own
+            # sentence names the pillar and points at it, so the plan fits its exit ceiling with it whole.
+            out["also_refused"] = [{"needs": wall.needs, "reason": said}]
+            whose = "this plan's consult reads" if marked_here else "an earlier read"
+            out["reason"] = (f"{out['reason']}; then refused by {wall.needs} (an untrusted read, marked by {whose}): "
+                             "see also_refused")
+        if not again.allowed and again.needs == "consent" and again.detail.get("taint_required"):
+            # the consent coupling: the grant asked for is mandatory because the session is tainted
+            out["taint_required"] = True
+            out["reason"] = (f"{out['reason']}; consent is mandatory here because the session is tainted "
+                             f"({spine.TAINT_REQUIRE_CONSENT_ENV})")
+    if section.get("untrusted") and spine.fence_on():
+        # Every field a judge may build from guest-authored text is fenced, not only the
+        # names: the warnings, the why, and the tier reason the consult wrote.
+        label = f"consult:{section['judge']}"
+        section = {**section, **{k: spine.fence(label, section[k])
+                                 for k in ("affects", "warnings", "why") if k in section}}
+        if out.get("tier_raised") and str(out["tier_raised"]).startswith("consult "):
+            out["tier_raised"] = spine.fence(label, out["tier_raised"])
+    out["consult"] = section
+
+
+def _marked(ledger_cfg: Any) -> bool:
+    """Whether the session's taint marker is set (False with tracking off: nothing is marked)."""
+    if not spine.taint_tracking_on():
+        return False
+    audit_dir = _audit_dir(ledger_cfg)
+    return not audit_dir or spine.is_tainted(audit_dir)
+
+
+def _why_again(needs: str | None, marked_here: bool, where: str) -> str:
+    """Why the second govern refused: the consult's reads only when they set the marker and the
+    refusal is a taint pillar's; otherwise the pillar that refused, by name."""
+    if marked_here and needs in ("taint", "consent"):
+        return f"the session was marked by this {where}'s own consult reads"
+    return f"refused by {needs} when the call was judged again after the consult"
+
+
+def _taint_wall(row: Row, path: str | None, args: dict[str, Any], ledger_cfg: Any) -> spine.Refusal | None:
+    """The taint pillars alone, as govern asks them: the forbid wall, then the consent coupling."""
+    audit_dir = _audit_dir(ledger_cfg)
+    called = rawdoor.canonical(path) if path else row.path
+    return (spine.taint_refusal(audit_dir, row.product, row.method, called, args)
+            or spine.taint_consent_refusal(audit_dir))
 
 
 # ---- PLAN's live state (B1) ---------------------------------------------------------------------
@@ -421,8 +714,52 @@ def notes_held(row: Row, args: Mapping[str, Any]) -> list[dict[str, str]]:
     DEFINITE ANSWER SILENCES A NOTE: a `given` name surely absent, or a `not_given` name surely
     given. What cannot be told shows the note, the safe direction for advice."""
     return [{"says": n["says"], "why": n["why"]} for n in row.notes
-            if not any(_given(row, k, args) is False for k in n["given"])
-            and not any(_given(row, k, args) is True for k in n["not_given"])]
+            if n.get("always") is True
+            or (not any(_given(row, k, args) is False for k in n["given"])
+                and not any(_given(row, k, args) is True for k in n["not_given"]))]
+
+
+# ---- THE EFFECTIVE TIER (tiers.toml [raise]) ------------------------------------------------------
+# What needs no read is judged without one. A service stop names its service in the PATH, so one
+# tier per address could not say that stopping sshd cuts the door while stopping a timer does not
+# (John, 2026-10-25: those are destructive). A raise moves the tier UP on a value the call names,
+# never down, and never opens an untiered address (the build refuses both). The plan shows it and
+# the executing receipt carries it; the ladder, when it lands, reads this and not the authored word.
+
+def effective_tier(row: Row, path: str | None, args: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """(the tier this call is judged at, the why of the raise that set it, or None)."""
+    tier, why = row.tier, None
+    if not row.raises or tier not in apitree.TIER_RANK:
+        return tier, why
+    bound = bind(row, path) if path and "{" not in path else {}
+    for x in row.raises:
+        hit = True
+        for name, values in x["when"].items():
+            value = bound.get(name, args.get(name))
+            if value is None or apitree.raise_value(value) not in values:
+                hit = False
+                break
+        if hit and apitree.TIER_RANK[x["tier"]] > apitree.TIER_RANK[tier]:
+            tier, why = x["tier"], x["why"]
+    return tier, why
+
+
+def with_consult(tier: str | None, raised: str | None, section: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """The tier after a consult: its `raise_to` when that is ABOVE `tier`, with the reason; else
+    `tier` and its own reason unchanged. An untiered address stays untiered (a consult never opens)."""
+    to = section.get("raise_to")
+    if tier not in apitree.TIER_RANK or to not in apitree.TIER_RANK or apitree.TIER_RANK[to] <= apitree.TIER_RANK[tier]:
+        return tier, raised
+    said = section.get("why") if not section.get("complete") else next(iter(section.get("warnings") or []), "")
+    return to, f"consult {section.get('judge')}: {said}"
+
+
+def _may_rise(row: Row, path: str | None) -> str | None:
+    """On a template path no value is bound: say which raise could apply, never stay quiet."""
+    if not row.raises or (path and "{" not in path):
+        return None
+    return "; ".join(f"{x['tier']} when {', '.join(f'{k} is {'/'.join(v)}' for k, v in x['when'].items())}"
+                     for x in row.raises)
 
 
 def _read_of(row: Row) -> tuple[Row | None, str | None, str | None, str | None]:
@@ -457,7 +794,7 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
         except RuntimeError as exc:        # unset, or a credential file the floor refuses: the words, no row
             return {"current": {"why": f"no credential usable on this box: {safe_exception_text(exc, paths=True)}"}}
         try:
-            env = execute(twin, {}, cfg=plane, path=concrete, ledger_cfg=ledger_cfg, fields="all")
+            env = execute(twin, {}, cfg=plane, path=concrete, ledger_cfg=ledger_cfg, fields="all", evaluating=True)
         except ProximoError as exc:        # refused by the spine, receipted by execute
             return {"current": {"why": str(exc)}}
         except Exception as exc:           # the vendor failed or is unreachable, receipted by execute
@@ -493,6 +830,7 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
                       else ledgered(v, None, rule) for k, v in out["change"].items()}}
     if untrusted and isinstance(out["current"], dict):
         out["current"] = {"untrusted": True, "channel": twin.channel, **out["current"]}
+        out["change_untrusted"] = True     # `change.from` is the same attacker-authored record, labelled like `current`
     return out
 
 
@@ -564,6 +902,57 @@ def _at(product: str, address: str) -> Row:
     return table()[(product, method, path)]
 
 
+NODE_ENV = "PROXIMO_NODE"
+_NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+
+
+def default_node(row: Row, path: str | None, args: Mapping[str, Any],
+                 cfg: wire.Plane | None) -> tuple[str | None, str | None]:
+    """(the path with `{node}` filled from PROXIMO_NODE, the node used or None). THE CALLER LEFT
+    THE NODE OUT when the path still carries the published `{node}` segment; that segment alone is
+    filled, and only where it begins the path (`/nodes/{node}/...`, this box's own node): on
+    `/cluster/config/nodes/{node}` it names the node being ADDED or REMOVED, and filling it would
+    aim a membership change at this box. Only on the env box's own PVE: a registry target's node is
+    not this box's, and PBS, PMG and PDM name their nodes their own way. A node the caller also names in `args` is the
+    caller naming it (the engine refuses the two as given twice; the environment picks no side).
+    Env unset or blank is inert: the same path back, today's behaviour. Once set, a value that is
+    not a node name refuses rather than reach a path (0.44's `_check_node`). Plan and call both
+    ask this first, so the consent id and the receipt are for the path that runs."""
+    node = os.environ.get(NODE_ENV, "")      # blank is unset; anything else is judged as written, never stripped
+    if (not node.strip() or path is None or row.product != "pve" or (cfg is not None and cfg.name)
+            or not row.path.startswith("/nodes/{node}") or "node" in args):
+        return path, None
+    segs, want = path.split("/"), row.path.split("/")
+    if len(segs) != len(want) or "{node}" not in segs:
+        return path, None
+    if not _NODE_NAME.match(node):
+        raise ProximoError(f"{NODE_ENV} is not a node name ({len(node)} characters); unset it or name the node "
+                           "(letters, digits, '.', '_' and '-', starting with a letter or digit)")
+    return "/".join(node if g == "{node}" and w == "{node}" else g for g, w in zip(segs, want, strict=True)), node
+
+
+def _fenced(name: str, value: Any, token: Any) -> bool:
+    """A fenced keyword of `execute`: absent (None) is off, the engine's own sentinel is on, anything
+    else is refused, a `True` included (a flag can be spelled by anyone; the sentinel cannot)."""
+    if value is None:
+        return False
+    if value is token:
+        return True
+    raise ProximoError(f"{name} is not a flag a caller can pass; it is the engine's own")
+
+
+def _default_node_receipted(row: Row, path: str | None, args: Mapping[str, Any], cfg: wire.Plane | None,
+                            ledger_cfg: Any, remote: str | None) -> tuple[str | None, str | None]:
+    """`default_node`, a refusal receipted like every other (`needs=config`)."""
+    try:
+        return default_node(row, path, args, cfg)
+    except ProximoError as exc:
+        _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                detail={"reason": str(exc), "needs": "config"}, called=rawdoor.canonical(path) if path else None,
+                remote=remote)
+        raise
+
+
 def _given_twice(row: Row, bound: dict[str, str], args: dict[str, Any]) -> str | None:
     """The refusal for a placeholder the path and the arguments give different values for,
     in one place: `execute` raises it, and the plan's verdict says it (a plan that stripped
@@ -596,7 +985,7 @@ def bind(row: Row, concrete: str) -> dict[str, str]:
         # nothing, so a caller-supplied `node=pve2` rode to the wire beside a path that already
         # named pve1. A guard that falls silent on the shape it cannot read is not a guard.
         raise ProximoError(
-            f"{row.address}: the path {concrete!r} has {len(got)} segments, "
+            f"{row.address}: the path {rawdoor.quote(concrete)} has {len(got)} segments, "
             f"but the published address has {len(want)}"
         )
     return {w[1:-1]: unquote(g) for w, g in zip(want, got, strict=True)
@@ -623,7 +1012,7 @@ def _published(row: Row, name: str) -> str | None:
         return name
     for published in row.params:
         m = _INDEXED.match(published)
-        if m and re.fullmatch(re.escape(m.group("stem")) + r"\d+", name):
+        if m and re.fullmatch(re.escape(m.group("stem")) + r"[0-9]+", name):
             return published
     return None
 
@@ -647,7 +1036,8 @@ def coerce_args(row: Row, args: dict[str, Any]) -> dict[str, Any]:
             # the `is True` test and the command ran with no net (lens B5c-1); a declared boolean
             # there is a bool or it is refused. The API planes keep Proxmox's own 0/1.
             if row.wire == "ssh" and kind == "boolean" and not isinstance(value, bool):
-                raise ProximoError(f"{row.address}: {name}={value!r} is not a boolean; use true/false")
+                raise ProximoError(f"{row.address}: {rawdoor.echo(name, 40)}={rawdoor.quote(str(value))} "
+                                   "is not a boolean; use true/false")
             out[name] = value
         elif kind == "boolean":
             # REFUSE WHAT WE DO NOT RECOGNISE. Mapping every unknown string to False looks
@@ -659,7 +1049,8 @@ def coerce_args(row: Row, args: dict[str, Any]) -> dict[str, Any]:
                 out[name] = word
             else:
                 raise ProximoError(
-                    f"{row.address}: {name}={ledgered(value, name, row.secret)!r} is not a boolean "
+                    f"{row.address}: {rawdoor.echo(name, 40)}="
+                    f"{rawdoor.quote(str(ledgered(value, name, row.secret)))} is not a boolean "
                     f"the vendor would accept; use true/false"
                 )
         elif kind in ("integer", "number"):
@@ -669,11 +1060,37 @@ def coerce_args(row: Row, args: dict[str, Any]) -> dict[str, Any]:
                 out[name] = int(value) if kind == "integer" else float(value)
             except ValueError:
                 raise ProximoError(
-                    f"{row.address}: {name}={ledgered(value, name, row.secret)!r} is not a valid {kind}"
+                    f"{row.address}: {rawdoor.echo(name, 40)}="
+                    f"{rawdoor.quote(str(ledgered(value, name, row.secret)))} is not a valid {kind}"
                 ) from None
+        elif kind == "array" and row.product == "pdm":
+            # PDM TAKES A JSON BODY, AND AN ARRAY IS AN ARRAY. The shell door has only strings, so
+            # `target-bridge=vmbr0:vmbr0` reached PDM as a scalar and PDM answered 400 "Expected
+            # array - got scalar value": the first real remote-migrate found it on 0.44, whose fix
+            # went in the 0.45 cut (capability pdm-typed-arrays). One value is a one-element list.
+            # The form planes (pve, pbs, pmg) encode an array differently; they are left alone.
+            out[name] = [value]
         else:
             out[name] = value
     return out
+
+
+def _names_it(value: Any) -> bool:
+    """Whether a value names its parameter as the wire will send it: a boolean, an integer or text
+    with something in it. A list or a mapping is dropped by the form encoder (`noout=[]` reaches
+    the vendor as an empty body), a float is no flag, and None or blank is no answer."""
+    return isinstance(value, (bool, int)) or (isinstance(value, str) and bool(value.strip()))
+
+
+def one_of_refusal(row: Row, args: Mapping[str, Any]) -> str | None:
+    """The sentence for a call that names none of the parameters its row must name one of
+    (records/args.toml), else None. PRESENCE, NOT TRUTH: `noout=0` clears a flag and is a real
+    change; a value that is absent, None, blank or a shape the wire drops names nothing. Reads the arguments alone, so
+    the plan and the call judge it the same way with no credential at all."""
+    rule = row.one_of
+    if rule is None or any(_names_it(args.get(k)) for k in rule["names"]):
+        return None
+    return f"{row.address} needs at least one of {', '.join(rule['names'])}: {rule['why']}"
 
 
 def check_args(row: Row, args: dict[str, Any]) -> dict[str, Any]:
@@ -685,15 +1102,18 @@ def check_args(row: Row, args: dict[str, Any]) -> dict[str, Any]:
     """
     unknown = sorted(n for n in args if not _published(row, n))
     if unknown:
-        known = ", ".join(sorted(row.params)) or "none"
-        raise ProximoError(
-            f"{row.address} does not publish {', '.join(unknown)}. Published parameters: {known}"
-        )
+        names = sorted(row.params)
+        known = ", ".join(names[:60]) + (f" (and {len(names) - 60} more)" if len(names) > 60 else "") or "none"
+        shown = ", ".join(rawdoor.echo(n, 40) for n in unknown[:5]) + (
+            f" (and {len(unknown) - 5} more)" if len(unknown) > 5 else "")
+        raise ProximoError(f"{row.address} does not publish {shown}. Published parameters: {known}")
     supplied = set(args) | set(placeholders(row.path))
     missing = sorted(n for n, s in row.params.items()
                      if not s["optional"] and n not in supplied and "[n]" not in n)
     if missing:
         raise ProximoError(f"{row.address} requires {', '.join(missing)}")
+    if none_of := one_of_refusal(row, args):
+        raise ProximoError(none_of)
     return args
 
 
@@ -730,8 +1150,8 @@ def _download(row: Row, called: str, args: dict[str, Any], cfg: wire.Plane | Non
             called=called, remote=remote)
     return {
         "address": row.address, "plane": row.product, "access": row.access, "derived": False,
-        "matched_path": row.path, "called_path": called, "tier": row.tier, "untrusted": row.untrusted,
-        "download": got, "cap_bytes": cap,
+        "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
+        "untrusted": row.untrusted, "download": got, "cap_bytes": cap,
         "note": "the bytes landed on the Proximo host, never in this answer; verify the sha256 before use",
     }
 
@@ -753,7 +1173,8 @@ def _built_client(row: Row, cfg: wire.Plane | None, ledger_cfg: Any, called: str
 def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | None = None,
             path: str | None = None, ledger_cfg: Any = None, fields: str | None = None,
             since: str | None = None, wait: int | None = None, restores: str | None = None,
-            net_of: tuple[Row, str, str | None] | None = None) -> dict[str, Any]:
+            net_of: tuple[Row, str, str | None] | None = None, asked: str | None = None,
+            evaluating: bool = False, judging: Any = None, rate_prepaid: Any = None) -> dict[str, Any]:
     """Run a governed address and hand back the vendor's data in a labelled envelope.
 
     THE GOVERNANCE RUNS HERE, NOT IN THE CALLER. A door cannot skip it by forgetting to ask:
@@ -767,11 +1188,26 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     allowed on a task-status address alone and polls that address (0.44's pve_task_wait).
     `restores` is the id of the capture this mutation writes back (`proximo.core.undo`); it
     rides on the executing and terminal rows so the ledger links a restore to its capture.
+    `asked` is the words a caller typed when a door turned them into this path; a read's receipt
+    carries them (capped), so the ledger shows what was said beside what ran.
+    `evaluating` is the door reading for its own verdict (diagnose), not for a model: the answer
+    cap is the evaluation cap (`rawdoor.evaluation_cap`), with no token cap.
     `net_of` is (the container command's row, its called path, its consent id), set by
     `_snapshot_first` alone: the snapshot rides the command's consent, on its own container only,
     and its receipt names the grant that covered it.
+    `judging` is the engine's own read for a judgement it makes (a rollback's safety net reads the
+    guest, its snapshot and its storage to decide whether a snapshot can and may be taken). Such a
+    read is receipted, withheld and bounded like any other, and does NOT mark the session tainted:
+    taint protects the model from text a guest wrote, and the caller is only ever handed a closed
+    vocabulary built from it (`tests/test_net_reads_taint_nothing.py` plants text in every answer
+    and reads every place for it). Only the engine passes it, and it has an effect only on a read; no door, record
+    or argument can: it is a Python keyword of this function, not a parameter of any address.
+    `rate_prepaid` is the safety snapshot's: its rate slot was taken with its act's, together and
+    in the one spending step (`_spend_gates`), so it takes none of its own.
     """
     args = dict(args or {})
+    judging = _fenced("judging", judging, safetynet.JUDGING)
+    rate_prepaid = _fenced("rate_prepaid", rate_prepaid, safetynet.PREPAID)
     # DECIDE BEFORE CONFIGURING. `ProximoConfig.from_env()` raises when the estate is not
     # configured, so building it first made every refusal depend on holding credentials -- and
     # a refusal that needs a credential has already read one. Governing first means "is this
@@ -779,11 +1215,15 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # safe to run anywhere. The pure pillars run inside govern; the spending ones run below,
     # after the arguments validated, so a typo never spends a grant or a budget slot.
     remote = cfg.name if cfg is not None else None
+    path, node = _default_node_receipted(row, path, args, cfg, ledger_cfg, remote)
+    said = {"default_node": node} if node else {}
+    submitted = dict(args)        # what the consent id hashes: the arguments AS SUBMITTED, before coercion
+    api_net = _has_api_net(row)
     if net_of is not None:
         _net_of_own_container(row, path, *net_of[:2])
     try:
         verdict = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg,
-                         consent_covered=net_of is not None)
+                         consent_covered=net_of is not None or api_net)
     except ProximoError as exc:
         # govern RAISES for one thing only, a malformed spelling. An attempted execute is an
         # event: the refusal is receipted like every other, with the path as given.
@@ -793,9 +1233,12 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
         raise
     if not verdict.allowed:
         # THE AIMED-AT PATH, not the template. "what did this agent try" is exactly the
-        # refusal question, and the receipt used to answer it with `{store}`.
+        # refusal question, and the receipt used to answer it with `{store}`. A refused MUTATION also records
+        # what it proposed (arguments as typed JSON, secrets fingerprinted, the box, the id): the row
+        # `proximo-core consent show <id>` prints, recomputing the id from what it shows.
+        proposed = _proposed(row, verdict, rawdoor.canonical(path) if path else row.path, cfg, args)
         _record(ledger_cfg, "core.refuse", row, outcome="refused",
-                detail={"reason": verdict.reason, "needs": verdict.needs, **verdict.detail},
+                detail={"reason": verdict.reason, "needs": verdict.needs, **verdict.detail, **proposed},
                 called=rawdoor.canonical(path) if path else None, remote=remote)
         raise ProximoError(verdict.reason)
     try:
@@ -848,7 +1291,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     if since is not None:
         raise ProximoError(f"{row.address} mutates; since= is a question about what a read saw")
     if row.access == READ:
-        _taint_before_the_wire(row, ledger_cfg, called, remote)
+        _taint_before_the_wire(row, ledger_cfg, called, remote, judging=judging)
         client = _built_client(row, cfg, ledger_cfg, called, remote)   # a read spends nothing first
         try:
             data = client.call(row.method, called, args)
@@ -860,6 +1303,10 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
                     detail={"tier": row.tier, "called_path": called, **wire_error(exc)},
                     called=called, remote=remote)
             raise
+        # AN EMPTY LIST FROM A TOKEN THAT COULD NOT SEE IS NOT "NONE" (sight.toml): Proxmox answers
+        # 200 and [] where it hides what the token may not see, so the empty answer is judged by
+        # what the token holds, and refused unless it provably could have seen.
+        seen = _sight(row, called, args, client, ledger_cfg, remote, data) if row.sight else {}
         task = None
         if wait is not None:
             # 0.44's pve_task_wait, on a UPID already in hand: the same helper, the same address
@@ -869,11 +1316,15 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
             if task["polls"]:
                 data = {"status": task["status"], "exitstatus": task["exitstatus"]}
         _record(ledger_cfg, "core.execute", row, outcome="ok",
-                detail={"tier": row.tier, "params": sorted(args), **_untrusted_detail(row),
+                detail={"tier": row.tier, "params": sorted(args), **_untrusted_detail(row), **said,
+                        **seen.get("receipt", {}), **({"asked": asked[:120]} if asked else {}),
                         **({"upid": task["upid"], "polls": task["polls"], "seconds": task["seconds"]} if task else {})},
                 called=called, remote=remote)
-        _keep(row, called, args, data, ledger_cfg, cfg)
-        return {**_envelope(row, called, data, fields), **({"task": task} if task else {})}
+        _keep(row, called, args, data, ledger_cfg, cfg, judging)
+        return {**_envelope(row, called, data, fields, rawdoor.evaluation_cap() if evaluating else None, args),
+                **seen.get("envelope", {}),
+                **({"task": task} if task else {}),
+                **({"default_node": {"node": node, "from": NODE_ENV}} if node else {})}
 
     # ---- a MUTATION: spend, capture, pre-record, execute, close ---------------------------
     # BUILT BEFORE ANYTHING IS SPENT, and a build that fails is a receipted refusal. Building
@@ -881,64 +1332,60 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # never dials. After the spending gates, a config error burned the operator's one-shot
     # consent grant and a rate slot and left no receipt (lens 2026-09-28, pmg credential mode).
     client = _built_client(row, cfg, ledger_cfg, called, remote)
-    # THE SPENDING GATES. CONSENT consumes the grant the operator placed for THIS plan (single
-    # use); RATE reserves a slot in the box's budget. RATE AFTER CONSENT, so a doomed attempt
-    # spends nothing the operator's own approved work will need. Both refusals are receipted
-    # like every other, before anything is touched.
-    base_url = cfg.base_url if cfg is not None else wire.env_base_url(row.product)
-    lcfg = ledger_cfg or LedgerConfig.from_env()
-    audit_dir = os.path.dirname(lcfg.audit_log_path) or "."
-    spent = None if net_of is not None else spine.spend_consent(verdict.consent_id or "", audit_dir)
-    if isinstance(spent, spine.Spend):
-        # The evidence beside the marker: an agent that deletes its marker to spend one grant
-        # again leaves one more of these rows in the chain each time. REQUIRED, and a failed
-        # write rolls the marker back: a spend PROVE can't hold is no spend, and it must not
-        # burn the operator's approval either. The grant goes only once the row is down.
-        try:
-            _record(ledger_cfg, "core.consent_spent", row, outcome="ok",
-                    detail={"consent_id": verdict.consent_id,
-                            "grant": {"inode": spent.inode, "mtime_ns": spent.mtime_ns},
-                            **({"advisory": True} if spent.advisory else {})},
-                    called=called, required=True, remote=remote)
-        except BaseException:
-            spine.unspend(spent)
-            raise
-        spine.retire_grant(verdict.consent_id or "", spent)
-    for refusal in (
-        spent if isinstance(spent, spine.Refusal) else None,
-        spine.reserve_rate(base_url, audit_dir,
-                           cap=(cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)),
-    ):
-        if refusal is not None:
-            _record(ledger_cfg, "core.refuse", row, outcome="refused",
-                    detail={"reason": refusal.reason, "needs": refusal.needs, **refusal.detail},
-                    called=called, remote=remote)
-            raise ProximoError(refusal.reason)
+    # THE SECOND LOOK, BEFORE ANYTHING IS SPENT. The consult's reads are receipted GETs of their
+    # own; made here, a slow or failed consult never burns the operator's grant or a rate slot,
+    # and the session they mark is judged before the call (design rule 7: an answer built from
+    # an untrusted read marks the session like the read did), so a taint wall refuses the call
+    # whether or not a plan's consult tainted the session first.
+    marked_before = _marked(ledger_cfg)
+    tier, raised, consult_seen = _tier_at_the_wire(row, called, args, cfg, ledger_cfg)
+    _judged_after_the_consult(row, consult_seen, path, args, cfg, ledger_cfg, net_of is not None or api_net, called,
+                              remote, marked_before)
+    # A ROLLBACK'S NET IS READ BEFORE ANYTHING IS SPENT: a target that is not there and a grant
+    # approved for a different net both refuse here, with the grant unspent and no rate slot taken.
+    verdict, view = _gate_net(row, called, submitted, args, cfg, ledger_cfg, remote, verdict)
+    # THE SPENDING STEP. Everything that can refuse has run: the arguments, the arm and the walls, the
+    # net's reads and its snapshot's own walls, the consent look. Now the rate slots are reserved and
+    # the grant spent as ONE step (`_spend_gates`), and a refusal there gives the slots back.
+    # a taint marker that cannot be written refuses HERE, with nothing spent
+    _taint_before_the_wire(row, ledger_cfg, called, remote, mutation=True)
+    before = _read_back(row, client, called, ledger_cfg, remote, view, net_of is not None)
+    give_back = _spend_gates(row, verdict, called, cfg, ledger_cfg, remote, view, net_of is not None, rate_prepaid)
     intent = intent_id(called)
     # UNDO: read back what the vendor publishes about this address BEFORE changing it. Where
     # it publishes no read, the receipt says so; where the read exists and fails, no net means
     # no risky act (the 0.44 auto-undo's rule). PROXIMO_UNDO=off is the operator's opt-out,
     # and the receipt carries it.
-    undo = _undo_before(row, args, client, called, cfg, ledger_cfg, intent, remote, verdict.consent_id)
+    try:
+        undo = _undo_before(row, args, client, called, cfg, ledger_cfg, intent, remote, verdict.consent_id, view,
+                            net_of is not None, before)
+    except Exception as exc:
+        # REFUSED AFTER THE SPEND, BEFORE THE ACT: the approval stays spent (a snapshot request may have
+        # gone out under it) but the act's own rate slot goes back, it was never dialled; the safety
+        # snapshot's slot goes back only when the error SAYS that request was not sent; an error that
+        # does not say (a ledger that failed mid-refusal) keeps it, since the request may have gone out.
+        give_back(_slots(view) if getattr(exc, "snapshot_sent", None) is False else 1)
+        raise
     # THE EXECUTING ROW. Written BEFORE the wire with the whole preview and the intent, closed
     # by the terminal row below. A process killed in between leaves this row open, which is
     # exactly what `in_flight` reports; without it the core answered "what was running when we
     # died" with nothing.
     held = notes_held(row, args)
-    preview = {"tier": row.tier, "args": ledgered(args, rule=arg_rule(row)), "consent_id": verdict.consent_id,
+    reading = risk.hint(row, args)
+    preview = {"tier": tier, **({"tier_raised": raised} if raised else {}),
+               **consult_seen,
+               "args": ledgered(args, rule=arg_rule(row)), "consent_id": verdict.consent_id,
                "undo": undo, "intent": intent, **({"restores": restores} if restores else {}),
                **({"notes": [n["says"] for n in held]} if held else {}),
+               **said,
+               **({"risk_hint": {"reading": reading["reading"], "reasons": reading["reasons"]}} if reading else {}),
                **({"consent_of": {"command": net_of[1], "consent_id": net_of[2]}} if net_of else {})}
     _record(ledger_cfg, "core.execute", row, outcome=EXECUTING, detail=preview, called=called,
             required=True, remote=remote)
-    _taint_before_the_wire(row, ledger_cfg, called, remote)
     try:
         data = client.call(row.method, called, args)
     except Exception as exc:
-        _record(ledger_cfg, "core.error", row, outcome="error",
-                detail={"tier": row.tier, "called_path": called, "intent": intent, **_capture_of(undo),
-                        **wire_error(exc)},
-                called=called, remote=remote)
+        _wire_failed(row, tier, called, intent, undo, exc, ledger_cfg, remote, restores)
         raise
     # A TASK-BACKED ANSWER IS SUBMITTED, NOT DONE. The vendor accepted the work and handed back
     # its id; "ok" here would let PROVE say ok for an outcome nobody has seen yet (a process
@@ -949,18 +1396,75 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # a locator in the hash chain (lens 6). A shape-valid id is bounded by its own class.
     upid = (str(data) if spine.upid_node(data) else safe_text(str(data))) if submitted else ""   # submitted: a str
     _record(ledger_cfg, "core.execute", row, outcome="submitted" if submitted else "ok",
-            detail={"tier": row.tier, "params": sorted(args), "intent": intent, **_untrusted_detail(row),
+            detail={"tier": tier, "params": sorted(args), "intent": intent, **_untrusted_detail(row),
                     **_capture_of(undo), **({"upid": upid} if submitted else {}),
                     **({"restores": restores} if restores else {})},
             called=called, remote=remote)
-    out = {**_envelope(row, called, data), "undo": undo, "intent": intent}
+    out = {**_envelope(row, called, data), "undo": undo, "intent": intent,
+           **({"default_node": {"node": node, "from": NODE_ENV}} if node else {}),
+           **({"risk_hint": reading} if reading else {})}
     if submitted:
         out["task"] = _task_of(client, row, called, upid, TASK_WAIT_DEFAULT if wait is None else wait,
                                ledger_cfg, intent, remote)
     return out
 
 
-def _capture_of(undo: dict[str, Any]) -> dict[str, str]:
+def _sight(row: Row, called: str, args: dict[str, Any], client: Any, ledger_cfg: Any,
+           remote: str | None, data: Any) -> dict[str, Any]:
+    """Judge an answer on a row that has a sight line (sight.toml). `{}` when the line does not
+    apply to this question. An EMPTY answer is refused (`needs=sight`, receipted) when the token
+    provably cannot see ("blind") or cannot be shown to ("unknown"). A NON-empty answer is never
+    refused: it is served, and marked `partial` or `unverified` (envelope and receipt) when the
+    token does not hold what shows all of it. The map is read through the same client the question
+    used, as UNDO reads its twin."""
+    empty = data in (None, [], {}, "")
+    state, said, matched = sight.judge(row.sight or {}, bind(row, called), args,
+                                       lambda: client.call("GET", "/access/permissions", {}), empty=empty)
+    if state == sight.NOT_ASKED:
+        return {}
+    if state == sight.SIGHTED:
+        return {"receipt": {"sight": state, "sight_by": matched}}
+    if empty:
+        _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                detail={"reason": said, "needs": "sight", "state": state}, called=called, remote=remote)
+        raise ProximoError(said)
+    mark = "partial" if state == sight.BLIND else "unverified"
+    return {"receipt": {"sight": mark}, "envelope": {"sight": mark, "sight_says": said}}
+def _tier_at_the_wire(row: Row, called: str, args: dict[str, Any], cfg: wire.Plane | None,
+                      ledger_cfg: Any) -> tuple[str | None, str | None, dict[str, Any]]:
+    """The tier a mutation runs at, its reason, and what the receipt carries of the consult.
+    THE SECOND LOOK, AGAIN: the plan may be stale, so a consulted row reads again here, through
+    `execute` like any read. The section rides the EXECUTING receipt as `seen_at: execute`: what
+    was read just before the call ran, not the plan the operator approved (the grant binds the
+    call's path and arguments, not a consult's answer). It raises the tier the terminal rows
+    carry and refuses nothing: advice raises; the ladder, when it lands, decides what a tier needs."""
+    tier, raised = effective_tier(row, called, args)
+    if not row.consult:
+        return tier, raised, {}
+    section = {**consult.run(row, called, args, cfg, ledger_cfg), "seen_at": "execute"}
+    return (*with_consult(tier, raised, section), {"consult": ledgered(section)})
+
+
+def _judged_after_the_consult(row: Row, consult_seen: Mapping[str, Any], path: str | None, args: dict[str, Any],
+                              cfg: wire.Plane | None, ledger_cfg: Any, covered: bool, called: str,
+                              remote: str | None, marked_before: bool) -> None:
+    """After a consult, with taint tracking on, govern again (pure; the grant is not spent yet) and
+    refuse, receipted, what the session now refuses. The SPINE'S MARKER is the evidence, never the
+    section's `untrusted` flag: a consult read marks the session before its wire, so one that then
+    failed, or a consult that failed after its reads landed, leaves a marked session and a section
+    that never said so (lens 2). `govern` re-stats the marker itself."""
+    if not (consult_seen and spine.taint_tracking_on()):
+        return
+    again = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=covered)
+    if not again.allowed:
+        _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                detail={"reason": again.reason, "needs": again.needs, **again.detail,
+                        "after": _why_again(again.needs, not marked_before and _marked(ledger_cfg), "call")},
+                called=called, remote=remote)
+        raise ProximoError(again.reason)
+
+
+def _capture_of(undo: Mapping[str, Any]) -> dict[str, str]:
     """THE TERMINAL ROW NAMES ITS CAPTURE. A restore asks how the captured mutation ended; paired
     by intent it read a LATER write at the same path as this one's landing (lens, 2026-10-08:
     a create the vendor refused, then a PUT that succeeded, and undo deleted the record that
@@ -969,12 +1473,60 @@ def _capture_of(undo: dict[str, Any]) -> dict[str, str]:
     return {"capture": undo["id"]} if undo.get("captured") and undo.get("id") else {}
 
 
+def _readback_twin(row: Row, view: Mapping[str, Any] | None, nested: bool) -> Row | None:
+    """The GET twin a mutation's before-state is read from, when this call takes that kind of net at all
+    (not a safety snapshot, not a rollback or shell command with a snapshot net, not an ssh command,
+    not with UNDO off, and the vendor publishes a served read)."""
+    if nested or row.wire == "ssh" or not spine.undo_enabled() or row.twin is None:
+        return None
+    if row.net and view is not None:
+        return None
+    twin = table()[(row.product, "GET", row.twin)]
+    return None if twin.excluded or twin.gate else twin
+
+
+def _read_back(row: Row, client: Any, called: str, ledger_cfg: Any, remote: str | None,
+               view: Mapping[str, Any] | None, nested: bool) -> dict[str, Any] | None:
+    """UNDO's read of the record BEFORE a mutation, taken BEFORE anything is spent: a read that fails
+    refuses the call (no net, no risky act) with the grant and the rate slots untouched. None when this
+    call takes no such read. A judged create's failed read-back is absence, as the vendor said it
+    (undo.toml): the record the path names is not there yet, and the restore is its DELETE. Not proof:
+    a read can fail over a record that IS there, so the restore sends the DELETE only when the ledger
+    shows this create landed (the vendor refuses a duplicate). Any other address keeps the rule."""
+    twin = _readback_twin(row, view, nested)
+    if twin is None:
+        return None
+    try:
+        return {"before": ledgered(spine.bound(client.call("GET", called, {})), rule=twin.secret)}
+    except Exception as exc:
+        if not row.creates:
+            reason = (f"undo unavailable: the read-back {twin.address} the vendor publishes could "
+                      f"not be taken ({type(exc).__name__}); the mutation was not run")
+            _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                    detail={"reason": reason, "needs": "undo", **wire_error(exc)}, called=called, remote=remote)
+            raise ProximoError(reason) from exc
+        return {"absent": True, "read_back": wire_error(exc)}          # its own key: never a record's value
+
+
 def _undo_before(row: Row, args: dict[str, Any], client: Any, called: str, cfg: Any, ledger_cfg: Any,
-                 intent: str, remote: str | None, consent_id: str | None) -> dict[str, Any]:
-    """The net taken before a mutation, or the receipt's words for why there is none (see execute)."""
+                 intent: str, remote: str | None, consent_id: str | None,
+                 view: Mapping[str, Any] | None = None, nested: bool = False,
+                 before: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The net taken before a mutation, or the receipt's words for why there is none (see execute).
+    `nested` is a safety snapshot taken for another call: it is its own net (deleting it undoes it),
+    and capturing the guest's snapshot list into the ledger for it would copy guest-authored
+    descriptions there for nothing. `before` is the read-back `_read_back` took before the spend."""
     twin = table()[(row.product, "GET", row.twin)] if row.twin else None
-    if row.net and args.get("snapshot") is True:
-        undo = _snapshot_first(row, called, cfg, ledger_cfg, intent, remote, consent_id)
+    if nested:
+        undo = {"captured": False, "why": "a safety snapshot is its own undo: deleting it puts the guest as it was"}
+    elif row.net and row.wire != "ssh" and view is not None and spine.undo_enabled():
+        if view["take"]:
+            undo = _snapshot_first(row, called, cfg, ledger_cfg, intent, remote, consent_id, view)
+        else:
+            undo = {"captured": False, "why": view["why"], "skipped": "storage", "blocked": view["blocked"],
+                    "cannot": view["cannot"]}
+    elif row.net and row.wire == "ssh" and view is not None:
+        undo = _snapshot_first(row, called, cfg, ledger_cfg, intent, remote, consent_id, view)
     elif row.wire == "ssh":
         undo = {"captured": False, "why": "a container command has no read-back"
                 + ("; snapshot=true takes one first" if row.net else "")}
@@ -984,23 +1536,7 @@ def _undo_before(row: Row, args: dict[str, Any], client: Any, called: str, cfg: 
         undo = {"captured": False, "why": (f"{row.product} publishes no GET {row.path}" if twin is None
                                             else f"the read of {row.path} is gated: {twin.gate or 'tunnel'}")}
     else:
-        try:
-            before: dict[str, Any] = {"before": ledgered(spine.bound(client.call("GET", called, {})),
-                                                         rule=twin.secret)}
-        except Exception as exc:
-            # A JUDGED CREATE'S FAILED READ-BACK IS ABSENCE, AS THE VENDOR SAID IT (undo.toml):
-            # the record the path names is not there yet, and the restore is its DELETE. Not
-            # proof: a read can fail over a record that IS there, so the restore sends the
-            # DELETE only when the ledger shows this create landed (the vendor refuses a
-            # duplicate). Any other address keeps the rule: no net, no risky act.
-            if not row.creates:
-                reason = (f"undo unavailable: the read-back {twin.address} the vendor publishes could "
-                          f"not be taken ({type(exc).__name__}); the mutation was not run")
-                _record(ledger_cfg, "core.refuse", row, outcome="refused",
-                        detail={"reason": reason, "needs": "undo", **wire_error(exc)},
-                        called=called, remote=remote)
-                raise ProximoError(reason) from exc
-            before = {"absent": True, "read_back": wire_error(exc)}    # its own key: never a record's value
+        before = before if before is not None else {"before": None}     # `_read_back` ran for this branch
         # THE CAPTURE HAS AN ID: the row's own hash, handed back so a restore (B2) names THAT
         # record. `intent` is shared by every mutation at a path and would pick the latest.
         # The plane rides on the row because `governed_as` spells the address without it.
@@ -1013,10 +1549,462 @@ def _undo_before(row: Row, args: dict[str, Any], client: Any, called: str, cfg: 
     return undo
 
 
+def _read_data(product: str, template: str, values: Mapping[str, Any], cfg: Any, ledger_cfg: Any,
+               extra: Mapping[str, Any] | None = None) -> Any:
+    """The data of a governed GET the safety net needs (`execute`: receipted, withheld, bounded; a
+    `judging` read, so it marks nothing tainted). Raises when the plane serves no such read or the
+    answer is over the cap."""
+    r = table().get((product, "GET", template))
+    if r is None or r.gate or r.excluded:
+        raise ProximoError(f"{product} publishes no GET {template} this door serves")
+    env = execute(r, dict(extra or {}), cfg=cfg, path=fill(template, values), ledger_cfg=ledger_cfg, fields="all",
+                  judging=safetynet.JUDGING, evaluating=True)    # a verdict's read, never a model's
+    if "data" not in env:
+        raise ProximoError(f"the answer of {template} is over the door's cap")
+    return env["data"]
+
+
+_NEVER_SENT = frozenset({"ConnectError", "ConnectTimeout", "PoolTimeout", "UnsupportedProtocol", "InvalidURL",
+                         "LocalProtocolError"})
+
+
+def _delivery(exc: BaseException) -> str:
+    """How far a failed request got, for the error row: `answered` (the vendor replied with an error
+    status: it refused), `never-sent` (the connection never opened or the request was malformed
+    locally), else `unknown` (a timeout or a reset after the request may have gone out: the vendor may
+    have acted). Only the first two are known not to have landed."""
+    names = {c.__name__ for c in type(exc).__mro__}
+    if "HTTPStatusError" in names:
+        return "answered"
+    return "never-sent" if names & _NEVER_SENT else "unknown"
+
+
+def _wire_failed(row: Row, tier: str | None, called: str, intent: str, undo: Mapping[str, Any], exc: Exception,
+                 ledger_cfg: Any, remote: str | None, restores: str | None = None) -> None:
+    """The error row of a mutation the wire failed; raises when the failure left a safety snapshot
+    behind, naming it. Otherwise returns and the caller re-raises the failure as it was. The failure
+    is tagged `wire_sent`: the request was sent (a refusal before the wire is not tagged)."""
+    delivery = _delivery(exc)
+    with contextlib.suppress(AttributeError):
+        exc.wire_sent = delivery != "never-sent"        # type: ignore[attr-defined]
+    _record(ledger_cfg, "core.error", row, outcome="error",
+            detail={"tier": tier, "called_path": called, "intent": intent, **_capture_of(undo),
+                    **({"restores": restores} if restores else {}), "delivery": delivery, **wire_error(exc)},
+            called=called, remote=remote)
+    if orphan := _naming_the_orphan(row, undo, exc):
+        raise orphan from exc
+
+
+def _naming_the_orphan(row: Row, undo: Mapping[str, Any], exc: Exception) -> ProximoError | None:
+    """THE SAFETY SNAPSHOT IS ON THE GUEST AND THE CALLER MUST HEAR OF IT, not only the ledger: a
+    rollback the vendor then refused leaves the net behind. Any other failure is raised as it was (None)."""
+    if not undo.get("snapshot") or row.wire == "ssh":
+        return None
+    return ProximoError(f"{row.address} failed after its safety snapshot {undo['snapshot']} was taken "
+                        f"({safe_exception_text(exc, paths=True)}); the snapshot is still on the guest, "
+                        "delete it when you no longer need it")
+
+
+def _storage_definitions(row: Row, where: Mapping[str, Any], node: Any, cfg: Any,
+                         ledger_cfg: Any) -> tuple[dict[str, Any] | None, bool]:
+    """(the storage definitions as a map by id, whether this plane can show the chain flag). PVE
+    publishes them at `GET /storage`, flag included. PDM publishes only the node's storage STATUS
+    list, which needs the node and never carries `snapshot-as-volume-chain`: the flag is not
+    visible there, and the types that depend on it are unsettled, never read as free."""
+    if row.product == "pve":
+        listing, visible = _read_data("pve", "/storage", {}, cfg, ledger_cfg), True
+    elif node:
+        listing, visible = _read_data(row.product, "/pve/remotes/{remote}/nodes/{node}/storage",
+                                      {**where, "node": node}, cfg, ledger_cfg), False
+    else:
+        return None, False
+    if not isinstance(listing, list):
+        return None, visible
+    return {e["storage"]: e for e in listing if isinstance(e, dict) and isinstance(e.get("storage"), str)}, visible
+
+
+def _net_view(row: Row, args: Mapping[str, Any], called: str, cfg: Any, ledger_cfg: Any) -> dict[str, Any]:
+    """What the safety net of a rollback will do, from governed reads (records/undo.toml [net];
+    core/safetynet.py says what stops a net and on whose volumes). Keys: `take` (a snapshot
+    first), `why` (the sentence the plan and the receipt print when none is taken or the storage
+    is not settled), `exists` (the rollback's target snapshot is there: True, False, or None when
+    unread), `blocked`/`cannot`/`unsettled` (storage TYPES and reasons, never names), `running`
+    (the guest's state now) and `node`.
+    Order matters: the target is checked BEFORE any snapshot exists, because a rollback to a
+    snapshot that is not there would otherwise first create a real one.
+    FAIL-CLOSED: a read that fails or a storage that is not settled TAKES the net, and says so."""
+    view: dict[str, Any] = {"take": True, "why": None, "exists": None, "blocked": [], "cannot": [],
+                            "unsettled": [], "running": None, "node": None}
+    if not spine.undo_enabled():
+        view.update(take=False, why=f"{spine.UNDO_ENV}=off: the operator turned every safety net off; "
+                                    "nothing is captured before this rollback")
+        return view
+    try:
+        where = bind(row, called)
+        snap = _at(row.product, cast(Mapping[str, str], row.net)["snapshot"])
+    except ProximoError:
+        view["why"] = "storage not read: the path is a template"
+        return view
+    if "{" in called or snap.path.rpartition("/")[2] != "snapshot":
+        view["why"] = "storage not read: the path is a template"
+        return view
+    base = snap.path.removesuffix("/snapshot")
+    node = args.get("node") if isinstance(args.get("node"), str) else None
+    view["node"] = node
+    extra = {"node": node} if node and "node" in snap.params and "node" not in where else {}
+
+    def read(template: str, **more: Any) -> Any:
+        """A governed GET of this guest; `node` rides when the caller named it, and so does anything
+        in `more` that the read publishes (PDM's config read REQUIRES `state`)."""
+        params = table()[(row.product, "GET", template)].params
+        return _read_data(row.product, template, where, cfg, ledger_cfg,
+                          {k: v for k, v in {**extra, **more}.items() if k in params})
+
+    try:
+        listed = read(snap.path)
+        names = {e.get("name") for e in listed if isinstance(e, dict)} if isinstance(listed, list) else None
+        view["exists"] = None if names is None else where.get("snapname") in names
+    except Exception:
+        view["exists"] = None
+    if view["exists"] is not True:
+        view["why"] = _target_unconfirmed() if view["exists"] is None else None
+        return view
+    _judge_storage(view, row, read, base, where, node, cfg, ledger_cfg)
+    for status_t in (base + "/status/current", base + "/status"):
+        if (row.product, "GET", status_t) in table():
+            with contextlib.suppress(Exception):
+                state = read(status_t)
+                st = state.get("status") if isinstance(state, dict) else None
+                view["running"] = True if st == "running" else False if st == "stopped" else None
+            break
+    if view["cannot"]:
+        view.update(take=False, why=f"{safetynet.IMPOSSIBLE_SENTENCE} ({'; '.join(view['cannot'])})")
+    elif view["blocked"]:
+        view.update(take=False, why=f"{safetynet.BLOCKED_SENTENCE} ({', '.join(view['blocked'])})")
+    elif view["unsettled"]:
+        view["why"] = (f"storage not settled ({', '.join(view['unsettled'])}): the safety snapshot is taken, and "
+                       "if the storage refuses the rollback because of it the rollback fails and the "
+                       "snapshot stays")
+    return view
+
+
+def _target_unconfirmed() -> str:
+    return ("could not confirm the snapshot to roll back to is on this guest: the rollback is refused "
+            "unless it can be confirmed when it runs")
+
+
+def _judge_storage(view: dict[str, Any], row: Row, read: Any, base: str, where: Mapping[str, Any], node: Any,
+                   cfg: Any, ledger_cfg: Any) -> None:
+    """Fill `blocked`, `cannot` and `unsettled`. The rollback is blocked only by the TARGET
+    SNAPSHOT's own volumes; the safety snapshot can be taken only if the CURRENT config's volumes
+    can be snapshotted (core/safetynet.py). A read that fails is never ignored: it is unsettled."""
+    unsettled: set[str] = set()
+    snap_vols: list[tuple[str, str]] = []
+    cur_vols: list[tuple[str, str]] = []
+    devices = 0
+    try:
+        snap_vols, unread = safetynet.volumes_of(read(base + "/config", state="active", snapshot=where["snapname"]))
+        if unread:
+            unsettled.add("a volume of the snapshot that names no storage")
+    except Exception:
+        unsettled.add("the snapshot's own config could not be read")
+    try:
+        # PVE's own snapshot judges the MAIN section of the config, not the pending one: on PVE the
+        # read asks `current=1` (without it the answer merges `pending` in and drops pending
+        # deletes); PDM publishes `state` instead, and `read` sends only what the address publishes.
+        current = read(base + "/config", state="active", current=True)
+        cur_vols, unread = safetynet.volumes_of(current)
+        devices = safetynet.device_mounts(current)
+        if unread > devices:
+            unsettled.add("a volume of the guest that names no storage")
+    except Exception:
+        unsettled.add("the guest's config could not be read")
+    try:
+        defs, visible = _storage_definitions(row, where, node, cfg, ledger_cfg)
+    except Exception:
+        defs, visible = None, row.product == "pve"
+    try:
+        blocking = safetynet.judge_blocking(snap_vols, defs, visible)
+        snapshottable = safetynet.judge_snapshottable(cur_vols, defs, devices)
+    except Exception:   # noqa: BLE001 -- a judgement that cannot finish is unsettled (the net is taken), never a crash
+        blocking, snapshottable = {"blocked": [], "unsettled": []}, {"cannot": [], "unsettled": []}
+        unsettled.add(safetynet.JUDGEMENT_FAILED)
+    view["blocked"], view["cannot"] = blocking["blocked"], snapshottable["cannot"]
+    view["unsettled"] = sorted({*unsettled, *blocking["unsettled"], *snapshottable["unsettled"]})
+
+
+def _net_signature(view: Mapping[str, Any]) -> str:
+    """What the plan says about the net, in a word the consent id binds: taken, skipped or off."""
+    if not spine.undo_enabled():
+        return "off"
+    return "taken" if view["take"] else "skipped"
+
+
+_NET_SIGNATURES = ("taken", "skipped", "off")
+
+
+def _net_verdict(row: Row, path: str | None, args: Mapping[str, Any], cfg: Any, ledger_cfg: Any, v0: Verdict,
+                 view: Mapping[str, Any]) -> Verdict:
+    """The verdict of a rollback with a net, AFTER the net's reads. `govern` ran without its two
+    consent looks (the id they need depends on the net); consent is looked at here against the id
+    that binds what the plan said about the net: a grant approved on "a safety snapshot is taken"
+    does not cover a rollback that would run with none (the guest's storage moved since)."""
+    if not v0.allowed:
+        return v0
+    audit_dir = _audit_dir(ledger_cfg)
+    called = rawdoor.canonical(path) if path else row.path
+    # `govern` ran without its two consent looks; the taint wall it applied stands (the net's reads
+    # taint nothing), and the taint-requires-consent look is made here with the consent look.
+    if (refusal := spine.taint_consent_refusal(audit_dir)) is not None:
+        detail = dict(refusal.detail)
+        if spine.taint_mandatory(audit_dir):
+            detail["taint_required"] = True
+        return Verdict(False, refusal.reason, refusal.needs, v0.consent_id, detail)
+    view_take = bool(view["take"]) and spine.undo_enabled()
+    called_path = path if path and "{" not in path else None
+    if view_take and called_path is not None and "snap" not in view and view.get("exists") is not False:
+        snap = _net_snapshot(row, called, dict(args))
+        wall = _snapshot_wall(row, snap, cfg, ledger_cfg, v0)
+        if wall is not None:
+            return wall
+        if isinstance(view, dict):
+            view["snap"] = snap
+    box = (cfg.base_url if cfg is not None else wire.env_base_url(row.product)) or ""
+
+    def cid_for(sig: str) -> str:
+        return spine.consent_id(row.product, row.method, row.path, called, dict(args), box=box, net=sig)
+
+    sig = _net_signature(view)
+    cid = cid_for(sig)
+    refusal = spine.consent_refusal(cid, audit_dir or ".")
+    if refusal is None:
+        return Verdict(True, f"mutate, tier {row.tier}", consent_id=cid)
+    reason = refusal.reason
+    if any(spine.consent_state(cid_for(alt), audit_dir or ".") in ("granted", "advisory")
+           for alt in _NET_SIGNATURES if alt != sig):
+        reason = ("the safety net changed since the plan (a grant was approved for a rollback with a different "
+                  f"net, and it now reads {sig}); plan again")
+    return Verdict(False, reason, "consent", cid, {**refusal.detail, "consent_id": cid})
+
+
+def _rate_cap(cfg: Any) -> tuple[int | None, int | None]:
+    return (cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)
+
+
+def _slots(view: Mapping[str, Any] | None) -> int:
+    """What a call costs the box's budget: two when it takes a safety snapshot first (the act and its
+    net are two mutations), else one."""
+    return 2 if view is not None and view.get("take") and view.get("snap") else 1
+
+
+def _spend_gates(row: Row, verdict: Verdict, called: str, cfg: Any, ledger_cfg: Any, remote: str | None,
+                 view: Mapping[str, Any] | None, nested: bool, rate_prepaid: bool) -> Callable[[int], None]:
+    """The one spending step, after EVERYTHING that can refuse has run. The order is the tightest that
+    keeps a doomed attempt from costing anyone: the grant's O_EXCL marker first (a caller that has lost
+    the grant to another holds no slot another caller needs), then the call's rate slots, reserved
+    together (a safety snapshot's are taken with its act's), then the receipt of the spend. A rate
+    refusal puts the marker back; a receipt that cannot be written puts back the marker AND the
+    slots. The grant file itself goes only once the receipt is down. The safety snapshot (`nested`)
+    spends no grant and, being `rate_prepaid`, takes no slot. Returns the means to give `n` of the slots
+    back later, for a call refused after the spend but before anything was dialled."""
+    base_url = cfg.base_url if cfg is not None else wire.env_base_url(row.product)
+    lcfg = ledger_cfg or LedgerConfig.from_env()
+    audit_dir = os.path.dirname(lcfg.audit_log_path) or "."
+    stamp: list[float] = []
+    count = _slots(view)
+    spent = None if nested else spine.spend_consent(verdict.consent_id or "", audit_dir)
+    refusal = spent if isinstance(spent, spine.Refusal) else None
+    if refusal is None and not rate_prepaid:
+        refusal = spine.reserve_rate(base_url, audit_dir, cap=_rate_cap(cfg), count=count, stamp=stamp)
+
+    def give_back() -> None:
+        if isinstance(spent, spine.Spend):
+            spine.unspend(spent)
+        if stamp:
+            spine.release_rate(base_url, audit_dir, stamp[0], count)
+
+    if refusal is not None:
+        give_back()
+        _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                detail={"reason": refusal.reason, "needs": refusal.needs, **refusal.detail},
+                called=called, remote=remote)
+        raise ProximoError(refusal.reason)
+    if isinstance(spent, spine.Spend):
+        # The evidence beside the marker: an agent that deletes its marker to spend one grant
+        # again leaves one more of these rows in the chain each time. REQUIRED, and a failed
+        # write rolls the marker back: a spend PROVE can't hold is no spend, and it must not
+        # burn the operator's approval (or the slots) either.
+        try:
+            _record(ledger_cfg, "core.consent_spent", row, outcome="ok",
+                    detail={"consent_id": verdict.consent_id,
+                            "grant": {"inode": spent.inode, "mtime_ns": spent.mtime_ns},
+                            **({"advisory": True} if spent.advisory else {})},
+                    called=called, required=True, remote=remote)
+        except BaseException:
+            give_back()
+            raise
+        spine.retire_grant(verdict.consent_id or "", spent)
+
+    def release(n: int) -> None:
+        if stamp:
+            spine.release_rate(base_url, audit_dir, stamp[0], min(n, count))
+    return release
+
+
+def _has_api_net(row: Row) -> bool:
+    """A rollback on the API wire: its net is taken unasked (records/undo.toml [net])."""
+    return bool(row.net and row.wire != "ssh")
+
+
+def _net_snapshot(row: Row, called: str, args: Mapping[str, Any]) -> dict[str, Any]:
+    """The safety snapshot a call will take, fixed BEFORE anything is spent so its own walls can be
+    met then: the vendor's snapshot row, its concrete path and the arguments it will send (a fresh
+    name; a description naming the act; the node the caller named, which rides to the snapshot
+    because PDM takes it as an optional hint and a snapshot on another node than the rollback's would
+    be no net; none is invented)."""
+    where = bind(row, rawdoor.canonical(called))
+    snap = _at(row.product, cast(Mapping[str, str], row.net)["snapshot"])
+    name = "proximo_" + time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "_" + os.urandom(2).hex()
+    act = "command" if row.wire == "ssh" else "rollback"
+    asked = {"node": args["node"]} if args.get("node") and "node" in snap.params and "node" not in where else {}
+    return {"row": snap, "path": fill(snap.path, where), "name": name, "act": act,
+            "args": {"snapname": name, "description": f"before a governed {act} ({intent_id(called)[:12]})", **asked}}
+
+
+def _snapshot_wall(row: Row, snap: Mapping[str, Any], cfg: Any, ledger_cfg: Any, v0: Verdict) -> Verdict | None:
+    """The safety snapshot's OWN governance (arm, tier, FORBID on its arguments, contain, taint),
+    judged before the act is spent on: a wall that only the net meets (`FORBID=description=`) must
+    refuse the act with its grant unspent, and the plan must show it. None when the net may be taken."""
+    try:
+        v = govern(snap["row"], cfg=cfg, path=snap["path"], args=dict(snap["args"]), ledger_cfg=ledger_cfg,
+                   consent_covered=True)
+    except ProximoError as exc:
+        v = Verdict(False, str(exc), "path")
+    if v.allowed:
+        return None
+    return Verdict(False, f"undo unavailable: the safety snapshot before this {snap['act']} would be refused "
+                          f"({v.reason}); the {snap['act']} was not run. Nothing was sent to the vendor",
+                   v.needs or "undo", v0.consent_id, dict(v.detail))
+
+
+def _shell_net_verdict(row: Row, args: Mapping[str, Any], path: str | None, cfg: Any, ledger_cfg: Any,
+                       verdict: Verdict) -> Verdict:
+    """The plan of a shell command that asks for `snapshot=true`: the snapshot's own walls, shown."""
+    if not (verdict.allowed and row.net and _snapshot_on(row, dict(args)) and path and "{" not in path):
+        return verdict
+    return _snapshot_wall(row, _net_snapshot(row, path, args), cfg, ledger_cfg, verdict) or verdict
+
+
+def _proposed(row: Row, verdict: Verdict, called: str, cfg: Any, args: Mapping[str, Any],
+              net: str = "") -> dict[str, Any]:
+    """What a refused mutation proposed, for the row the refusal writes (`proximo-core consent show`):
+    the inputs of its consent id as the ledger keeps them (a secret fingerprinted), the net signature
+    when the id carries one, and the BINDING (`spine.consent_binding`) of all of it to the id. Empty
+    when the verdict has no consent id."""
+    if not verdict.consent_id:
+        return {}
+    p: dict[str, Any] = {"consent_id": verdict.consent_id, "plane": row.product, "method": row.method,
+                         "published": row.path, "called": called, "box": _box(row, cfg),
+                         "args": ledgered(dict(args), rule=arg_rule(row)), **({"net": net} if net else {})}
+    return {"proposed": {**p, "binding": spine.consent_binding(p)}}
+
+
+def _net_of_id(row: Row, verdict: Verdict, called: str, cfg: Any, args: Mapping[str, Any],
+               view: Mapping[str, Any]) -> str:
+    """The net signature the verdict's consent id was made with, or "" when it carries none (a refusal
+    made before the net was judged keeps the plain id)."""
+    sig = _net_signature(view)
+    with_net = spine.consent_id(row.product, row.method, row.path, called, dict(args), box=_box(row, cfg), net=sig)
+    return sig if with_net == verdict.consent_id else ""
+
+
+def _gate_net(row: Row, called: str, submitted: Mapping[str, Any], args: Mapping[str, Any], cfg: Any,
+              ledger_cfg: Any, remote: str | None, v0: Verdict) -> tuple[Verdict, dict[str, Any] | None]:
+    """Execute's half, BEFORE the grant is spent or a rate slot taken: read the net, refuse a target
+    that is not there (nothing taken), meet the safety snapshot's own walls, and judge consent
+    against the net as it reads now. A refusal is receipted and sends nothing. A row with no net
+    asked of this call (a shell command without `snapshot=true`) passes through. A shell command's
+    snapshot is the same step: its walls are met here, before the grant."""
+    if not row.net or (row.wire == "ssh" and args.get("snapshot") is not True):
+        return v0, None
+    if row.wire == "ssh":
+        snap = _net_snapshot(row, called, args)
+        view: dict[str, Any] = {"take": True, "snap": snap, "node": None, "running": True, "why": None}
+        verdict = _snapshot_wall(row, snap, cfg, ledger_cfg, v0) or v0
+    else:
+        view = _net_view(row, args, called, cfg, ledger_cfg)
+        if spine.undo_enabled() and view["exists"] is not True:
+            absent = view["exists"] is False
+            reason = ("undo unavailable: the snapshot to roll back to is not on this guest; nothing was taken "
+                      "and the rollback was not run" if absent else
+                      "undo unavailable: could not confirm the snapshot to roll back to is there; nothing was "
+                      "taken and the rollback was not run")
+            _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                    detail={"reason": reason, "needs": "arguments" if absent else "undo"}, called=called,
+                    remote=remote)
+            raise ProximoError(reason)
+        verdict = _net_verdict(row, called, submitted, cfg, ledger_cfg, v0, view)
+    if not verdict.allowed:
+        # a consent refusal keeps what it proposed, net signature included, for `consent show`
+        net = _net_of_id(row, verdict, called, cfg, submitted, view) if verdict.needs == "consent" else ""
+        proposed = _proposed(row, verdict, called, cfg, submitted, net) if verdict.needs == "consent" else {}
+        _record(ledger_cfg, "core.refuse", row, outcome="refused",
+                detail={"reason": verdict.reason, "needs": verdict.needs, **verdict.detail, **proposed},
+                called=called, remote=remote)
+        raise ProximoError(verdict.reason)
+    return verdict, view
+
+
+def _tier_fields(row: Row, path: str | None, args: Mapping[str, Any]) -> dict[str, Any]:
+    """The plan's tier keys when a value rule (tiers.toml [raise]) raises or may raise this call."""
+    if row.access == READ or not row.raises:
+        return {}
+    try:
+        effective, raised = effective_tier(row, path, dict(args))
+    except ProximoError:
+        effective, raised = row.tier, None
+    if raised:
+        return {"tier": effective, "tier_authored": row.tier, "tier_raised": raised}
+    may = _may_rise(row, path)
+    return {"tier_may_rise": may} if may else {}
+
+
+def _plan_net_view(row: Row, args: Mapping[str, Any], path: str | None, cfg: Any, ledger_cfg: Any,
+                   verdict: Verdict) -> dict[str, Any]:
+    """The plan's view of a rollback's net: governed reads when the call can run and names a
+    concrete path, else what can be said without them."""
+    on = spine.undo_enabled()
+    if verdict.needs in ("arguments", "held") or not path or "{" in path:
+        return {"take": on, "exists": None, "blocked": [], "cannot": [], "unsettled": [], "why": (
+            "storage not read: the path is a template" if on else
+            f"{spine.UNDO_ENV}=off: the operator turned every safety net off; nothing is captured before "
+            "this rollback")}
+    return _net_view(row, args, path, cfg, ledger_cfg)
+
+
+def _safety_net_plan(row: Row, view: Mapping[str, Any]) -> dict[str, Any]:
+    """The plan's `safety_net` (and `also`) of a rollback: nobody asks for this net and nobody can
+    skip it, so the plan says what it will do, or why it will not, BEFORE the operator approves."""
+    net: dict[str, Any] = {"taken": bool(view["take"] and view["exists"] is not False),
+                           **({"why": view["why"]} if view["why"] else {}),
+                           **({"snapshot_exists": view["exists"]} if view["exists"] is not None else {}),
+                           **({"unsettled": view["unsettled"]} if view["unsettled"] else {})}
+    if view["exists"] is False:
+        net["why"] = "the snapshot to roll back to is not on this guest: the rollback would fail, and nothing is taken"
+    out: dict[str, Any] = {"safety_net": net}
+    if net["taken"]:
+        snap = _at(row.product, cast(Mapping[str, str], row.net)["snapshot"])
+        out["also"] = {"address": snap.address, "tier": snap.tier, "consent": "covered by this plan's grant",
+                       "why": "a rollback takes a safety snapshot of the guest first and waits for it; if it "
+                              "does not land, the rollback is not run"}
+    return out
+
+
 def _snapshot_on(row: Row, args: dict[str, Any]) -> bool:
-    """Whether a shell call's `snapshot` reads as true the way execute will read it (the CLI's
-    "true" included); a value execute refuses is not a snapshot the plan announces."""
-    if "snapshot" not in args:
+    """Whether a shell command takes its net first: the CALLER asks with `snapshot`, which reads as
+    true the way execute will read it (the CLI's "true" included), and a value execute refuses is
+    not a snapshot the plan announces. (The API wire's net asks nobody: `_net_view`.)"""
+    if not row.net or row.wire != "ssh" or "snapshot" not in args:
         return False
     try:
         return coerce_args(row, {"snapshot": args["snapshot"]})["snapshot"] is True
@@ -1044,40 +2032,69 @@ SNAPSHOT_WAIT = 120     # seconds: 0.44's auto-undo waited the same for its snap
 
 
 def _snapshot_first(row: Row, called: str, cfg: Any, ledger_cfg: Any, intent: str,
-                    remote: str | None, consent_id: str | None) -> dict[str, Any]:
-    """UNDO for a container command (B5 stage 2; 0.44's `snapshot=True`). The snapshot is a
-    governed mutation of its OWN, the vendor's `POST .../lxc/{vmid}/snapshot` through `execute`
-    (armed, tiered, receipted, waited), so the net is as accountable as the act. FAIL-CLOSED:
-    anything short of a task that finished OK refuses the command before it runs. The capture
-    names the snapshot and the vendor's rollback, so `undo <id>` puts the container back."""
+                    remote: str | None, consent_id: str | None, view: Mapping[str, Any]) -> dict[str, Any]:
+    """UNDO for a container command (B5 stage 2; 0.44's `snapshot=True`) and for a rollback (0.44's
+    `_pdm_auto_undo`, undo.toml [net]). The snapshot is a governed mutation of its OWN, the vendor's
+    snapshot create through `execute` (armed, tiered, receipted, waited), so the net is as
+    accountable as the act; it was fixed, and its own walls met, before anything was spent
+    (`_net_snapshot`, `_snapshot_wall`). FAIL-CLOSED: anything short of a task that finished OK
+    refuses the act before it runs. The capture names the snapshot and the vendor's rollback, so
+    `undo <id>` puts the guest back."""
     where = bind(row, rawdoor.canonical(called))
-    net = cast(Mapping[str, str], row.net)      # execute reaches here on `row.net and snapshot=true` alone
-    snap = _at(row.product, net["snapshot"])
-    name = "proximo_" + time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "_" + os.urandom(2).hex()
-    path = fill(snap.path, where)
+    net = cast(Mapping[str, str], row.net)
+    snap = view["snap"]
+    name, act = snap["name"], snap["act"]
 
-    def refused(why: str, exc: BaseException | None = None) -> ProximoError:
-        reason = f"undo unavailable: the snapshot before this command did not land ({why}); the command was not run"
+    def refused(why: str, exc: BaseException | None = None, upid: Any = None) -> ProximoError:
+        # What is true depends on whether the snapshot request went out. Sent: it may have landed, so
+        # it is named, to be found. Not sent (a wall, a grant, the rate cap, a connection that never
+        # opened): nothing was sent. Either way the approval for this call is spent where consent is
+        # enforced (something was, or could have been, sent under it); the act was never dialled.
+        sent = True if exc is None else bool(getattr(exc, "wire_sent", False))
+        tail = (f"The snapshot request was SENT, named {name}: if the vendor created it anyway it is still on the "
+                f"guest, and deleting it is yours. The {act} was not run; where consent is enforced, the approval "
+                "for this call is spent" if sent else
+                "Nothing was sent to the vendor; where consent is enforced, the approval for this call is spent")
+        reason = f"undo unavailable: the snapshot before this {act} did not land ({why}); the {act} was not run. {tail}"
         _record(ledger_cfg, "core.refuse", row, outcome="refused",
-                detail={"reason": reason, "needs": "undo", "snapshot": name, **(wire_error(exc) if exc else {})},
+                detail={"reason": reason, "needs": "undo", **({"snapshot": name} if sent else {}),
+                        **({"upid": upid} if upid else {}), **(wire_error(exc) if exc else {})},
                 called=called, remote=remote)
-        return ProximoError(reason)
+        failure = ProximoError(reason)
+        failure.snapshot_sent = sent                       # type: ignore[attr-defined]
+        return failure
 
     try:
-        out = execute(snap, {"snapname": name, "description": f"before a governed command ({intent[:12]})"},
-                      cfg=cfg, path=path, ledger_cfg=ledger_cfg, wait=SNAPSHOT_WAIT, net_of=(row, called, consent_id))
+        out = execute(snap["row"], dict(snap["args"]), cfg=cfg, path=snap["path"], ledger_cfg=ledger_cfg,
+                      wait=SNAPSHOT_WAIT, net_of=(row, called, consent_id), rate_prepaid=safetynet.PREPAID)
     except Exception as exc:
         raise refused(safe_exception_text(exc, paths=True), exc) from exc
     task = out.get("task") or {}
     if not task.get("succeeded"):
-        raise refused(f"task {task.get('exitstatus') or task.get('status') or 'not seen to finish'}")
+        # A FIXED WORD, never the task's exit status: the vendor's text can carry what a guest agent
+        # said (a freeze hook's output), and what reaches the caller and the ledger is a closed vocabulary.
+        # The task's id (a vendor id, not guest text) is on the row to read the real status by.
+        word = ("the vendor's task ended in an error" if task.get("finished")
+                else "the vendor's task did not finish in time" if task.get("timed_out")
+                else "the vendor's task was not seen to finish")
+        raise refused(word, upid=task.get("upid"))
     method, _, template = net["rollback"].partition(" ")
     rollback = f"{method} {fill(template, {**where, 'snapname': name})}"
-    point = _record(ledger_cfg, "core.undo_point", row, outcome="undo_point",
-                    detail={"snapshot": name, "rollback": rollback, "intent": intent, "tier": row.tier,
-                            "plane": row.product, "upid": task.get("upid")},
-                    called=called, required=True, remote=remote)
-    return {"captured": True, "snapshot": name, "rollback": rollback,
+    # The guest's state when the net was taken: an undo puts it back to THAT, not to "running". A
+    # container command ran inside the container, so it was running; an unread state is None.
+    running, node = view.get("running"), view.get("node")
+    try:
+        point = _record(ledger_cfg, "core.undo_point", row, outcome="undo_point",
+                        detail={"snapshot": name, "rollback": rollback, "intent": intent, "tier": row.tier,
+                                "plane": row.product, "upid": task.get("upid"), "running": running,
+                                **({"node": node} if node else {})},
+                        called=called, required=True, remote=remote)
+    except Exception as exc:
+        raise ProximoError(f"the safety snapshot {name} landed but its receipt could not be written "
+                           f"({safe_exception_text(exc, paths=True)}); the {act} was not run and the snapshot is "
+                           "still on the guest") from exc
+    return {"captured": True, "snapshot": name, "rollback": rollback, "running": running,
+            **({"note": view["why"]} if view.get("why") else {}),
             "id": str((point or {}).get("entry_hash", ""))[:12]}
 
 
@@ -1159,8 +2176,13 @@ def _audit_dir(ledger_cfg: Any) -> str:
     return os.path.dirname((ledger_cfg or LedgerConfig.from_env()).audit_log_path or "")
 
 
-def _taint_before_the_wire(row: Row, ledger_cfg: Any, called: str, remote: str | None) -> None:
-    if not (row.untrusted and spine.taint_tracking_on()):
+def _taint_before_the_wire(row: Row, ledger_cfg: Any, called: str, remote: str | None,
+                           judging: bool = False, mutation: bool = False) -> None:
+    """Mark the session tainted before an untrusted answer can be served: a read's, or a mutation's
+    (an exec's output, a guest-agent answer). A `judging` read (the engine's own, see `execute`) marks
+    nothing: it is never served to the caller, only judged. A mutation marks BEFORE anything is spent,
+    so a marker that cannot be written refuses it with its grant, its rate slots and its net untouched."""
+    if judging or not (row.untrusted and spine.taint_tracking_on()):
         return
     audit_dir = _audit_dir(ledger_cfg)
     try:
@@ -1168,8 +2190,10 @@ def _taint_before_the_wire(row: Row, ledger_cfg: Any, called: str, remote: str |
             raise OSError("the ledger has no directory to hold the taint marker")
         spine.mark_tainted(audit_dir, row.key)
     except Exception as exc:  # noqa: BLE001 -- any failure to mark is a refusal to serve
-        reason = (f"{row.key} is an untrusted read and the taint marker could not be written "
-                  f"({type(exc).__name__}); the read was not served (fail-closed)")
+        what = "call was not run" if mutation else "read was not served"
+        kind = "returns untrusted bytes" if mutation else "is an untrusted read"
+        reason = (f"{row.key} {kind} and the taint marker could not be written ({type(exc).__name__}); "
+                  f"the {what} (fail-closed)")
         _record(ledger_cfg, "core.refuse", row, outcome="refused",
                 detail={"reason": reason, "needs": "taint", **wire_error(exc)},
                 called=called, remote=remote)
@@ -1192,8 +2216,15 @@ def _untrusted_detail(row: Row) -> dict[str, Any]:
 # the rule must be total over whatever a caller sends. `pub` in a name is a public key and stays;
 # `alice@pam` is a userid, not a credential, so bare user@host without a scheme or a colon stays.
 _SECRET_NAME = re.compile(
-    r"pass|secret|hmac|private|keyring|certkey|credential|(^|[-_])(totp|otp)$|(keys?|tokens?)$", re.I)
+    r"password|passwd|passphrase|(^|[-_])pass($|[-_])|secret|hmac|private|keyring|certkey|credential"
+    r"|(^|[-_])(totp|otp)$|(keys?|tokens?)$", re.I | re.ASCII)
 _URL_AUTHORITY = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)?(?P<authority>[^/?#\s]*)")
+
+
+def name_looks_secret(name: str) -> bool:
+    """The NAME rule: whether an argument called `name` is fingerprinted unless its address's `public` line
+    (secrets.toml) judges it not a secret value. `pub` in a name is a public key and stays visible. ASCII only."""
+    return bool(_SECRET_NAME.search(name)) and "pub" not in name.lower()
 
 
 def _fingerprint(value: Any) -> str:
@@ -1222,7 +2253,7 @@ def _plan_rule(row: Row) -> Rule:
     the name rule, WITHOUT the bearer clause. A bearer line says the mutation's ANSWER is a
     credential; a plan holds the read's state and the caller's arguments, never that answer, and
     fingerprinting it whole made a storage create's `exists` unreadable."""
-    return (*row.secret[:4], None)
+    return (row.secret[0] | _NOT_SECRET_MARK(row), *row.secret[1:4], None)
 
 
 def ledgered(value: Any, name: str | None = None,
@@ -1234,7 +2265,7 @@ def ledgered(value: Any, name: str | None = None,
     UNDO capture of such a read, or the args of a mutation at its path, never lands raw."""
     if rule[4] is not None:
         return _fingerprint(value)
-    if name is not None and (name in rule[0] or (_SECRET_NAME.search(name) and "pub" not in name.lower())):
+    if name is not None and (name in rule[0] or (name_looks_secret(name) and "!" + name not in rule[0])):
         return _fingerprint(value)
     if isinstance(value, dict):
         return {k: ledgered(v, str(k), rule) for k, v in value.items()}
@@ -1245,7 +2276,8 @@ def ledgered(value: Any, name: str | None = None,
     return value
 
 
-def _envelope(row: Row, called: str, data: Any, fields: str | None = None) -> dict[str, Any]:
+def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
+              cap: rawdoor.Cap | None = None, given: dict[str, Any] | None = None) -> dict[str, Any]:
     # By the address's OWN line when it has one, else the READ's, whatever the verb: a mutation
     # that echoes its resource (PBS's PUT of an OpenID realm returns the config, client-key
     # included) carries what its read carries; a token mint answers a secret its read never
@@ -1256,43 +2288,135 @@ def _envelope(row: Row, called: str, data: Any, fields: str | None = None) -> di
     total = len(data) if isinstance(data, list) else None
     if row.access == READ:
         data = project(data, fields)
-    # THE SIZE LAW, the raw door's: a read over the cap is reported (a list cut by rows with its
-    # count; anything else by size with a head), never handed to the model whole. The wrappers
-    # bounded output by their defaults (a `limit`, a `lastentries`); the door serves the vendor's,
-    # and some of those are unbounded.
-    over = rawdoor.bounded(data) if row.access == READ else None
-    if over is not None and "returned" in over and fields is None:
-        # OVER THE CAP, A DEFAULT READ ANSWERS WHOLE AND SMALLER. A cut list fits and is wrong:
-        # 16 of 37 rows is most of the estate missing. Rows asked for by name keep the cut, and
-        # so do a list whose rows carry their own content (a log's lines) or no state to count,
-        # and a summary that would not fit the cap itself (lens 2026-09-28: 150 enum fields made
-        # a 9 KB "summary" against 2 KB): there the cut is the smaller answer.
-        summary = summarize(data)
-        if summary["tally"] and rawdoor.bounded(summary) is None:
-            over = summary
     fenced = row.untrusted and spine.fence_on()
-    if over is not None and "minority" in over and fenced:
-        over["minority"] = spine.fence(row.key, over["minority"])
-    if over is not None and "head" in over:
-        over["head"] = spine.fence(row.key, over["head"]) if fenced else over["head"]
-    if over is not None and "data" in over and fenced:
-        over["data"] = spine.fence(row.key, over["data"])
-    return {
+    header = {
         "address": row.address,
         "plane": row.product,
         "access": row.access,
         "derived": False,          # the vendor's bytes, never composed prose
         "matched_path": row.path,  # the published address that governed this call
-        "called_path": called,     # what actually went to the wire
+        "called_path": rawdoor.echo(called, 160),     # what went to the wire; a clip carries its length and hash
         "tier": row.tier,
         "untrusted": row.untrusted,   # a fact about the address, like the tier; the env gates behaviour
         **({"total": total} if total is not None else {}),   # counted at the gate, from the raw rows
-        **(over if over is not None else {"data": spine.fence(row.key, data) if fenced else data}),
         **({"withheld": withheld} if withheld else {}),   # the record's fields this response carried
         # a response that IS a credential is served whole (the caller asked for it) and says so;
         # the ledger never holds a read's bytes and the store keeps lists only, so it goes no further
         **({"bearer_credential": b} if (b := row.secret[4]) else {}),
     }
+    # THE SIZE LAW, the raw door's: an answer over the cap is reported (a list cut by rows with its
+    # count; anything else described by its keys and sizes), never handed to the model whole. The cap is
+    # on the WHOLE answer: the header above is spent first, and a FENCED answer is measured as it will
+    # be sent (the wrapper and the escaping its JSON string adds) and the data's share shrunk until the
+    # whole fits. A MUTATION'S echo (a PUT that returns its resource) is capped too, except a credential
+    # served whole on purpose (a token mint): a truncated secret is worse than none.
+    whole = cap or rawdoor.answer_cap()
+    room = whole.minus(*rawdoor.spent(header))
+    answer, last, stalls = header, None, 0
+    for _ in range(10):
+        shown, over = _bounded_data(row, data, fields, room, whole, fenced, given)
+        answer = {**header, **(over if over is not None else {"data": shown})}
+        body = json.dumps(answer, separators=(",", ":"), default=str)
+        stalls += last is not None and len(body) >= last
+        if rawdoor.fits(len(body.encode()), body, cap=whole) or room.bytes <= 48 or stalls >= 3 or row.secret[4]:
+            break           # fits; or nothing left to take; or taking more changed nothing (a credential kept whole)
+        last = len(body)
+        room = room.minus(2 * (len(body.encode()) - whole.bytes) + 16,
+                          0 if whole.tokens is None
+                          else 2 * max(rawdoor.estimate_tokens(body) - whole.tokens, 0) + 8, 48)
+    return answer
+
+
+def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, whole: rawdoor.Cap,
+                  fenced: bool, given: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any] | None]:
+    """(the data to send, or None) and (what stands in for it when it does not fit `room`), fenced as
+    the row requires. One pass of the size law; `_envelope` repeats it with a smaller room until the
+    whole answer is under the cap."""
+    bearer = bool(row.secret[4])
+    if bearer:
+        # A CREDENTIAL SERVED WHOLE IS THE CREDENTIAL, NOT EVERYTHING BESIDE IT: a token mint's scalar
+        # fields (the value, its id) stay whole; its objects and lists beside them are capped.
+        data, over = _bearer_split(data, room)
+    else:
+        over = rawdoor.bounded(data, room)
+    if over is not None and "cap" in over:
+        over["cap"] = whole.bytes            # the cap the operator knows, not what is left after the header
+    if over is not None and "returned" in over and fields is None and not bearer:
+        # OVER THE CAP, A DEFAULT READ ANSWERS WHOLE AND SMALLER. A cut list fits and is wrong:
+        # 16 of 37 rows is most of the estate missing. Rows asked for by name keep the cut, and
+        # so do a list whose rows carry their own content (a log's lines) or no state to count,
+        # and a summary that would not fit the cap itself (lens 2026-09-28: 150 enum fields made
+        # a 9 KB "summary" against 2 KB): there the cut is the smaller answer.
+        # a fenced summary is ONE wrapper (below): its fixed cost comes out of the room the counts and the odd
+        # rows share (the escaping its JSON string adds is caught by the whole-answer loop in `_envelope`)
+        squeeze = rawdoor.Cap(room.bytes, room.tokens)
+        if fenced:
+            wrap = rawdoor._cost(spine.fence(row.key, ""))
+            squeeze = room.minus(wrap[0], wrap[1], 48)
+        summary = summarize(data, squeeze)
+        if summary["tally"] and rawdoor.bounded(summary, squeeze) is None:
+            over = summary
+    if over is not None and "returned" in over and "summarized" not in over:
+        over["next"] = _narrowing(row, fields, over["returned"], over["total"], given)   # never what was asked
+    if over is not None:
+        rawdoor.note_problems(over)
+    if over is not None and fenced and "summarized" in over:
+        # ONE wrapper for the whole summary (counts and the odd rows): the vendor's words, fenced once, so
+        # a fenced estate still gets its counts inside the cap (two wrappers did not fit)
+        core = {k: over.pop(k) for k in ("tally", "by_type", "minority") if k in over}
+        over["summary"] = spine.fence(row.key, core)
+    elif over is not None and fenced:
+        for part in ("keys", "data"):                         # the vendor's words, in every form it comes in
+            if part in over:
+                over[part] = spine.fence(row.key, over[part])
+    return (spine.fence(row.key, data) if fenced else data), over
+
+
+def _bearer_split(data: Any, cap: rawdoor.Cap) -> tuple[Any, dict[str, Any] | None]:
+    """(data, over) for a credential answer: the scalar fields stay whole, and the containers beside
+    them are capped by the room the scalars leave. `over` is None when the whole fits."""
+    if not isinstance(data, dict):
+        return data, None
+    scalars = {k: v for k, v in data.items() if not isinstance(v, (dict, list))}
+    rest = {k: v for k, v in data.items() if isinstance(v, (dict, list))}
+    room = cap.minus(*rawdoor._cost(scalars))
+    over = rawdoor.bounded(rest, room) if rest else None
+    if over is None:
+        return data, None
+    return scalars, {"data": scalars, "other_fields": {k: over["keys"].get(k) for k in over.get("keys", {})},
+                     "other_fields_total": over["keys_total"], "truncated": True, "bytes": over["bytes"],
+                     "cap": over["cap"], **({"note": over["note"]} if "note" in over else {}), "next": over["next"]}
+
+
+#: filter-shaped parameters a list address commonly publishes, in the order worth naming
+_PAGING = ("limit", "start", "offset", "since", "until", "lastentries")
+
+
+def _narrowing(row: Row, fields: str | None, kept: int, total: int, given: dict[str, Any] | None = None) -> str:
+    """The `next` of a list cut by rows. It NEVER suggests what was just asked: after `fields=name,status`
+    it does not say to ask for `fields=name,status`. It offers a real narrowing the address publishes (its
+    own filters, a paging pair), a concrete path, or says plainly that the first rows are all there is."""
+    what = f"{kept} of {total} rows came back, in the vendor's order"
+    placeholders_ = set(placeholders(row.path))
+    filters = [n for n, sp in row.params.items()
+               if n not in placeholders_ and sp.get("optional") is not False and n not in (given or {})]
+    paging = [n for n in _PAGING if n in row.params]
+    asked = (fields or "").strip().lower()
+    advice = []
+    if not asked:
+        advice.append("fields='name,status' keeps fewer keys per row")
+    elif asked == "all":
+        advice.append("fields='name,status' (fewer keys per row) fits more of them")
+    if filters:
+        advice.append(f"args narrows by what this address publishes ({', '.join(filters[:4])})")
+    if paging:
+        advice.append(f"page with args {' and '.join(paging[:2])}")
+    if "{" in row.path:
+        advice.append("or read one row by its concrete path")
+    if not advice:
+        advice.append("this address publishes no further filter or paging: these are the first rows it has; "
+                      "a concrete per-node or per-guest address (proximo_find lists them) holds fewer")
+    return f"{what}: " + "; ".join(advice)
 
 
 # ---- OVER THE CAP: the count, a tally per state, the rows not in the most common state ---------
@@ -1329,44 +2453,73 @@ def _carries_content(records: list[dict]) -> bool:
     return False
 
 
-def summarize(rows: list[Any]) -> dict[str, Any]:
-    records = [r for r in rows if isinstance(r, dict)]
+#: free text a guest owner (or the vendor's description) sets: never a STATE to count, however few distinct
+#: values it takes on this estate
+_FREE_TEXT = frozenset({"tags", "description", "comment", "notes", "title", "hostname", "text", "message", "msg"})
+
+
+def _state_keys(records: list[dict]) -> dict[str, dict[str, int]]:
+    """Per-key counts for the keys that are STATES: strings, bools or nulls, at most `_STATES` values, and never
+    identity or free text. A key on few rows of the COMMON type (`lock` on one guest in three hundred) is kept:
+    the exception is the point; one carried only by a minor type (storage `content`, node `level`) is not."""
     tally: dict[str, dict[str, int]] = {}
-    if _carries_content(records):
-        return {"summarized": True, "tally": tally, "minority": [], "minority_total": 0}
-    for k in sorted({k for r in records for k in r if not _identity_key(k)}):
+    typed = bool(records) and all("type" in r for r in records)
+    dominant = Counter(_spell(r, "type") for r in records).most_common(1)[0][0] if typed else None
+    for k in sorted({k for r in records for k in r if not _identity_key(k) and k not in _FREE_TEXT}):
         if any(k in r and not (isinstance(r[k], (str, bool)) or r[k] is None) for r in records):
             continue
+        if typed and sum(k in r for r in records) * 2 < len(records) and not any(
+                k in r and _spell(r, "type") == dominant for r in records):
+            continue       # a sparse field of a minor type (storage `content`, node `level`), not the estate's state
         counts = Counter(_spell(r, k) for r in records)
         if len(counts) <= _STATES:
             tally[k] = dict(counts.most_common())
-    group = (lambda r: _spell(r, "type")) if records and all("type" in r for r in records) else (lambda r: "")
+    return tally
+
+
+def summarize(rows: list[Any], cap: rawdoor.Cap | None = None) -> dict[str, Any]:
+    """Counts per state and the rows that are not in the most common one. When every row has a `type`
+    (cluster resources: qemu, lxc, node, storage) the states are ALSO counted PER TYPE (`by_type`), because
+    "how many containers are running" is a count of (type, status) pairs, not of two marginals."""
+    records = [r for r in rows if isinstance(r, dict)]
+    if _carries_content(records):
+        return {"summarized": True, "tally": {}, "minority": [], "minority_total": 0}
+    tally = _state_keys(records)
+    typed = bool(records) and all("type" in r for r in records)
+    group = (lambda r: _spell(r, "type")) if typed else (lambda r: "")
     modes: dict[str, dict[str, str]] = {}
+    by_type: dict[str, dict[str, dict[str, int]]] = {}
     for g in {group(r) for r in records}:
         members = [r for r in records if group(r) == g]
         modes[g] = {k: Counter(_spell(r, k) for r in members).most_common(1)[0][0]
                     for k, v in tally.items() if len(v) > 1}
+        if typed:
+            counted = {k: {v: n for v, n in Counter(_spell(r, k) for r in members).most_common() if v != _ABSENT}
+                       for k in tally if k != "type" and any(k in r for r in members)}
+            by_type[g] = {k: v for k, v in counted.items() if v}
     minority = []
     for r in records:
         odd = {k: r.get(k) for k, mode in modes[group(r)].items() if _spell(r, k) != mode}
         if odd:
             minority.append({**{k: v for k, v in r.items() if _identity_key(k)}, **odd})
-    out: dict[str, Any] = {"summarized": True, "tally": tally, "minority": minority,
-                           "minority_total": len(minority),
-                           "note": "over the cap: counts per state and the rows not in the most "
-                                   "common one; fields= or the path's params for rows"}
+    out: dict[str, Any] = {"summarized": True, "tally": tally, **({"by_type": by_type} if typed else {}),
+                           "minority": minority, "minority_total": len(minority),
+                           "next": "fields='name,status' lists the rows; args (this address's filters) or a "
+                                   "concrete path narrows"}
     # The minority gets the room the rest of the summary leaves under the cap, row by row, so
     # the whole summary fits (cut to the full cap, it pushed the summary over and lost it).
-    room = rawdoor.max_bytes() - len(json.dumps({**out, "minority": [], "minority_returned": 0},
-                                                default=str))
-    kept, used = [], 2
+    compact = {"default": str, "separators": (",", ":")}
+    base = json.dumps({**out, "minority": [], "minority_returned": 0}, **compact)
+    used, spent = len(base.encode()), rawdoor.estimate_tokens(base)
+    kept = []
     for r in minority:
-        size = len(json.dumps(r, default=str)) + 2
-        if used + size > room:
+        text = json.dumps(r, **compact)
+        used2, spent2 = used + len(text.encode()) + 1, spent + rawdoor.estimate_tokens(text) + 1
+        if not rawdoor.fits(used2, tokens=spent2, cap=cap):
             out.update(minority=kept, minority_returned=len(kept))
             break
         kept.append(r)
-        used += size
+        used, spent = used2, spent2
     return out
 
 
@@ -1377,9 +2530,11 @@ def _box(row: Row, cfg: wire.Plane | None) -> str:
 
 
 def _keep(row: Row, called: str, args: dict[str, Any], data: Any, ledger_cfg: Any,
-          cfg: wire.Plane | None) -> None:
-    """Best-effort and silent: a convenience must never fail the read it rides on."""
-    if not store.enabled() or not isinstance(data, list):
+          cfg: wire.Plane | None, judging: bool = False) -> None:
+    """Best-effort and silent: a convenience must never fail the read it rides on. A `judging` read
+    keeps NOTHING: its answer is the engine's to judge, never a caller's to ask `since=` about, so it
+    must not write a guest's text into the store or move a caller's baseline."""
+    if judging or not store.enabled() or not isinstance(data, list):
         return
     try:
         rows, _ = withhold(data, row.secret)
@@ -1411,14 +2566,46 @@ def _recall(row: Row, called: str, args: dict[str, Any], since: str, ledger_cfg:
     _record(ledger_cfg, "core.recall", row, outcome="ok",
             detail={"source": "store", **answer["counts"], **_untrusted_detail(row)},
             called=called, remote=remote)
-    cut = rawdoor.bounded(answer["changes"])
+    # CAPPED LIKE ANY ANSWER: the header and the counts are spent first, the changes get the rest, and
+    # a cut says so and how to narrow (a recall of a busy cluster is as long as the cluster).
+    header = {"address": row.address, "plane": row.product, "access": row.access, "derived": True,
+              "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
+              "untrusted": row.untrusted,
+              **{k: v for k, v in answer.items() if k != "changes"}}
+    fenced = row.untrusted and spine.fence_on()
+    whole = rawdoor.answer_cap()
+    room = whole.minus(*rawdoor.spent(header))
+    final: dict[str, Any] = {}
+    last, stalls = None, 0
+    for _ in range(6):
+        final = _recalled(row, called, answer, room, fenced)
+        body = json.dumps(final, separators=(",", ":"), default=str)
+        stalls += last is not None and len(body) >= last
+        if rawdoor.fits(len(body.encode()), body, cap=whole) or room.bytes <= 48 or stalls >= 3:
+            break
+        last = len(body)
+        room = room.minus(2 * (len(body.encode()) - whole.bytes) + 16,
+                          0 if whole.tokens is None
+                          else 2 * max(rawdoor.estimate_tokens(body) - whole.tokens, 0) + 8, 48)
+    return final
+
+
+def _recalled(row: Row, called: str, answer: dict[str, Any], room: rawdoor.Cap, fenced: bool) -> dict[str, Any]:
+    """The recall answer with its changes cut to `room` (and fenced when the row is untrusted)."""
+    answer = dict(answer)
+    cut = rawdoor.bounded(answer["changes"], room)
     if cut is not None and "returned" in cut:
-        answer.update(changes=cut["data"], changes_returned=cut["returned"])
-    if row.untrusted and spine.fence_on():
+        answer.update(changes=cut["data"], changes_returned=cut["returned"], changes_truncated=True,
+                      next="the changes that fit; a shorter since= or a narrower path returns fewer")
+    elif cut is not None:
+        answer.update(changes=rawdoor.describe(answer["changes"]), changes_truncated=True, next=cut["next"])
+    if cut is not None:
+        rawdoor.note_problems(answer)
+    if fenced:
         answer["changes"] = spine.fence(row.key, answer["changes"])
     return {"address": row.address, "plane": row.product, "access": row.access,
             "derived": True,           # composed by the door from what it kept, not the vendor's bytes
-            "matched_path": row.path, "called_path": called, "tier": row.tier,
+            "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
             "untrusted": row.untrusted, **answer}
 
 
@@ -1455,7 +2642,10 @@ def project(data: Any, fields: str | None) -> Any:
     have = {k for r in records for k in r}
     for name in want:
         if name not in have:
-            raise ProximoError(f"fields: no row carries {name!r}; the rows carry: {', '.join(sorted(have))}")
+            names = sorted(have)
+            more = f" (and {len(names) - 15} more)" if len(names) > 15 else ""
+            raise ProximoError(f"fields: no row carries {rawdoor.quote(name, 40)}; the rows carry: "
+                               f"{', '.join(names[:15])}{more}")
     return [{k: r[k] for k in want if k in r} if isinstance(r, dict) else r for r in data]
 
 

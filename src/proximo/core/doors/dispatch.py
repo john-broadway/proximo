@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from proximo.core import rawdoor
 from proximo.core.errors import ProximoError
 
 
@@ -30,9 +31,12 @@ class DispatchError(Exception):
     """A dispatch failure carrying the HTTP-ish status a transport maps it to.
 
     404 unknown tool · 400 malformed request · 502 the tool ran and failed. `message` is safe to
-    return to the caller: our own structural sentence, a `ProximoError`'s text, or a type name."""
+    return to the caller: our own structural sentence, a `ProximoError`'s text, or a type name, and
+    SEALED HERE, at construction (`rawdoor.refusal_text`: escaped, at most the refusal ceiling in
+    bytes), so the REST and A2A faces cannot hand back a refusal the MCP doors would have cut."""
 
     def __init__(self, status: int, message: str) -> None:
+        message = rawdoor.refusal_text(str(message))
         super().__init__(message)
         self.status = status
         self.message = message
@@ -69,7 +73,7 @@ async def call_on(instance: Any, name: Any, arguments: Any) -> dict[str, Any]:
         raise DispatchError(400, "request params must be a JSON object")
     tool = next((t for t in await list_on(instance) if t.name == name), None)
     if tool is None:
-        raise DispatchError(404, f"unknown tool '{name}'")
+        raise DispatchError(404, f"unknown tool {rawdoor.quote(name, 40)}")
     schema = tool_input_schema(tool)
     required = schema.get("required", []) if isinstance(schema, dict) else []
     missing = [r for r in required if r not in arguments]
@@ -92,8 +96,8 @@ async def call_on(instance: Any, name: Any, arguments: Any) -> dict[str, Any]:
         # cause's type name (lens 1, 2026-10-04). The MCP doors stop at the first; so does this.
         spoken = next((c for c in chain if isinstance(c, ProximoError)), None)
         if spoken is not None:
-            raise DispatchError(502, f"tool {name!r} failed: {spoken}") from None
-        raise DispatchError(502, f"tool {name!r} failed: {type(chain[-1]).__name__}") from None
+            raise DispatchError(502, f"tool {rawdoor.quote(name, 40)} failed: {spoken}") from None
+        raise DispatchError(502, f"tool {rawdoor.quote(name, 40)} failed: {type(chain[-1]).__name__}") from None
     return normalize(in_process_result(result))
 
 

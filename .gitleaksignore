@@ -1,0 +1,3 @@
+# Known test fixtures that a scanner reads as a credential. One fingerprint per line, each with its why.
+# tests/test_risk_hint.py sentinel before bc37351 built it in parts: a made-up string the risk hint must never echo.
+7e0f55aa2485d34749ccc85c696ab426123dd03c:tests/test_risk_hint.py:generic-api-key:28

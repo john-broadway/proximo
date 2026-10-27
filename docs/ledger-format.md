@@ -74,7 +74,7 @@ That is the custody seam between the two files. A keyed log is never rotated.
 
 | `action` | `detail` holds |
 |---|---|
-| `core.execute` | a mutation's `executing` row: `tier`, `args` (secrets fingerprinted), `consent_id`, `undo`, `intent`, and `notes` (the plan notes whose condition the arguments met, as sentences) when any did; it is closed by a later `core.execute` row carrying `tier` and `params`, or by `core.error` if the wire failed. A read writes a `core.execute` row with `params` too |
+| `core.execute` | a mutation's `executing` row: `tier`, `args` (secrets fingerprinted), `consent_id`, `undo`, `intent`, `notes` (the plan notes whose condition the arguments met, as sentences) when any did, `risk_hint` (`reading` and `reasons`: the advisory read, write or destructive reading of an exec, psql or guest-agent command, a word and closed labels, never the command) on those rows, and `default_node` (the node `PROXIMO_NODE` filled into `{node}`) when it did; it is closed by a later `core.execute` row carrying `tier` and `params`, or by `core.error` if the wire failed. A read writes a `core.execute` row with `params` too |
 | `core.refuse` | `reason`, `needs` (which gate), and that gate's own fields |
 | `core.consent_spent` | `consent_id`, `grant: {inode, mtime_ns}`: one operator approval, used once |
 | `core.undo_point` | the record read back before a change, so the change can be put back |

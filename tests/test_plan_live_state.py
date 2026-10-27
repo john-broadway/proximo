@@ -167,7 +167,9 @@ def test_a_target_the_vendor_publishes_no_read_for_says_so(armed_plane, monkeypa
     row = _tiered("pve", "POST", "/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback")
     out = engine.plan(row, {}, "/nodes/pve1/qemu/101/snapshot/s1/rollback", cfg=armed_plane)
     assert out["current"] == {"why": "pve publishes no GET /nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback"}
-    assert w.calls == [] and _rows() == []
+    # the rollback's twin is not read; its safety net reads the guest (governed GETs) and writes nothing
+    assert w.calls and all(c[0] == "GET" for c in w.calls) and not any(r["action"] == "core.execute" and
+                                                                      r["outcome"] == "executing" for r in _rows())
 
 
 def test_a_pdm_remote_action_composes_no_path(armed_plane, monkeypatch, tmp_path):
