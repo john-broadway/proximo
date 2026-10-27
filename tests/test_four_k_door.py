@@ -11,8 +11,10 @@ vendor's raw rows where the 0.44 wrappers projected them. Four rules, one door, 
      and hands back a handful
   4. plan takes words: an argument with no leading slash is a query, not a path
 
-The gate at the bottom measures the bar in the unit the sentence uses (tokens = bytes // 4),
-with the control that must fail: the same rows raw exceed the cap.
+The gate lives in tests/test_door_fixes.py (section 5), in the unit the sentence uses, tokens: the
+door carries the budget, so the cap on every answer is a TOKEN cap too, and the six tools, a find, a
+plan and the largest read the cap lets through fit with the model's thousand to spare. The control
+here: the same rows raw exceed the cap.
 """
 from __future__ import annotations
 
@@ -71,6 +73,13 @@ def cfg(tmp_path):
                 audit_log_path=str(tmp_path / "audit.log"))
 
 
+@pytest.fixture
+def big(monkeypatch):
+    """Rule 1 is about WHAT a row keeps, not the cap: an operator's byte cap stands alone (the token
+    cap stands down) and 64 KiB is room for all 37 rows."""
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "65536")
+
+
 def _serve(monkeypatch, cfg, body, **kw):
     monkeypatch.setattr(engine, "_client", lambda product, c=None: _Body(body))
     return engine.execute(engine.resolve("pve", "GET", "/cluster/resources"), {}, cfg=cfg,
@@ -79,7 +88,7 @@ def _serve(monkeypatch, cfg, body, **kw):
 
 # --- rule 1: lean by default, with a count -----------------------------------------------------
 
-def test_a_list_read_comes_back_lean_with_a_count(monkeypatch, cfg):
+def test_a_list_read_comes_back_lean_with_a_count(monkeypatch, cfg, big):
     out = _serve(monkeypatch, cfg, _resources())
     assert out["total"] == 37 and len(out["data"]) == 37 and "truncated" not in out
     guest = next(r for r in out["data"] if "vmid" in r)
@@ -87,13 +96,13 @@ def test_a_list_read_comes_back_lean_with_a_count(monkeypatch, cfg):
     assert not any(k in guest for k in ("mem", "netin", "uptime", "template", "cpu", "disk"))
 
 
-def test_fields_all_returns_the_vendors_rows_untouched(monkeypatch, cfg):
+def test_fields_all_returns_the_vendors_rows_untouched(monkeypatch, cfg, big):
     rows = _resources(3)
     out = _serve(monkeypatch, cfg, rows, fields="all")
     assert out["data"] == rows and out["total"] == 3
 
 
-def test_fields_names_exact_keys_in_order_and_refuses_a_name_no_row_carries(monkeypatch, cfg):
+def test_fields_names_exact_keys_in_order_and_refuses_a_name_no_row_carries(monkeypatch, cfg, big):
     out = _serve(monkeypatch, cfg, _resources(), fields="status,name")
     assert list(out["data"][0]) == ["status", "name"] and list(out["data"][-1]) == ["status"]   # the zone has no name
     with pytest.raises(ProximoError, match="no row carries 'nme'") as e:
@@ -122,7 +131,8 @@ def test_a_dict_read_is_not_projected(monkeypatch, cfg):
 # --- rule 2: a 4K-shaped cap, cut by rows --------------------------------------------------------
 
 def test_the_default_cap_is_four_k_shaped():
-    assert rawdoor.DEFAULT_MAX_BYTES == 6 * 1024
+    """1.125 KiB and 750 estimated tokens; test_door_fixes.py says why."""
+    assert rawdoor.DEFAULT_MAX_BYTES == 1152 and rawdoor.DEFAULT_MAX_TOKENS == 750
 
 
 def test_a_list_over_the_cap_is_cut_by_rows_with_total_and_returned(monkeypatch, cfg):
@@ -133,7 +143,7 @@ def test_a_list_over_the_cap_is_cut_by_rows_with_total_and_returned(monkeypatch,
     out = _serve(monkeypatch, cfg, _resources(300), fields="all")
     assert out["truncated"] is True and out["total"] == 300
     assert 0 < out["returned"] < 300 and len(out["data"]) == out["returned"]
-    assert len(json.dumps(out["data"])) <= 2048 and "head" not in out
+    assert len(json.dumps(out["data"], separators=(",", ":"))) <= 2048 and "head" not in out
     out = _serve(monkeypatch, cfg, _resources(5))          # the control: under the cap, whole
     assert "truncated" not in out and out["returned"] == 5 if "returned" in out else out["total"] == 5
 
@@ -164,41 +174,9 @@ def test_plan_on_words_that_match_nothing_refuses_like_an_unknown_address(cfg):
         door.plan("pve", "GET", "zorblax frobnicate")
 
 
-# --- THE GATE: door + plan + one projected estate read fit a 4K window ---------------------------
+# --- THE CONTROL: the same rows raw exceed the cap ---------------------------------------------
 
-_WINDOW_TOKENS = 4_000
-_MODEL_ROOM = 1_500          # the model's own reply and reasoning; what the door may not eat
-
-
-def _tokens(obj) -> int:
-    return len(json.dumps(obj, separators=(",", ":")).encode()) // 4
-
-
-def _door_tokens() -> int:
-    import asyncio
-    import inspect
-    srv = door.build_server()
-    lt = getattr(srv, "list_tools", None) or srv._list_tools
-    res = asyncio.run(lt()) if inspect.iscoroutinefunction(lt) else lt()
-    tools = getattr(res, "tools", res)
-    out = []
-    for t in tools:
-        d = t.model_dump(mode="json") if hasattr(t, "model_dump") else dict(t)
-        out.append({"name": d.get("name"), "description": d.get("description"),
-                    "inputSchema": d.get("inputSchema") or d.get("input_schema")})
-    return _tokens(out)
-
-
-def test_the_door_a_plan_and_one_estate_read_fit_a_4k_window(monkeypatch, cfg):
-    # The ONE-ESTATE door: `target` is advertised only where PROXIMO_TARGETS is set (B16), and a
-    # box with two estates pays about 43 tokens more (CHANGELOG says so). Unset here, so the gate
-    # measures what it names and a registry on the box running the suite cannot move it.
-    monkeypatch.delenv("PROXIMO_TARGETS", raising=False)
-    door_cost = _door_tokens()
-    plan_cost = _tokens(door.plan("pve", "GET", "/cluster/resources"))
-    read_cost = _tokens(_serve(monkeypatch, cfg, _resources()))
-    assert door_cost + plan_cost + read_cost <= _WINDOW_TOKENS - _MODEL_ROOM, (door_cost, plan_cost, read_cost)
-    # THE CONTROL: the same 37 rows raw are over the default cap and come back cut, not whole
+def test_the_estate_raw_is_over_the_cap_and_comes_back_cut_not_whole(monkeypatch, cfg):
     raw = _serve(monkeypatch, cfg, _resources(), fields="all")
     assert raw["truncated"] is True and raw["returned"] < 37
 
@@ -220,7 +198,7 @@ def test_empty_fields_is_refused_not_an_empty_row(monkeypatch, cfg):
             _serve(monkeypatch, cfg, _resources(3), fields=fields)
 
 
-def test_fields_all_is_recognised_however_it_is_spelled(monkeypatch, cfg):
+def test_fields_all_is_recognised_however_it_is_spelled(monkeypatch, cfg, big):
     rows = _resources(3)
     for fields in (" all ", "ALL"):
         assert _serve(monkeypatch, cfg, rows, fields=fields)["data"] == rows

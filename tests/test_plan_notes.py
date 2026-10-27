@@ -61,8 +61,9 @@ def test_the_two_shipped_lines_are_the_restores():
     assert [(n["given"], n["not_given"]) for n in x.notes] == [(("restore",), ("unique",))]
     assert "MAC and SMBIOS UUID" in q.notes[0]["says"] and "SMBIOS" not in x.notes[0]["says"]
     assert all(n["why"] for n in (*q.notes, *x.notes))
-    # every other row carries none: a note is judged by name, one address at a time
-    assert sum(bool(r.notes) for r in engine.table().values()) == 2
+    # every other row carries none but the four rollbacks (tests/test_rollback_note.py): a note
+    # is judged by name, one address at a time
+    assert sum(bool(r.notes) for r in engine.table().values()) == 2 + 4
 
 
 # --- the plan --------------------------------------------------------------------------------
@@ -240,7 +241,6 @@ def _line(addr="pve:POST /nodes/{node}/qemu", **fields):
     (_line("pve:POST /nodes/{node}/qemu/{vmid}/agent/exec"), "is not a mutation the door serves"),
     (_line(given=["nonesuch"]), "names nonesuch, which the address does not publish"),
     (_line(given=["unique"]), "names unique in both given and not_given"),
-    (_line(given=[], not_given=[]), "has no condition"),
     (_line(not_given=...), "takes exactly given, not_given, says and why"),
     (_line(says="short"), "is without a says"),
     (_line(why=""), "is without a why"),
@@ -257,6 +257,49 @@ def _line(addr="pve:POST /nodes/{node}/qemu", **fields):
 def test_the_build_refuses_a_note_that_would_do_nothing_or_mislead(records, line, words):
     with pytest.raises(ProximoError, match=f"notes.toml: .*{words}"):
         records(**{"notes.toml": f"[note]\n{line}\n"})
+
+
+def _always(addr="pve:PUT /nodes/{node}/qemu/{vmid}/config", **fields):
+    note = {"always": True, "says": _SAYS, "why": _WHY, **fields}
+    body = ", ".join(f"{k} = {json.dumps(v)}" for k, v in note.items() if v is not ...)
+    return f'"{addr}" = [{{ {body} }}]'
+
+
+def test_a_note_that_says_always_is_on_for_every_call(records):
+    """On for every call is written out, `always = true`, never left to an empty condition."""
+    row = records(**{"notes.toml": f"[note]\n{_always()}\n"})[("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")]
+    assert engine.notes_held(row, {}) == [{"says": _SAYS, "why": _WHY}]
+    assert engine.notes_held(row, {"memory": 512}) == [{"says": _SAYS, "why": _WHY}]
+    assert row.notes[0]["always"] is True
+
+
+@pytest.mark.parametrize("line,words", [
+    (_line(given=[], not_given=[]), "has no condition; a note that holds for every call says `always = true`"),
+    (_always(always=False), "says always but not `always = true`"),
+    (_always(always="yes"), "says always but not `always = true`"),
+    (_always(given=["memory"]), "takes exactly"),
+    (_always(not_given=[]), "takes exactly"),
+    (_always(says=...), "takes exactly"),
+    (_always(says="short"), "is without a says"),
+    (_always("pve:GET /nodes/{node}/qemu"), "is not a mutation the door serves"),
+])
+def test_the_build_refuses_an_always_note_that_is_not_written_out(records, line, words):
+    with pytest.raises(ProximoError, match=f"notes.toml: .*{words}"):
+        records(**{"notes.toml": f"[note]\n{line}\n"})
+
+
+def test_two_always_notes_on_one_address_are_refused(records):
+    one = _always()
+    two = f"{one[:-1]}, {one[one.index('[') + 1:]}"
+    with pytest.raises(ProximoError, match="notes.toml: .*carries two notes with one condition"):
+        records(**{"notes.toml": f"[note]\n{two}\n"})
+
+
+def test_an_always_note_beside_a_conditional_one_is_allowed(records):
+    one, two = _always(), _line("pve:PUT /nodes/{node}/qemu/{vmid}/config", given=["memory"], not_given=[])
+    row = records(**{"notes.toml": f"[note]\n{one[:-1]}, {two[two.index('[') + 1:]}\n"})[
+        ("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")]
+    assert len(engine.notes_held(row, {"memory": 1})) == 2 and len(engine.notes_held(row, {})) == 1
 
 
 def test_no_record_no_notes(records):
@@ -286,8 +329,9 @@ def _restore(rows):
     lambda r: r.update(notes=None),                                                   # not a list
     lambda r: r["notes"][0].update(exists=False),                                     # a key no note has
     lambda r: r["notes"][0].update(given=["nonesuch"]),                               # an unpublished name
-    lambda r: r["notes"][0].update(given=[], not_given=[]),                           # no condition
     lambda r: r["notes"][0].update(says=7),                                           # not a sentence
+    lambda r: r["notes"][0].update(given=[], not_given=[]),                           # no condition, not always
+    lambda r: r["notes"][0].update(always=True),                                      # both shapes at once
     lambda r: r["notes"][0].update(not_given=["archive"]),                            # a name on both sides
     lambda r: r["notes"][0].update(says=" " + r["notes"][0]["says"]),                  # padded: never built
     lambda r: r["notes"][0].update(given=["node"]),                                   # a name the path binds

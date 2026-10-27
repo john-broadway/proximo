@@ -202,7 +202,7 @@ def test_an_undeclared_argument_is_refused_and_nothing_dials(estates, monkeypatc
     server = door.build_server()
     bad = {"plane": "pve", "path": "/nodes", "target": "east"} if not registry_set else \
           {"plane": "pve", "path": "/nodes", "taget": "east"}
-    with pytest.raises(Exception, match="Extra inputs are not permitted"):
+    with pytest.raises(Exception, match="unexpected arguments"):
         asyncio.run(server.call_tool("proximo_read", bad))
     assert estates["dialed"] == []
 

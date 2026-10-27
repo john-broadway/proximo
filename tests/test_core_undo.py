@@ -155,6 +155,18 @@ def test_a_restore_plans_the_put_that_writes_the_capture_back_with_the_current_d
     assert plan["skipped"] == META_SKIPPED and plan["captured"] == _rows()[0]["ts"]
 
 
+def test_a_restore_reads_a_record_bigger_than_the_answer_cap_to_diff_it(box, monkeypatch):
+    """The door reads the record to compute the change back, under the evaluation cap; only what it SHOWS
+    is capped (a 3 KB note is over the 1.125 KiB answer cap and must not be 'over the door's cap now')."""
+    big = {**QEMU, "notes": "n" * 3000}
+    out = _mutate(box, monkeypatch, QEMU_PATH, {"memory": "8192"}, big)
+    drifted = {**big, "memory": "8192", "digest": "1111111111111111111111111111111111111111"}
+    _wire(monkeypatch, drifted)
+    plan = undo.restore(out["undo"]["id"], cfg=box)
+    assert plan["status"] == "plan" and plan["arguments"]["memory"] == "4096"
+    assert len(json.dumps(plan, separators=(",", ":"))) <= 2000
+
+
 def test_a_restore_writes_only_what_drifted_deletes_what_was_added_and_is_itself_captured(box, monkeypatch):
     out = _mutate(box, monkeypatch, QEMU_PATH, {"memory": "8192", "description": "x"}, QEMU)
     drifted = {**QEMU, "memory": "8192", "description": "x", "digest": "2222222222222222222222222222222222222222"}
@@ -166,7 +178,9 @@ def test_a_restore_writes_only_what_drifted_deletes_what_was_added_and_is_itself
     assert done["restores"] == out["undo"]["id"] and done["undo"]["captured"] is True
     rows = [r for r in _rows() if r["mutation"] and r["action"] in ("core.undo_point", "core.execute")]
     assert [r["outcome"] for r in rows] == ["undo_point", "executing", "ok", "undo_point", "executing", "ok"]
-    assert rows[4]["detail"]["restores"] == out["undo"]["id"] == rows[5]["detail"]["restores"]   # the ledger links them
+    # the ledger links them, under the capture's RESOLVED hash (whatever spelling the caller typed)
+    assert rows[4]["detail"]["restores"] == rows[5]["detail"]["restores"] == rows[0]["entry_hash"]
+    assert rows[0]["entry_hash"].startswith(out["undo"]["id"])
     assert rows[3]["detail"]["before"] == drifted                                                # an undo is undoable
     assert in_flight(_rows()) == []
 
@@ -905,7 +919,8 @@ def test_an_absent_capture_is_restored_by_the_vendors_delete_plan_first_then_sen
     assert done["removes"] == TOKEN_PATH and done["restores"] == ref and done["captured"] == _capture_rows()[0]["ts"]
     assert w.mutations() == [("DELETE", TOKEN_PATH, {})]
     executed = [r for r in _rows() if r["action"] == "core.execute" and r["outcome"] == "ok"][-1]
-    assert executed["detail"]["restores"] == ref and executed["detail"]["governed_as"] == TOKEN_DELETE
+    assert executed["detail"]["restores"].startswith(ref) and len(executed["detail"]["restores"]) == 64
+    assert executed["detail"]["governed_as"] == TOKEN_DELETE
     assert done["undo"]["captured"] is True                       # the delete is itself captured: the record now
 
 

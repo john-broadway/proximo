@@ -7,8 +7,8 @@ HMAC-SHA256 under an operator key. Altering, inserting, reordering, or removing
 any *interior* entry breaks the chain, and verify() pinpoints the first break. **Tail operations** —
 deleting the last entry, appending a forged entry, or wiping the file — are NOT caught by a forward
 walk alone; pass `verify(expected_head=...)` with a head() value you pinned off-box to detect them.
-The pin is the operator's hand: copy head() somewhere this box cannot write (0.44's anchor sinks
-went with it); the guarantee rests on the copy being off-box, not on code.
+The pin is the operator's hand, or the anchor's (core/anchor.py, opt-in): copy head() somewhere
+this box cannot write; the guarantee rests on the copy being off-box, not on code.
 
 Keyed, always (0.45 retired the ``PROXIMO_AUDIT_KEYED`` opt-out; a door refuses while it is set off):
     With a key, entry_hash = HMAC-SHA256(key, prev_hash + canonical(body)) and each entry carries
@@ -49,6 +49,7 @@ import re
 import secrets
 import tempfile
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -299,6 +300,9 @@ class AuditLedger:
     def __init__(self, path: str, *, key: bytes | None = None):
         self.path = path
         self.key = key
+        #: Called with this ledger after each row lands, outside the lock. `open_ledger` installs
+        #: the off-box anchor's hook on the instance ledger only; it never raises into a write.
+        self.after_write: Callable[[AuditLedger], None] | None = None
         self._refuse_if_symlinked_dir()
         directory = os.path.dirname(path)
         if directory:
@@ -422,6 +426,11 @@ class AuditLedger:
                 os.fsync(f.fileno())
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        if self.after_write is not None:
+            try:
+                self.after_write(self)
+            except Exception:  # noqa: BLE001, S110 -- a publish failure never fails the call that wrote the row
+                pass
         return entry
 
     def head(self) -> str:
@@ -613,7 +622,8 @@ def find_entry(entries: list[dict], ref: str, log_path: str) -> dict:
     mutation returns under `undo.id` and `read_entries` prints is the first 12. A prefix two
     rows share is refused for more characters, never resolved to the newer one."""
     if not re.fullmatch(r"[0-9a-f]{8,64}", ref or ""):
-        raise ProximoError(f"a receipt id is at least 8 hex characters of the row's hash, not {ref!r}")
+        shown = repr(ref) if len(ref or "") <= 40 else f"{ref[:40]!r}... ({len(ref)} chars)"
+        raise ProximoError(f"a receipt id is at least 8 hex characters of the row's hash, not {shown}")
     found = [e for e in entries if str(e.get("entry_hash", "")).startswith(ref)]
     if not found:
         raise ProximoError(f"no capture {ref}: not in the live log at {log_path}; sealed archives beside it "
@@ -667,8 +677,16 @@ def open_ledger(cfg: Any) -> AuditLedger:
                 f"re-pin it to this new head.",
                 stacklevel=2,
             )
-        return ledger
-    return AuditLedger(log, key=key)
+        return _anchored(ledger)
+    return _anchored(AuditLedger(log, key=key))
+
+
+def _anchored(ledger: AuditLedger) -> AuditLedger:
+    """The instance ledger publishes its head to the off-box anchor after a write, when one is
+    configured (core/anchor.py); with none set the hook reads one env variable and does nothing."""
+    from proximo.core import anchor  # noqa: PLC0415 -- anchor imports this module
+    ledger.after_write = anchor.after_write
+    return ledger
 
 
 def verify_chain(path: str, key: bytes | None) -> LedgerVerification:

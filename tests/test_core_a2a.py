@@ -142,7 +142,8 @@ def test_session_rows_land_even_when_serving_crashes(env, monkeypatch):
     monkeypatch.setattr(uvicorn, "run", boom)
     with pytest.raises(RuntimeError, match="bind failed"):
         face.main([])
-    kinds = [(r["action"], r["detail"].get("face"), r["target"]) for r in _rows(env)]
+    kinds = [(r["action"], r["detail"].get("face"), r["target"]) for r in _rows(env)
+             if r["action"].startswith("session_")]
     assert kinds == [("session_start", "a2a", "face/a2a"), ("session_end", "a2a", "face/a2a")]
 
 

@@ -35,6 +35,8 @@ E = "src/proximo/core/engine.py"
 L = "src/proximo/core/ledger.py"
 SP = "src/proximo/core/spine.py"
 AT = "src/proximo/core/apitree.py"
+SI = "src/proximo/core/sight.py"
+C = "src/proximo/core/consult.py"
 
 #: (name, file, the gate as written, the gate neutered)
 M = [
@@ -73,15 +75,23 @@ M = [
      '        None if consent_covered else spine.consent_refusal(cid, audit_dir or "."),',
      '        None,'),
     ('M12-CONSENT-SPEND', E,
-     '        spent if isinstance(spent, spine.Refusal) else None,',
-     '        None,'),
+     '    refusal = spent if isinstance(spent, spine.Refusal) else None',
+     '    refusal = None'),
     ('M13-RATE', E,
-     '        spine.reserve_rate(base_url, audit_dir,\n              '
-     '             cap=(cfg.rate_max, cfg.rate_window) if cfg is not None else (None, None)),',
-     '        None,'),
+     '        refusal = spine.reserve_rate(base_url, audit_dir, cap=_rate_cap(cfg), count=count, stamp=stamp)',
+     '        refusal = None'),
+    ('M56-RATE-TWO-SLOTS', E,
+     '    return 2 if view is not None and view.get("take") and view.get("snap") else 1',
+     '    return 1'),
+    ('M57-RATE-PREPAID', E,
+     '    if refusal is None and not rate_prepaid:',
+     '    if refusal is None:'),
     ('M14-TAINT-MARK', E,
-     '    if not (row.untrusted and spine.taint_tracking_on()):\n        return',
+     '    if judging or not (row.untrusted and spine.taint_tracking_on()):\n        return',
      '    if True:\n        return'),
+    ('M55-JUDGING-READ-MARKS', E,
+     '    if judging or not (row.untrusted and spine.taint_tracking_on()):\n        return',
+     '    if not (row.untrusted and spine.taint_tracking_on()):\n        return'),
     ('M15-PROVE-CHAIN', L,
      '        if entry.get("prev_hash") != prev:\n            return LedgerVerification(False, count, lineno,\n'
      '                                      "prev_hash mismatch (entry inserted, removed, or reordered)")',
@@ -111,16 +121,16 @@ M = [
      '        check_args(row, args)\n    except ProximoError as exc:',
      '        pass\n    except ProximoError as exc:'),
     ('M19-UNDO-BEFORE', E,
-     '    undo = _undo_before(row, args, client, called, cfg, ledger_cfg, intent, remote, verdict.cons'
-     'ent_id)',
-     '    undo = {"state": "off"}'),
+     '        undo = _undo_before(row, args, client, called, cfg, ledger_cfg, intent, remote, verdict.cons'
+     'ent_id, view,\n                            net_of is not None, before)',
+     '        undo = {"state": "off"}'),
     ('M20-EXECUTING-ROW', E,
      '    _record(ledger_cfg, "core.execute", row, outcome=EXECUTING, detail=preview, called=called,\n '
      '           required=True, remote=remote)',
      '    pass'),
     ('M21-REFUSE-RECEIPT', E,
      '        _record(ledger_cfg, "core.refuse", row, outcome="refused",\n                detail={"reas'
-     'on": verdict.reason, "needs": verdict.needs, **verdict.detail},\n                called=rawdoor.c'
+     'on": verdict.reason, "needs": verdict.needs, **verdict.detail, **proposed},\n                called=rawdoor.c'
      'anonical(path) if path else None, remote=remote)\n        raise ProximoError(verdict.reason)',
      '        raise ProximoError(verdict.reason)'),
     ('M22-SPELLING', E,
@@ -164,11 +174,11 @@ M = [
      '               **({"notes": [n["says"] for n in held]} if held else {}),\n',
      ''),
     ('M39-NOTE-NOT-GIVEN', E,
-     '            and not any(_given(row, k, args) is True for k in n["not_given"])]',
-     '            ]'),
+     '                and not any(_given(row, k, args) is True for k in n["not_given"]))]',
+     '                and True)]'),
     ('M40-NOTE-GIVEN', E,
-     'if not any(_given(row, k, args) is False for k in n["given"])',
-     'if True'),
+     'or (not any(_given(row, k, args) is False for k in n["given"])',
+     'or (True'),
     ('M41-NOTE-BOOL-WORD', E,
      '    return True if lowered in TRUE_WORDS else False if lowered in FALSE_WORDS else None',
      '    return True if lowered in TRUE_WORDS else None'),
@@ -179,11 +189,60 @@ M = [
      '    lowered = value.strip().lower()\n    return True if',
      '    lowered = value.lower()\n    return True if'),
     ('M45-NOTE-EACH-GIVEN', E,
-     'if not any(_given(row, k, args) is False for k in n["given"])',
-     'if not all(_given(row, k, args) is False for k in n["given"])'),
+     'or (not any(_given(row, k, args) is False for k in n["given"])',
+     'or (not all(_given(row, k, args) is False for k in n["given"])'),
+    ('M54-NOTE-ALWAYS', E,
+     '            if n.get("always") is True\n',
+     '            if False\n'),
     ('M42-NOTE-LOADER', AT,
      '    if wrong := notes_problem(r["notes"], r):\n',
      '    if wrong := None:\n'),
+    # TOKEN SIGHT (sight.toml): an empty list the token could not see is refused, never served as none
+    ('M46-SIGHT-JUDGES-EMPTY', E,
+     'seen = _sight(row, called, args, client, ledger_cfg, remote, data) if row.sight else {}',
+     'seen = {}'),
+    ('M47-SIGHT-UNKNOWN-REFUSED', E,
+     '    if empty:\n        _record(ledger_cfg, "core.refuse", row, outcome="refused",\n'
+     '                detail={"reason": said, "needs": "sight"',
+     '    if False:\n        _record(ledger_cfg, "core.refuse", row, outcome="refused",\n'
+     '                detail={"reason": said, "needs": "sight"'),
+    ('M48-SIGHT-HELD-OR-BLIND', SI,
+     '        if all(_held(flags, priv, path) for priv, path in alt):\n',
+     '        if True:\n'),
+    ('M49-SIGHT-UNREADABLE-IS-UNKNOWN', SI,
+     '    if flags is None:\n        if empty:\n',
+     '    if False:\n        if empty:\n'),
+    ('M51-SIGHT-PREFIX-SEPARATOR', SI,
+     'path.startswith(p + "/")',
+     'path.startswith(p)'),
+    ('M52-SIGHT-NONE-IS-NO-GRANT', SI,
+     '            if propagate is None:                           # None is no grant\n                continue\n',
+     ''),
+    ('M53-SIGHT-PARTIAL-MARK', E,
+     '    mark = "partial" if state == sight.BLIND else "unverified"\n',
+     '    return {}\n'),
+    ('M50-SIGHT-LOADER', AT,
+     '    if r["sight"] is not None and (wrong := sight_problem(r["sight"], r, index)):\n',
+     '    if False:\n'),
+    # CONSULT (records/consult.toml): the budget, the worst case on an incomplete read, the one seam
+    # for its reads, the section on the EXECUTING receipt, and the loader's rule.
+    ('M60-CONSULT-BUDGET', C,
+     '        if self.reads >= MAX_READS:\n',
+     '        if False:\n'),
+    ('M61-CONSULT-WORST', C,
+     'raise_to=finding.raise_to if complete else worse(finding.raise_to, worst),',
+     'raise_to=finding.raise_to,'),
+    ('M62-CONSULT-SEAM', C,
+     '            env = engine.execute(engine.table()[(self.row.product, "GET", template)], dict(rargs), '
+     'cfg=self.plane,\n'
+     '                                 path=concrete, ledger_cfg=self.ledger_cfg, fields=fields, **READ_OPTIONS)\n',
+     '            env = {"data": engine._client(self.row.product, self.plane).call("GET", concrete, dict(rargs))}\n'),
+    ('M63-CONSULT-RECEIPT', E,
+     '               **consult_seen,\n',
+     ''),
+    ('M64-CONSULT-LOADER', AT,
+     '    if r["consult"] is not None and (wrong := consult_problem(r["consult"], r, index)):\n',
+     '    if False:\n'),
 ]
 
 #: The round's test set: the whole suite. Until the cut (2026-10-18) this was a hand-kept list of

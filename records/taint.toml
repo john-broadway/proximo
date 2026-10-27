@@ -96,9 +96,11 @@
 "pve:GET /nodes/{node}/journal" = { why = "free-text host log lines; attacker-influenced process and service output lands in the journal [pve_node_journal]" }
 "pve:GET /nodes/{node}/lxc" = { why = "guest names and descriptions are free text the guest owner sets [pve_list_guests]" }
 "pve:GET /nodes/{node}/lxc/{vmid}/config" = { why = "description, notes and other free-text config fields are set by the guest owner [pve_guest_config_get]" }
+"pve:GET /nodes/{node}/lxc/{vmid}/pending" = { why = "the same guest config as the config read, current and pending values side by side: description, notes and other free-text fields are set by the guest owner, and consult reads it for every guest [Claude, 2026-10-25, consult fan-out]" }
 "pve:GET /nodes/{node}/lxc/{vmid}/snapshot" = { why = "snapshot names and descriptions are free text the guest owner sets [pve_snapshot_list]" }
 "pve:GET /nodes/{node}/qemu" = { why = "guest names and descriptions are free text the guest owner sets [pve_list_guests]" }
 "pve:GET /nodes/{node}/qemu/{vmid}/config" = { why = "description, notes and other free-text config fields are set by the guest owner [pve_guest_config_get]" }
+"pve:GET /nodes/{node}/qemu/{vmid}/pending" = { why = "the same guest config as the config read, current and pending values side by side: description, notes and other free-text fields are set by the guest owner, and consult reads it for every guest [Claude, 2026-10-25, consult fan-out]" }
 "pve:GET /nodes/{node}/qemu/{vmid}/snapshot" = { why = "snapshot names and descriptions are free text the guest owner sets [pve_snapshot_list]" }
 "pve:GET /nodes/{node}/sdn/fabrics/{fabric}/neighbors" = { why = "`neighbor` is the remote peer's own self-announced IP/hostname, and `status`/`uptime` are returned by FRR as the peer presents itself [pve_sdn_fabric_status_neighbors]" }
 "pve:GET /nodes/{node}/sdn/fabrics/{fabric}/routes" = { why = "`via` nexthops are injected by whatever peer announces them over the running routing protocol [pve_sdn_fabric_status_routes]" }

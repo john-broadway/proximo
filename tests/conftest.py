@@ -134,7 +134,7 @@ def build_app(request):
 _DATA_CACHES = (
     ("proximo.core.apitree", ("published", "raw_tree", "tree", "_rows")),
     ("proximo.core.engine", ("table", "untrusted_addresses")),
-    ("proximo.core.search", ("descriptions", "_index", "synonyms", "_stopwords")),
+    ("proximo.core.search", ("descriptions", "_index", "synonyms", "_stopwords", "_known_words", "_lexical_index")),
     ("proximo.core.diagnose", ("subjects",)),
 )
 

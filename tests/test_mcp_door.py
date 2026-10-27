@@ -64,8 +64,8 @@ def test_the_input_schemas_are_pinned(server):
     tools = server._tool_manager._tools
     want = {
         "proximo_find": {"query", "plane", "limit"},
-        "proximo_plan": {"plane", "method", "path", "args"},
-        "proximo_read": {"plane", "path", "params", "fields", "since", "wait", "diagnose"},   # wait (B4), diagnose (B3)
+        "proximo_plan": {"plane", "method", "path", "args", "fields"},
+        "proximo_read": {"plane", "path", "args", "params", "fields", "since", "wait", "diagnose"},  # params: old args
         "proximo_call": {"plane", "method", "path", "args", "confirm", "wait"},    # wait (B4)
         "audit_entries": {"limit", "target", "action", "mutations_only"},
         "audit_verify": {"expected_head", "path"},
@@ -77,7 +77,10 @@ def test_the_input_schemas_are_pinned(server):
 def test_plan_answers_on_a_box_that_holds_no_credential(server):
     out = _call(server, "proximo_plan", {"plane": "pve", "method": "DELETE", "path": "/nodes/x/qemu/1"})
     assert out["allowed"] is False and out["needs"] == "arm" and out["access"] == "mutate"
-    assert "purge" in out["published_parameters"]
+    assert "purge" not in out["published_parameters"] and out["parameters_more"] >= 1
+    full = _call(server, "proximo_plan", {"plane": "pve", "method": "DELETE", "path": "/nodes/x/qemu/1",
+                                          "fields": "purge"})
+    assert "purge" in full["published_parameters"]
     out = _call(server, "proximo_plan", {"plane": "pve", "method": "GET", "path": "/nodes/x/status"})
     assert out["allowed"] is True and out["access"] == "read"
 
@@ -301,7 +304,7 @@ def test_the_stdio_door_stamps_both_session_rows_even_when_serving_crashes(clean
     monkeypatch.setattr(mcp, "build_server", lambda *a, **k: _Boom())
     with pytest.raises(RuntimeError, match="stdin closed"):
         mcp.main([])
-    kinds = [(r["action"], r["target"]) for r in _rows(log)]
+    kinds = [(r["action"], r["target"]) for r in _rows(log) if r["action"].startswith("session_")]
     assert kinds == [("session_start", "face/stdio"), ("session_end", "face/stdio")]
 
 

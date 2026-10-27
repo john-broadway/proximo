@@ -129,6 +129,7 @@ _GETCFG = ("pve", "GET", "/nodes/{node}/qemu/{vmid}/config")
 _PUTCFG = ("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")
 _CUR = "/nodes/{node}/qemu/{vmid}/status/current"
 _TASK = "/nodes/{node}/tasks/{upid}/status"
+_PDMROLL = ("pdm", "POST", "/pve/remotes/{remote}/qemu/{vmid}/snapshot/{snapname}/rollback")
 _NET = {"snapshot": "POST /nodes/{node}/lxc/{vmid}/snapshot",
         "rollback": "POST /nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback"}
 _REBOOT = ("pve", "POST", "/nodes/{node}/qemu/{vmid}/status/reboot")
@@ -174,6 +175,11 @@ _COLUMN_DAMAGE = {
     "state on the current read itself": (("pve", "GET", _CUR), lambda r, rows: r.update(state=_CUR)),
     "state beside a served twin at the parent's current": (_START, lambda r, rows: (
         rows.append({**_at(rows, _GETCFG), "path": _START[2]}), r.update(twin=_START[2]))),
+    "a pdm rollback net naming another guest kind": (_PDMROLL, lambda r, rows: r.update(net={
+        "snapshot": "POST /pve/remotes/{remote}/lxc/{vmid}/snapshot", "rollback": f"POST {_PDMROLL[2]}"})),
+    "a pdm rollback net whose rollback is another snapshot": (_PDMROLL, lambda r, rows: r.update(net={
+        "snapshot": "POST /pve/remotes/{remote}/qemu/{vmid}/snapshot",
+        "rollback": "POST /pve/remotes/{remote}/lxc/{vmid}/snapshot/{snapname}/rollback"})),
     "net on an http row with the snapshot param": (_PUTCFG, lambda r, rows: (
         r["params"].update(snapshot=_BOOL), r.update(net=_QNET))),
     "net beside a snapshot param that is not a boolean": (_EXEC, lambda r, rows: r["params"].update(
@@ -243,13 +249,16 @@ _WORDS = {
     'expect not a status': 'carries expect',
     'a mutation with no task status': 'carries task_status',
     'task status not a task read': 'carries task_status',
-    'net on an http row': 'no boolean snapshot parameter on the ssh wire',
+    'net on an http row': 'net that is not the snapshot and rollback of its own guest',
     "net on another container's path": 'net snapshot that is not a mutation the door serves',
     'net rollback a delete': 'net rollback that is not a mutation the door serves',
     'net snapshot naming its own snapname': 'net snapshot that is not a mutation the door serves',
     'state on the current read itself': 'carries state',
     "state beside a served twin at the parent's current": 'carries state',
-    'net on an http row with the snapshot param': 'no boolean snapshot parameter on the ssh wire',
+    'net on an http row with the snapshot param': 'net that is not the snapshot and rollback of its own guest',
+    'a pdm rollback net naming another guest kind': 'net that is not the snapshot and rollback of its own guest',
+    'a pdm rollback net whose rollback is another snapshot':
+        'net that is not the snapshot and rollback of its own guest',
     'net beside a snapshot param that is not a boolean': 'no boolean snapshot parameter on the ssh wire',
     'net rollback naming no snapshot': 'net rollback that is not a mutation the door serves',
     'twin missing where the file serves a GET at the path': 'carries twin',
@@ -552,7 +561,7 @@ def test_the_net_is_authored_and_the_build_holds_it_to_the_table(records):
     net = engine.table()[("pve", "POST", "/nodes/{node}/lxc/{vmid}/exec")].net
     assert dict(net) == {"snapshot": "POST /nodes/{node}/lxc/{vmid}/snapshot",
                          "rollback": "POST /nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback"}
-    assert sum(1 for r in engine.table().values() if r.net) == 2
+    assert sum(1 for r in engine.table().values() if r.net and r.wire == "ssh") == 2   # + the two PDM rollbacks
     real = bj.read_inputs()[1]["shell.toml"]
     line = ('net = { snapshot = "POST /nodes/{node}/lxc/{vmid}/snapshot", '
             'rollback = "POST /nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback" }')

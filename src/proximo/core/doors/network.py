@@ -8,9 +8,10 @@ refuses a public bind with no token, builds the app, serves and stamps `session_
 host dies. A door module is its `FACE`, its `build_app`, and a call to `main_of`.
 
 What a core door does NOT carry from its 0.44 twin, said once: `PROXIMO_SURFACES` (refused at
-start; the core has no surfaces), the 0.44 server's reach-grant check at serve time (parity row
-B16), and session rows land on every start and stop (0.44 wrote them only with the principal
-feature configured).
+start; the core has no surfaces). What it does differently: session rows land on every start and
+stop (0.44 wrote them only with the principal feature configured), and the reach grant is greeted
+first (`reach.greet`: the allowlists compared with the ledger's last record, a row if they moved,
+a refusal to start when a lane is open and the grant cannot be compared).
 """
 from __future__ import annotations
 
@@ -98,6 +99,9 @@ def main_of(prog: str, face: str, *, prefix: str, default_port: int, token_env: 
         return 3
     except (ProximoError, ValueError, RuntimeError) as e:
         print(f"{prog}: {e}", file=sys.stderr)
+        return 3
+    from proximo.core import reach  # noqa: PLC0415
+    if not reach.greet(prog, face):   # the reach grant is on the ledger first, or the door does not start
         return 3
     print(BANNER, file=sys.stderr)
     record("session_start", target=f"face/{face}", detail={"face": face})

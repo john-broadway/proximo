@@ -1,7 +1,8 @@
 """Every `PROXIMO_*` the operator is told to set is one the core reads, or one it refuses.
 
-Lens 2 (2026-10-18) found `PROXIMO_NODE` in the README quickstart, SETUP, mint's steps, the env
-example and the LXC installer, and `PROXIMO_LEDGER_REDACT` in the env example: read by nothing,
+Lens 2 (2026-10-18) found `PROXIMO_NODE` (read again since default-node came back) in the README
+quickstart, SETUP, mint's steps, the env example and the LXC installer, and `PROXIMO_LEDGER_REDACT`
+in the env example: read by nothing,
 so a setting that looked like configuration did nothing. A name the code reads is an exact string
 constant (`"PROXIMO_FORBID"`) or one the planes and doors compose from a prefix and a suffix
 (`PROXIMO_PBS_TOKEN_PATH`, `PROXIMO_HTTP_PORT`). The composed set is over-approximated (every
@@ -67,7 +68,8 @@ def test_the_reader_sees_a_constant_and_a_composed_name():
     names = _read_names()
     assert "PROXIMO_FORBID" in names and "PROXIMO_PBS_TOKEN_PATH" in names and "PROXIMO_HTTP_PORT" in names
     assert "PROXIMO_MCP_HTTP_STATELESS" in names                       # through `_flag("STATELESS")`
-    assert "PROXIMO_NODE" not in names   # the control: the name this test was written for
+    assert "PROXIMO_NODE" in names                                      # read again: the default-node capability
+    assert "PROXIMO_LEDGER_REDACT" not in names   # the control: a name the lens found documented and read by nothing
 
 
 def test_every_documented_proximo_name_is_read_or_refused():

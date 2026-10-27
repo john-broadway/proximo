@@ -154,6 +154,7 @@ def test_a_flag_with_no_sentence_or_an_unknown_shape_refuses_the_load(records):
 # --- the node battery ---------------------------------------------------------------------------
 
 def test_a_node_diagnosis_reads_status_storage_and_tasks_through_execute_and_is_receipted(box, monkeypatch):
+    monkeypatch.setenv("PROXIMO_RAW_MAX_TOKENS", "100000")    # whole sections; the answer cap: test_door_fixes.py
     w = _node_wire(monkeypatch)
     out = diagnose.run("pve", NODE, cfg=box)
     assert [c[1] for c in w.calls] == [f"{NODE}/status", f"{NODE}/storage", f"{NODE}/tasks"]
@@ -579,6 +580,7 @@ def test_n1_rows_that_lack_every_named_field_are_read_again_raw_not_reported_as_
     """NON-BLOCKING 1: the projection refuses when no row carries a named field (no rows, none
     finished, every storage offline) and the section said "read failed". The read answered; it is
     taken again raw, receipted again, projected here, and an all-offline node gets its sentences."""
+    monkeypatch.setenv("PROXIMO_RAW_MAX_TOKENS", "100000")    # whole sections; the answer cap: test_door_fixes.py
     offline = [{"storage": "nfs-a", "type": "nfs", "active": 0, "enabled": 1},
                {"storage": "nfs-b", "type": "nfs", "active": 0, "enabled": 1}]
     w = _node_wire(monkeypatch, storage=offline, tasks=[])

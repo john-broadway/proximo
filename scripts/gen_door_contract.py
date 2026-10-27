@@ -48,6 +48,9 @@ SAMPLES: list[tuple[str, dict[str, Any], dict[str, str]]] = [
     # a restore without `unique`: the plan carries a note (notes.toml), a key no other sample fires
     ("proximo_plan", {"plane": "pve", "method": "POST", "path": "/nodes/n1/qemu",
                       "args": {"vmid": "103", "archive": "local:backup/vzdump-qemu-101.vma.zst"}}, {}),
+    # a consulted address (consult.toml): the plan carries the consult section, here on a box with no
+    # credential (it says why it could not look and raises to the judge's worst case)
+    ("proximo_plan", {"plane": "pve", "method": "DELETE", "path": "/nodes/n1/storage/local/content/vm-101-disk-0"}, {}),
     ("proximo_call", dict(_STOP), {}),
     ("proximo_call", dict(_STOP, confirm=True), {}),
     ("proximo_read", {"plane": "pve", "path": "/cluster/resources"}, {}),

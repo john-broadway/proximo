@@ -1,0 +1,17 @@
+# PLAN's consults: the mutations whose plan takes a second look at the estate before the change,
+# and the judge that looks (proximo.core.consult.JUDGES).
+#
+# A line is keyed on the ADDRESS, like every record, and carries `judge` (a name in JUDGES) and
+# `why` (what the vendor does not do, quoting it: bar 4, nothing here re-does Proxmox). The READS
+# are the judge's, declared in code beside its pure function, so one judge serves many addresses
+# and a read is never retyped per line. The plan runs the reads through `engine.execute` under a
+# budget, the judge names what the change hits, and the section rides the plan and the EXECUTING
+# receipt; a consult that cannot finish raises the tier to the judge's worst case. Advice: a
+# consult raises the tier, never lowers it, and refuses nothing.
+#
+# The build refuses a line on an address that is not a served mutation (or is held), a judge that does
+# not exist, a line that is not exactly judge and why, a why under eight words, and a judge whose
+# reads are not published GETs the door serves on that plane or need a value the path does not
+# bind. Opening a line is John's hand, by name.
+[consult]
+"pve:DELETE /nodes/{node}/storage/{storage}/content/{volume}" = { judge = "content_delete", why = "Vendor: 'Delete volume', and nothing more. The address publishes no parameter or check that asks whether a guest config still names the volume, so a disk a guest still uses can be deleted with the guest left pointing at nothing. 0.44 read every guest config before this delete for that reason (compute_content_delete_blast). Read from the published address; not measured live for this record. [Claude, 2026-10-25; John: approved]" }

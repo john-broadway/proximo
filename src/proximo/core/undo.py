@@ -47,12 +47,17 @@ not diffed at all. A write the vendor's task then fails claims nothing restored.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
+import os
 import re
+import stat
+import time
 from collections.abc import Set as AbstractSet
 from typing import Any
 
-from proximo.core import engine, spine, wire
+from proximo.core import engine, rawdoor, spine, wire
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import (
     EXECUTING,
@@ -68,7 +73,7 @@ from proximo.core.ledger import (
 WITHHELD = "withheld or masked by the receipt (a credential); set it by hand"
 UNPUBLISHED = "the write does not publish it"
 NOT_BY_THE_MUTATION = "added since the capture by something other than the captured mutation; not removed"
-_REDACTED = re.compile(r"\[redacted( sha256:[0-9a-f]{12} len:\d+)?\]")
+_REDACTED = re.compile(r"\[redacted( sha256:[0-9a-f]{12} len:[0-9]+)?\]")
 _CONTROLS = frozenset({"delete", "digest"})
 
 
@@ -82,12 +87,14 @@ def restore(ref: str, *, plane: str | None = None, cfg: wire.Plane | None = None
     failed` with `attempted` when the vendor's task did not land), or `status: noop` when no
     published key differs from the capture and nothing is written or spent.
     """
+    rawdoor.check_input("id", ref)        # a receipt id is 8 to 64 hex characters; the rest is refused
     lcfg = ledger_cfg or LedgerConfig.from_env()
     # ONE READ. The bytes are read once and verified, found in and paired within; three separate
     # reads of a writable file let a swap between them put a forged capture on the wire (lens 2).
     lines, entries, entry, detail, product, aimed_at = _capture(ref, plane, cfg, lcfg)
     if "snapshot" in detail:
-        return _rollback(ref, entry, detail, lines, lcfg, cfg, ledger_cfg, aimed_at, confirm, wait)
+        return _rollback(ref, entry, detail, lines, lcfg, cfg, ledger_cfg, aimed_at, confirm, wait, product,
+                         entries)
     method, _, published = str(detail.get("governed_as", "")).partition(" ")
     target = entry.get("target") or ""
     before = detail.get("before")
@@ -128,7 +135,8 @@ def restore(ref: str, *, plane: str | None = None, cfg: wire.Plane | None = None
         raise
     plane_cfg = cfg if cfg is not None else wire.Plane.from_env(product)
     # THE RECORD NOW, through execute: receipted, withheld, tainted, bounded like any read.
-    env = engine.execute(twin, {}, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, fields="all")
+    env = engine.execute(twin, {}, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, fields="all",
+                         evaluating=True)         # the door reads the record to diff it, not to show it
     if "data" not in env:
         raise ProximoError(f"the record at {target} is over the door's cap now; the change back cannot be computed")
     untrusted = bool(env.get("untrusted"))
@@ -144,23 +152,49 @@ def restore(ref: str, *, plane: str | None = None, cfg: wire.Plane | None = None
                            f"fence, so nothing restores capture {ref} while {spine.TAINT_FENCE_ENV} is on")
     added_by = executing_for(entries, entry)
     d = _args(put, before, current, set((added_by or {}).get("args") or {}), withheld_now)
-    answer: dict[str, Any] = {"restores": ref, "captured": entry.get("ts"), "skipped": d["skipped"],
+    shown = _reported(d)
+    answer: dict[str, Any] = {"restores": ref, "captured": entry.get("ts"), "skipped": shown["skipped"],
+                              **({"skipped_more": shown["skipped_more"]} if shown["skipped_more"] else {}),
                               **({"untrusted": True, "channel": twin.channel} if untrusted else {})}
     if not d["restored"] and not d["deleted"]:
-        return {"status": "noop", **answer, "why": "no published key differs from the capture; nothing to write",
-                "differs_unwritten": d["differs_unwritten"]}
+        return _fit({"status": "noop", **answer, "why": "no published key differs from the capture; nothing to write",
+                     **shown["differs"]})
     if not confirm:                           # the restore's own labels last: the twin's, not the PUT row's
-        return {**engine.plan(put, d["args"], target, cfg=plane_cfg, ledger_cfg=ledger_cfg, env=env),
-                "status": "plan", **answer}
-    out = engine.execute(put, d["args"], cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait, restores=ref)
+        return _fit({**engine.plan(put, d["args"], target, cfg=plane_cfg, ledger_cfg=ledger_cfg, env=env),
+                     "status": "plan", **answer})
+    out = engine.execute(put, d["args"], cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait,
+                         restores=str(entry.get("entry_hash") or ref))
     # THE CLAIM FOLLOWS THE TASK (lens 1), AND SAYS WHICH WAY IT WENT (lens 2): a task that
     # finished and failed landed nothing; one merely submitted, timed out or unpollable may
     # land yet, and "failed" for it would send a caller to retry a write that took.
     state = _task_state(out)
     if state is not None:
-        return {**out, **answer, "status": state, "restored": [], "deleted": [],
-                "attempted": {"restored": d["restored"], "deleted": d["deleted"]}}
-    return {**out, **answer, "restored": d["restored"], "deleted": d["deleted"]}
+        return _fit({**out, **answer, "status": state, "restored": [], "deleted": [],
+                     "attempted": {k: _names(d[k]) for k in ("restored", "deleted")}})
+    return _fit({**out, **answer, **{k: _names(d[k]) for k in ("restored", "deleted")}})
+
+
+#: how many keys of a capture the model is shown by name; the rest are counted (a capture is up to 64 KB)
+REPORT_KEYS = 8
+
+
+def _names(names: Any) -> Any:
+    """A list of key names, or the first REPORT_KEYS of it with `... (N more)` as the last entry's tail.
+    The restore wrote them all; this is only how many the model is told by name."""
+    if not isinstance(names, list) or len(names) <= REPORT_KEYS:
+        return names
+    return [rawdoor.echo(str(n), 40) for n in names[:REPORT_KEYS]] + [f"... and {len(names) - REPORT_KEYS} more"]
+
+
+def _reported(d: dict[str, Any]) -> dict[str, Any]:
+    """`skipped` (key -> why) and `differs_unwritten` (keys) as bounded entries and a count of the rest."""
+    skipped, more = rawdoor.echo_map(d["skipped"], REPORT_KEYS, 120)
+    differs = {"differs_unwritten": _names(d["differs_unwritten"])}
+    return {"skipped": skipped, "skipped_more": more, "differs": differs}
+
+
+def _fit(answer: dict[str, Any]) -> dict[str, Any]:
+    return rawdoor.fit_answer(answer)
 
 
 def _capture(ref: str, plane: str | None, cfg: wire.Plane | None, lcfg: Any) -> tuple:
@@ -199,8 +233,10 @@ def _task_state(out: dict[str, Any]) -> str | None:
 
 
 def _rollback(ref: str, entry: dict, detail: dict, lines: list[str], lcfg: Any, cfg: wire.Plane | None,
-              ledger_cfg: Any, aimed_at: str | None, confirm: bool, wait: int | None) -> dict[str, Any]:
-    """A snapshot capture (B5 stage 2: a container command run with snapshot=true) is restored by
+              ledger_cfg: Any, aimed_at: str | None, confirm: bool, wait: int | None,
+              product: str = "pve", entries: list[dict] | None = None) -> dict[str, Any]:
+    """A snapshot capture (B5 stage 2: a container command run with snapshot=true; a PDM rollback's
+    safety snapshot, undo.toml [net]) is restored by
     the vendor's own rollback of THAT snapshot, through `execute` like every write: plan by
     default, armed and tiered to run, receipted, its task's outcome reported as it went. The
     rollback address is rebuilt from the row's own spelling, never taken as written."""
@@ -210,7 +246,7 @@ def _rollback(ref: str, entry: dict, detail: dict, lines: list[str], lcfg: Any, 
     # integer vmid) and fill the template back to exactly the target, so a trailing slash or
     # an encoded node in a capture is refused, as the consent exemption refuses them.
     try:
-        cmd = engine.resolve("pve", "POST", target) if target else None
+        cmd = engine.resolve(product, "POST", target) if target else None
         bound = engine.coerce_args(cmd, engine.bind(cmd, target)) if cmd is not None else {}
     except ProximoError:
         cmd, bound = None, {}
@@ -221,25 +257,65 @@ def _rollback(ref: str, entry: dict, detail: dict, lines: list[str], lcfg: Any, 
     path = engine.fill(template, {**bound, "snapname": name})
     if detail.get("rollback") != f"{method} {path}":
         raise ProximoError(f"capture {ref}'s rollback address does not match its own target; refused")
-    row = engine.table().get(("pve", method, template))
+    row = engine.table().get((product, method, template))
     if row is None or row.gate or row.excluded:
-        raise ProximoError("the vendor's container rollback is not served; nothing rolls back this capture")
+        raise ProximoError("the vendor's guest rollback is not served; nothing rolls back this capture")
+    canonical = str(entry.get("entry_hash") or ref)
+    shape = re.search(r"/(qemu|lxc)/(\d+)/snapshot/", path)
+    guest = (shape.group(1), shape.group(2), name) if shape else None
+    harm = "rolling the guest back to it again would discard the work done on it since"
+    with _receipted(row, ledger_cfg, path, aimed_at, canonical):
+        _refuse_a_second(entries or [], canonical, ref, "rolled back to", harm, path, guest)
     try:
         _verified(lcfg, lines)
     except ProximoError as exc:
         engine._record(ledger_cfg, "core.refuse", row, outcome="refused",
                        detail={"reason": str(exc), "needs": "prove", "restores": ref}, called=path, remote=aimed_at)
         raise
-    plane_cfg = cfg if cfg is not None else wire.Plane.from_env("pve")
-    answer = {"restores": ref, "captured": entry.get("ts"), "snapshot": name, "called_path": path}
-    # THE CONTAINER COMES BACK UP. The vendor's rollback leaves it stopped (live, lab 10-04), and
-    # it was running when the snapshot was taken: `pct exec` needs a running container.
-    args = {"start": True} if "start" in row.params else {}
+    plane_cfg = cfg if cfg is not None else wire.Plane.from_env(product)
+    answer = {"restores": ref, "captured": entry.get("ts"), "snapshot": name, "called_path": rawdoor.echo(path, 160)}
+    # THE GUEST COMES BACK AS IT WAS. The vendor's rollback leaves it stopped (live, lab 10-04), so
+    # it is started again only if the capture says it was RUNNING when the net was taken. A stopped
+    # guest stays stopped; a state that was never read (or a capture from before it was recorded)
+    # starts nothing, and the plan says so.
+    running = detail.get("running")
+    args: dict[str, Any] = {"start": True} if "start" in row.params and running is True else {}
+    node = detail.get("node")
+    if isinstance(node, str) and "node" in row.params and "node" not in engine.placeholders(row.path):
+        args["node"] = node                                  # the caller's hint rides back, as it rode out
     if not confirm:
-        return {**engine.plan(row, args, path, cfg=plane_cfg, ledger_cfg=ledger_cfg), "status": "plan", **answer}
-    out = engine.execute(row, args, cfg=plane_cfg, path=path, ledger_cfg=ledger_cfg, wait=wait, restores=ref)
+        planned = engine.plan(row, args, path, cfg=plane_cfg, ledger_cfg=ledger_cfg)
+        answer["undo_notes"] = _rollback_notes(row, running, (planned.get("safety_net") or {}).get("taken"))
+        return _fit({**planned, "status": "plan", **answer})
+    with contextlib.ExitStack() as held:
+        with _receipted(row, ledger_cfg, path, aimed_at, canonical):
+            held.enter_context(_once_lock(lcfg, canonical))
+            # the check again, on the log as it is NOW, and the rollback inside the same lock: two
+            # undos racing (each saw a clean log) cannot both roll the guest back
+            _refuse_a_second(parse_lines(read_log(lcfg.audit_log_path)), canonical, ref, "rolled back to",
+                             harm, path, guest)
+        out = engine.execute(row, args, cfg=plane_cfg, path=path, ledger_cfg=ledger_cfg, wait=wait,
+                             restores=canonical)
+    answer["undo_notes"] = _rollback_notes(row, running, (out.get("undo") or {}).get("captured"))
     state = _task_state(out)
     return {**out, **answer, **({"status": state} if state else {})}
+
+
+def _rollback_notes(row: engine.Row, running: Any, net_taken: Any) -> list[str]:
+    """What the restore's plan says that the plan of an ordinary write would not. The net sentence is
+    derived from the SAME verdict the plan carries (`safety_net.taken`), never from the row alone."""
+    notes = []
+    if "start" in row.params and running is not True:
+        notes.append("the guest was stopped when the capture was taken: it stays stopped after this rollback"
+                     if running is False else
+                     "the guest's run state was not known when the capture was taken: nothing is started, and the "
+                     "guest stays stopped if the rollback leaves it so")
+    if row.net and net_taken is True:
+        notes.append("this rollback takes its own safety snapshot first, like any rollback here (see `also` and "
+                     "`safety_net`), so undoing a container command takes a further net")
+    elif row.net:
+        notes.append("this rollback takes no safety snapshot of its own; `safety_net` says why")
+    return notes
 
 
 def _delete_back(ref: str, entry: dict, entries: list[dict], lines: list[str], lcfg: Any, cfg: wire.Plane | None,
@@ -262,11 +338,10 @@ def _delete_back(ref: str, entry: dict, entries: list[dict], lines: list[str], l
                            f"is not deleted")
     # ONCE. The capture stays on the chain after its DELETE went; a second `undo` of it would
     # delete whatever was made at that path since (lens, 2026-10-08).
-    done = next((e for e in entries if e.get("action") == "core.execute" and e.get("outcome") in ("ok", "submitted")
-                 and (e.get("detail") or {}).get("restores") == ref), None)
-    if done is not None:
-        raise ProximoError(f"capture {ref} was already put back on {done.get('ts')} ({done.get('outcome')}); a second "
-                           f"delete would remove a record made at {target} since")
+    canonical = str(entry.get("entry_hash") or ref)
+    harm = f"a second delete would remove a record made at {target} since"
+    with _receipted(row, ledger_cfg, target, aimed_at, canonical):
+        _refuse_a_second(entries, canonical, ref, "put back", harm)
     try:
         _verified(lcfg, lines)
     except ProximoError as exc:
@@ -276,10 +351,149 @@ def _delete_back(ref: str, entry: dict, entries: list[dict], lines: list[str], l
     plane_cfg = cfg if cfg is not None else wire.Plane.from_env(product)
     answer = {"restores": ref, "captured": entry.get("ts"), "removes": target}
     if not confirm:
-        return {**engine.plan(row, {}, target, cfg=plane_cfg, ledger_cfg=ledger_cfg), "status": "plan", **answer}
-    out = engine.execute(row, {}, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait, restores=ref)
+        return _fit({**engine.plan(row, {}, target, cfg=plane_cfg, ledger_cfg=ledger_cfg), "status": "plan", **answer})
+    with contextlib.ExitStack() as held:
+        with _receipted(row, ledger_cfg, target, aimed_at, canonical):
+            held.enter_context(_once_lock(lcfg, canonical))
+            _refuse_a_second(parse_lines(read_log(lcfg.audit_log_path)), canonical, ref, "put back", harm)
+        out = engine.execute(row, {}, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait,
+                             restores=canonical)
     state = _task_state(out)
     return {**out, **answer, **({"status": state} if state else {})}
+
+
+def _same_capture(recorded: Any, canonical: str) -> bool:
+    """Whether a `restores` the ledger holds names this capture, however it was spelled: the row's hash
+    is the id, and any 8+ character prefix of it (what the doors print is 12) names it. Compared on
+    the RESOLVED hash, never on the spelling the caller typed."""
+    return isinstance(recorded, str) and len(recorded) >= 8 and canonical.startswith(recorded)
+
+
+@contextlib.contextmanager
+def _receipted(row: engine.Row, ledger_cfg: Any, called: str, remote: str | None, canonical: str):
+    """A refusal of the once-guard or the undo lock is an event: it leaves a `core.refuse` row, as every
+    other refusal does, naming the capture. (The rollback's own refusals are receipted by `execute`.)"""
+    try:
+        yield
+    except ProximoError as exc:
+        engine._record(ledger_cfg, "core.refuse", row, outcome="refused",
+                       detail={"reason": str(exc), "needs": "undo", "restores": canonical}, called=called,
+                       remote=remote)
+        raise
+
+
+UNDO_LOCK_WAIT = 30          # seconds one restore waits for another restore of the SAME capture
+
+
+def _attempts(entries: list[dict], canonical: str, guest: tuple[str, str, str] | None = None) -> list[dict[str, Any]]:
+    """Every attempt to roll back to this capture, from the ledger, each `done`, `unknown` or `failed`:
+    `done` landed (the call answered ok, or its task finished OK), `failed` provably did not (the
+    request never reached the vendor, or the vendor answered with a refusal, or its task finished with
+    an error), and `unknown` may have: an EXECUTING row with no terminal row after a crash, an error
+    after the request went out with no answer (a timeout, a reset), a task that timed out or whose end
+    was never seen. `done` and `unknown` close the capture: a second rollback over work that may
+    already have been rolled back is the harm this guards.
+
+    An attempt is an `undo` of the capture (its rows carry `restores`) OR a direct rollback to its
+    safety snapshot (`guest` = kind, vmid, the snapshot's name: the name is unique and the guest is the
+    same whichever plane or node path the operator used). A terminal row closes an attempt only of ITS
+    OWN kind: the same `restores` (or none, for a direct one) and the same intent. An error row ends an
+    attempt as `failed` only when it says `delivery` was `answered` or `never-sent`; a row without it
+    (written before delivery was recorded) closes the attempt as `unknown`."""
+    tasks = {(e.get("detail") or {}).get("upid"): e.get("outcome") for e in entries if e.get("action") == "core.task"}
+    attempts: list[dict[str, Any]] = []
+    direct_path = re.compile(rf"/{guest[0]}/{guest[1]}/snapshot/{re.escape(guest[2])}/rollback$") if guest else None
+
+    def kind(e: dict[str, Any], d: dict[str, Any]) -> tuple[bool, Any]:
+        restores = d.get("restores")
+        mine = _same_capture(restores, canonical)
+        direct = not restores and direct_path is not None and bool(direct_path.search(str(e.get("target") or "")))
+        return mine or direct, (restores if mine else None)
+
+    for e in entries:
+        d = e.get("detail") or {}
+        if e.get("action") not in ("core.execute", "core.error"):
+            continue
+        counts, restores = kind(e, d)
+        if not counts:
+            continue
+        key = (d.get("intent"), restores)
+        if e.get("action") == "core.execute" and e.get("outcome") == EXECUTING:
+            attempts.append({"ts": e.get("ts"), "key": key, "state": "unknown", "upid": None, "closed": False})
+            continue
+        open_ = next((a for a in reversed(attempts) if a["key"] == key and not a["closed"]), None)
+        if open_ is None:
+            continue
+        if e.get("action") == "core.error":
+            provably = d.get("delivery") in ("answered", "never-sent")
+            open_.update(state="failed" if provably else "unknown", closed=True)
+        elif e.get("outcome") == "ok":
+            open_.update(state="done", closed=True)
+        elif e.get("outcome") == "submitted":
+            open_.update(upid=d.get("upid"), closed=True)
+    for a in attempts:
+        if a["upid"] is not None:
+            outcome = tasks.get(a["upid"])
+            a["state"] = "done" if outcome == "finished" else "failed" if outcome == "failed" else "unknown"
+    return attempts
+
+
+def _refuse_a_second(entries: list[dict], canonical: str, ref: str, verb: str, harm: str,
+                     target: str | None = None, guest: tuple[str, str, str] | None = None) -> None:
+    """Refuse when this capture was restored, or may have been. `unknown` reads as done (the safe
+    side) and the refusal says what the operator can actually do: nothing in the ledger can reopen the
+    capture, so the way on is a direct rollback to the safety snapshot, which is counted too."""
+    attempts = _attempts(entries, canonical, guest)
+    done = next((a for a in attempts if a["state"] == "done"), None)
+    if done is not None:
+        raise ProximoError(f"capture {ref} was already {verb} on {done['ts']}; {harm}")
+    unknown = next((a for a in attempts if a["state"] == "unknown"), None)
+    if unknown is not None:
+        raise ProximoError(
+            f"a restore of capture {ref} was started on {unknown['ts']} and the ledger does not show how it "
+            f"ended (the process may have died, or its task was not seen to finish), so it may have landed: "
+            f"{harm}. `undo` stays closed for this capture. Read the guest and the vendor's task log"
+            + (f" (task {unknown['upid']})" if unknown["upid"] else "")
+            + (f"; if the rollback did not land, roll back yourself with proximo_call POST {target} (it takes its "
+               "own safety snapshot first, and a rollback to this capture's snapshot closes the capture too)"
+               if target else ""))
+
+
+@contextlib.contextmanager
+def _once_lock(lcfg: Any, canonical: str):
+    """An exclusive lock for ONE capture, held across the once-check AND the rollback it guards, so
+    two undos of it racing (no consent, or advisory consent) cannot both pass the check and both roll
+    the guest back, while undos of other captures go on. The lock files live in a directory beside
+    the ledger (refused if it is a symlink, as the rate reservation's is); the wait is bounded, and a
+    lock that cannot be taken in time refuses with a sentence."""
+    if not re.fullmatch(r"[0-9a-f]{8,64}", canonical):
+        raise ProximoError("the capture's id is not a ledger hash; nothing is restored")
+    directory = os.path.join(os.path.dirname(lcfg.audit_log_path) or ".", ".proximo-undo")
+    try:
+        if os.path.islink(directory):
+            raise OSError("refusing to use a symlinked undo lock directory")
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        st = os.lstat(directory)
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o022:
+            raise OSError("refusing to use an undo lock directory that is not ours alone")
+        fd = os.open(os.path.join(directory, f"{canonical}.lock"), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        raise ProximoError(f"the undo lock beside the ledger could not be opened ({type(exc).__name__}); "
+                           "nothing is restored") from exc
+    try:
+        deadline = time.monotonic() + UNDO_LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ProximoError("another restore of this capture is still running; nothing was done. "
+                                       "Try again when it has finished") from None
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)
 
 
 def _landed(entries: list[dict], capture: dict) -> str:
