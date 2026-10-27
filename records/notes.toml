@@ -7,12 +7,19 @@
 # knowing less): `given` (each name present: a boolean read through the words `coerce_args` sends
 # the vendor, any other value given unless blank) and `not_given` (each name absent or false).
 # Only a definite answer silences a note: a value that cannot be told before the wire shows it.
+# A note with NO condition is a note that is on for every call to its address, and it says so in
+# so many words: `always = true` in place of `given` and `not_given` (John, 2026-10-25: the
+# rollback's "description and tags are not reverted" is always on). A condition left empty is
+# refused, so an always-on note cannot happen by accident. The tier's sentence stays the home of a
+# consequence that holds for a whole family; `always` is for one address inside a family whose
+# sentence says something else.
 # A line is keyed on the ADDRESS, like every record, and carries `says` (what the plan prints)
 # and `why` (the judgement, quoting the vendor). The build
 # refuses a line on an address that is not a served mutation, a note without exactly those four
-# keys (an empty side is written `[]`), a name the address does not publish or the path binds, a
-# name twice or on both sides, an empty condition, a sentence under four words or with space
-# around it, or two notes with one condition.
+# keys (an empty side is written `[]`) or exactly `always`, `says` and `why`, an empty condition
+# without `always = true`, `always` with anything but true, a name the address does not publish or the path binds, a
+# name twice or on both sides, a sentence under four words or with space around it, or two notes
+# with one condition.
 #
 # Why notes and not defaults: 0.44.2 sent `unique=1` on a restore unless it judged the restore in
 # place, by parsing the archive's volid for its source VMID. That is a client changing what the
@@ -24,4 +31,21 @@
 ]
 "pve:POST /nodes/{node}/lxc" = [
   { given = ["restore"], not_given = ["unique"], says = "this restore keeps the backup's MAC. Right for rebuilding the same container in place; for a copy, pass unique=1, or two containers share one address on the network.", why = "Vendor: unique 'Assign a unique random ethernet address.' The vendor's own sentence; not measured live for containers (QEMU was, #100). [Claude, 2026-10-24; John: approved]" },
+]
+
+# A rollback discards what changed since the snapshot, and the family sentence says so. It is not
+# the whole of it: Proxmox does not snapshot a guest's description or tags, so the rollback leaves
+# them as they are now. The note is `always` because the rollback's one argument, `start`, has
+# nothing to do with it. Same sentence on the datacenter manager's proxy of each.
+"pve:POST /nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback" = [
+  { always = true, says = "the rollback does not revert the container's description or tags: Proxmox does not snapshot them, so they stay as they are now. Change them back by hand if they should match the snapshot.", why = "Field: 0.7.3's rollback plan said it after dogfooding a live cluster, where a description set after the snapshot survived the rollback, and 0.44 kept saying it until the 0.45 cut. Proxmox keeps a guest's description and tags out of its snapshots. [Claude, 2026-10-25; John: owed row rollback-keeps-description-and-tags]" },
+]
+"pve:POST /nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback" = [
+  { always = true, says = "the rollback does not revert the VM's description or tags: Proxmox does not snapshot them, so they stay as they are now. Change them back by hand if they should match the snapshot.", why = "Field: 0.7.3's rollback plan said it after dogfooding a live cluster, where a description set after the snapshot survived the rollback, and 0.44 kept saying it until the 0.45 cut. Proxmox keeps a guest's description and tags out of its snapshots. [Claude, 2026-10-25; John: owed row rollback-keeps-description-and-tags]" },
+]
+"pdm:POST /pve/remotes/{remote}/lxc/{vmid}/snapshot/{snapname}/rollback" = [
+  { always = true, says = "the rollback does not revert the container's description or tags: Proxmox does not snapshot them, so they stay as they are now. Change them back by hand if they should match the snapshot.", why = "Field: 0.7.3's rollback plan said it after dogfooding a live cluster, where a description set after the snapshot survived the rollback, and 0.44 kept saying it until the 0.45 cut. The datacenter manager hands the rollback to the remote's own PVE, which keeps a guest's description and tags out of its snapshots. [Claude, 2026-10-25; John: owed row rollback-keeps-description-and-tags]" },
+]
+"pdm:POST /pve/remotes/{remote}/qemu/{vmid}/snapshot/{snapname}/rollback" = [
+  { always = true, says = "the rollback does not revert the VM's description or tags: Proxmox does not snapshot them, so they stay as they are now. Change them back by hand if they should match the snapshot.", why = "Field: 0.7.3's rollback plan said it after dogfooding a live cluster, where a description set after the snapshot survived the rollback, and 0.44 kept saying it until the 0.45 cut. The datacenter manager hands the rollback to the remote's own PVE, which keeps a guest's description and tags out of its snapshots. [Claude, 2026-10-25; John: owed row rollback-keeps-description-and-tags]" },
 ]

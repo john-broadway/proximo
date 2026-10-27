@@ -141,3 +141,85 @@ def test_a_network_door_refuses_a_switch_set_only_in_the_file(tmp_path, monkeypa
                          build=lambda *a: (_ for _ in ()).throw(AssertionError("built")))
     assert rc == 3
     assert "PROXIMO_SCOPE_PATH" in capsys.readouterr().err
+
+
+# --- an allowlist is compared as the grant it is, and its refusal names its source --------------
+# 0.44 lost two things at the cut (capability `allowlist-compares-grants`): a reordered allowlist
+# holding the same ids was reported SHADOWED (the same 22 CTIDs, dogfood 2026-09), and a refusal
+# never said which store fed the value or that only a restart applies an edit (hit live 2026-09-02).
+
+@pytest.fixture
+def _fresh_state(monkeypatch):
+    monkeypatch.setattr(envfile, "_STATE", envfile._fresh_state())
+
+
+@pytest.mark.parametrize("key", ["PROXIMO_CT_ALLOWLIST", "PROXIMO_AGENT_ALLOWLIST"])
+@pytest.mark.parametrize("env,file", [("101,102,103", "103,101,102"), ("101,102", " 102 , 101 ,"),
+                                       ("*", "7,*"), ("101,101", "101")])
+def test_same_ids_in_another_order_or_spacing_are_one_grant_not_shadowed(
+        tmp_path, monkeypatch, capsys, _fresh_state, key, env, file):
+    monkeypatch.setenv(key, env)
+    _file(tmp_path, f"{key}={file}\n")
+    loaded, shadowed = envfile.load(prog="p")
+    assert shadowed == [] and loaded == []
+    assert "SHADOWED" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("key", ["PROXIMO_CT_ALLOWLIST", "PROXIMO_AGENT_ALLOWLIST"])
+@pytest.mark.parametrize("env,file", [("101,102", "101,103"), ("101", "101,102"), ("101", "*"), ("", "101")])
+def test_a_genuinely_different_grant_is_still_shadowed(tmp_path, monkeypatch, _fresh_state, key, env, file):
+    monkeypatch.setenv(key, env)
+    _file(tmp_path, f"{key}={file}\n")
+    assert envfile.load(announce=False)[1] == [key]
+
+
+def test_a_non_allowlist_key_still_compares_as_raw_text(tmp_path, monkeypatch, _fresh_state):
+    monkeypatch.setenv("PROXIMO_FORBID", "a,b")
+    monkeypatch.setenv("PROXIMO_TARGETS", "/t")
+    _file(tmp_path, "PROXIMO_FORBID=b,a\nPROXIMO_TARGETS=/t\n")
+    assert envfile.load(announce=False)[1] == ["PROXIMO_FORBID"]   # reordered text IS a difference here
+
+
+def _refusal(lane: str, vmid: str) -> str:
+    from proximo.core import spine
+    r = spine.opt_in_refusal(lane, vmid)
+    assert r is not None
+    return r.reason
+
+
+@pytest.mark.parametrize("lane,enable,allow", [("shell", "PROXIMO_ENABLE_EXEC", "PROXIMO_CT_ALLOWLIST"),
+                                                ("agent", "PROXIMO_ENABLE_AGENT", "PROXIMO_AGENT_ALLOWLIST")])
+def test_the_refusal_names_the_store_that_fed_the_allowlist_and_the_restart(
+        tmp_path, monkeypatch, _fresh_state, lane, enable, allow):
+    monkeypatch.setenv(enable, "1")
+    secret = str(tmp_path)
+
+    # fed by the env file
+    monkeypatch.delenv(allow, raising=False)
+    _file(tmp_path, f"{allow}=101\n")
+    envfile.load(announce=False)
+    msg = _refusal(lane, "999")
+    assert "env file" in msg and "restart" in msg and secret not in msg and "proximo.env" not in msg
+
+    # fed by the process environment alone
+    monkeypatch.setattr(envfile, "_STATE", envfile._fresh_state())
+    monkeypatch.setenv(allow, "101")
+    _file(tmp_path, "")
+    envfile.load(announce=False)
+    msg = _refusal(lane, "999")
+    assert "process environment" in msg and "env file" not in msg and "restart" in msg
+
+    # both, the environment winning with a different grant: the file's copy is named dead
+    monkeypatch.setattr(envfile, "_STATE", envfile._fresh_state())
+    _file(tmp_path, f"{allow}=999\n")
+    envfile.load(announce=False)
+    msg = _refusal(lane, "999")
+    assert "process environment" in msg and "env file" in msg and "SHADOWED" in msg and "restart" in msg
+    assert secret not in msg
+
+    # both, same grant: no shadow claim
+    monkeypatch.setattr(envfile, "_STATE", envfile._fresh_state())
+    monkeypatch.setenv(allow, "101,102")
+    _file(tmp_path, f"{allow}=102,101\n")
+    envfile.load(announce=False)
+    assert "SHADOWED" not in _refusal(lane, "999")

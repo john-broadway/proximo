@@ -1,0 +1,434 @@
+# THE CAPABILITY RECORD: what Proximo does for the person running it, why it exists, and the test
+# that proves it still does.
+#
+# Why this file exists. 0.45.0's cut deleted everything outside `src/proximo/core/` by DIRECTORY.
+# Twenty-five capabilities went with the wrappers they sat beside, seventeen of them never judged
+# one by one, seven of them fixes for things that went wrong on a real box. A cut list of files
+# is not a list of capabilities. This record is: a capability leaves only by a ruling written on
+# its own row, and `tests/test_capabilities.py` fails when a proving test disappears, when a row
+# disappears, or when a retirement carries no ruling.
+#
+# A row is `[capability.<id>]` with:
+#   what    one sentence: what the operator gets
+#   origin  where it came from: `field:` (a real box, with the date or release) or `design:`
+#   status  standing  · it works today; `proof` names the tests that hold it (file::function)
+#           unproven  · believed working today, but no test pins the case that earned it
+#           owed      · lost in a cut and coming back; `was` names the 0.44 code it restores from
+#           ask       · lost or cut, and the owner has not ruled on bringing it back (none today)
+#           retired   · gone on purpose; `ruling` (who, when) and `instead` (what does it now)
+#   proof   tests, required for standing; a proof test may not be skipped or xfailed
+#   was     0.44 locations (removed in 0.45.0), required for owed and ask
+#   ruling, instead   required for retired
+#
+# A row is never deleted. A capability that goes away is `retired`, by name, with its ruling.
+
+# ---- STANDING: field-born fixes the core carries today --------------------------------------
+
+[capability.arm-gates-every-mutation]
+what = "A disarmed session cannot run a command inside a container: ARM is asked for every mutation, the shell lane's included."
+origin = "field: dogfood, 2026-08-24 (a disarmed session still executed in containers)"
+status = "standing"
+proof = ["tests/test_core_shell_lane.py::test_an_opted_in_exec_is_refused_disarmed_and_logs_is_not"]
+
+[capability.split-ssh-target-refused]
+what = "A shell-lane call refuses, naming both hosts, when the ssh target reaches a different node than the path names; nothing runs."
+origin = "field: lab session, 2026-09-04 (the ssh target and the API host were different machines)"
+status = "standing"
+proof = ["tests/test_core_shell_lane.py::test_the_real_split_is_still_refused_and_nothing_ran",
+         "tests/test_core_shell_lane.py::test_a_container_forging_the_markers_cannot_pass_as_a_split_or_an_ssh_failure"]
+
+[capability.secrets-withheld-at-any-depth]
+what = "A credential the vendor echoes back (an SDN fabric's lock-token among them) is withheld from every answer, at any depth."
+origin = "field: 0.41 (the SDN lock token rode fabric reads back to the caller)"
+status = "standing"
+proof = ["tests/test_secret_record.py::test_a_nested_field_is_withheld_at_any_depth"]
+
+[capability.privsep-token-and-user-grant]
+what = "mint's recipe grants a privilege-separated token AND its user, because Proxmox checks both."
+origin = "field: GitHub #24, a production report"
+status = "standing"
+proof = ["tests/test_mint.py::test_privsep_planes_grant_the_token_and_the_user"]
+
+[capability.ledger-tail-cut-caught]
+what = "audit_verify with the head the operator pinned catches a cut or wiped tail of the ledger."
+origin = "design: PROVE"
+status = "standing"
+proof = ["tests/test_mcp_door.py::test_the_env_pin_is_a_row_the_chain_must_still_hold",
+         "tests/test_verify_ledger_script.py::test_expected_head_catches_a_cut_tail"]
+
+[capability.unkeyed-chain-sealed-not-deleted]
+what = "A mixed or unkeyed ledger is sealed and archived on the first keyed write, never deleted, and the custody row says so."
+origin = "design: the keyed-only ruling, 2026-10-18"
+status = "standing"
+proof = ["tests/test_ledger_chain.py::test_open_ledger_seals_a_mixed_chain_and_the_custody_row_tells_the_truth"]
+
+[capability.arguments-cast-to-published-types]
+what = "Arguments are cast to the types the vendor publishes, so a boolean or a number typed as text reaches the wire as what the API expects."
+origin = "design: the core's coerce_args"
+status = "standing"
+proof = ["tests/test_engine.py::test_arguments_are_cast_to_the_types_the_vendor_published"]
+
+[capability.door-services-raised]
+what = "Stopping, restarting or reloading a service that holds the door open (sshd, the API daemons and proxies, corosync, networking) is judged destructive on every plane, on any box, from the call alone; the plan shows the raise beside the authored tier and the receipt carries it."
+origin = "design: John, 2026-10-25 (the services family was restorable for every service)"
+status = "standing"
+proof = ["tests/test_tier_raise.py::test_stopping_a_service_that_holds_the_door_is_destructive",
+         "tests/test_tier_raise.py::test_the_other_planes_raise_their_own_doors",
+         "tests/test_tier_raise.py::test_the_executing_receipt_carries_the_raised_tier",
+         "tests/test_tier_raise.py::test_the_build_refuses_a_raise_that_would_not_raise"]
+
+# ---- UNPROVEN: believed carried, the case that earned it is not pinned ------------------------
+
+[capability.pdm-typed-arrays]
+what = "PDM's array parameters are sent as the typed arrays the API wants, from every door: a single value from the shell door is a one-element array."
+origin = "field: the first real PDM remote-migrate (0.3x); found broken again on 2026-10-25 when its proof was first written"
+status = "standing"
+proof = ["tests/test_core_pdm_arrays.py::test_a_scalar_from_the_shell_door_reaches_pdm_as_a_one_element_array",
+         "tests/test_core_pdm_arrays.py::test_a_list_reaches_pdm_as_a_json_array"]
+
+[capability.token-sight-guard]
+what = "An empty backup, snapshot or group list the token could not have seen into is refused as blind, never served as 'no backups'; a permission map that cannot be read does not vouch for it either."
+origin = "field: live-found on day one (PVE hides backup volumes per volume: 200 and an empty list without Datastore.AllocateSpace; PBS shows a non-owner only its own groups); restored from 0.44 as records/sight.toml"
+status = "standing"
+proof = ["tests/test_token_sight.py::test_an_empty_backup_list_the_token_could_not_see_is_refused",
+         "tests/test_token_sight.py::test_an_empty_backup_list_the_token_could_see_is_served",
+         "tests/test_token_sight.py::test_a_backup_list_with_archives_is_served_whole_when_the_token_sees_all",
+         "tests/test_token_sight.py::test_a_permission_map_that_cannot_be_read_does_not_vouch_for_the_empty_list",
+         "tests/test_token_sight.py::test_an_empty_pbs_list_from_a_backup_only_token_is_refused",
+         "tests/test_token_sight.py::test_an_empty_pbs_list_from_an_auditing_token_is_served"]
+
+# ---- OWED: lost in the 0.45.0 cut, coming back ------------------------------------------------
+
+[capability.backup-freshness-fence]
+what = "Backups are proven by the archives on the shelf against what the schedules promise, never by a job's own OK; the visible guest population is reported because the list itself is permission-filtered."
+origin = "field: a nightly vzdump job reported OK for a month while producing nothing; a scoped grant shrank a real fleet's visible population from 25 to 6 with no error"
+status = "owed"
+was = ["src/proximo/freshness.py"]
+
+[capability.blast-dependents]
+what = "A dangerous plan names who it hits: guests on a storage, an in-use disk, a template's linked clones, HA, replication and backup-job references, a migrate's disk residency, guests on a bridge. An enumeration that cannot finish reads as the worst case, never 'nothing affected'."
+origin = "design: PLAN"
+status = "owed"
+was = ["src/proximo/blast.py"]
+
+[capability.access-blast]
+what = "An ACL change shows that a deeper entry replaces inherited grants (a grant can narrow, a revoke can widen); role, realm, user, group, pool and TFA deletes name who is affected; over-broad grants are flagged."
+origin = "field: the ACL replace rule cost a real production cycle"
+status = "owed"
+was = ["src/proximo/access.py", "src/proximo/access_users.py", "src/proximo/access_governance.py",
+       "src/proximo/blast.py:compute_acl_blast", "src/proximo/tasks_pools.py:plan_pool_delete",
+       "src/proximo/pmg_identity.py:_classify_captured_role"]
+
+[capability.lockout-naming]
+what = "A firewall enable, a DROP policy, a network apply, or stopping sshd, pveproxy, pvedaemon or corosync names the nodes and the door that go dark, and is tiered above a routine service restart."
+origin = "design: PLAN"
+status = "owed"
+was = ["src/proximo/blast.py:compute_firewall_lockout_blast", "src/proximo/blast.py:compute_apply_lockout",
+       "src/proximo/firewall.py:_is_lockout_trigger", "src/proximo/observability.py", "src/proximo/pbs_node.py"]
+
+[capability.estate-memory]
+what = "A derived, rebuildable local map of what exists (guests, nodes, storage, their relations, first and last seen), so estate questions are a query, with no model and no daemon."
+origin = "design: bar 3; the 0.45 bar-3 drive itself recorded a 1.5B answering with a number it never read"
+status = "owed"
+was = ["src/proximo/memory.py", "src/proximo/tools/memory_tools.py"]
+
+[capability.last-backup-and-coverage]
+what = "Deleting a backup says whether other recovery points of that guest remain; the job list names guests no job covers."
+origin = "design: UNDO"
+status = "owed"
+was = ["src/proximo/backup.py:plan_backup_delete", "src/proximo/backup_schedules.py:backup_job_list"]
+
+[capability.allowlist-compares-grants]
+what = "A reordered allowlist holding the same ids is the same grant, not a shadowed setting; a refusal names which source fed the value and that a restart applies it."
+origin = "field: dogfood (the same 22 CTIDs flagged as shadowed); hit live 2026-09-02 (the refusal never named its source)"
+status = "standing"
+proof = ["tests/test_core_envfile.py::test_same_ids_in_another_order_or_spacing_are_one_grant_not_shadowed",
+         "tests/test_core_envfile.py::test_a_genuinely_different_grant_is_still_shadowed",
+         "tests/test_core_envfile.py::test_the_refusal_names_the_store_that_fed_the_allowlist_and_the_restart"]
+was = ["src/proximo/config.py:values_differ", "src/proximo/config.py:env_source", "src/proximo/config.py:allowlist_remedy"]
+
+[capability.lexical-find]
+what = "find understands an operator's words with no model: a wide vocabulary from operator language to Proxmox's, and character n-grams that survive a typo."
+origin = "design: bar 3"
+status = "standing"
+proof = ["tests/test_lexical_find.py::test_memory_usage_of_a_container_reaches_the_containers_status",
+         "tests/test_lexical_find.py::test_every_quoted_why_is_a_sentence_the_vendor_published",
+         "tests/test_lexical_find.py::test_a_typo_still_lands_and_says_what_it_heard",
+         "tests/test_lexical_find.py::test_a_typo_of_a_vocabulary_word_is_read_as_the_word",
+         "tests/test_lexical_find.py::test_nonsense_still_returns_nothing",
+         "tests/test_lexical_find.py::test_the_typo_shapes_are_what_keeps_a_near_word_out_of_the_answer",
+         "tests/test_lexical_find.py::test_lexical_off_returns_what_the_word_tier_alone_answers",
+         "tests/test_lexical_find.py::test_a_plan_on_words_is_never_resolved_by_a_guess",
+         "tests/test_lexical_find.py::test_the_answer_keeps_its_shape_and_its_size",
+         "tests/test_lexical_find.py::test_a_real_english_word_the_table_does_not_spell_is_not_read_as_another",
+         "tests/test_lexical_find.py::test_a_folded_verb_is_not_a_word_to_find_and_never_picks_the_method",
+         "tests/test_lexical_find.py::test_a_folded_word_never_ranks_a_mutation_first_on_a_read_question",
+         "tests/test_lexical_find.py::test_a_match_reached_only_through_a_synonym_is_a_choice_not_a_plan"]
+was = ["src/proximo/lexical.py", "src/proximo/ranking.py"]
+
+[capability.offbox-anchor]
+what = "The ledger head is published to a place this box cannot write and read back, catching a cut or wiped tail without a human copying it."
+origin = "design: PROVE"
+status = "standing"
+proof = ["tests/test_anchor.py::test_a_write_publishes_the_head_and_no_path",
+         "tests/test_anchor.py::test_the_anchored_head_is_a_row_the_chain_must_still_hold",
+         "tests/test_anchor.py::test_a_wiped_or_deleted_ledger_fails_against_the_anchor",
+         "tests/test_anchor.py::test_a_cut_chain_followed_by_an_honest_write_does_not_repin_the_anchor",
+         "tests/test_anchor.py::test_a_publish_failure_never_fails_the_write_and_is_visible",
+         "tests/test_anchor.py::test_http_sink_publishes_and_reads_back"]
+was = ["src/proximo/audit_anchor.py"]
+
+[capability.vendor-safety-checks-in-plan]
+what = "A Ceph destroy or stop plan cites the vendor's own cmd-safety answer; an SDN apply or rollback plan cites the pending dry-run diff."
+origin = "design: PLAN"
+status = "owed"
+was = ["src/proximo/ceph.py:_cmd_safety_note", "src/proximo/network.py:_sdn_dry_run_note"]
+
+[capability.rollback-keeps-description-and-tags]
+what = "A rollback plan says the description and tags are not reverted, because Proxmox does not snapshot them."
+origin = "field: a description set after a snapshot survived the rollback"
+status = "standing"
+proof = ["tests/test_rollback_note.py::test_the_rollback_plan_says_description_and_tags_are_not_reverted",
+         "tests/test_rollback_note.py::test_the_note_is_the_same_for_every_argument_the_rollback_takes",
+         "tests/test_rollback_note.py::test_only_the_rollbacks_carry_it",
+         "tests/test_rollback_note.py::test_the_note_gates_nothing",
+         "tests/test_rollback_note.py::test_the_executing_row_carries_the_note",
+         "tests/test_plan_notes.py::test_a_note_that_says_always_is_on_for_every_call",
+         "tests/test_plan_notes.py::test_the_build_refuses_an_always_note_that_is_not_written_out"]
+
+[capability.command-risk-hint]
+what = "An exec or psql plan carries an advisory read-or-write reading of the whole command or SQL."
+origin = "design: PLAN"
+status = "standing"
+proof = ["tests/test_risk_hint.py::test_a_command_reads_as_0_44_read_it",
+         "tests/test_risk_hint.py::test_a_read_command_with_a_mutating_form_is_not_read",
+         "tests/test_risk_hint.py::test_sql_reads_as_0_44_read_it",
+         "tests/test_risk_hint.py::test_a_command_it_cannot_read_is_write_never_read",
+         "tests/test_risk_hint.py::test_the_plan_carries_the_reading",
+         "tests/test_risk_hint.py::test_the_hint_changes_no_verdict",
+         "tests/test_risk_hint.py::test_a_read_reading_never_lowers_the_tier_the_ladder_will_consult",
+         "tests/test_risk_hint.py::test_every_row_that_gets_a_hint_fingerprints_the_argument_it_reads",
+         "tests/test_risk_hint.py::test_the_receipt_carries_the_reading_and_the_ledger_never_the_command",
+         "tests/test_risk_hint.py::test_a_psql_receipt_never_carries_the_sql",
+         "tests/test_risk_hint.py::test_a_backslash_in_a_plain_string_is_not_read",
+         "tests/test_risk_hint.py::test_a_command_reading_a_device_node_is_not_a_read",
+         "tests/test_risk_hint.py::test_a_schema_qualified_function_is_not_the_allowlisted_one",
+         "tests/test_lens3_net_attack.py::test_a_content_reader_on_a_device_or_a_descriptor_is_not_a_read",
+         "tests/test_lens3_net_attack.py::test_listing_a_device_or_naming_something_else_is_still_a_read"]
+
+[capability.pdm-rollback-safety-snapshot]
+what = "A rollback, through the datacenter manager or direct on the node, takes and waits on a safety snapshot first and refuses if it cannot; only the operator can turn the net off, and on a storage where the snapshot would block the rollback none is taken and the plan and the receipt say so."
+origin = "design: UNDO"
+status = "standing"
+proof = ["tests/test_core_pdm_rollback_net.py::test_the_four_rollbacks_carry_the_net_and_nothing_else_does_on_the_api_wire",
+         "tests/test_core_pdm_rollback_net.py::test_the_plan_says_it_takes_a_snapshot_first_with_no_credential",
+         "tests/test_core_pdm_rollback_net.py::test_the_snapshot_lands_first_then_the_rollback_and_the_capture_names_the_way_back",
+         "tests/test_core_pdm_rollback_net.py::test_a_snapshot_that_does_not_land_refuses_the_rollback_fail_closed_and_names_it",
+         "tests/test_core_pdm_rollback_net.py::test_a_snapshot_task_not_seen_to_finish_refuses_the_rollback",
+         "tests/test_core_pdm_rollback_net.py::test_a_rollback_the_vendor_then_refuses_names_the_snapshot_it_left_to_the_caller",
+         "tests/test_core_pdm_rollback_net.py::test_the_operators_opt_out_is_honoured_and_the_plan_and_the_receipt_say_so",
+         "tests/test_core_pdm_rollback_net.py::test_no_argument_can_skip_the_net",
+         "tests/test_core_pdm_rollback_net.py::test_the_net_is_not_taken_where_the_storage_would_block_the_rollback",
+         "tests/test_core_pdm_rollback_net.py::test_what_is_not_settled_takes_the_net_and_says_so",
+         "tests/test_core_pdm_rollback_net.py::test_a_rollback_to_a_snapshot_that_is_not_there_takes_no_snapshot_and_refuses",
+         "tests/test_core_pdm_rollback_net.py::test_under_enforced_consent_one_grant_for_the_rollback_covers_its_snapshot",
+         "tests/test_core_pdm_rollback_net.py::test_undo_by_receipt_rolls_the_guest_back_to_the_safety_snapshot",
+         "tests/test_core_pdm_rollback_net.py::test_undo_puts_the_guest_back_to_the_state_it_was_in_not_to_running",
+         "tests/test_core_pdm_rollback_net.py::test_where_the_safety_snapshot_itself_cannot_be_taken_none_is_tried_and_the_plan_says_so",
+         "tests/test_core_pdm_rollback_net.py::test_a_vmstate_on_a_blocking_storage_does_not_drop_the_net",
+         "tests/test_lens2_net_attack.py::test_an_unused_volume_on_zfs_does_not_drop_the_net",
+         "tests/test_lens2_net_attack.py::test_zfs_over_iscsi_takes_no_net",
+         "tests/test_lens2_net_attack.py::test_a_dir_behind_pdm_is_not_settled",
+         "tests/test_lens2_net_attack.py::test_a_plan_whose_target_read_failed_does_not_promise_the_net",
+         "tests/test_net_reads_taint_nothing.py::test_a_rollback_on_a_clean_session_runs_under_taint_forbid",
+         "tests/test_net_reads_taint_nothing.py::test_a_rollback_on_an_already_tainted_session_is_refused_before_any_write",
+         "tests/test_net_reads_taint_nothing.py::test_taint_requiring_consent_still_applies_to_a_tainted_rollback",
+         "tests/test_net_reads_taint_nothing.py::test_no_byte_of_what_a_guest_wrote_reaches_a_caller_a_receipt_or_the_ledger",
+         "tests/test_net_reads_taint_nothing.py::test_every_sentence_the_net_puts_out_is_from_the_fixed_vocabulary",
+         "tests/test_net_reads_taint_nothing.py::test_no_argument_can_ask_for_an_untainted_read",
+         "tests/test_lens2_net_attack.py::test_a_grant_approved_on_net_taken_does_not_run_a_rollback_with_no_net",
+         "tests/test_lens2_net_attack.py::test_a_missing_target_spends_no_grant_and_no_rate_slot",
+         "tests/test_lens2_net_attack.py::test_undo_of_an_unread_state_starts_nothing_and_says_so",
+         "tests/test_lens3_net_attack.py::test_a_pending_change_does_not_cost_a_guest_its_net",
+         "tests/test_lens3_net_attack.py::test_a_cap_of_one_refuses_before_the_grant_is_spent_naming_the_two_slots",
+         "tests/test_lens3_net_attack.py::test_an_lxc_bind_mount_means_no_safety_snapshot_is_possible",
+         "tests/test_lens3_net_attack.py::test_qed_is_not_snapshottable_since_plugin_pm_lists_qcow2_only",
+         "tests/test_lens3_net_attack.py::test_restore_notes_agree_with_the_plans_safety_net_when_the_net_is_off",
+         "tests/test_lens3_net_attack.py::test_a_second_undo_of_one_capture_is_refused_before_it_rolls_the_guest_back_again",
+         "tests/test_lens3_net_attack.py::test_require_consent_on_a_tainted_session_without_a_consent_dir_refuses",
+         "tests/test_lens3_net_attack.py::test_require_consent_on_a_clean_session_is_not_tainted_by_the_nets_reads",
+         "tests/test_lens4_probe.py::test_a_capture_is_rolled_back_to_once_whatever_the_id_spelling",
+         "tests/test_lens4_probe.py::test_a_restore_recorded_under_a_short_spelling_still_closes_the_capture",
+         "tests/test_lens4_probe.py::test_a_rollback_whose_task_failed_may_be_retried",
+         "tests/test_lens4_probe.py::test_a_rollback_that_may_have_landed_closes_the_capture_and_says_how_to_go_on",
+         "tests/test_lens4_probe.py::test_a_rollback_refused_at_the_spend_costs_no_rate_slot",
+         "tests/test_lens4_probe.py::test_shell_snapshot_on_the_last_slot_refuses_before_the_grant_is_spent",
+         "tests/test_lens4_probe.py::test_a_forbid_only_the_net_meets_is_shown_by_the_plan_and_refuses_before_the_grant_is_spent",
+         "tests/test_lens4_probe.py::test_an_unhashable_storage_type_is_unsettled_not_a_crash",
+         "tests/test_lens4_probe.py::test_a_net_read_keeps_nothing_in_the_store",
+         "tests/test_lens4_probe.py::test_two_undos_racing_roll_back_once",
+         "tests/test_net_reads_taint_nothing.py::test_only_safetynet_and_the_engines_own_sites_reference_the_sentinels",
+         "tests/test_net_reads_taint_nothing.py::test_a_fenced_keyword_accepts_only_its_sentinel",
+         "tests/test_lens5_probe.py::test_a_mutation_whose_read_back_fails_spends_no_grant_and_no_slot",
+         "tests/test_lens5_probe.py::test_the_read_back_is_already_taken_when_the_grant_is_spent",
+         "tests/test_lens5_probe.py::test_an_unrelated_wire_error_at_the_same_path_does_not_reopen_a_maybe_landed_capture",
+         "tests/test_lens5_probe.py::test_a_direct_rollback_to_the_safety_snapshot_closes_the_capture",
+         "tests/test_lens5_probe.py::test_the_unknown_refusal_says_only_what_the_operator_can_do",
+         "tests/test_lens5_probe.py::test_a_caller_whose_grant_is_gone_reserves_no_slot_at_all",
+         "tests/test_lens5_probe.py::test_a_consent_spent_receipt_that_cannot_be_written_gives_back_the_marker_and_the_slots",
+         "tests/test_lens5_probe.py::test_a_shell_command_whose_taint_mark_fails_spent_nothing_and_left_nothing_open",
+         "tests/test_lens5_probe.py::test_a_guest_agent_command_whose_taint_mark_fails_is_refused_before_anything_is_spent",
+         "tests/test_lens5_probe.py::test_the_rollbacks_check_is_repeated_inside_its_lock",
+         "tests/test_lens5_probe.py::test_the_delete_backs_check_is_repeated_inside_its_lock",
+         "tests/test_lens5_probe.py::test_a_restore_waits_a_bounded_time_for_another_of_the_same_capture_then_refuses",
+         "tests/test_lens5_probe.py::test_a_rollback_whose_task_is_not_seen_to_end_reads_unknown_and_closes_the_capture",
+         "tests/test_lens6_probe.py::test_an_undo_whose_answer_was_lost_is_unknown_and_never_retried",
+         "tests/test_lens6_probe.py::test_an_attempt_that_provably_did_not_land_may_be_tried_again",
+         "tests/test_lens6_probe.py::test_a_failed_safety_snapshot_keeps_the_grant_spent_and_gives_the_rollbacks_slot_back",
+         "tests/test_lens6_probe.py::test_a_direct_pve_rollback_to_a_pdm_captures_snapshot_closes_it",
+         "tests/test_lens6_probe.py::test_a_once_refusal_is_receipted_in_the_plan_and_the_confirm",
+         "tests/test_lens6_probe.py::test_an_undo_waiting_for_the_lock_sees_a_direct_rollback_that_landed_meanwhile",
+         "tests/test_lens6_probe.py::test_a_shorter_window_caller_does_not_erase_a_longer_window_callers_slots",
+         "tests/test_net_reads_taint_nothing.py::test_no_module_but_the_engine_reads_safetynets_namespace_dynamically"]
+
+[capability.create-plan-network-and-vmid]
+what = "A create or clone plan names the bridges the guest attaches to and the SDN.Use privilege PVE checks apart from VM.Allocate, and checks VMID collision across the cluster, not one node."
+origin = "field: a create plan never looked at its own network options"
+status = "owed"
+was = ["src/proximo/provisioning.py:_nic_bridges", "src/proximo/provisioning.py:_source_nic_bridges",
+       "src/proximo/provisioning.py:_cluster_guests"]
+
+[capability.config-host-crossings]
+what = "A guest config change that crosses a host boundary (a NIC onto a host bridge, firewall=0, device passthrough) is named in the plan."
+origin = "design: PLAN"
+status = "owed"
+was = ["src/proximo/config_edit.py:_host_crossings"]
+
+[capability.shareable-doctor-receipt]
+what = "A doctor report becomes one pasteable, estate-redacted artifact with a fingerprint; nothing transmits."
+origin = "design: support without telemetry"
+status = "standing"
+was = ["src/proximo/receipt.py"]
+proof = ["tests/test_core_receipt.py::test_the_module_imports_no_network_no_process_no_filesystem",
+         "tests/test_core_receipt.py::test_each_kind_of_estate_identifier_is_gone_from_the_receipt",
+         "tests/test_core_receipt.py::test_versions_counts_pillars_and_flag_codes_survive",
+         "tests/test_core_receipt.py::test_the_same_defect_on_two_different_estates_has_one_fingerprint",
+         "tests/test_core_receipt.py::test_the_verb_prints_the_receipt_and_keeps_the_doctors_exit",
+         "tests/test_core_receipt.py::test_the_real_doctor_through_the_verb_leaks_nothing",
+         "tests/test_core_receipt_live.py::test_a_registry_target_name_in_the_toml_error_does_not_leak",
+         "tests/test_core_receipt_live.py::test_the_contain_trip_files_free_text_does_not_leak",
+         "tests/test_core_receipt_live.py::test_the_sealed_archive_name_does_not_leak",
+         "tests/test_core_receipt_live.py::test_an_identifier_injected_into_any_string_field_never_reaches_the_receipt"]
+
+[capability.composed-reads]
+what = "PBS catalog paths decode to readable entries; a download is size-probed before it lands; backups and snapshots cap newest-first; mail statistics cap top-N."
+origin = "design: bar 3"
+status = "owed"
+was = ["src/proximo/file_restore.py", "src/proximo/projection.py:cap_newest", "src/proximo/projection.py:cap_top"]
+
+[capability.semantic-find]
+what = "Opt-in semantic search over addresses and estate entities through a local embedding server or an in-process static embedding file; inert unless configured."
+origin = "design: bar 3"
+status = "owed"
+was = ["src/proximo/vectors.py"]
+
+[capability.docs-knowledge]
+what = "The vendor's docs and the operator's notes, indexed locally for full-text recall, so a fact is retrieved, not remembered."
+origin = "design: bar 3"
+status = "owed"
+was = ["src/proximo/wiki.py", "src/proximo/tools/wiki_tools.py"]
+
+[capability.pmg-and-sync-classifiers]
+what = "A PMG score or TLS policy change says whether it loosens or tightens; a quarantine list change names its real scope; a RuleDB reset says how many rules it wipes."
+origin = "design: PLAN"
+status = "owed"
+was = ["src/proximo/pmg.py:_customscore_delta_line", "src/proximo/pmg.py:_tls_policy_direction_line",
+       "src/proximo/pmg.py:_quarantine_scope", "src/proximo/pmg.py:_ruledb_reset_capture_count",
+       "src/proximo/pbs_admin.py:_sync_display_fields"]
+
+[capability.default-node]
+what = "A call may leave the node out and use the configured one."
+origin = "design: convenience"
+status = "standing"
+proof = ["tests/test_default_node.py::test_unset_a_template_read_is_refused_at_the_wire_as_before",
+         "tests/test_default_node.py::test_unset_or_blank_the_plan_is_exactly_the_plan_without_the_variable",
+         "tests/test_default_node.py::test_set_a_template_read_goes_to_the_configured_node",
+         "tests/test_default_node.py::test_set_the_plan_says_the_node_came_from_the_environment",
+         "tests/test_default_node.py::test_set_a_template_mutation_runs_on_the_configured_node_and_the_receipt_says_so",
+         "tests/test_default_node.py::test_a_registry_targets_node_is_not_the_env_boxs",
+         "tests/test_default_node.py::test_a_value_that_is_not_a_node_name_refuses_and_is_receipted"]
+
+[capability.ceph-zero-flags-guard]
+what = "A Ceph flags change with no flags is refused, because the vendor accepts it and starts a worker task."
+origin = "field: a zero-flags call fired a real Ceph worker task"
+status = "standing"
+proof = ["tests/test_arg_one_of.py::test_the_ceph_flags_put_carries_the_rule_over_every_flag_it_publishes",
+         "tests/test_arg_one_of.py::test_the_plan_of_an_empty_flags_call_says_no_with_no_credential",
+         "tests/test_arg_one_of.py::test_an_empty_flags_call_is_refused_before_the_wire_and_receipted",
+         "tests/test_arg_one_of.py::test_a_call_naming_a_flag_reaches_the_wire",
+         "tests/test_arg_one_of.py::test_a_call_naming_a_flag_is_planned_allowed_whatever_its_value"]
+
+# ---- OWED BY RULING: cut by an earlier ruling, brought back by a later one ------------------------
+# John, 2026-10-25: "Both come back" (the reach grant and the runbook prompts, cut 2026-10-18).
+
+[capability.reach-grant-observable]
+what = "Any widening of the container or agent allowlists between restarts lands on the ledger; doctor reads the grant, its source and the last change back, and can say which allowlisted containers the served token holds a named privilege on (an advisory, not a gate)."
+origin = "design: CONTAIN"
+status = "standing"
+proof = ["tests/test_reach_grant.py::test_ids_added_are_a_widening_and_name_exactly_what_was_added",
+         "tests/test_reach_grant.py::test_a_star_appearing_is_a_widening",
+         "tests/test_reach_grant.py::test_ids_removed_are_a_narrowing",
+         "tests/test_reach_grant.py::test_switching_a_lane_on_is_a_widening_though_the_ids_did_not_move",
+         "tests/test_reach_grant.py::test_an_unchanged_restart_records_nothing",
+         "tests/test_reach_grant.py::test_the_same_ids_in_another_order_are_the_same_grant",
+         "tests/test_reach_grant.py::test_a_ledger_that_cannot_be_read_refuses_the_start_when_a_lane_is_open",
+         "tests/test_reach_grant.py::test_a_chain_that_will_not_verify_does_not_brick_the_door_it_is_loud_and_still_names_a_widening",
+         "tests/test_reach_grant.py::test_a_wiped_ledger_with_the_key_left_behind_is_first_with_history_and_unproven_with_a_lane_open",
+         "tests/test_reach_grant.py::test_every_network_door_records_the_grant_before_it_serves",
+         "tests/test_reach_grant.py::test_the_stdio_door_records_the_grant_before_session_start_and_refuses_when_it_cannot_read_the_ledger",
+         "tests/test_reach_grant.py::test_doctor_reach_reads_back_the_grant_its_source_and_the_last_change",
+         "tests/test_reach_grant.py::test_the_mirror_flags_allowlisted_guests_the_token_holds_no_privilege_on",
+         "tests/test_reach_grant.py::test_a_refused_permissions_read_is_unanswered_never_allowed",
+         "tests/test_reach_grant.py::test_a_face_is_compared_with_its_own_last_row_not_the_newest_row_of_another_face",
+         "tests/test_reach_grant.py::test_the_operators_pin_makes_a_rolled_back_ledger_unprovable",
+         "tests/test_reach_grant.py::test_a_sealed_rotation_archive_is_followed_for_the_last_reach_row",
+         "tests/test_reach_grant.py::test_concurrent_starts_write_one_row_for_one_change",
+         "tests/test_reach_grant.py::test_the_shell_door_greets_before_a_call_that_can_mutate_and_not_before_a_read",
+         "tests/test_reach_grant.py::test_switching_a_lane_with_no_allowlist_on_is_a_widening"]
+
+[capability.runbook-prompts]
+what = "MCP prompts: safe migration, diagnose the cluster, provision a container, safe backup, review receipts."
+origin = "design: the 0.44 server"
+status = "standing"
+proof = [
+  "tests/test_core_prompts.py::test_the_five_are_registered_and_the_tool_surface_is_unchanged",
+  "tests/test_core_prompts.py::test_every_address_a_runbook_names_is_published",
+  "tests/test_core_prompts.py::test_every_tool_a_runbook_names_is_one_the_door_lists",
+  "tests/test_core_prompts.py::test_every_prompt_is_short_enough_for_a_small_model",
+  "tests/test_core_prompts.py::test_review_receipts_pins_the_head_and_names_only_the_fields_a_row_carries",
+  "tests/test_core_prompts.py::test_the_prompts_ride_the_network_door_and_the_tools_stay_six",
+]
+was = ["src/proximo/prompts.py", "src/proximo/core/prompts.py"]
+
+# ---- RETIRED: gone on purpose, by ruling --------------------------------------------------------
+
+[capability.scope-file]
+what = "A guest allowlist file the agent could not widen."
+origin = "design: CONTAIN"
+status = "retired"
+ruling = "John, 2026-10-05: the 0.45 bar, nothing that re-does Proxmox"
+instead = "the write token's own ACL on a guest path or a pool; proximo mint prints it; PROXIMO_SCOPE_PATH is refused at every door"
+
+[capability.arm-lease]
+what = "An auto-expiring TTL on the armed state."
+origin = "design: CONTAIN"
+status = "retired"
+ruling = "John, 2026-10-05: the 0.45 bar, nothing that re-does Proxmox"
+instead = "the write token's own expire at Proxmox; PROXIMO_ARM_TTL is refused at every door"
+
+[capability.client-argument-validation]
+what = "Client-side pattern, length, enum and bounds checks on every argument."
+origin = "design: the 0.44 wrappers"
+status = "retired"
+ruling = "John, 2026-10-05: revert B19's constraints"
+instead = "Proxmox enforces its own and answers 400, receipted; path-component safety stays in rawdoor"

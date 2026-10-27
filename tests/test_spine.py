@@ -419,23 +419,35 @@ def test_a_spent_marker_dir_that_cannot_be_made_refuses(armed, monkeypatch):
     (grants / cid).write_text("")
     with pytest.raises(ProximoError, match="consent"):
         engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
-    assert rec.calls == []
+    assert [c for c in rec.calls if c[0] != "GET"] == []
 
 
-def test_a_rate_refusal_after_the_spend_leaves_the_grant_spent(armed, monkeypatch):
+def test_a_rate_refusal_leaves_the_grant_unspent(armed, monkeypatch):
+    """A doomed attempt spends nothing: the rate slot is reserved BEFORE the grant is spent (one step,
+    the slots given back if the spend fails), so a call the budget refuses leaves the operator's one
+    approval where it was, and it runs once the budget allows."""
     cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
     _grant_cannot_be_unlinked(monkeypatch, grants)
     monkeypatch.setenv("PROXIMO_RATE_MAX", "0")                  # 0 = refuse everything
     (grants / cid).write_text("")
     with pytest.raises(ProximoError, match="rate"):
         engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    assert "core.consent_spent" not in [r["action"] for r in _rows()]
     monkeypatch.delenv("PROXIMO_RATE_MAX")
-    with pytest.raises(ProximoError, match="spent"):
-        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
-    assert _puts(rec) == []
-    actions = [r["action"] for r in _rows()]
-    assert "core.consent_spent" in actions
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)               # the same grant, now spent once, and it ran
+    assert len(_puts(rec)) == 1
     assert any(r["detail"].get("needs") == "rate" for r in _refusals())
+
+
+def test_a_grant_that_cannot_be_spent_gives_its_rate_slot_back(armed, monkeypatch):
+    cfg, rec, tmp, grants, row, cid = _consent_box(armed, monkeypatch)
+    monkeypatch.setenv("PROXIMO_RATE_MAX", "1")
+    monkeypatch.setenv("PROXIMO_RATE_WINDOW", "600")
+    with pytest.raises(ProximoError, match="consent"):             # no grant: refused at the look, then at the spend
+        engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
+    (grants / cid).write_text("")
+    engine.execute(row, {}, cfg=cfg, path=CFG_PATH)               # the one slot was still there
+    assert len(_puts(rec)) == 1
 
 
 def test_two_racing_spends_of_one_grant_one_wins(armed, monkeypatch, tmp_path):
@@ -465,7 +477,7 @@ def test_a_spend_the_ledger_cannot_hold_touches_nothing_and_keeps_the_grant(arme
     monkeypatch.setattr(ledger.AuditLedger, "record", record)
     with pytest.raises(ProximoError):
         engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
-    assert rec.calls == [], "the spend PROVE could not hold reached the wire"
+    assert [c for c in rec.calls if c[0] != "GET"] == [], "the spend PROVE could not hold reached the wire"
     assert (grants / cid).exists(), "the grant was removed before its spend was receipted"
     monkeypatch.setattr(ledger.AuditLedger, "record", real)
     engine.execute(row, {}, cfg=cfg, path=CFG_PATH)               # the same approval, once
@@ -655,7 +667,7 @@ def test_rate_cap_is_per_box_and_refuses_when_spent(armed, monkeypatch):
     rec.calls.clear()
     with pytest.raises(ProximoError, match="rate"):
         engine.execute(row, {"memory": "3"}, cfg=cfg, path=CFG_PATH)
-    assert rec.calls == []
+    assert [c for c in rec.calls if c[0] != "GET"] == []
     r = _refusals()[-1]
     assert r["detail"]["needs"] == "rate" and r["detail"]["rate_max"] == 2
     # another box has its own budget
@@ -851,7 +863,7 @@ def test_rate_garbled_cap_refuses_everything(armed, monkeypatch):
     monkeypatch.setenv("PROXIMO_RATE_MAX", "lots")
     with pytest.raises(ProximoError, match="rate"):
         engine.execute(_config_row(monkeypatch), {"memory": "1"}, cfg=cfg, path=CFG_PATH)
-    assert rec.calls == []
+    assert [c for c in rec.calls if c[0] != "GET"] == []
 
 
 @pytest.mark.parametrize("env,value", [("PROXIMO_ARM_TTL", "0"), ("PROXIMO_ARM_TTL", "-1"),
@@ -897,7 +909,7 @@ def test_seam_order_contain_retired_forbid_taint_consent_rate(armed, monkeypatch
             engine.execute(row, {}, cfg=cfg, path=CFG_PATH)
         order.append(_refusals()[-1]["detail"]["needs"])
     assert order == ["contain", "config", "forbid", "taint", "consent", "rate"]
-    assert rec.calls == []
+    assert [c for c in rec.calls if c[0] != "GET"] == []
 
 
 def test_arm_and_tier_still_come_first(armed, monkeypatch):

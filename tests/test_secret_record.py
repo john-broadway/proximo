@@ -46,7 +46,9 @@ def _record() -> dict:
 def _read_lines() -> dict:
     # the READ strips; the arg-secret lines (B5: a mutation's own argv/content) carry `args`
     # instead of drop/userinfo/rows/text/bearer and are guarded by their own test below.
-    return {k: v for k, v in _record().items() if "args" not in v}
+    read = ("drop", "userinfo", "rows", "text", "bearer")
+    public_only = lambda v: "public" in v and not any(f in v for f in read)  # noqa: E731
+    return {k: v for k, v in _record().items() if "args" not in v and not public_only(v)}
 
 
 def test_the_record_is_exact_and_names_only_addresses_the_door_serves():

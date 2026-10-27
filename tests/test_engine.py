@@ -655,7 +655,11 @@ def test_plan_prints_json_a_script_can_parse(capsys):
     assert cli.main(["pve", "DELETE", "/nodes/x/qemu/1", "--plan"]) == cli.EXIT_REFUSED
     out = json.loads(capsys.readouterr().out)
     assert out["allowed"] is False and out["needs"] in ("arm", "tier")
-    assert isinstance(out["published_parameters"], dict) and "purge" in out["published_parameters"]
+    assert isinstance(out["published_parameters"], dict) and out["parameters_more"] >= 1
+    assert "purge" not in out["published_parameters"] and "fields=" in out["next"]
+    assert cli.main(["pve", "DELETE", "/nodes/x/qemu/1", "--plan", "--fields", "purge"]) == cli.EXIT_REFUSED
+    out = json.loads(capsys.readouterr().out)
+    assert "purge" in out["published_parameters"] and "description" in out["published_parameters"]["purge"]
 
 
 # --- a config for another plane answers for another plane -------------------------------------

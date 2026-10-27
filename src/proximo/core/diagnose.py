@@ -43,7 +43,9 @@ text is neither OK nor a WARNINGS line). The task classifier is 0.44's rule in t
 """
 from __future__ import annotations
 
+import json
 import math
+import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -234,11 +236,12 @@ def run(plane: str, path: str, *, cfg: wire.Plane | None = None, ledger_cfg: Any
     shell = ({"skipped": "; ".join(c["reason"] for c in skipped.values()),
               "probes": [n for c in skipped.values() for n in c["probes"]]} if skipped
              else {"skipped": sub.shell} if sub.shell else None)
+    flags = _grouped(flags)
     incomplete = any(v != "ok" for v in sections.values()) or bool(skipped)
     answer: dict[str, Any] = {
         "address": row.address, "plane": plane, "access": engine.READ,
         "derived": True,           # composed by the door from governed reads, not the vendor's bytes
-        "matched_path": row.path, "called_path": called, "subject": sub.is_,
+        "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "subject": sub.is_,
         "battery": battery, "flags": flags, "incomplete": incomplete,
         **({"shell": shell} if shell else {}), "note": NOTE,
         **({"untrusted": True} if untrusted else {}),
@@ -249,7 +252,58 @@ def run(plane: str, path: str, *, cfg: wire.Plane | None = None, ledger_cfg: Any
                    detail={"sections": sections, "flags": len(flags), **({"untrusted": True} if untrusted else {}),
                            **({"skipped": skipped} if skipped else {})},
                    called=called, remote=plane_cfg.name)
-    return answer
+    # WHAT THE MODEL SEES IS CAPPED, whatever the reads were allowed: a node with 80 storages and a
+    # busy task list answered 12 KB. The sections trim one by one (their verdicts, errors and the
+    # flags stay), each trimmed part named, with a `next` to ask for it by its own address.
+    cap = rawdoor.composed_cap()
+    body = json.dumps(answer, separators=(",", ":"), default=str)
+    if not rawdoor.fits(len(body.encode()), body, cap=cap):
+        answer = {**answer, "battery": _same_channels(battery)}
+    return rawdoor.fit_answer(answer, descend=("battery",), cap=cap, next_text=(
+        "cut for size (see trimmed), not a failed probe; read a cut part by its own address"))
+
+
+def _same_channels(battery: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Seven host probes carry one `channel` sentence seven times. The label (`untrusted: true`) stays
+    on every section; a repeat of the sentence says which section already carries it. Only when over the cap."""
+    first: dict[str, str] = {}
+    out = {}
+    for name, section in battery.items():
+        ch = section.get("channel")
+        if isinstance(ch, str) and ch in first:
+            section = {**section, "channel": f"same as {first[ch]}"}
+        elif isinstance(ch, str):
+            first[ch] = name
+        out[name] = section
+    return out
+
+
+#: a flag shape repeated this many times becomes one line (36 offline storages are one finding)
+GROUP_FLAGS_AT = 6
+
+
+def _grouped(flags: list[str]) -> list[str]:
+    """Flags of one shape ("storage nfs-0 is inactive (offline); usage not evaluated", thirty-six of
+    them) as ONE line that keeps the verdict, names the first three and counts the rest, and every
+    flag's text bounded: a flag is a sentence, not a place to echo a vendor's paragraph."""
+    by_shape: dict[tuple[str, str], list[str]] = {}
+    for flag in flags:
+        m = re.match(r"^(\w+) (\S+) (.+)$", flag, re.ASCII)
+        if m:
+            by_shape.setdefault((m.group(1), m.group(3)), []).append(m.group(2))
+    out, said = [], set()
+    for flag in flags:
+        m = re.match(r"^(\w+) (\S+) (.+)$", flag, re.ASCII)
+        key = (m.group(1), m.group(3)) if m else None
+        if key is None or len(by_shape[key]) < GROUP_FLAGS_AT:
+            out.append(rawdoor.echo(flag, 200))
+        elif key not in said:
+            said.add(key)
+            names = by_shape[key]
+            verdict = re.sub(r"^is ", "are ", key[1])
+            shown = ', '.join(names[:3])
+            out.append(rawdoor.echo(f"{len(names)} {key[0]}s {verdict}: {shown} and {len(names) - 3} more", 200))
+    return out
 
 
 def _concrete(probe: Probe, bound: dict[str, str]) -> str:
@@ -311,7 +365,7 @@ def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Pl
     try:
         try:
             env = engine.execute(prow, dict(probe.params), cfg=plane_cfg, path=concrete, ledger_cfg=ledger_cfg,
-                                 fields=",".join(wanted) if wanted is not None else "all")
+                                 fields=",".join(wanted) if wanted is not None else "all", evaluating=True)
         except ProximoError as exc:
             # THE PROJECTION'S OWN REFUSAL IS NOT A FAILED READ. `fields=` refuses when no
             # row carries a named field: no rows, none finished, every storage offline. The
@@ -320,7 +374,7 @@ def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Pl
             if not (projected and str(exc).startswith("fields:")):
                 raise
             env = engine.execute(prow, dict(probe.params), cfg=plane_cfg, path=concrete, ledger_cfg=ledger_cfg,
-                                 fields="all")
+                                 fields="all", evaluating=True)
             projected = False
     except ProximoError as exc:            # refused by the spine, receipted by execute
         section["error"] = {"why": _words(prow, str(exc))}

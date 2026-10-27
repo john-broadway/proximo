@@ -252,6 +252,10 @@ not declare (`arguments`), a path that is not a published address (`path`), a re
 capture does not verify on the ledger (`prove`), a `--since` window that is malformed or has no kept snapshot to answer from (`store`).
 Every refusal is a receipt on the ledger.
 
+### The safety snapshot before a rollback
+
+A rollback discards everything since its snapshot, so Proximo takes another snapshot first, named `proximo_<time>_<hex>`, through the datacenter manager or on the node. It is on by default. Each one uses space on the guest's storage and Proximo never deletes it: list and remove old ones as you would any snapshot. Where the storage cannot take one without blocking the rollback, the plan says so before you approve. `PROXIMO_UNDO=off` in the environment turns off every before-state capture, this snapshot included; no argument a model sends can skip it.
+
 ### Seeing backups
 
 The read token sees **zero** backup archives on every storage, and that is Proxmox, not Proximo:

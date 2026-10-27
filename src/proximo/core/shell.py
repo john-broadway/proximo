@@ -207,20 +207,35 @@ class ShellClient:
         return _bounded(result)
 
 
+#: bytes and tokens a mutation's answer spends beside its data: header, undo capture, intent
+ENVELOPE_ROOM = (450, 160)
+
+
 def _bounded(result: dict[str, Any]) -> dict[str, Any]:
     """The one cap (PROXIMO_RAW_MAX_BYTES), split between the two streams, so the exit code always
     survives and each stream says when it was cut (`truncated`: its original length). The core never
     caps a mutation's answer, so the wire does; `rawdoor.bounded` would fold the code into a head."""
-    if rawdoor.bounded(result) is None:
+    # THE ENVELOPE IS SPENT FIRST: this result rides in an answer with a header (address, tier, undo ...),
+    # so the streams get the cap less what that costs, or the answer would be cut again at the door.
+    room = rawdoor.answer_cap().minus(*ENVELOPE_ROOM)
+    if rawdoor.bounded(result, room) is None:
         return result
-    per = max(rawdoor.max_bytes() // 2 - 128, 0)
+    per = max(room.bytes // 2 - 128, 0)
+    per_tokens = None if room.tokens is None else max(room.tokens // 2 - 64, 0)
+
+    def over(text: str) -> bool:
+        """Past its half in bytes, or (when a token cap is on) in estimated tokens: command output
+        is the densest text the door returns (hashes, addresses, escapes)."""
+        enc = json.dumps(text)
+        return len(enc) > per or (per_tokens is not None and rawdoor.estimate_tokens(enc) > per_tokens)
+
     out, cut = dict(result), {}
     for name in ("stdout", "stderr"):
         s = result[name]
-        if len(json.dumps(s)) > per:
+        if over(s):
             cut[name] = len(s)
-            while s and len(json.dumps(s)) > per:
-                s = s[: max(len(s) * per // len(json.dumps(s)) - 1, 0)]
+            while s and over(s):
+                s = s[: max(int(len(s) * 0.85) - 1, 0)]
             out[name] = s
     out["truncated"] = cut
     return out

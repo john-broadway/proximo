@@ -20,3 +20,22 @@
 "pdm:POST /access/users/{userid}/token/{token-name}" = { why = "Vendor: POST 'Generate a new API token with given metadata', GET 'Read user's API token metadata', DELETE 'Delete a user's API token'. A create of the record the path names; the same code as PBS's. [Claude, 2026-10-08]" }
 "pve:POST /cluster/jobs/realm-sync/{id}" = { why = "Vendor: POST 'Create new realm-sync job', GET 'Read realm-sync job definition', DELETE 'Delete realm-sync job definition'. A create of the record the path names; a duplicate id is refused by the vendor's section config (not proven live). [Claude, 2026-10-08]" }
 "pve:POST /cluster/metrics/server/{id}" = { why = "Vendor: POST 'Create a new external metric server config', GET 'Read metric server configuration', DELETE 'Remove Metric server'. A create of the record the path names; a duplicate id is refused by the vendor's section config (not proven live). [Claude, 2026-10-08]" }
+
+# UNDO's safety snapshots: the rollbacks that take a snapshot first.
+#
+# A rollback discards everything since the snapshot, and Proxmox publishes no read of a guest to
+# capture first, so the only net is another snapshot of the same guest, taken through `execute`
+# (armed, tiered, receipted, waited) before the rollback is dialled. If it does not land the
+# rollback is not run. The snapshot is put back by the vendor's own rollback of it, `undo <id>`.
+# Unlike the shell lane's `snapshot=true`, nobody asks for this net, so a caller cannot skip it;
+# the operator's `PROXIMO_UNDO=off` opts out of every net and the receipt says so.
+# A line carries only its `why`: the snapshot and the rollback are DERIVED from the address
+# (the guest's own snapshot create, and this very rollback), so no line can name a net the
+# address does not support. The build refuses a line on an address that is not a served POST
+# `.../snapshot/{snapname}/rollback` on the API wire, or whose guest serves no snapshot create.
+# Opening a line is John's hand, by name.
+[net]
+"pdm:POST /pve/remotes/{remote}/qemu/{vmid}/snapshot/{snapname}/rollback" = { why = "Vendor: 'Roll back a remote qemu vm to a snapshot. This is destructive: it reverts the guest's disk and configuration to that snapshot'; the datacenter manager publishes no read of the guest to capture first. 0.44.0's pdm_pve_qemu_snapshot_rollback took a snapshot first and waited for it, fail-closed; the 0.45 cut dropped it with the wrapper. [Claude, 2026-10-25; John: owed row pdm-rollback-safety-snapshot]" }
+"pdm:POST /pve/remotes/{remote}/lxc/{vmid}/snapshot/{snapname}/rollback" = { why = "Vendor: 'Roll back a remote lxc container to a snapshot. This is destructive: it reverts the container's disk and configuration to that snapshot'; the datacenter manager publishes no read of the guest to capture first. 0.44.0's pdm_pve_lxc_snapshot_rollback took a snapshot first and waited for it, fail-closed; the 0.45 cut dropped it with the wrapper. [Claude, 2026-10-25; John: owed row pdm-rollback-safety-snapshot]" }
+"pve:POST /nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback" = { why = "Vendor: 'Rollback VM state to specified snapshot' discards everything since the snapshot, and the node publishes no read of the guest to capture first. John, 2026-10-25: the direct rollbacks get the same net as the datacenter manager's, taken unless the storage would block the rollback with it. [Claude, 2026-10-25]" }
+"pve:POST /nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback" = { why = "Vendor: 'Rollback LXC state to specified snapshot' discards everything since the snapshot, and the node publishes no read of the guest to capture first. John, 2026-10-25: the direct rollbacks get the same net as the datacenter manager's, taken unless the storage would block the rollback with it. [Claude, 2026-10-25]" }

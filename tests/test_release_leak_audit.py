@@ -553,3 +553,12 @@ def test_a_gzipped_record_cannot_hide_an_address_from_the_scan():
     dup = _gzip.compress(('{"a": "' + lab + '", "a": "x"}').encode())               # lens 3: a duplicate key
     assert [f.match for f in rla.scan_binary(gz, dup)] == [lab]                      # json.loads keeps the last
     assert [f.kind for f in rla.scan_binary(gz, _gzip.compress(b"[" * 100000))] == ["unreadable-gzip"]
+
+
+def test_the_internal_reach_tool_is_stripped_by_path_and_the_core_reach_grant_publishes():
+    # 0.49.0's first public CI: a basename deny on `reach.py` stripped the restored `core/reach.py`
+    # too, and 14 published test modules failed to import it. The internal tool is denied by path.
+    kept, stripped = rla.partition_paths(["scripts/reach.py", "tests/test_reach.py",
+                                          "src/proximo/core/reach.py", "tests/test_reach_grant.py"])
+    assert stripped == ["scripts/reach.py", "tests/test_reach.py"]
+    assert kept == ["src/proximo/core/reach.py", "tests/test_reach_grant.py"]

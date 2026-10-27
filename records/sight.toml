@@ -1,0 +1,37 @@
+# TOKEN SIGHT: when an empty list is not evidence of "none". Hand-authored; a why on every line.
+#
+# Proxmox answers 200 and an EMPTY list, not a refusal, where it hides what the token may not
+# see. An agent told `[]` reads "no backups" about a shelf it was never allowed to look at. On a
+# line here, an empty answer is judged by the token's own `GET /access/permissions` (the same
+# plane's read): sighted is served, blind is refused naming what the token would need, and a
+# permission map that cannot be read is refused too (the empty list is not vouched for). A
+# non-empty answer is served as ever and the permissions are never read.
+#
+#   "plane:GET /path" = { when = {...}, sighted = [[...], ...], what = "...", why = "..." }
+#
+#   when     parameter -> the values the line speaks to; the parameter absent counts (the default
+#            asks for everything, the hidden kind included). A question about another value
+#            (content=iso) is not judged.
+#   sighted  alternatives (any one suffices), each a list of `privilege@path` (all must hold).
+#            `@*` = held on any path. `{name}` fills from the path the question was asked at, or
+#            from an argument; an optional argument that is not given drops its segment (a PBS
+#            namespace: the privilege is then asked at the datastore).
+#   what     what an empty answer cannot be taken to mean, in two words or more.
+#   why      the judgement, quoting where the vendor hides it.
+#
+# A privilege is held at a path iff its key is DEFINED there (PVE: the value is the propagate flag,
+# informational at the exact path), or on an ancestor that propagates. The privilege names are the
+# vendor's own, as GET /access/permissions answers them; nothing here translates them into roles.
+#
+# NOT here, on purpose: any list Proxmox filters by privilege that has no single privilege to ask
+# (the cluster resources, a pool's members): the filter there is by the entry, and an empty answer
+# is a different claim. A line is added by name, when one is found hiding.
+# Opening a line is John's hand, by name.
+
+[sight]
+
+"pve:GET /nodes/{node}/storage/{storage}/content" = { when = { content = ["backup"] }, sighted = [["Datastore.Allocate@/storage/{storage}"], ["Datastore.AllocateSpace@/storage/{storage}", "VM.Backup@*"]], what = "backup volumes", why = "PVE filters backup volumes out of a storage's content listing per volume (check_volume_access in PVE::Storage): a token sees one with Datastore.AllocateSpace on the storage and VM.Backup on the owner guest, or Datastore.Allocate on the storage as the bypass; without them the answer is 200 and an empty list on a storage full of archives. VM.Backup on any path counts, because the filter is per owner guest and a grant on one guest truthfully shows that guest's archives; that scope is the admin's decision. Found live in July and September 2026 (the freshness fence, then the plain listing) by 0.44. [Claude, 2026-10-25; restored from 0.44's storage_blind_reason]" }
+
+"pbs:GET /admin/datastore/{store}/snapshots" = { when = {}, sighted = [["Datastore.Audit@/datastore/{store}/{ns}"]], what = "backup snapshots", why = "PBS gates the listing with check_ns_privs_full(store, ns, auth_id, PRIV_DATASTORE_AUDIT, PRIV_DATASTORE_BACKUP): Datastore.Audit shows every group, Datastore.Backup alone shows the groups the caller OWNS, and an empty answer cannot tell 'no such snapshot' from 'someone else's'. Read and Modify are never consulted by that check. The role DatastoreBackup is described as able to 'backup and restore OWNED backups'. Found live in September 2026: a Backup-only token read zero snapshots on a datastore holding another owner's group. [Claude, 2026-10-25; restored from 0.44's datastore_blind_reason]" }
+
+"pbs:GET /admin/datastore/{store}/groups" = { when = {}, sighted = [["Datastore.Audit@/datastore/{store}/{ns}"]], what = "backup groups", why = "The same check as the snapshot listing (list_groups uses check_ns_privs_full with PRIV_DATASTORE_AUDIT and PRIV_DATASTORE_BACKUP): Datastore.Audit shows every group, Datastore.Backup alone shows the groups the caller OWNS, so an empty list from an owner-filtered token is not 'none'. Found live in September 2026 with a Backup-only token against another owner's group. [Claude, 2026-10-25; restored from 0.44's datastore_blind_reason]" }

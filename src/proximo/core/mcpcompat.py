@@ -24,9 +24,11 @@ module's map is wrong, and it should be loud.
 from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from . import rawdoor
 from .errors import ProximoError
 from .secretfile import redact
 
@@ -49,6 +51,10 @@ else:
 
 __all__ = [
     "MCP_MAJOR",
+    "compact_result",
+    "compact_text_blocks",
+    "seal_result",
+    "slim_schemas",
     "ServerClass",
     "ToolError",
     "annotations_read_only",
@@ -65,6 +71,74 @@ __all__ = [
 # floor, so passing it unconditionally is a TypeError on the floor — and CI's 1.x leg runs the
 # lock's pin, not the floor, so only this gate (not a green build) protects that path.
 TOOL_SUPPORTS_ANNOTATIONS = "annotations" in inspect.signature(ServerClass.tool).parameters
+
+
+def compact_text_blocks(blocks: Any) -> list[Any]:
+    """The same blocks with every text block that holds a JSON object or array re-spelled COMPACT.
+
+    Both SDK majors serialize a tool's dict with `indent=2`, and a model reads that text: measured
+    with the Qwen3 tokenizer, the indentation was a third of the tokens of a lean read. The answer
+    is unchanged (same keys, same order, same values; non-ASCII left whole, not `\\u`-escaped), and
+    the structured copy a client reads beside it is not touched. Anything that is not an object or
+    an array (a refusal's sentence, a bare number, plain text) is left exactly as it was."""
+    out = []
+    for block in blocks:
+        text = getattr(block, "text", None)
+        if isinstance(text, str) and getattr(block, "type", None) == "text":
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, (dict, list)):
+                squeezed = json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
+                if squeezed != text:
+                    block = block.model_copy(update={"text": squeezed})
+        out.append(block)
+    return out
+
+
+def compact_result(result: Any) -> Any:
+    """`compact_text_blocks` over what an in-process `call_tool` returns, per SDK major: 2.x a
+    `CallToolResult`, 1.x the content list or the `(content, structured)` pair."""
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], (list, tuple)):
+        return (compact_text_blocks(result[0]), result[1])
+    if isinstance(result, (list, tuple)):
+        return compact_text_blocks(result)
+    content = getattr(result, "content", None)
+    if isinstance(content, (list, tuple)):
+        return result.model_copy(update={"content": compact_text_blocks(content)})
+    return result
+
+
+def seal_result(name: str, result: Any) -> Any:
+    """THE EXIT: `compact_result`, then the answer held to its kind's ceiling (`rawdoor.finish`): terse, and
+    REPLACED by the fixed-shape over-cap answer when its final bytes are over. The structured copy a client
+    reads beside the text is the same object, so neither can carry what the other was cut of."""
+    result = compact_result(result)
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
+        answer = result[1]
+    elif isinstance(structured := getattr(result, "structured_content", None), dict):
+        answer = structured
+    else:
+        return result
+    final = rawdoor.finish(name, answer)
+    from mcp.types import TextContent  # noqa: PLC0415 -- the SDK is an optional extra
+    block = TextContent(type="text", text=json.dumps(final, separators=(",", ":"), ensure_ascii=False, default=str))
+    if isinstance(result, tuple):
+        return ([block], final)
+    return result.model_copy(update={"content": [block], "structured_content": final})
+
+
+def _invalid(tool: str, error: Any) -> str:
+    """A validation failure as ONE fixed sentence and at most three argument names, each cut by echo. Pydantic's
+    own text quotes the input (233 KB for a thousand undeclared keys); the names are all a caller needs."""
+    found = error.errors(include_input=False, include_url=False)
+    names = [".".join(str(p) for p in item.get("loc", ())) for item in found]
+    more = f" (and {len(names) - 3} more)" if len(names) > 3 else ""
+    shown = ", ".join(rawdoor.echo(n, 40) for n in names[:3]) + more
+    extra = all(item.get("type") == "extra_forbidden" for item in found)
+    what = "unexpected arguments" if extra else "invalid arguments"
+    return f"Error executing tool {tool}: {what}: {shown}"
 
 
 def tool_annotations_kwargs(read_only: bool) -> dict[str, Any]:
@@ -102,7 +176,11 @@ def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | No
     (proximo's own faces are unaffected: governed 404s on non-residents before dispatching.)
     """
     if MCP_MAJOR == 1:
-        server = ServerClass(name)
+        class _CompactFastMCP(ServerClass):  # type: ignore[misc,valid-type]
+            async def call_tool(self, *args: Any, **kwargs: Any) -> Any:
+                return seal_result(str(args[0]) if args else "", await super().call_tool(*args, **kwargs))
+
+        server = _CompactFastMCP(name)
         server._mcp_server.version = version  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue] -- 1.x only
         return server
 
@@ -110,11 +188,11 @@ def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | No
         async def call_tool(self, name: str, arguments: dict, context: Any = None) -> Any:  # noqa: A002
             if name not in self._tool_manager._tools:  # noqa: SLF001
                 if unknown_tool is not None:
-                    raise ProximoError(unknown_tool(name))
+                    raise ProximoError(rawdoor.refusal_text(unknown_tool(rawdoor.echo(str(name), 40))))
                 known = ", ".join(sorted(self._tool_manager._tools))  # noqa: SLF001
-                raise ProximoError(f"unknown tool {name!r}; this server has: {known}")
+                raise ProximoError(f"unknown tool {rawdoor.quote(str(name), 40)}; this server has: {known}")
             try:
-                return await super().call_tool(name, arguments, context)
+                return seal_result(name, await super().call_tool(name, arguments, context))
             except ToolError as e:
                 # 2.x sanitizes every non-ToolError raised inside a tool to "Error executing tool
                 # <name>" (UnexpectedToolError), so an adopter on this SDK read every refusal —
@@ -128,14 +206,18 @@ def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | No
                 while isinstance(cause, ToolError) and cause.__cause__ is not None:
                     cause = cause.__cause__
                 if isinstance(cause, ProximoError):
-                    raise ToolError(f"Error executing tool {name}: {cause}") from cause
+                    head = f"Error executing tool {rawdoor.echo(str(name), 40)}: "     # the WHOLE text <= the ceiling
+                    raise ToolError(head + rawdoor.echo_bytes(str(cause), rawdoor.CEILINGS["refusal"]
+                                                              - len(head.encode()))) from cause
                 # The last seam before str(e) reaches the model: argument validation runs in the
                 # SDK before the tool body, so a caller value echoed by pydantic never met
                 # target_aware (lens 2026-09-20). Scrub here; cause kept for governed.py.
+                if type(cause).__name__ == "ValidationError":
+                    raise ToolError(rawdoor.refusal_text(_invalid(name, cause))) from e.__cause__
                 clean = redact(str(e))
                 if clean != str(e):
-                    raise ToolError(clean) from e.__cause__
-                raise
+                    raise ToolError(rawdoor.refusal_text(clean)) from e.__cause__
+                raise ToolError(rawdoor.refusal_text(str(e))) from e.__cause__
 
     return _GovernedMCPServer(name, version=version)
 
@@ -209,6 +291,43 @@ def streamable_http_app(server: Any, *, path: str, stateless: bool, json_respons
         json_response=json_response,
         transport_security=transport_security,
     )
+
+
+_SCHEMA_MAPS = ("properties", "$defs", "definitions", "patternProperties")   # name -> schema
+_VALUES = ("enum", "const", "default", "examples", "required")                    # data, not schema
+
+
+def _slim(node: Any, names: bool = False) -> Any:
+    """A schema as a model needs it: no `title` (pydantic repeats every name as one), no `default:
+    null` and no `anyOf [X, null]` wrapper (an argument that may be left out is simply not required),
+    no `additionalProperties`. Only SCHEMA KEYWORDS go: the keys of a `properties` map are argument
+    NAMES (an argument called `title` or `default` stays), and an enum, a default or a required list
+    is data. The ARGUMENT MODEL is untouched: validation and the undeclared-name refusal read that,
+    not this."""
+    if isinstance(node, list):
+        return [_slim(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    if names:                                   # a name -> schema map: every key is a name, kept
+        return {k: _slim(v) for k, v in node.items()}
+    out: dict[str, Any] = {}
+    for k, v in node.items():
+        if k in ("title", "additionalProperties") or (k == "default" and v is None):
+            continue
+        out[k] = v if k in _VALUES else _slim(v, names=k in _SCHEMA_MAPS)
+    options = out.get("anyOf")
+    if isinstance(options, list) and len(options) == 2 and {"type": "null"} in options:
+        keep = next(o for o in options if o != {"type": "null"})
+        out.pop("anyOf")
+        out.update(keep if isinstance(keep, dict) else {})
+    return out
+
+
+def slim_schemas(server: Any) -> None:
+    """Hand the model the slim schema of every registered tool (see `_slim`). The registry Tool's
+    `.parameters` is what both majors put on the wire as the input schema."""
+    for tool in server._tool_manager.list_tools():  # noqa: SLF001 -- the seam's sanctioned reach
+        tool.parameters = _slim(tool.parameters)
 
 
 def forbid_undeclared(server: Any) -> None:

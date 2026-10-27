@@ -199,7 +199,7 @@ def test_every_name_in_the_tree_is_answered_by_a_module(path):
 @pytest.mark.parametrize("plant,expect", [
     ("\n\ndef _p():\n    from proximo.backends import ProxmoxClient\n",
      {"proximo.backends", "proximo.backends.ProxmoxClient"}),
-    ("\n\ndef _p():\n    from proximo.core import prompts\n", {"proximo.core.prompts"}),
+    ("\n\ndef _p():\n    from proximo.core import blast\n", {"proximo.core.blast"}),
     ("\n\nimport proximo.server\n", {"proximo.server"}),
     ("\n\nfrom proximo import tools\n", {"proximo.tools"}),
     ("\n\nfrom proximo.core import the\n", {"proximo.core.the"}),

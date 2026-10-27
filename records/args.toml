@@ -1,0 +1,15 @@
+# ARGUMENT RULES: what a call must name, judged from its own arguments and nothing else.
+#
+# Bar 4 leaves argument judgement to the vendor. This file is for the call the vendor ACCEPTS and
+# then does something other than what was asked: the refusal is authored here, on the address,
+# with the sentence that is the judgement. A rule reads the arguments alone (never a read of the
+# target), so a plan says no on a box with no credential, and `execute` refuses the same call with
+# a receipt, before anything is spent or sent.
+#
+# `[one_of]`: a call must name at least ONE of `names` (presence, not truth: a boolean given as 0
+# is a real change; an absent, null or blank value names nothing). The build refuses a line on an
+# address that is not a served mutation, an empty or repeated `names`, a name the address does not
+# publish or the path binds, and a `why` under four words or with space around it.
+# Opening a line is John's hand, by name.
+[one_of]
+"pve:PUT /cluster/ceph/flags" = { names = ["nobackfill", "nodeep-scrub", "nodown", "noin", "noout", "norebalance", "norecover", "noscrub", "notieragent", "noup", "pause"], why = "Vendor: every flag is optional and none is required, so a PUT that names none is accepted and starts a worker task that changes nothing. 0.44.0 found it live: a zero-flags call fired a real Ceph worker task, and guarded it; the 0.45 cut dropped the guard with the wrapper. [Claude, 2026-10-25; John: owed row ceph-zero-flags-guard]" }

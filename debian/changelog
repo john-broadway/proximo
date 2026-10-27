@@ -1,3 +1,14 @@
+proximo (0.49.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.49.0 (minor: every answer a model is handed fits under
+    a hard byte ceiling at one exit on every door; a model's plan names its
+    arguments and hashes long values, and proximo-core consent show prints
+    the whole proposal for the operator; a rollback takes a safety snapshot
+    first, on by default; consult, the plan's second look; capabilities the
+    0.45 cut took come back on a record. Door contract 3. 4,126 tests.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Tue, 27 Oct 2026 01:45:00 +0000
+
 proximo (0.48.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.48.1 (patch: a pool-scoped PVE write recipe also

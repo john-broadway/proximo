@@ -420,3 +420,40 @@
 "pve:POST /nodes/{node}/execute" = { why = "Runs a JSON array of API calls in one request, root only: the inner addresses and methods never pass through resolve, tier, forbid or scope, so one grant here would open every other address through it; held until each inner call is governed as itself. [Claude, 2026-10-04, on John's word: every gate offered; his to overrule]" }
 "pdm:POST /auto-install/answer" = { why = "Answers an installing machine's request for its answer file, root password in plain text and the subscription key with it: the door's caller is never the installing machine, and the answer is a credential set for a machine that is not the caller; held until John opens it by name. [Claude, 2026-10-04, lens 1 B1; his to overrule]" }
 "pve:POST /cluster/config/nodes/{node}" = { why = "Adds a node to the cluster configuration, a call the vendor marks for internal use, and answers with the corosync authkey, the secret that admits a node to the cluster; held until John opens it by name. [Claude, 2026-10-04, lens 1 B1; his to overrule]" }
+
+# ── RAISED BY A VALUE ([raise]) ────────────────────────────────────────────────────────────────
+# A tier one address cannot carry, because the value that decides it is in the call: the service a
+# stop names is a path value. A raise names its addresses, `when` (a name the path binds or the
+# address publishes -> the values, compared lower case with `.service` dropped), the HIGHER tier
+# and why. It only raises: the build refuses a raise that would lower or keep the tier, or that sits
+# on an address with no tier of its own (a raise never opens). The plan shows the raised tier beside
+# the authored one; the executing receipt carries it.
+#
+# John, 2026-10-25 ("Raise to destructive"): stopping, restarting or reloading the services that
+# hold the door open is destructive on every plane; every other service keeps the family's tier.
+# The service sets are 0.44's lockout sets, carried whole (observability.py _LOCKOUT_SERVICES,
+# pbs_node.py _PBS_LOCKOUT_SERVICES; PMG's API daemons added by name in the same ruling). Starting
+# one is not raised: 0.44 judged a start of a lockout service additive.
+
+[raise.pve-door-services]
+addresses = ["pve:POST /nodes/{node}/services/{service}/stop", "pve:POST /nodes/{node}/services/{service}/restart",
+             "pve:POST /nodes/{node}/services/{service}/reload"]
+when = { service = ["networking", "pveproxy", "pvedaemon", "pve-cluster", "corosync", "sshd", "ssh", "ifupdown2",
+                    "pve-firewall", "chrony"] }
+tier = "destructive"
+why = "this service holds the node's management door or its cluster quorum: stopping it can cut the API, ssh and this door off, or break quorum, until someone reaches the console [John, 2026-10-25]"
+
+[raise.pbs-door-services]
+addresses = ["pbs:POST /nodes/{node}/services/{service}/stop", "pbs:POST /nodes/{node}/services/{service}/restart",
+             "pbs:POST /nodes/{node}/services/{service}/reload"]
+when = { service = ["proxmox-backup", "proxmox-backup-proxy", "networking", "sshd", "ssh", "ifupdown2", "chrony",
+                    "chronyd"] }
+tier = "destructive"
+why = "this service holds the backup server's management door: stopping the API daemon or the proxy, the network or ssh can cut every client and this door off until someone reaches the console [John, 2026-10-25]"
+
+[raise.pmg-door-services]
+addresses = ["pmg:POST /nodes/{node}/services/{service}/stop", "pmg:POST /nodes/{node}/services/{service}/restart",
+             "pmg:POST /nodes/{node}/services/{service}/reload"]
+when = { service = ["pmgproxy", "pmgdaemon", "networking", "sshd", "ssh", "ifupdown2"] }
+tier = "destructive"
+why = "this service holds the mail gateway's management door: stopping the API daemon or the proxy, the network or ssh can cut this door off until someone reaches the console [John, 2026-10-25]"

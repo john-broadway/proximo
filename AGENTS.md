@@ -33,7 +33,8 @@ and how to check.
 
 - **A refusal names what would change the answer, and that is the whole message.** `needs`
   is one of `arm`, `tier`, `held`, `contain`, `consent`, `forbid`, `rate`, `taint`, `config`,
-  `undo`, `prove`, `arguments`, `path`, `store`, or an opt-in lane's own name (`agent`, `shell`,
+  `undo`, `prove`, `arguments`, `path`, `store`, `sight` (an empty list the token could not see into is not
+  served as "none": the refusal names the privileges it would need), or an opt-in lane's own name (`agent`, `shell`,
   `node`, `download`: the lane is off, or this guest is not on its allowlist). `arm` means a human swaps the token; `held` means the address is refused by design and
   nothing you send opens it; `consent` means a grant file only the operator writes. Retrying,
   rewording the arguments, or trying a sibling address is not the fix for any of them.

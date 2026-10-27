@@ -17,6 +17,7 @@ pydantic or the big server in, and that is measured, not listed.
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
@@ -87,10 +88,11 @@ def test_the_built_distribution_answers_from_the_shell(tmp_path):
     plan = subprocess.run([str(door), "pve", "DELETE", "/nodes/x/qemu/1", "--plan"],
                           capture_output=True, text=True, env=env)
     assert plan.returncode == 2, plan.stderr            # refused by the spine: not armed, no tier
-    assert '"allowed": false' in plan.stdout and '"needs": "arm"' in plan.stdout
+    said = json.loads(plan.stdout)              # the shell door answers compact JSON: read it, not its spacing
+    assert said["allowed"] is False and said["needs"] == "arm"
     read = subprocess.run([str(door), "pve", "GET", "/nodes/x/status", "--plan"],
                           capture_output=True, text=True, env=env)
-    assert read.returncode == 0 and '"access": "read"' in read.stdout, read.stderr
+    assert read.returncode == 0 and json.loads(read.stdout)["access"] == "read", read.stderr
     listing = subprocess.run([str(venv / "bin" / "python"), "-c",
                               "import importlib.metadata as m; print(sorted(d.name for d in m.distributions()))"],
                              capture_output=True, text=True, check=True, env=env).stdout

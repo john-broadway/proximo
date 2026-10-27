@@ -2,51 +2,39 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the Proxmox MCP you can hand the keys",
   "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
-  "version": "0.48.1",
+  "version": "0.49.0",
   "tools": [
     {
       "name": "proximo_find",
-      "description": "READ-ONLY: search every API address the planes publish, in plain words ('list datastores', 'guest status'). A verb picks the method; other words match the path, the vendor's description, parameter names. 5 by default. Returns access and the authored blast-radius tier.",
+      "description": "READ-ONLY: find API addresses by plain words ('list datastores'). A verb picks the method. Returns access and blast-radius tier. 5 by default.",
       "inputSchema": {
         "properties": {
           "query": {
-            "title": "Query",
             "type": "string"
           },
           "plane": {
-            "anyOf": [
-              {
-                "enum": [
-                  "pve",
-                  "pbs",
-                  "pmg",
-                  "pdm"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "pve",
+              "pbs",
+              "pmg",
+              "pdm"
             ],
-            "default": null,
-            "title": "Plane"
+            "type": "string"
           },
           "limit": {
             "default": 5,
-            "title": "Limit",
             "type": "integer"
           }
         },
         "required": [
           "query"
         ],
-        "type": "object",
-        "title": "findArguments"
+        "type": "object"
       }
     },
     {
       "name": "proximo_plan",
-      "description": "READ-ONLY: the governed verdict for one address and the vendor's published parameters. Mutates nothing. A mutation's plan also reads the target (one governed read, receipted): current, change (from/to per argument), noop. Run before proximo_call. path may be words: one match is planned, several come back to pick from.",
+      "description": "READ-ONLY, mutates nothing: the governed verdict (armed, tier, consent) for one address, with the parameters you gave and the required ones you lack; fields='name1,name2' or 'all' shows the vendor's full schema. A mutation's plan also reads the target: current, change, noop. Run before proximo_call. path may be words: one match is planned, several come back to pick from.",
       "inputSchema": {
         "properties": {
           "plane": {
@@ -56,29 +44,19 @@
               "pmg",
               "pdm"
             ],
-            "title": "Plane",
             "type": "string"
           },
           "method": {
-            "title": "Method",
             "type": "string"
           },
           "path": {
-            "title": "Path",
             "type": "string"
           },
           "args": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Args"
+            "type": "object"
+          },
+          "fields": {
+            "type": "string"
           }
         },
         "required": [
@@ -86,13 +64,12 @@
           "method",
           "path"
         ],
-        "type": "object",
-        "title": "_planArguments"
+        "type": "object"
       }
     },
     {
       "name": "proximo_read",
-      "description": "READ-ONLY: run any GET the plane publishes, by path. Rows come back LEAN with a total (names, states, ids) unless fields='all' or fields='name,status'. Over the cap: counts per state and the odd rows; fields= gets rows. since='24h' (30m, 7d): what changed, from the door's own snapshots, no vendor call. Credentials come back withheld. wait=N on a .../tasks/{upid}/status address waits up to N s (max 600) for the task's end. diagnose=true on a node or guest path: its health reads and advisory flags, one call.",
+      "description": "READ-ONLY: run a GET by path or words (no leading slash). args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
       "inputSchema": {
         "properties": {
           "plane": {
@@ -102,79 +79,41 @@
               "pmg",
               "pdm"
             ],
-            "title": "Plane",
             "type": "string"
           },
           "path": {
-            "title": "Path",
             "type": "string"
           },
-          "params": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Params"
+          "args": {
+            "type": "object"
           },
           "fields": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Fields"
+            "type": "string"
           },
           "since": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Since"
+            "type": "string"
           },
           "wait": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Wait"
+            "type": "integer"
           },
           "diagnose": {
             "default": false,
-            "title": "Diagnose",
             "type": "boolean"
+          },
+          "params": {
+            "type": "object"
           }
         },
         "required": [
           "plane",
           "path"
         ],
-        "type": "object",
-        "title": "_readArguments"
+        "type": "object"
       }
     },
     {
       "name": "proximo_call",
-      "description": "MUTATION: run a governed POST/PUT/DELETE. Dry-run by default: without confirm=true it returns the plan (verdict, consent id, current, change) and mutates nothing. Refused unless the operator is armed AND the address carries an authored blast-radius tier. Every call, refused or executed, is receipted. A task-backed call is waited on (wait=N s, default 60, max 600; 0 submits only) and reports finished, failed or timed out under 'task'. method=undo with path=<undo.id> puts that receipt's capture back through the vendor's PUT, plan first; withheld or unpublished keys come back as skipped.",
+      "description": "MUTATION: run a governed POST/PUT/DELETE. Without confirm=true it returns the plan (verdict, consent id, current, change) and mutates nothing. Refused unless the operator is armed AND the address has an authored blast-radius tier. Every call, refused or executed, is receipted. Task-backed calls are waited on (wait=N s, default 60, max 600; 0 submits only). method=undo with path=<undo.id> puts a receipt's capture back, plan first; withheld or unpublished keys come back as skipped.",
       "inputSchema": {
         "properties": {
           "plane": {
@@ -184,46 +123,23 @@
               "pmg",
               "pdm"
             ],
-            "title": "Plane",
             "type": "string"
           },
           "method": {
-            "title": "Method",
             "type": "string"
           },
           "path": {
-            "title": "Path",
             "type": "string"
           },
           "args": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Args"
+            "type": "object"
           },
           "confirm": {
             "default": false,
-            "title": "Confirm",
             "type": "boolean"
           },
           "wait": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Wait"
+            "type": "integer"
           }
         },
         "required": [
@@ -231,87 +147,106 @@
           "method",
           "path"
         ],
-        "type": "object",
-        "title": "_callArguments"
+        "type": "object"
       }
     },
     {
       "name": "audit_entries",
-      "description": "READ-ONLY: read the PROVE ledger back, newest first, bounded, rows with ids; says when it truncated.",
+      "description": "READ-ONLY: the PROVE ledger, newest first, bounded; says when it truncated.",
       "inputSchema": {
         "properties": {
           "limit": {
             "default": 20,
-            "title": "Limit",
             "type": "integer"
           },
           "target": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Target"
+            "type": "string"
           },
           "action": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Action"
+            "type": "string"
           },
           "mutations_only": {
             "default": false,
-            "title": "Mutations Only",
             "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "audit_entriesArguments"
+        "type": "object"
       }
     },
     {
       "name": "audit_verify",
-      "description": "READ-ONLY: walk the chain and report the first break; expected_head catches a cut tail; path=<archive> verifies a sealed archive beside the ledger.",
+      "description": "READ-ONLY: walk the chain, report the first break; expected_head catches a cut tail; path=<archive> checks a sealed archive.",
       "inputSchema": {
         "properties": {
           "expected_head": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Expected Head"
+            "type": "string"
           },
           "path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Path"
+            "type": "string"
           }
         },
-        "type": "object",
-        "title": "audit_verifyArguments"
+        "type": "object"
       }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "safe_migration",
+      "description": "Runbook: migrate a guest (by vmid) to another node safely (look, plan, call, verify).",
+      "arguments": [
+        {
+          "name": "guest",
+          "required": true
+        },
+        {
+          "name": "target_node",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "diagnose_cluster",
+      "description": "Runbook: read-only health sweep of the cluster (DIAGNOSE, no changes).",
+      "arguments": [
+        {
+          "name": "node",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "provision_container",
+      "description": "Runbook: provision a new LXC within policy (look, plan, call, verify).",
+      "arguments": [
+        {
+          "name": "node",
+          "required": true
+        },
+        {
+          "name": "hostname",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "safe_backup",
+      "description": "Runbook: back up a guest (by vmid) and verify the backup landed.",
+      "arguments": [
+        {
+          "name": "guest",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "review_receipts",
+      "description": "Runbook: verify the PROVE ledger against a head you hold, and read what it holds.",
+      "arguments": [
+        {
+          "name": "expected_head",
+          "required": false
+        }
+      ]
     }
   ]
 }

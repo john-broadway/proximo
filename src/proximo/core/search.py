@@ -15,6 +15,11 @@ right address first 38% of the time and nothing at all 46% of the time, on 0.44'
   * A PARENTHETICAL IS DETAIL about the answer, not words for the address, and is dropped.
   * SYNONYMS ARE A RECORD (`records/vocab.toml`, shipped in the one JSON), each quoting the
     vendor's own use of the word.
+  * A WORD NO TIER KNOWS MAY BE AN INFLECTION OR A TYPO (`core/lexical.py`): `restarting` is read as
+    a verb, `snaphsot` as a possible `snapshot`, offered as a WEAKER alternative to what was said
+    (what the operator said is never replaced). Those answers say `"match": "lexical"` on the rows
+    that leaned on the guess and `"guessed"` with what was read as what; `PROXIMO_LEXICAL=off`
+    turns the tier off, and an answer that ACTS (`strict`, what proximo_plan resolves) never takes it.
 
 The descriptions rank; they never ship in the answer, so the door's 4K budget holds.
 """
@@ -25,12 +30,13 @@ import re
 from functools import cache
 from typing import Any
 
-from proximo.core import apitree, engine
+from proximo.core import apitree, engine, lexical
 from proximo.core.errors import ProximoError
 
 # HTTP semantics, not a vocabulary guess: what each verb asks the vendor to do.
 _VERBS = {
-    "GET": {"list", "get", "read", "show", "view", "fetch", "query", "describe", "info", "retrieve"},
+    "GET": {"list", "get", "read", "show", "view", "fetch", "query", "describe", "info", "retrieve", "check",
+            "see", "display", "inspect", "look"},
     "POST": {"create", "add", "new", "start", "stop", "run", "trigger", "send", "upload", "execute",
              "shutdown", "reboot", "suspend", "resume", "restore", "migrate", "clone", "order",
              "renew", "generate", "apply", "reload", "restart"},
@@ -56,6 +62,12 @@ def stem(word: str) -> str:
     if word.endswith("es") and word[:-2].endswith(("s", "x", "z", "sh")):
         return word[:-2]
     return word[:-1] if word.endswith("s") else word
+
+
+def verb_methods(words: list[str]) -> set[str]:
+    """The HTTP methods the verbs among `words` ask for ("delete", "stop", "list"): what the
+    operator literally said, for a caller that must not act on words that ask for something else."""
+    return {_VERB_OF[w.lower()] for w in words if w.lower() in _VERB_OF}
 
 
 def tokens(text: str) -> list[str]:
@@ -114,17 +126,134 @@ def _stopwords() -> frozenset[str]:
     return frozenset(_STOP - {t for _, segs, _, _ in _index() for t in segs})
 
 
-def _terms(query: str) -> tuple[list[frozenset[str]], set[str], set[str]]:
-    """The question's words (each with its synonyms), the verbs' methods, and any plane named."""
+@cache
+def _known_words() -> frozenset[str]:
+    """Every word the table spells: path segments, the vendor's sentences, parameter names, and
+    the vocabulary's own words."""
+    words: set[str] = {stem(k) for k in synonyms()}
+    for _, segs, said, params in _index():
+        words |= segs | said | params
+    return frozenset(words)
+
+
+@cache
+def _lexical_index() -> lexical.WordIndex:
+    """The n-gram index over `_known_words`. Built on the first question that says a word the table
+    does not spell, never before: a question made of known words never pays for it."""
+    return lexical.WordIndex(_known_words())
+
+
+#: how many distinct words one question may have read as another. A question is a sentence, not a
+#: document; the rest are left as said.
+MAX_GUESSES = 3
+#: and how many it may LOOK at: a guess is cheap to refuse but not free (about 2.6 ms a word)
+MAX_LOOKED = 20
+
+# a term: (what was said, with its synonyms), (what was said alone), (what it may have meant)
+Term = tuple[frozenset[str], frozenset[str], frozenset[str]]
+
+
+def _terms(query: str) -> tuple[list[Term], set[str], set[str], list[str]]:
+    """The question's words (each with its synonyms), the verbs' methods, any plane named, and the
+    word each term was said as (parallel to the terms)."""
     q = re.sub(r"\([^)]*\)?", " ", query.lower())
     raw = [t for t in re.split(r"[^a-z0-9]+", q) if len(t) > 1]    # a lone letter is a possessive's tail
     syn = synonyms()
     stop = _stopwords()
     named = {t for t in raw if t in apitree.PRODUCTS}
     methods = {_VERB_OF[t] for t in raw if t in _VERB_OF}
-    terms = [frozenset({stem(t)} | {stem(m) for m in syn.get(t, ())})
-             for t in raw if t not in apitree.PRODUCTS and t not in _VERB_OF and t not in stop]
-    return terms, methods, named
+    said = [t for t in raw if t not in apitree.PRODUCTS and t not in _VERB_OF and t not in stop]
+    terms = [(frozenset({stem(t)} | {stem(m) for m in syn.get(t, ())}), frozenset({stem(t)}), frozenset())
+             for t in said]
+    return terms, methods, named, said
+
+
+class _Hit:
+    """A row that scored: how, and whether the score leaned on a guess or on a synonym alone."""
+    __slots__ = ("score", "row", "guessed", "by_synonym")
+
+    def __init__(self, score: int, row: engine.Row, guessed: bool, by_synonym: bool):
+        self.score, self.row, self.guessed, self.by_synonym = score, row, guessed, by_synonym
+
+
+def _rank(terms: list[Term], methods: set[str], plane: str | None, method: str | None,
+          strict: bool) -> list[_Hit]:
+    need = len(terms) if strict else max(1, math.ceil(len(terms) / 3))
+    scored = []
+    for row, segs, said, params in _index():
+        if (plane and row.product != plane) or (method and row.method != method):
+            continue
+        score = matched = 0
+        guessed = by_synonym = False
+        landed = False
+        for alts, own, maybe in terms:
+            weight = (_SEGMENT if alts & segs else 0 if strict
+                      else _DESCRIPTION if _said(alts, said) else _PARAM if alts & params else 0)
+            if weight == _SEGMENT and strict and not own & segs:
+                by_synonym = True
+            if not weight and maybe:
+                # a guess may admit a row (that is how a typo lands) but weighs one less than the same
+                # landing of a word said, so a real word that already scores is not displaced
+                # a guess lands one weight lower than the same landing said, and never in a parameter name
+                weight = _SEGMENT - 1 if maybe & segs else _DESCRIPTION - 1 if _said(maybe, said) else 0
+                if weight:
+                    guessed = True
+                    landed = landed or bool(maybe & (segs | said))
+            else:
+                landed = landed or bool(alts & (segs | said))
+            score += weight
+            matched += weight > 0
+        if terms and (matched < need or not landed):
+            continue
+        if methods:
+            if guessed and row.method not in methods:
+                continue           # a guess never puts a mutation (or a read) the question did not ask for
+            score += 2 if row.method in methods else -2
+        scored.append(_Hit(score, row, guessed, by_synonym))
+    return scored
+
+
+def _hear(terms: list[Term], said: list[str], methods: set[str]) -> tuple[list[Term], set[str], dict[str, str]]:
+    """What the words nobody knows may have meant. A word NO tier knows (not a path word, a sentence
+    word, a parameter or a vocabulary word) is first read as an inflection of one that is known
+    (`restarting`, `destroyed`, `rolledback`): one that folds to a VERB is dropped (it is
+    description, `snapshot creation` asks about a snapshot, and it never picks the method: only a
+    verb the operator literally said does), any other word is offered as a weaker alternative.
+    Failing that, a typo of a known word is offered the same way. What the operator said always
+    stays. At most `MAX_LOOKED` distinct unknown words are looked at and `MAX_GUESSES` of them read
+    (junk does not use the cap); the n-gram index is not built for a question of known words."""
+    known = _known_words()
+    syn = synonyms()
+    seen: dict[str, int] = {}
+    for i, w in enumerate(said):
+        if stem(w) not in known and w not in syn:
+            seen.setdefault(w, i)
+    if not seen:
+        return terms, methods, {}
+    out, guessed, dropped = list(terms), {}, set()
+    by_stem = {stem(k): m for k, m in syn.items()}
+    for word, i in list(seen.items())[:MAX_LOOKED]:
+        if len(guessed) >= MAX_GUESSES:
+            break
+        meant = None
+        for b in lexical.bases(word):
+            if b in _VERB_OF:
+                dropped.add(i)
+                guessed[word] = b
+                break
+            if stem(b) in known or b in syn:
+                meant = stem(b)
+                guessed[word] = b
+                break
+        else:
+            if len(word) >= lexical.MIN_LENGTH:
+                meant = _lexical_index().repair(stem(word))
+                if meant is not None:
+                    guessed[word] = meant
+        if meant is not None and i not in dropped:
+            alts, own, _ = out[i]
+            out[i] = (alts, own, frozenset({meant} | {stem(m) for m in by_stem.get(meant, ())}))
+    return [t for j, t in enumerate(out) if j not in dropped], methods, guessed
 
 
 def find(query: str, plane: str | None = None, limit: int = 5, *, strict: bool = False,
@@ -133,40 +262,38 @@ def find(query: str, plane: str | None = None, limit: int = 5, *, strict: bool =
     must be a segment of the PATH ITSELF, for a caller that ACTS on a single match (proximo_plan
     given words) and so needs the address to say it, not a parameter name that happens to (lens
     2026-09-29: "POST create subscription keys" planned /auto-install/prepared, whose parameters
-    spell post, subscription and key, because the literal "post" was a word to find)."""
-    terms, methods, named = _terms(query)
+    spell post, subscription and key, because the literal "post" was a word to find). A single
+    strict match that only a synonym reached comes back marked `choose`: plan does not act on it."""
+    terms, methods, named, said = _terms(query)
     if not terms and not methods:
         raise ProximoError("give proximo_find one or more words to look for")
-    need = len(terms) if strict else max(1, math.ceil(len(terms) / 3))
-    scored = []
-    for row, segs, said, params in _index():
-        if (plane and row.product != plane) or (method and row.method != method):
-            continue
-        score = matched = 0
-        for alts in terms:
-            weight = (_SEGMENT if alts & segs else 0 if strict
-                      else _DESCRIPTION if _said(alts, said) else _PARAM if alts & params else 0)
-            score += weight
-            matched += weight > 0
-        if terms and (matched < need or not any(alts & (segs | said) for alts in terms)):
-            continue
-        if methods:
-            score += 2 if row.method in methods else -2
-        scored.append((score, row))
+    guessed: dict[str, str] = {}
+    if terms and not strict and lexical.enabled():
+        terms, methods, guessed = _hear(terms, said, methods)
+        if not terms:      # every word said was a verb in disguise: nothing is left to look for
+            return {"matches": [], "note": f"no published address matched {query[:80]!r}; try other words "
+                                           f"(a verb and a noun: 'list datastores') or a plane filter"}
+    scored = _rank(terms, methods, plane, method, strict)
     if not scored:
         return {"matches": [], "note": f"no published address matched {query[:80]!r}; try other words "
                                        f"(a verb and a noun: 'list datastores') or a plane filter"}
-    scored.sort(key=lambda s: (-s[0], bool(named) and s[1].product not in named,
-                               not methods and s[1].access != engine.READ,
-                               s[1].path.count("/"), len(s[1].path), s[1].product, s[1].method, s[1].path))
+    scored.sort(key=lambda h: (-h.score, bool(named) and h.row.product not in named,
+                               not methods and h.row.access != engine.READ,
+                               h.row.path.count("/"), len(h.row.path), h.row.product, h.row.method, h.row.path))
     top = scored[:limit]
     out: dict[str, Any] = {
-        "matches": [{"plane": r.product, "method": r.method, "path": r.path, "access": r.access,
-                     "tier": r.tier, "why": r.why, "params": sorted(r.params)} for _, r in top],
+        "matches": [{"plane": h.row.product, "method": h.row.method, "path": h.row.path,
+                     "access": h.row.access, "tier": h.row.tier, "why": h.row.why,
+                     "params": sorted(h.row.params), **({"match": "lexical"} if h.guessed else {})}
+                    for h in top],
         "total": len(scored), "truncated": len(scored) > limit}
+    if guessed:
+        out["guessed"] = guessed
+    if strict and len(scored) == 1 and scored[0].by_synonym:
+        out["choose"] = "reached only through a synonym; confirm the address before acting on it"
     # the bundle's honest answer: when the best score is shared by several planes and none was
     # named, say which, so the caller picks one instead of trusting an order the words cannot set
-    best = {r.product for s, r in scored if s == scored[0][0]}
+    best = {h.row.product for h in scored if h.score == scored[0].score}
     if not plane and not named and len(best) > 1:
         out["planes"] = sorted(best)
         out["note"] = f"{', '.join(sorted(best))} each publish this; name the plane you mean"

@@ -28,6 +28,7 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types.a2a_pb2 import TaskState
 from a2a.utils.errors import UnsupportedOperationError
 
+from ... import rawdoor
 from ...doors.dispatch import DispatchError
 
 
@@ -47,7 +48,7 @@ class ProximoAgentExecutor(AgentExecutor):
 
     async def _fail(self, updater: TaskUpdater, message: str) -> None:
         """Wrap `message` in a TaskUpdater failed-message — the shared 'fail the task' tail."""
-        await updater.failed(updater.new_agent_message([new_text_part(message)]))
+        await updater.failed(updater.new_agent_message([new_text_part(rawdoor.refusal_text(message))]))
 
     def _audit_rejection(self, tool_name: str | None, reason: str) -> None:
         """Best-effort PROVE trace for a REJECTED A2A call (unknown tool / bad params / no tool).
@@ -109,7 +110,7 @@ class ProximoAgentExecutor(AgentExecutor):
             await self._fail(updater, exc.message)
             return
         except Exception as exc:  # noqa: BLE001 -- last-resort sanitize; never leak a traceback
-            await self._fail(updater, f"tool '{tool_name}' failed: {type(exc).__name__}")
+            await self._fail(updater, f"tool {rawdoor.quote(str(tool_name), 40)} failed: {type(exc).__name__}")
             return
 
         await updater.add_artifact(parts=[new_data_part(result)], name="result")
