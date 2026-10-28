@@ -522,6 +522,18 @@ asked (`proximo badge mint`, pinned under `PROXIMO_CALLER_KEYS_DIR`); identity, 
 
 ---
 
+## Built on Proximo
+
+What operators have built on the door, as they measured it. Proximo does not pick a way to drive it; this
+is the record of who does.
+
+- **[proxmox-manager-agent-skill](https://github.com/kevwillow/proxmox-manager-agent-skill)** (kevwillow,
+  MIT): an agent playbook for running a Proxmox homelab or small cluster, with a token-setup template for
+  Proximo's read and write pair, re-measured against Proximo 0.46.2 on PVE 9.2.2. Its author's measured
+  findings became 0.44.2, 0.48.0 and 0.48.1 (issues #82 and #100).
+
+Built something on it? Open an issue with what you measured, and it goes here under your name.
+
 ## Pull the keys anytime
 
 Revoke instantly in the GUI (**Datacenter → Permissions → API Tokens → Remove**) or:
