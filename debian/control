@@ -18,10 +18,10 @@ Depends: python3 (>= 3.12),
          ${shlibs:Depends},
          ${misc:Depends},
          openssh-client
-Description: Ethical Proxmox MCP server
- Proximo is a Model Context Protocol (MCP) server for Proxmox VE: REST API
- management plus scoped in-container execution (ssh -> pct), behind clean
- native tools. Least-privilege by default; every action audited.
+Description: The governed client for Proxmox
+ Proximo is the governed client for Proxmox (PVE, PBS, PMG, PDM): one hand
+ that plans, keeps the receipts and can put things back, with MCP, A2A, REST
+ and a shell door. Least-privilege by default; every action audited.
  .
  Self-contained: ships its own virtualenv under /opt/venvs/proximo (built
  with dh-virtualenv) carrying the mcp and httpx runtime dependencies, which

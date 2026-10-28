@@ -174,6 +174,9 @@ _FLAGS: tuple[tuple[re.Pattern[str], str], ...] = tuple((re.compile(p), c) for p
     (r"a retired switch is set", "retired-switch-set"),
     (r"PROXIMO_SURFACES is set", "surfaces-set"),
     (r"no plane is configured", "no-plane-configured"),
+    (r"PROXIMO_MEMORY is set to a word", "memory-setting-unrecognised"),
+    (r"memory search runs on LIKE", "memory-search-like"),
+    (r"the estate memory file is (refused|unreadable)", "memory-file:{1}"),
 ))
 
 

@@ -159,8 +159,8 @@ def test_version_literals_ignore_ip_addresses():
 def test_tagline_must_survive_on_metadata_surfaces():
     files = {"pyproject.toml": 'description = "A cool Proxmox helper."'}
     problems = copy_ripple_check.check_tagline(files)
-    assert any("hand the keys" in p for p in problems)
-    files = {"pyproject.toml": 'description = "The Proxmox MCP you can hand the keys."'}
+    assert any("governed client for Proxmox" in p for p in problems)
+    files = {"pyproject.toml": 'description = "The governed client for Proxmox."'}
     assert copy_ripple_check.check_tagline(files) == []
 
 

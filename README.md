@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://john-broadway.github.io/proximo/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-dark-63e64dd5.png">
-      <img alt="Proximo" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-light-c1322c4d.png" width="880">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-dark-caec60e5.png">
+      <img alt="Proximo" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-titlecard-light-d95073df.png" width="880">
     </picture>
   </a>
 </p>
@@ -75,8 +75,8 @@ vendor. Demand them everywhere.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark-b71f84c2.svg">
-    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light-dc406164.svg" width="860">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-dark-2de7d79e.svg">
+    <img alt="Proximo architecture: MCP clients (stdio and Streamable HTTP), A2A, and HTTP/OpenAPI clients all land on one governed spine, pass the six-pillar trust spine (PLAN, PROVE, UNDO, DIAGNOSE standing by default; CONSENT and CONTAIN yours to raise), sit on the Proxmox-enforced token floor, and reach four products — PVE, PBS, PMG, PDM" src="https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-architecture-light-0ce1a647.svg" width="860">
   </picture>
 </p>
 
@@ -140,7 +140,7 @@ Proximo builds the principled whole. Both halves, one audited surface, least-pri
 | Products covered | usually PVE | usually PVE | **PVE + PBS + PMG + PDM**, one audited plane |
 | Verify the artifact you run | varies | varies | signed image · PyPI provenance · SBOM · [Scorecard](https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo) |
 
-*(The archetype columns describe the split above, not any specific project. There is no official Proxmox MCP; Proximo is a community project, standing on its own.)*
+*(The archetype columns describe the split above, not any specific project. There is no official Proxmox MCP; Proximo is a community project, standing on its own, and MCP is one of its doors.)*
 
 ## The trust layer: what makes Proximo different
 
@@ -208,13 +208,13 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 ## Install & run
 
-**The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing). Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
+**The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing), and the estate memory behind `proximo-core learn | where 105 | uses local | changed 24h`: what the governed reads have seen, answered from one file beside the ledger, no model, no network. Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.49.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.49.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.50.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.50.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.49.1 (shell calls across a cluster, and the operator's wait).** A named PVE target can map each node name to an ssh destination (`[targets.<name>.nodes]`), so the shell rows reach every node of a cluster; a missing mapping refuses before anything is read or spent, and the far end must still answer as the path's node. `PROXIMO_SHELL_TIMEOUT` sets how long one shell call waits, 1 to 600 seconds. Node routing from RavenLiao (PR #107).
+> **New in 0.50.0 (the estate memory is back).** Proximo keeps what its governed reads have seen in one SQLite file beside the ledger, derived and never proof, and answers `proximo-core learn | where 105 | uses local | changed 24h` with no model and no network: kind, node, status, how old the answer is, and the published path that reads the thing live. A thing it has not seen is "not in memory", never "does not exist"; only a whole, unfiltered list read may mark a thing gone. The file is the operator's alone (0600, never tightened), bounded, and every answer is a row on the ledger. `PROXIMO_MEMORY=0` opts out and creates nothing.
 >
-> Recent: **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.49.1** routed shell calls across a cluster by target and node (from PR #107) and gave the operator the shell wait; **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -251,12 +251,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.49.1**: **Shell calls across a cluster, and the operator's wait.** A named PVE target maps
-  node names to ssh destinations, so the shell rows reach every node (from PR #107); `PROXIMO_SHELL_TIMEOUT`
-  sets one shell call's wait, 1 to 600 seconds (issue #106). 4,186 tests.
+- 🩸 **0.50.0**: **The estate memory is back.** One SQLite file beside the ledger, fed by reads that already
+  happened; `learn`, `where`, `uses`, `changed` on the core door with no model and no network; derived, never
+  proof; owner-only and bounded; three adversarial rounds closed on the branch. 4,323 tests.
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
-**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,186 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
+**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,323 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
 
 **Proven live** (not mocks): the governed path end to end against a real PVE 9 node through this door, plans reading the live target, receipts on the keyed chain, before-state captures and their restore. The 0.44 wrappers' live record (a 3-node cluster, PBS, PMG, PDM, a real cross-datacenter move) stays in [`CHANGELOG.md`](./CHANGELOG.md) where it was earned; it is not re-claimed for the core.
 **Not yet proven — said plainly:** a small local model finishing a whole task through this door. Measured and driven on 0.45: a stock 1.5B behind llama.cpp with a 4,096-token context the server enforces, against a real PVE node, read-only. Its calls landed and the door's refusals named the fix each time (an invented field, the real ones listed); the prompt peaked at 3,074 tokens; the model did not finish the task, it invented a number. The window holds; a 1.5B does not. *Hardware*-watchdog fencing (needs physical iTCO/IPMI), and behavior at production scale. The 20 held addresses are never fired: refused by sentence, by design, not a gap.

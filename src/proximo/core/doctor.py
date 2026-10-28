@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from proximo.core import anchor, arm, engine, rawdoor, reach, registry, shell, spine, wire
+from proximo.core import anchor, arm, engine, memory, rawdoor, reach, registry, shell, spine, wire
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import (
     LedgerConfig,
@@ -57,6 +57,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
     report["anchor"] = anchor.station(lcfg, flags)           # PROVE's off-box station (core/anchor.py)
     chain_ok = chain_ok and report["anchor"]["state"] != "diverged"   # a chain that lost its pin is not whole
     report["pillars"] = _pillars(report, chain_ok, flags)
+    report["memory"] = memory.station(lcfg, flags)       # the estate memory's state (core/memory.py)
     retired = spine.retired_refusal()
     report["retired"] = [retired.reason] if retired else []
     if retired:
@@ -75,7 +76,8 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
 #: An EMPTY pillar is advice, not incompleteness; a TRIPPED one is neither (every mutation is refused
 #: and the report must say it is not whole). Each prefix opens one flag.
 _ADVISORY = ("CONSENT is inert", "CONTAIN has no trip path", "CONTAIN: no rate cap", "UNDO is off",
-             "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY
+             "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY \
+    + memory.ADVISORY
 
 
 def _said(exc: ProximoError) -> str:

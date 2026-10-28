@@ -4,9 +4,9 @@ This file is for an AI agent (Cline, Claude, or any MCP-capable assistant) setti
 Proximo for a user. Follow it top to bottom. Every step is non-interactive except where
 marked **ASK THE USER**.
 
-Proximo is a Proxmox MCP server (PyPI package `proximo-proxmox`, command `proximo`).
-It is read-only by default and safe to install before any credentials exist: the server
-starts and serves its tool surface with no configuration at all.
+Proximo is the governed client for Proxmox (PyPI package `proximo-proxmox`, command `proximo`);
+this file installs its MCP door. It is read-only by default and safe to install before any
+credentials exist: the door starts and serves its tool surface with no configuration at all.
 
 ## 1. Prerequisites
 

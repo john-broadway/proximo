@@ -318,6 +318,35 @@ call, shorter than yours.
 
 ---
 
+## The estate memory — `learn`, `where`, `uses`, `changed`
+
+Proximo keeps what its governed reads have seen of the estate in one SQLite file, `memory.db`,
+beside the ledger: guests, nodes, storage, pools, backup jobs, bridges, backup volumes and ACL
+grants, with first and last seen, and the edges between them. It is derived, never proof: a read
+that already happened fed it, and the ledger stays the record. It answers on the core's own door
+with no model and no network:
+
+```sh
+proximo-core learn              # the one deliberate pass that fills it: every list, every guest config
+proximo-core where 105          # kind, node, status, how old the answer is, and the one path to read it live
+proximo-core uses local         # the guests with a disk or NIC on that storage or bridge
+proximo-core changed 24h        # added, gone and changed, over 30m, 24h or 7d
+```
+
+An answer says how old it is and when it is incomplete (no whole cluster read yet, a guest whose
+config was never read), and "not in memory" never means "does not exist": each answer carries the
+published path that would read the thing live. Only a whole, unfiltered list read may mark a thing
+gone; a filtered or node-scoped read only adds. Every memory answer is a `core.recall` row on the
+ledger.
+
+`PROXIMO_MEMORY` is on unless set to `0`; off, nothing is created or kept. Any other word reads as
+off and `proximo doctor` flags it. `PROXIMO_MEMORY_PATH` moves the file (name the `.db` file itself,
+not a directory). The file is created `0600` and opened read-write, never creating, after the file
+and its sidecars are checked; a symlink, a hard link, a file another user owns, one that group or
+other can read, or an empty file memory did not create is refused, never quietly tightened.
+
+---
+
 ## Many boxes from one Proximo — `target`
 
 One Proximo can address several Proxmox remotes. Register them in a TOML file (see

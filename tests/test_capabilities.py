@@ -62,7 +62,7 @@ STANDING = frozenset({
     "privsep-token-and-user-grant", "ledger-tail-cut-caught", "unkeyed-chain-sealed-not-deleted",
     "arguments-cast-to-published-types", "allowlist-compares-grants", "door-services-raised",
     "token-sight-guard", "runbook-prompts", "pdm-typed-arrays", "offbox-anchor", "reach-grant-observable",
-    "shareable-doctor-receipt", "lexical-find",
+    "shareable-doctor-receipt", "lexical-find", "estate-memory",
     "rollback-keeps-description-and-tags", "command-risk-hint", "pdm-rollback-safety-snapshot",
     "default-node", "ceph-zero-flags-guard",
 })

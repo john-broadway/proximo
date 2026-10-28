@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.john-broadway/proximo-proxmox",
-  "title": "Proximo — the Proxmox MCP you can hand the keys",
-  "description": "The Proxmox MCP you can hand the keys: VE/PBS/PMG/PDM. Plan, prove, undo, diagnose. MCP/A2A/API.",
+  "title": "Proximo — the governed client for Proxmox",
+  "description": "The governed client for Proxmox (PVE, PBS, PMG, PDM): one hand that plans, keeps the receipts and can put things back. Doors: MCP, A2A, REST, shell.",
   "icons": [
     {
       "src": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-avatar-256.png",
@@ -24,12 +24,12 @@
     "url": "https://github.com/john-broadway/proximo",
     "source": "github"
   },
-  "version": "0.49.1",
+  "version": "0.50.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "proximo-proxmox",
-      "version": "0.49.1",
+      "version": "0.50.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

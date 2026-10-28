@@ -14,7 +14,7 @@ The rules, mechanically:
     tools") are exempt by their context markers.
   - Every "N trust controls" claim (README, and each satellite, HTML tiles included)
     equals the rows of SECURITY.md's control table.
-  - The tagline phrase "hand the keys" survives on every metadata surface
+  - The tagline phrase "governed client for Proxmox" survives on every metadata surface
     (pyproject / server.json / lhm.plugin.json descriptions).
 
 Usage:
@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 MAX_STATUS_BULLETS = 1  # 2026-07-16: Status carries ONLY the current release; history lives in CHANGELOG.md
 MAX_README_LINES = 300  # accretion fence — line-creep was invisible when only bullets counted (283 at 2026-07-16)
-TAGLINE_PHRASE = "hand the keys"
+TAGLINE_PHRASE = "governed client for Proxmox"   # John 2026-10-28: not a Proxmox MCP server
 TAGLINE_SURFACES = ("pyproject.toml", "server.json", "lhm.plugin.json")
 
 _NEW_IN_RE = re.compile(r"\*\*New in (\d+\.\d+\.\d+[^ ]*)")

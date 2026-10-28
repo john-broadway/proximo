@@ -1,8 +1,8 @@
 """Proximo's A2A (Agent2Agent) face — a transport on the governed core.
 
-Proximo is an MCP server first (see ``proximo.core.doors.mcp``). This package adds an OPTIONAL A2A face so
-Proximo can also be a first-class Agent2Agent participant — "the Proxmox operator agent" other
-agents can call.
+Proximo is a governed client; MCP over stdio is its first door (``proximo.core.doors.mcp``). This package
+adds an OPTIONAL A2A face so Proximo can also be a first-class Agent2Agent participant — "the Proxmox
+operator agent" other agents can call.
 
 Design (one core, interchangeable transports):
     The A2A face exposes the FULL governed tool surface and routes every call through the

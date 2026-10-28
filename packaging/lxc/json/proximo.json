@@ -19,7 +19,7 @@
     "pve"
   ],
   "logo": "https://raw.githubusercontent.com/john-broadway/proximo/main/docs/brand/proximo-avatar-256.png",
-  "description": "Proximo is the Proxmox MCP you can hand the keys. One governed control plane for all four Proxmox products (PVE, PBS, PMG, PDM), served as MCP over Streamable HTTP to Claude Code, Claude Desktop, Cursor and any MCP client on your network. Every action crosses the same trust spine: plan, consent, prove, undo, diagnose, contain.",
+  "description": "Proximo is the governed client for Proxmox. One governed control plane for all four Proxmox products (PVE, PBS, PMG, PDM), served as MCP over Streamable HTTP to Claude Code, Claude Desktop, Cursor and any MCP client on your network. Every action crosses the same trust spine: plan, consent, prove, undo, diagnose, contain.",
   "install_methods": [
     {
       "type": "default",

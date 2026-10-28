@@ -89,6 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv /tmp/smoke-env
+          # Unpinned by design (Scorecard Pinned-Dependencies warns here): this is the end user's
+          # own `pip install` from PyPI, and hashes read back from PyPI would prove nothing.
           # 3 short retries for a transient network blip only — NOT the release job's 20x30s
           # index-propagation loop; the version this installs has been public for days.
           for i in 1 2 3; do

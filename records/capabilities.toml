@@ -129,7 +129,38 @@ was = ["src/proximo/blast.py:compute_firewall_lockout_blast", "src/proximo/blast
 [capability.estate-memory]
 what = "A derived, rebuildable local map of what exists (guests, nodes, storage, their relations, first and last seen), so estate questions are a query, with no model and no daemon."
 origin = "design: bar 3; the 0.45 bar-3 drive itself recorded a 1.5B answering with a number it never read"
-status = "owed"
+status = "standing"
+proof = ["tests/test_memory.py::test_where_an_id_names_kind_node_status_and_the_concrete_path",
+         "tests/test_memory.py::test_every_path_memory_answers_is_a_published_get",
+         "tests/test_memory.py::test_an_empty_memory_answers_with_no_count_at_all",
+         "tests/test_memory.py::test_not_in_memory_never_says_it_does_not_exist",
+         "tests/test_memory.py::test_uses_agrees_with_the_estate_by_construction",
+         "tests/test_memory.py::test_uses_is_incomplete_while_a_guest_config_is_not_in_memory",
+         "tests/test_memory.py::test_changed_names_added_gone_and_changed",
+         "tests/test_memory.py::test_a_node_scoped_read_never_makes_anything_gone",
+         "tests/test_memory.py::test_a_field_subset_read_through_the_engine_never_retires",
+         "tests/test_memory.py::test_a_plans_own_look_at_its_target_never_retires",
+         "tests/test_memory.py::test_an_eviction_that_drops_an_edge_makes_uses_incomplete",
+         "tests/test_memory.py::test_a_row_cut_to_fit_keeps_its_published_paths_to_the_same_thing",
+         "tests/test_memory.py::test_a_vendor_id_longer_than_text_is_not_kept",
+         "tests/test_memory.py::test_a_swap_to_a_dangling_link_creates_nothing_at_its_target",
+         "tests/test_memory.py::test_a_zero_byte_file_memory_did_not_make_is_refused",
+         "tests/test_memory.py::test_the_seam_keeps_its_paths_outside_the_fence",
+         "tests/test_memory.py::test_an_answer_built_from_guest_text_marks_the_session",
+         "tests/test_memory.py::test_the_file_is_owner_only_before_sqlite_opens_it",
+         "tests/test_memory.py::test_a_symlink_at_the_file_is_refused_and_the_read_still_answers",
+         "tests/test_memory.py::test_memory_off_creates_nothing",
+         "tests/test_memory.py::test_a_memory_failure_never_fails_the_read_that_fed_it",
+         "tests/test_memory.py::test_the_judging_seam_keeps_nothing_when_a_caller_passes_it",
+         "tests/test_memory.py::test_the_file_is_bounded_and_says_what_it_dropped",
+         "tests/test_memory.py::test_two_boxes_behind_one_ledger_never_mix",
+         "tests/test_memory.py::test_deleting_the_file_loses_convenience_never_proof",
+         "tests/test_memory.py::test_a_build_without_fts5_searches_by_like_and_doctor_flags_it",
+         "tests/test_memory.py::test_learn_reads_every_source_through_execute_and_says_complete",
+         "tests/test_memory.py::test_learn_over_its_budget_is_incomplete_and_names_it",
+         "tests/test_memory.py::test_memory_never_dials_on_its_own",
+         "tests/test_memory.py::test_the_shell_door_answers_where_uses_and_changed",
+         "tests/test_memory.py::test_each_verb_answers_a_hundred_guest_file_fast"]
 was = ["src/proximo/memory.py", "src/proximo/tools/memory_tools.py"]
 
 [capability.last-backup-and-coverage]

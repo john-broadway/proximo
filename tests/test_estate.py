@@ -351,3 +351,39 @@ def test_a_null_pending_on_a_disk_key_is_malformed():
     rows = [{"key": "scsi1", "value": "local-lvm:vm-101-disk-1", "pending": None}]
     e = estate.build([estate.Answer("/nodes/{node}/qemu/{vmid}/pending", {"node": "pve1", "vmid": "101"}, rows)])
     assert e.malformed and [d.slot for d in e.disks] == ["scsi1"]
+
+
+# --- the relations, named once (memory keeps them as edges; a judge asks the methods) ---------------
+
+def test_the_edges_are_the_relations_the_judges_ask():
+    est = estate.build([
+        estate.Answer("/cluster/resources", {}, [
+            {"type": "lxc", "vmid": 105, "node": "pve1", "status": "running"},
+            {"type": "qemu", "vmid": 100, "node": "pve1", "status": "stopped", "pool": "core"}]),
+        estate.Answer("/nodes/{node}/lxc/{vmid}/pending", {"node": "pve1", "vmid": "105"},
+                      [{"key": "rootfs", "value": "local:105/vm-105-disk-0.raw"},
+                       {"key": "net0", "value": "name=eth0,bridge=vmbr0"}]),
+        estate.Answer("/nodes/{node}/qemu/{vmid}/pending", {"node": "pve1", "vmid": "100"},
+                      [{"key": "scsi0", "value": "nas:100/vm-100-disk-0.qcow2"},
+                       {"key": "ide2", "value": "local:iso/x.iso,media=cdrom"}]),
+        estate.Answer("/cluster/backup", {}, [{"id": "nightly", "vmid": "105"}]),
+        estate.Answer("/nodes/{node}/storage/{storage}/content", {"node": "pve1", "storage": "nas"},
+                      [{"volid": "nas:backup/vzdump-lxc-105-x.tar.zst", "content": "backup", "vmid": 105}]),
+        estate.Answer("/access/acl", {}, [{"path": "/vms/105", "type": "user", "ugid": "ops@pve",
+                                           "roleid": "PVEVMUser", "propagate": 1}]),
+    ])
+    edges = set(est.edges())
+    assert {e.rel for e in edges} <= set(estate.RELATIONS)
+    assert edges == {
+        estate.Edge("lxc/105", "runs_on", "node/pve1"), estate.Edge("qemu/100", "runs_on", "node/pve1"),
+        estate.Edge("lxc/105", "disk_on", "storage/local"), estate.Edge("qemu/100", "disk_on", "storage/nas"),
+        estate.Edge("lxc/105", "nic_on", "bridge/vmbr0"), estate.Edge("qemu/100", "in_pool", "pool/core"),
+        estate.Edge("lxc/105", "covered_by", "job/nightly"),
+        estate.Edge("volume/nas:backup/vzdump-lxc-105-x.tar.zst", "backup_of", "lxc/105"),
+        estate.Edge("user/ops@pve", "granted_on", "path/vms/105"),
+    }
+    for s in ("local", "nas"):     # the same answer either way: an edge IS the method's relation
+        assert {e.src for e in edges if e.rel == "disk_on" and e.dst == f"storage/{s}"} == \
+            {g.key for g in est.guests_on_storage(s)}
+    (acl,) = est.acls
+    assert (acl.path, acl.type, acl.ugid, acl.role, acl.propagate) == ("/vms/105", "user", "ops@pve", "PVEVMUser", True)

@@ -8,6 +8,10 @@ README and becomes a property the test suite checks.
     proximo-core pve GET /nodes/pve1/status
     proximo-core pve DELETE /nodes/pve1/qemu/101 purge=1
     proximo-core pve GET /nodes --target east      # a box PROXIMO_TARGETS names
+    proximo-core learn                              # the one deliberate pass that fills the memory
+    proximo-core where 105                          # kind, node, status, the concrete path
+    proximo-core uses local                         # the guests with a disk or NIC on it
+    proximo-core changed 24h                        # added, gone, changed
 
 Exit codes are the contract for scripts: 0 executed, 2 refused by the spine, 3 the caller's
 own mistake (bad syntax, unconfigured estate), 4 the vendor refused or could not be reached.
@@ -250,6 +254,71 @@ def arm_main(verb: str, argv: list[str]) -> int:
     return EXIT_OK
 
 
+MEMORY_VERBS = ("learn", "where", "uses", "changed")
+
+
+def memory_main(verb: str, argv: list[str]) -> int:
+    """`proximo-core learn | where <id or name> | uses <storage or bridge> | changed <window>`, each
+    with `--plane pve` and `--target NAME`. where, uses and changed answer from the estate memory
+    (`core.memory`) with no vendor call and say how old they are; learn is the one deliberate pass that
+    fills it, every read through the engine and receipted. 0 answered (an honest "not in memory"
+    included), 2 the spine refused (a taint marker that cannot be written), 3 the caller's or the
+    box's configuration (memory off, its file refused, no box, a bad window)."""
+    import sqlite3  # noqa: PLC0415
+
+    from proximo.core import memory, store, wire  # noqa: PLC0415 -- only these verbs need them
+    from proximo.core.ledger import LedgerConfig  # noqa: PLC0415
+
+    ap = argparse.ArgumentParser(prog=f"proximo-core {verb}", description=(memory_main.__doc__ or "").split("\n")[0])
+    if verb == "where":
+        ap.add_argument("words", nargs="+", help="an id, a name, a tag, or words like 'container 105'")
+    elif verb == "uses":
+        ap.add_argument("thing", help="a storage id or a bridge name")
+    elif verb == "changed":
+        ap.add_argument("window", help="30m, 24h or 7d")
+    ap.add_argument("--plane", default="pve", help="the estate memory is PVE's (default pve)")
+    ap.add_argument("--target", default=None, help="a box the PROXIMO_TARGETS registry names; omit for the env box")
+    try:
+        ns = ap.parse_args(argv)
+    except SystemExit as e:
+        return EXIT_OK if e.code == 0 else EXIT_USAGE
+    try:
+        # The caller's and the box's configuration first, each a 3: never mistaken for a verdict.
+        if ns.plane != "pve":
+            raise memory.Unusable(f"the estate memory is PVE's; {ns.plane} has none")
+        if verb == "changed":
+            store.parse_since(ns.window)
+        cfg = registry.plane(ns.plane, ns.target)
+        box = cfg.base_url if cfg is not None else wire.env_base_url(ns.plane)
+        if not box:
+            raise memory.Unusable("no box to answer for: set PROXIMO_API_BASE_URL or name a --target")
+        ledger = LedgerConfig.from_env().audit_log_path
+    except (ProximoError, RuntimeError) as e:
+        print(f"unconfigured: {safe_text(str(e), paths=True)}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        if verb == "learn":
+            out = memory.learn(ns.plane, cfg=cfg)
+        elif verb == "where":
+            out = memory.where(ledger, ns.plane, box, " ".join(ns.words))
+        elif verb == "uses":
+            out = memory.uses(ledger, ns.plane, box, ns.thing)
+        else:
+            out = memory.changed(ledger, ns.plane, box, ns.window)
+    except memory.Unusable as e:
+        print(f"unconfigured: {safe_text(str(e), paths=True)}", file=sys.stderr)
+        return EXIT_USAGE
+    except ProximoError as e:             # the taint marker could not be written: the spine's refusal
+        print(f"refused: {e}", file=sys.stderr)
+        return EXIT_REFUSED
+    except (OSError, sqlite3.Error) as e:
+        print(f"unconfigured: the estate memory could not be read ({safe_exception_text(e, paths=True)})",
+              file=sys.stderr)
+        return EXIT_USAGE
+    print(json.dumps(out, indent=2, sort_keys=True, default=str))
+    return EXIT_OK
+
+
 def _greeted(mutates: bool) -> bool:
     """A call that can mutate greets the ledger with the reach grant first (`reach.greet`); a read,
     a plan and a verb that only prints do not: this door has no start, and a read cannot use a lane."""
@@ -346,8 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     from proximo.core.doors.network import refuse_surfaces  # noqa: PLC0415
     if refuse_surfaces("proximo-core"):                   # a retired switch still set: told here, not served past
         return EXIT_USAGE
-    if argv[:1] == ["arm"]:
-        return arm_main("arm", argv[1:])
+    if argv[:1] == ["arm"] or argv[:1] and argv[0] in MEMORY_VERBS:
+        return arm_main("arm", argv[1:]) if argv[0] == "arm" else memory_main(argv[0], argv[1:])
     ap = argparse.ArgumentParser(prog="proximo-core", description=(__doc__ or "").split("\n")[0],
                                  epilog=BANNER, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("plane", help="pve, pbs, pmg or pdm")

@@ -200,6 +200,8 @@ jobs:
           set -euo pipefail
           V="${VERSION#v}"
           if [ "$MCP_MAJOR" = "1" ]; then PIN="mcp>=1.24,<2"; else PIN="mcp>=2,<3"; fi
+          # Unpinned by design (Scorecard Pinned-Dependencies warns here): this is the end user's
+          # own `pip install` from PyPI; built == uploaded is proven by the attestation above.
           python -m venv /tmp/verify-env
           for i in $(seq 1 20); do
             if /tmp/verify-env/bin/pip install --quiet "proximo-proxmox==$V" "$PIN"; then

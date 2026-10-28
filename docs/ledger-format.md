@@ -78,6 +78,7 @@ That is the custody seam between the two files. A keyed log is never rotated.
 | `core.refuse` | `reason`, `needs` (which gate), and that gate's own fields |
 | `core.consent_spent` | `consent_id`, `grant: {inode, mtime_ns}`: one operator approval, used once |
 | `core.undo_point` | the record read back before a change, so the change can be put back |
+| `core.recall` | an answer served from what Proximo already holds, not the vendor: a `since=` recall of a list, or a memory verb (`target: memory where|uses|changed`; `learn` is reads, each its own `core.execute` row) with the caller's words capped (a long ask keeps a prefix, its length and a fingerprint) |
 | `audit_rotate` | see above |
 
 ## What a check tells you, and what it does not

@@ -39,7 +39,7 @@
   <!-- dispatch -->
   <rect x="110" y="136" width="640" height="56" rx="8" fill="#cf914214" stroke="#cf9142" stroke-width="1.5"/>
   <text x="430" y="159" text-anchor="middle" class="h">ONE GOVERNED SPINE</text>
-  <text x="430" y="179" text-anchor="middle" class="m">MCP serves it natively · A2A and HTTP are doors over the same engine · no second path</text>
+  <text x="430" y="179" text-anchor="middle" class="m">MCP, A2A, REST and the shell are doors over the same engine · no second path</text>
 
   <path d="M430 192 V216" fill="none" stroke="#cf9142" stroke-width="1.5" marker-end="url(#a)"/>
 

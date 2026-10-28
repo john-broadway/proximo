@@ -9,9 +9,13 @@ between them. Pure: no I/O, no engine, no wire. A judge reads an `Estate`, never
         /cluster/backup                          backup jobs
         /pools                                   pools and their members
         /nodes/{node}/network                    a node's interfaces (bridges)
+        /access/acl                              who is granted which role where
 
 The relations are the edges a judge asks about: `guests_on_storage`, `guests_on_bridge`, `disks_of`,
-`disks_using`, `backups_of`, `jobs_covering`, `guests_in_pool`.
+`disks_using`, `backups_of`, `jobs_covering`, `guests_in_pool`. `Estate.edges` spells the same
+relations as (src, rel, dst) triples, named once in `RELATIONS`: the estate memory
+(`proximo.core.memory`) keeps those triples, so a terminal answer from the file and a judge reading
+live agree by construction.
 
 A FIELD THE VENDOR OMITTED IS UNKNOWN, NOT ZERO. Every record field is `X | None`: a guest row with no
 `status` is not stopped, a storage with no `shared` is not local, a pool listed without `members` is
@@ -62,7 +66,7 @@ GUEST_KINDS = ("qemu", "lxc")
 #: The sources whose answer is a list of rows; any other shape is malformed, never "no rows".
 _PENDING = frozenset({"/nodes/{node}/qemu/{vmid}/pending", "/nodes/{node}/lxc/{vmid}/pending"})
 _LIST_SOURCES = frozenset({"/cluster/resources", "/storage", "/nodes/{node}/storage/{storage}/content",
-                           "/cluster/backup", "/pools", "/nodes/{node}/network"}) | _PENDING
+                           "/cluster/backup", "/pools", "/nodes/{node}/network", "/access/acl"}) | _PENDING
 
 #: The published GETs an estate is built from. `tests/test_estate.py` resolves each one on pve.
 SOURCES = (
@@ -77,7 +81,21 @@ SOURCES = (
     "/pools",
     "/nodes/{node}/network",
     "/access/permissions",
+    "/access/acl",
 )
+
+#: The relations between the records, as `Estate.edges` names them: a guest runs_on its node, has a
+#: disk_on a storage and a nic_on a bridge, is in_pool a pool and covered_by a backup job; a backup
+#: volume is a backup_of its guest; a user, group or token is granted_on an ACL path.
+RELATIONS = ("runs_on", "disk_on", "nic_on", "in_pool", "backup_of", "covered_by", "granted_on")
+
+
+class Edge(NamedTuple):
+    """One relation: `src` and `dst` are `kind/key` ids (`lxc/105`, `storage/local`, `path/vms/105`)."""
+
+    src: str
+    rel: str
+    dst: str
 
 
 # ---- the vendor's spellings, read without guessing ---------------------------------------------------
@@ -254,6 +272,15 @@ class Iface:
     ports: tuple[str, ...] | None = None
 
 
+@dataclass(frozen=True)
+class Acl:
+    path: str
+    ugid: str
+    type: str | None = None                       # "user" | "group" | "token"
+    role: str | None = None
+    propagate: bool | None = None
+
+
 # ---- constructors: one vendor answer each ------------------------------------------------------------
 
 def _rows(answer: Any) -> list[dict]:
@@ -426,6 +453,12 @@ def jobs_from_backup(rows: Any) -> tuple[BackupJob, ...]:
                  for r in _rows(rows) if (i := _str(r.get("id"))))
 
 
+def acls_from_acl(rows: Any) -> tuple[Acl, ...]:
+    return tuple(Acl(path=p, ugid=u, type=_str(r.get("type")), role=_str(r.get("roleid")),
+                     propagate=_flag(r.get("propagate")))
+                 for r in _rows(rows) if (p := _str(r.get("path"))) and (u := _str(r.get("ugid"))))
+
+
 def pools_from_pools(rows: Any) -> tuple[Pool, ...]:
     out = []
     for r in _rows(rows):
@@ -467,6 +500,7 @@ class Estate:
     jobs: tuple[BackupJob, ...] = ()
     volumes: tuple[Volume, ...] = ()
     ifaces: tuple[Iface, ...] = ()
+    acls: tuple[Acl, ...] = ()
     unread: frozenset[str] = frozenset()      # guests whose config is not known: never "no disks"
     read: frozenset[str] = frozenset()        # the SOURCES templates this estate was built from
     malformed: tuple[str, ...] = ()           # answers of the wrong shape: a failed read, never "none"
@@ -562,13 +596,30 @@ class Estate:
     def guests_in_pool(self, poolid: str) -> tuple[Guest, ...]:
         return tuple(g for g in self.guests if self._in_pool(g.vmid, poolid))
 
+    def edges(self) -> tuple[Edge, ...]:
+        """Every relation this estate holds, as `RELATIONS` names them, each from the method a judge
+        asks (a cdrom is no disk_on its storage; covered_by only where coverage is True, never
+        where it cannot be told). Sorted, each once."""
+        by_vmid = {g.vmid: g.key for g in self.guests}
+        out = {Edge(g.key, "runs_on", f"node/{g.node}") for g in self.guests if g.node}
+        out |= {Edge(d.guest, "disk_on", f"storage/{d.storage}") for d in self.disks if d.storage and not d.cdrom}
+        out |= {Edge(n.guest, "nic_on", f"bridge/{n.bridge}") for n in self.nics if n.bridge}
+        for pid in {p.id for p in self.pools} | {g.pool for g in self.guests if g.pool}:
+            out |= {Edge(g.key, "in_pool", f"pool/{pid}") for g in self.guests_in_pool(pid)}
+        out |= {Edge(f"volume/{v.volid}", "backup_of", by_vmid.get(v.vmid, f"guest/{v.vmid}"))
+                for v in self.volumes if v.content == "backup" and v.vmid}
+        out |= {Edge(g.key, "covered_by", f"job/{j.id}")
+                for g in self.guests for j, covered in self.jobs_covering(g.vmid) if covered is True}
+        out |= {Edge(f"{a.type or 'subject'}/{a.ugid}", "granted_on", f"path{a.path}") for a in self.acls}
+        return tuple(sorted(out))
+
 
 def build(answers: Iterable[Answer]) -> Estate:
     """An Estate from the answers a consult read (any subset of SOURCES, in any order). An answer
     from a template the estate does not read is refused (a judge declaring a read nothing consumes)."""
     guests: dict[str, Guest] = {}
-    configs: dict[str, list[Any]] = {}
-    parts: dict[str, list] = {k: [] for k in ("nodes", "storages", "pools", "jobs", "volumes", "ifaces")}
+    configs: dict[str, list[Any]] = {}      # a view (a Mapping) or whatever a config read answered
+    parts: dict[str, list] = {k: [] for k in ("nodes", "storages", "pools", "jobs", "volumes", "ifaces", "acls")}
     read: set[str] = set()
     malformed: list[str] = []
     permissions = None
@@ -599,6 +650,8 @@ def build(answers: Iterable[Answer]) -> Estate:
             parts["pools"] += pools_from_pools(a.data)
         elif a.template == "/access/permissions":
             permissions = permission_map(a.data)
+        elif a.template == "/access/acl":
+            parts["acls"] += acls_from_acl(a.data)
         elif a.template.endswith("/network"):
             parts["ifaces"] += ifaces_from_network(str(a.bound.get("node", "")), a.data)
     disks, nics, unread, ordered = [], [], set(), []
@@ -627,5 +680,5 @@ def build(answers: Iterable[Answer]) -> Estate:
         ordered.append(Guest(**{**g.__dict__, "boot": boot, "name": name}))
     return Estate(guests=tuple(ordered), nodes=tuple(parts["nodes"]), storages=tuple(parts["storages"]),
                   disks=tuple(disks), nics=tuple(nics), pools=tuple(parts["pools"]), jobs=tuple(parts["jobs"]),
-                  volumes=tuple(parts["volumes"]), ifaces=tuple(parts["ifaces"]), unread=frozenset(unread),
-                  read=frozenset(read), malformed=tuple(malformed), permissions=permissions)
+                  volumes=tuple(parts["volumes"]), ifaces=tuple(parts["ifaces"]), acls=tuple(parts["acls"]),
+                  unread=frozenset(unread), read=frozenset(read), malformed=tuple(malformed), permissions=permissions)

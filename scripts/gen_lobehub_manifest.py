@@ -37,7 +37,7 @@ BASE = {
     # "Proxmox" must appear in the NAME, not just the description — LobeHub/Glama
     # keyword search matches the name field, and "Proximo" doesn't contain the
     # substring "proxmox" (2026-07-10 community audit: invisible in "proxmox" search).
-    "name": "Proximo — the Proxmox MCP you can hand the keys",
+    "name": "Proximo — the governed client for Proxmox",
     # description is NOT here on purpose — see pyproject_description(). It used to be a
     # hardcoded copy of the pyproject line, and the two silently diverged: CLAUDE.md said
     # "description comes from pyproject" while this literal was the real source, so a

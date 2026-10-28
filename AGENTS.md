@@ -1,7 +1,7 @@
 # Proximo — operating notes for agents
 
-Proximo is a Proxmox MCP server built so a human can hand an agent real keys to
-infrastructure they care about. You get six tools over every address the four Proxmox
+Proximo is the governed client for Proxmox, built so a human can hand an agent real keys to
+infrastructure they care about; MCP is one of its doors. You get six tools over every address the four Proxmox
 products publish. Every mutation is planned before it runs, recorded in a tamper-evident
 audit ledger, and undone where the vendor publishes a write to put the record back.
 

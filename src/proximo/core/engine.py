@@ -31,7 +31,21 @@ from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import unquote
 
-from proximo.core import apitree, arm, consult, download, rawdoor, risk, safetynet, shell, sight, spine, store, wire
+from proximo.core import (
+    apitree,
+    arm,
+    consult,
+    download,
+    memory,
+    rawdoor,
+    risk,
+    safetynet,
+    shell,
+    sight,
+    spine,
+    store,
+    wire,
+)
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import EXECUTING, LedgerConfig, open_ledger
 from proximo.core.principal import ledger_principal
@@ -1336,7 +1350,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
                         **seen.get("receipt", {}), **({"asked": asked[:120]} if asked else {}),
                         **({"upid": task["upid"], "polls": task["polls"], "seconds": task["seconds"]} if task else {})},
                 called=called, remote=remote)
-        _keep(row, called, args, data, ledger_cfg, cfg, judging)
+        _keep(row, called, args, data, ledger_cfg, cfg, judging, fields=fields, evaluating=evaluating)
         return {**_envelope(row, called, data, fields, rawdoor.evaluation_cap() if evaluating else None, args),
                 **seen.get("envelope", {}),
                 **({"task": task} if task else {}),
@@ -2546,11 +2560,28 @@ def _box(row: Row, cfg: wire.Plane | None) -> str:
 
 
 def _keep(row: Row, called: str, args: dict[str, Any], data: Any, ledger_cfg: Any,
-          cfg: wire.Plane | None, judging: bool = False) -> None:
-    """Best-effort and silent: a convenience must never fail the read it rides on. A `judging` read
-    keeps NOTHING: its answer is the engine's to judge, never a caller's to ask `since=` about, so it
-    must not write a guest's text into the store or move a caller's baseline."""
-    if judging or not store.enabled() or not isinstance(data, list):
+          cfg: wire.Plane | None, judging: bool = False, *, fields: str | None = None,
+          evaluating: bool = False) -> None:
+    """Best-effort and silent: a convenience must never fail the read it rides on. Two keepers, each
+    on its own (one off, or failing, never stops the other): the store's snapshot of a list
+    (`since=`), and the estate memory (`proximo.core.memory`: where, uses, changed), which also takes
+    a guest's config and is fed the WITHHELD answer, never the vendor's raw bytes. A `judging` read
+    (the engine's own read for a judgement it makes) keeps NOTHING in either. How the read was asked
+    rides with it: a field subset (`fields`, with `all` and unset both the whole rows) or the door's
+    own look for a verdict (`evaluating`) feeds memory but may not retire what it does not list
+    (lens 2026-10-27: neither reached the feed, so a projected read and a plan's twin read retired)."""
+    if judging:
+        return
+    try:
+        if row.product == "pve" and row.path in memory.FEEDS and memory.enabled():
+            kept, _ = withhold(data, row.secret)
+            subset = None if fields is None or fields.strip().lower() == "all" else fields
+            memory.feed((ledger_cfg or LedgerConfig.from_env()).audit_log_path, row.product, _box(row, cfg),
+                        row.path, bind(row, called), args, kept, source=row.key, untrusted=row.untrusted,
+                        fields=subset, evaluating=evaluating)
+    except Exception:  # noqa: BLE001, S110 -- see the docstring
+        pass
+    if not store.enabled() or not isinstance(data, list):
         return
     try:
         rows, _ = withhold(data, row.secret)
