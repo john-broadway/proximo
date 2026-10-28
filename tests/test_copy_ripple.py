@@ -164,6 +164,17 @@ def test_tagline_must_survive_on_metadata_surfaces():
     assert copy_ripple_check.check_tagline(files) == []
 
 
+def test_description_must_fit_the_registry_cap():
+    """2026-10-28: the registry answered 422 on a 150-character description after the release was public."""
+    long = "x" * (copy_ripple_check.DESCRIPTION_MAX + 1)
+    files = {"server.json": f'  "description": "{long}",', "pyproject.toml": f'description = "{long}"'}
+    problems = copy_ripple_check.check_description_length(files)
+    assert len(problems) == 2 and all("422" in p for p in problems)
+    files = {"server.json": f'  "description": "{"y" * copy_ripple_check.DESCRIPTION_MAX}",'}
+    assert copy_ripple_check.check_description_length(files) == []
+    assert copy_ripple_check.check_description_length({"README.md": "no description key here"}) == []
+
+
 def test_satellite_must_carry_current_version():
     problems = copy_ripple_check.check_satellite_text("v0.1.0 is live", "0.2.0", "index.html")
     assert problems and "0.2.0" in problems[0]

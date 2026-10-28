@@ -1,7 +1,7 @@
 {
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the governed client for Proxmox",
-  "description": "The governed client for Proxmox (PVE, PBS, PMG, PDM): one hand that plans, keeps the receipts and can put things back. Doors: MCP, A2A, REST, shell.",
+  "description": "The governed client for Proxmox (PVE, PBS, PMG, PDM): plans, keeps the receipts, puts things back.",
   "version": "0.50.0",
   "tools": [
     {

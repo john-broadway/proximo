@@ -40,6 +40,11 @@ MAX_STATUS_BULLETS = 1  # 2026-07-16: Status carries ONLY the current release; h
 MAX_README_LINES = 300  # accretion fence — line-creep was invisible when only bullets counted (283 at 2026-07-16)
 TAGLINE_PHRASE = "governed client for Proxmox"   # John 2026-10-28: not a Proxmox MCP server
 TAGLINE_SURFACES = ("pyproject.toml", "server.json", "lhm.plugin.json")
+# The MCP registry refuses a server.json description over 100 characters (422, 2026-10-28: the
+# 0.50.0 surfaces run published everything but the registry). The generator's docstring knew the
+# ceiling; nothing gated it. The ONE description must fit the tightest listing.
+DESCRIPTION_MAX = 100
+_DESCRIPTION_RE = re.compile(r'(?m)^(?:description = |\s*"description": )"([^"]*)"')
 
 _NEW_IN_RE = re.compile(r"\*\*New in (\d+\.\d+\.\d+[^ ]*)")
 _STATUS_BULLET_RE = re.compile(r"(?m)^- 🩸 \*\*(\d+\.\d+\.\d+[^*]*)\*\*")
@@ -186,6 +191,17 @@ def check_tagline(files: dict[str, str]) -> list[str]:
     ]
 
 
+def check_description_length(files: dict[str, str]) -> list[str]:
+    """Every metadata surface's description fits the MCP registry's cap (the tightest listing)."""
+    out = []
+    for name, text in files.items():
+        m = _DESCRIPTION_RE.search(text)
+        if m and len(m.group(1)) > DESCRIPTION_MAX:
+            out.append(f"{name}: description is {len(m.group(1))} characters; the MCP registry refuses more "
+                       f"than {DESCRIPTION_MAX} (422 on publish), so the one line must fit it")
+    return out
+
+
 def canonical_control_count(security: str) -> int | None:
     """The rows of SECURITY.md's control table, or None when there is no such table (or no row)."""
     lines = security.splitlines()
@@ -283,6 +299,7 @@ def check_repo(root: Path) -> list[str]:
         if (root / name).exists()
     }
     problems += check_tagline(tagline_files)
+    problems += check_description_length(tagline_files)
 
     receipt_docs = {
         name: (root / name).read_text(encoding="utf-8")

@@ -126,21 +126,18 @@ Full token-first walkthrough: **[docs/SETUP.md](docs/SETUP.md)** · more install
 
 ## Why Proximo exists
 
-The Proxmox MCP landscape is split. **API-based servers** manage nodes and VMs but structurally *cannot* run a command inside an LXC: the REST API has no exec endpoint. **SSH-based servers** can, through broad shell access with little scoping.
+Everything that touches a Proxmox product is a call: the web UI, `pct` and `qm` on a host, `curl` against the API, an agent's tool. Most of those calls leave no plan behind them, no receipt, and no way back. Proximo is the one client that governs the call before it runs, records it, and can put the record back, whichever door it came in by. **Trust by construction:**
 
-Proximo builds the principled whole. Both halves, one audited surface, least-privilege. **Trust by construction:**
+| | A call on its own | Through Proximo |
+|---|---|---|
+| Before it runs | nothing | **a plan, recorded first**: the verdict, the live target, the exact change, the blast radius |
+| Record of what happened | app logs, editable | **keyed, hash-chained ledger**; `audit_verify` catches edits, reordering and, against a pinned head, truncation |
+| Undo | by hand, if you kept notes | the record captured first, restored through the vendor's own write |
+| Command inside an LXC | broad SSH | opt-in, fail-closed allowlist, judged like any mutation |
+| Products covered | one at a time | **PVE + PBS + PMG + PDM**, one governed plane |
+| Verify the artifact you run | varies | signed image · PyPI provenance · SBOM · [Scorecard](https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo) |
 
-| | Read-only inspector | Full-access executor | **Proximo** |
-|---|---|---|---|
-| Can mutate | no, that's the safety | yes | yes, plan recorded first, then `confirm=true` |
-| Preview before a change | n/a | rarely | **default**: blast radius + live state, every mutation |
-| Record of what happened | no | app logs, editable | **keyed hash-chained ledger, tamper-evident, on by default** |
-| Undo | n/a | rare | snapshot-first, wherever the platform can snapshot |
-| Command inside an LXC | no | broad SSH | opt-in, fail-closed CTID allowlist |
-| Products covered | usually PVE | usually PVE | **PVE + PBS + PMG + PDM**, one audited plane |
-| Verify the artifact you run | varies | varies | signed image · PyPI provenance · SBOM · [Scorecard](https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo) |
-
-*(The archetype columns describe the split above, not any specific project. There is no official Proxmox MCP; Proximo is a community project, standing on its own, and MCP is one of its doors.)*
+Proximo is a community project, standing on its own. MCP, A2A, REST and a shell with no model in the loop are its doors; the governance is the product.
 
 ## The trust layer: what makes Proximo different
 
@@ -220,7 +217,7 @@ Proximo runs **on your machine**, on demand. No daemon, no open port.
 
 ```
 uvx proximo-proxmox            # zero-install run (PyPI package: proximo-proxmox; command stays `proximo`)
-# or: pip install proximo-proxmox            the MCP core
+# or: pip install proximo-proxmox            the core, MCP door included
 # or: pip install "proximo-proxmox[a2a]"     + the optional A2A face
 # or: pip install "proximo-proxmox[http]"    + the optional HTTP/OpenAPI face
 # or: pip install "proximo-proxmox[mcp-http]" + the optional MCP-over-streamable-HTTP face
