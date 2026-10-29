@@ -49,6 +49,45 @@ def test_arm_installs_the_write_token_bytes_atomically_and_records_a_row(box, ca
     assert [(r["action"], r["detail"]["armed"]) for r in _rows(box)] == [("core.arm", True)]
 
 
+def test_arm_creates_the_served_tokens_directory_on_a_fresh_state_dir(box, monkeypatch, capsys):
+    """alexdelprete, #114: on an empty state dir `arm` died with ENOENT on served/.tok.<rand>; the served
+    token's own directory is made (0700) when it is missing. A missing grandparent is still the operator's."""
+    served = box / "state" / "served" / "token"
+    (box / "state").mkdir()
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(served))
+    assert cli.main(["arm"]) == 0
+    assert served.read_text() == (box / "write.tok").read_text()
+    assert oct(served.parent.stat().st_mode & 0o777) == "0o700" and oct(served.stat().st_mode & 0o777) == "0o600"
+    assert [(r["action"], r["detail"]["armed"]) for r in _rows(box)] == [("core.arm", True)]
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(box / "nowhere" / "served" / "token"))
+    assert cli.main(["arm"]) != 0
+    assert not (box / "nowhere").exists()
+    assert "arm" in capsys.readouterr().err
+
+
+def test_two_arms_racing_on_a_fresh_state_dir_both_arm(box, monkeypatch, capsys):
+    """Lens 3: the loser of a mkdir race found the directory the winner made and failed rc 3 with no token.
+    The race is replayed by hand: isdir answers False, then mkdir finds the directory there."""
+    served = box / "state2" / "served" / "token"
+    (box / "state2").mkdir()
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(served))
+    real_mkdir = os.mkdir
+
+    def racing_mkdir(path, mode=0o777, *a, **kw):
+        real_mkdir(path, 0o700)                                              # the other arm wins the race
+        raise FileExistsError(17, "File exists", path)
+
+    monkeypatch.setattr(os, "mkdir", racing_mkdir)
+    assert cli.main(["arm"]) == 0
+    assert served.read_text() == (box / "write.tok").read_text()
+    monkeypatch.setattr(os, "mkdir", real_mkdir)
+    (box / "state3").mkdir()
+    (box / "state3" / "served").write_text("a file where the directory should be")
+    monkeypatch.setenv("PROXIMO_TOKEN_PATH", str(box / "state3" / "served" / "token"))
+    assert cli.main(["arm"]) != 0                                            # a file in the way still refuses
+    assert "arm" in capsys.readouterr().err
+
+
 def test_disarm_restores_the_read_only_token_and_records_a_row(box, capsys):
     assert cli.main(["arm"]) == 0
     assert cli.main(["disarm", "--json"]) == 0

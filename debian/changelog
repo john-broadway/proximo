@@ -1,3 +1,15 @@
+proximo (0.50.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.50.1 (patch: the exit ceiling is the operator's to
+    raise. PROXIMO_EXIT_MAX_BYTES, whole bytes 3072 to 65536, one ceiling
+    for every read, plan and call answer; unset is the 0.49 defaults;
+    junk keeps them and doctor flags it. A cut exec stream names the knob
+    that lifts it; proximo-core arm makes the served token's directory on
+    a fresh state dir; the one-line description fits the MCP registry.
+    From alexdelprete's measurements on issue 114. 4,386 tests.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Wed, 28 Oct 2026 23:00:00 +0000
+
 proximo (0.50.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.50.0 (minor: the estate memory is back. One SQLite

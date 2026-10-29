@@ -1,6 +1,8 @@
 """THE EXIT (round 6, John's ruling): no model-facing answer is ever large, and that does not depend on any
 builder being right. Every answer leaves a door as its final serialized bytes; one over its kind's ceiling is
-REPLACED by a fixed-shape answer of a few hundred bytes. This file drives hostile inputs through every tool
+REPLACED by a fixed-shape answer of a few hundred bytes. The ceilings are the operator's to RAISE, never a
+model's (`PROXIMO_EXIT_MAX_BYTES`, tests/test_exit_ceiling.py); unset, they are the numbers pinned here. This
+file drives hostile inputs through every tool
 and asserts the bytes at the exit, plus `proximo-core consent show` (the operator's whole view) and the
 bounds on every echo of what a caller sent."""
 # ruff: noqa: E501, S311, B023  -- adversarial fixtures: seeded generators and long literal rows are the point
@@ -89,13 +91,14 @@ def test_one_over_its_ceiling_is_replaced_by_the_fixed_shape(tool, answer, kind)
                         "reason", "undo", "task", "counts", "next"}
 
 
-def test_the_replacement_keeps_the_verdict_the_id_the_counts_and_one_fixed_line():
+def test_the_replacement_keeps_the_verdict_the_id_the_counts_and_the_operators_line():
     cid = "ab" * 32
     out = rawdoor.finish("proximo_plan", {"address": "PUT /x", "allowed": True, "needs": None, "consent_id": cid,
                                           "reason": "ok", "arguments": {f"k{i}": "v" * 300 for i in range(40)},
                                           "not_shown_whole": [f"k{i}" for i in range(40)]})
     assert out["allowed"] is True and out["consent_id"] == cid and out["counts"] == {"arguments": 40, "not_shown_whole": 40}
-    assert out["next"] == f"the full plan is for the operator: proximo-core consent show {cid}"
+    assert out["next"].startswith(f"the full plan is for the operator: proximo-core consent show {cid}; ")
+    assert out["next"].endswith(f"the operator can raise the exit: {rawdoor.EXIT_ENV}")
     no_id = rawdoor.finish("proximo_plan", {"address": "PUT /x", "allowed": False, "arguments": {"a": "z" * 3000}})
     assert "proximo-core <plane> <METHOD> <path> --plan" in no_id["next"]
     read = rawdoor.finish("proximo_read", {"address": "GET /x", "total": 900, "data": ["x" * 90] * 100})

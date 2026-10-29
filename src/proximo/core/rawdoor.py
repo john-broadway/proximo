@@ -249,6 +249,18 @@ def cap_problems() -> list[str]:
     return [p for p in (_env_number("PROXIMO_RAW_MAX_BYTES")[1], _env_number("PROXIMO_RAW_MAX_TOKENS")[1]) if p]
 
 
+def raw_cap_line() -> str | None:
+    """What a cut stream names (alexdelprete, #114; lens rounds 3 and 4): the byte knob, and ONLY while neither
+    raw knob is set at all. Then the claim is always true: a valid byte cap raises the bytes and stands the
+    token cap down (`max_tokens`), so it lifts the cut whichever dimension bound it. Once the operator has set
+    either knob, valid or junk, nothing is named: which one bound a kept prefix is not knowable from here,
+    a junk value is doctor's to flag, and a line that could be wrong is worse than none. The lane spends
+    the line's cost before it sizes the streams, so the line is never what tips the answer (lens 5)."""
+    if os.environ.get("PROXIMO_RAW_MAX_BYTES", "").strip() or os.environ.get("PROXIMO_RAW_MAX_TOKENS", "").strip():
+        return None
+    return "the operator can raise the lane's cap: PROXIMO_RAW_MAX_BYTES"
+
+
 def max_bytes() -> int:
     value, _ = _env_number("PROXIMO_RAW_MAX_BYTES")
     return DEFAULT_MAX_BYTES if value is None else value
@@ -314,9 +326,9 @@ def composed_cap() -> Cap:
 
 
 def max_tokens() -> int | None:
-    """The token cap. None only when the operator chose a VALID byte cap (PROXIMO_RAW_MAX_BYTES, no
-    PROXIMO_RAW_MAX_TOKENS): their number then stands alone. Junk in either variable never stands
-    the token cap down."""
+    """The token cap. None only when the operator chose a VALID byte cap (PROXIMO_RAW_MAX_BYTES) and no
+    VALID token cap: their number then stands alone. Junk in PROXIMO_RAW_MAX_BYTES never stands the token
+    cap down; junk in PROXIMO_RAW_MAX_TOKENS beside a valid byte cap is that byte cap alone (lens 4)."""
     value, _ = _env_number("PROXIMO_RAW_MAX_TOKENS")
     if value is not None:
         return value
@@ -518,6 +530,11 @@ def first_sentence(text: str, limit: int = 160) -> str:
 def _cost(obj: object) -> tuple[int, int]:
     body = _compact(obj)
     return len(body.encode()), estimate_tokens(body)
+
+
+def cost_of(obj: object) -> tuple[int, int]:
+    """(bytes, estimated tokens) of `obj` as the door sends it; what a lane reserves for a line of its own."""
+    return _cost(obj)
 
 
 #: bytes and tokens kept back from every answer for the notes a door adds beside it (`asked`, `read_only`,
@@ -747,8 +764,57 @@ def fit_answer(answer: dict[str, Any], *, descend: tuple[str, ...] = (), protect
 # one over its kind's ceiling is REPLACED by a fixed-shape answer of a few hundred bytes. Nothing is exempt,
 # protected keys included. The worst case in real tokens is the ceiling itself at one token a byte (dense
 # text, measured); at the measured 2.5 to 4 bytes a token it is a third of that.
+#
+# THE CEILING IS THE OPERATOR'S TO RAISE (issue #114): on a client whose window is not the constraint, the
+# output IS the call (85 rows of a container store, fifty log lines), and a replaced answer costs a second
+# call to learn what the first did. PROXIMO_EXIT_MAX_BYTES, whole bytes from EXIT_MIN to EXIT_MAX, is ONE
+# ceiling for every read, plan and composed answer; unset is the three below, which never changed. It only
+# raises: EXIT_MIN is the largest default, so the floor the over-cap shape is proven to fit under holds. The
+# refusal ceiling never moves (every error path is built on it). Junk keeps the defaults, as the raw cap's
+# does, but is never echoed (the raw cap's note quotes its value): doctor names it, and the over-cap answer
+# names it after the operator's line when that still fits under the ceiling (the `_minimal` floor never does,
+# and a rich shape is never dropped to the floor for the sake of the suffix). It is NOT in `cap_problems`:
+# that sentence rides on every cut read, and a typo in the exit knob must not cost rows on answers the exit
+# never touched (lens, 2026-10-28). No argument a model sends moves it.
 
 CEILINGS = {"read": 1152, "plan": 2048, "composed": 3072, "refusal": 512}
+EXIT_ENV = "PROXIMO_EXIT_MAX_BYTES"
+EXIT_MIN, EXIT_MAX = CEILINGS["composed"], 65536
+_EXIT_BYTES = re.compile(r"[0-9]{1,6}\Z", re.ASCII)
+
+
+def _exit_value() -> tuple[int | None, str | None]:
+    """(the operator's ceiling, None), (None, the problem) for junk, (None, None) for unset or empty."""
+    raw = os.environ.get(EXIT_ENV, "").strip()
+    if not raw:
+        return None, None
+    if not _EXIT_BYTES.match(raw) or not EXIT_MIN <= int(raw) <= EXIT_MAX:
+        return None, (f"the exit ceiling is garbled: {EXIT_ENV} is not whole bytes from {EXIT_MIN} to {EXIT_MAX}, "
+                      "so the default ceilings stand")
+    return int(raw), None
+
+
+def exit_problem() -> str | None:
+    """The one flag sentence when PROXIMO_EXIT_MAX_BYTES is set to junk (never the value), else None."""
+    return _exit_value()[1]
+
+
+def ceilings() -> dict[str, int]:
+    """The effective ceiling of every kind: CEILINGS, or the operator's one number for all but `refusal`."""
+    value, _ = _exit_value()
+    if value is None:
+        return dict(CEILINGS)
+    return {kind: (CEILINGS[kind] if kind == "refusal" else value) for kind in CEILINGS}
+
+
+def _exit_line() -> str | None:
+    """What an over-cap answer at a DEFAULT ceiling adds to its next line: the knob, or that it is garbled."""
+    value, problem = _exit_value()
+    if value is not None:
+        return None
+    if problem:
+        return f"{EXIT_ENV} is garbled; the default exit stands"
+    return f"the operator can raise the exit: {EXIT_ENV}"
 
 #: answers whose null, false or empty values say nothing a model acts on
 _NOISE = frozenset({"untrusted", "derived", "channel", "tier", "needs", "withheld", "tier_authored", "tier_raised",
@@ -780,7 +846,8 @@ def _sent(answer: object) -> int:
 
 
 def over_cap(name: str, answer: dict[str, Any], size: int, ceiling: int) -> dict[str, Any]:
-    """The fixed-shape replacement: the verdict and identifiers, counts of what was left out, one fixed line."""
+    """The fixed-shape replacement: the verdict and identifiers, counts of what was left out, the operator's
+    line, and after it, when that still fits, the exit knob (unset: how to raise it; junk: that it is garbled)."""
     out: dict[str, Any] = {"over_cap": True, "bytes": size, "cap": ceiling}
     for key in _KEEP:
         if key in answer and isinstance(answer[key], (str, int, float, bool)) and answer[key] is not None:
@@ -797,6 +864,8 @@ def over_cap(name: str, answer: dict[str, Any], size: int, ceiling: int) -> dict
     if counts:
         out["counts"] = dict(list(counts.items())[:8])
     out["next"] = _operator_line(name, answer)
+    if (exit_line := _exit_line()) is not None and _sent({**out, "next": f"{out['next']}; {exit_line}"}) <= ceiling:
+        out["next"] = f"{out['next']}; {exit_line}"
     if _sent(out) <= ceiling:
         return out
     return _minimal(name, answer, size, ceiling)
@@ -832,7 +901,7 @@ def _minimal(name: str, answer: dict[str, Any], size: int, ceiling: int) -> dict
 def finish(name: str, answer: dict[str, Any]) -> dict[str, Any]:
     """`answer` as the door lets it leave: terse, and under its ceiling or replaced (see above)."""
     tidy = terse(answer)
-    ceiling = CEILINGS[kind_of(name, answer)]
+    ceiling = ceilings()[kind_of(name, answer)]
     size = _sent(tidy)
     return tidy if size <= ceiling else over_cap(name, tidy, size, ceiling)
 

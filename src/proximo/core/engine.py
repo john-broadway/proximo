@@ -2347,9 +2347,22 @@ def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
         shown, over = _bounded_data(row, data, fields, room, whole, fenced, given)
         answer = {**header, **(over if over is not None else {"data": shown})}
         body = json.dumps(answer, separators=(",", ":"), default=str)
+        fits = rawdoor.fits(len(body.encode()), body, cap=whole)
+        if (over is not None or not fits) and row.wire == "ssh" and isinstance(data, dict) \
+                and isinstance(data.get("next"), str):
+            # A LANE'S OWN LINE IS THE FIRST THING TO GO (lens 5, 6 and 7): the shell lane names its cap on
+            # `next`, and that line must never be what costs the dict its shape. So the moment the dict with
+            # it is over the ROOM (it was described: `over`, and a description always fits, so this is checked
+            # BEFORE the break below; lens 7) or the answer with it is over the CAP, the line is dropped and
+            # the SAME room is tried again: no shrink step is ever computed from a body the line was on, and
+            # from here the loop runs exactly as it would have with no line at all.
+            data = {k: v for k, v in data.items() if k != "next"}
+            continue
+        if fits or row.secret[4]:
+            break           # fits (or a credential kept whole)
         stalls += last is not None and len(body) >= last
-        if rawdoor.fits(len(body.encode()), body, cap=whole) or room.bytes <= 48 or stalls >= 3 or row.secret[4]:
-            break           # fits; or nothing left to take; or taking more changed nothing (a credential kept whole)
+        if room.bytes <= 48 or stalls >= 3:
+            break           # nothing left to take; or taking more changed nothing
         last = len(body)
         room = room.minus(2 * (len(body.encode()) - whole.bytes) + 16,
                           0 if whole.tokens is None
@@ -2381,7 +2394,7 @@ def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, wh
         # rows share (the escaping its JSON string adds is caught by the whole-answer loop in `_envelope`)
         squeeze = rawdoor.Cap(room.bytes, room.tokens)
         if fenced:
-            wrap = rawdoor._cost(spine.fence(row.key, ""))
+            wrap = rawdoor.cost_of(spine.fence(row.key, ""))
             squeeze = room.minus(wrap[0], wrap[1], 48)
         summary = summarize(data, squeeze)
         if summary["tally"] and rawdoor.bounded(summary, squeeze) is None:
@@ -2409,7 +2422,7 @@ def _bearer_split(data: Any, cap: rawdoor.Cap) -> tuple[Any, dict[str, Any] | No
         return data, None
     scalars = {k: v for k, v in data.items() if not isinstance(v, (dict, list))}
     rest = {k: v for k, v in data.items() if isinstance(v, (dict, list))}
-    room = cap.minus(*rawdoor._cost(scalars))
+    room = cap.minus(*rawdoor.cost_of(scalars))
     over = rawdoor.bounded(rest, room) if rest else None
     if over is None:
         return data, None

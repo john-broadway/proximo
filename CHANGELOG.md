@@ -2,7 +2,9 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
-## [Unreleased]
+## [0.50.1] — 2026-10-28
+
+**The exit ceiling is the operator's to raise.** `PROXIMO_EXIT_MAX_BYTES` sets one byte ceiling for every read, plan and composed answer a model is handed, in whole bytes from 3072 to 65536; unset is the three ceilings 0.49.0 set (1,152 / 2,048 / 3,072), unchanged. From alexdelprete, issue #114: on a large-window client the fixed ceilings replaced the whole output of an exec (85 rows of a container store, fifty log lines, `proximo-core doctor`) with the over-cap shape, and `PROXIMO_RAW_MAX_BYTES` could not move them. Any other value is junk: the defaults stand, `proximo doctor` flags it (`exit-ceiling-garbled`), and the over-cap answer names the variable on its `next` line when the shape has the room, never the value. The refusal ceiling never moves. `doctor` reports the effective ceilings under DIAGNOSE. The raw cap below the exit is a separate knob and still trims first: a shell exec's output or a read comes back whole only when `PROXIMO_RAW_MAX_BYTES` is raised too (both at 16384 carry 8.7 KB of output whole; `PROXIMO_RAW_MAX_TOKENS`, if set, still applies). Two more from his test of the branch: a cut exec stream names `PROXIMO_RAW_MAX_BYTES` on its `next` line while neither raw cap is set, budgeted out of the streams' own room, and the engine drops the line before it would cost the answer its dict (a cap the operator set, valid or not, names nothing: `doctor` flags junk), and `proximo-core arm` on a fresh state directory creates the served token's own directory (0700) instead of dying on it. No argument a model sends changes it. A patch, on 0.49.1's precedent for a new operator variable that is off until set.
 
 **The one-line description fits the MCP registry.** The registry caps a description at 100 characters and answered 422 on 0.50.0's 150; the line is now 98 characters on every surface, and the copy gate refuses a longer one.
 

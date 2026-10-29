@@ -67,7 +67,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
         flags.append("PROXIMO_SURFACES is set: every core door refuses to start while it is; unset it")
     if not configured:
         flags.append("no plane is configured: set a plane's base URL and credential path (each plane names its own)")
-    report["flags"] = flags = [*flags, *rawdoor.cap_problems()]   # a junk cap variable never stands the cap down
+    report["flags"] = flags = [*flags, *rawdoor.cap_problems(), *filter(None, [rawdoor.exit_problem()])]
     report["complete"] = not flags or all(f.startswith(_ADVISORY) for f in flags)
     report["exit"] = EXIT_USAGE if not configured else EXIT_VENDOR if (unreachable or not chain_ok) else EXIT_OK
     return report
@@ -255,7 +255,7 @@ def _pillars(report: dict[str, Any], chain_ok: bool, flags: list[str]) -> dict[s
                 flags.append(f"the {name} lane's allowlist is garbled: it denies every id")
     shell_wait, garbled = shell.timeout_report()
     flags.extend(garbled)
-    p["DIAGNOSE"] = {"standing": True, "lanes": lanes,
+    p["DIAGNOSE"] = {"standing": True, "lanes": lanes, "exit_ceilings": rawdoor.ceilings(),
                      "ssh_target_configured": spine._env_set_nonempty(shell.TARGET_ENV), "shell_timeout": shell_wait}
     trip = spine.contain_state()
     trip_section: dict[str, Any] = {"configured": spine._env_set_nonempty(spine.TRIP_ENV), "tripped": trip.contained}

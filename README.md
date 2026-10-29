@@ -207,11 +207,11 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 **The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing), and the estate memory behind `proximo-core learn | where 105 | uses local | changed 24h`: what the governed reads have seen, answered from one file beside the ledger, no model, no network. Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.50.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.50.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.50.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.50.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.50.0 (the estate memory is back).** Proximo keeps what its governed reads have seen in one SQLite file beside the ledger, derived and never proof, and answers `proximo-core learn | where 105 | uses local | changed 24h` with no model and no network: kind, node, status, how old the answer is, and the published path that reads the thing live. A thing it has not seen is "not in memory", never "does not exist"; only a whole, unfiltered list read may mark a thing gone. The file is the operator's alone (0600, never tightened), bounded, and every answer is a row on the ledger. `PROXIMO_MEMORY=0` opts out and creates nothing.
+> **New in 0.50.1 (the exit ceiling is the operator's to raise).** `PROXIMO_EXIT_MAX_BYTES` lifts the byte ceiling every read, plan and call answer leaves the door under, from the 0.49 defaults up to 64 KiB, for a client whose window is not the constraint; unset, nothing moves. From alexdelprete's measurements on issue #114: a container store of 85 rows, fifty log lines, `proximo-core doctor`, each replaced whole by the fixed over-cap shape. Junk keeps the defaults and `doctor` flags it; a cut stream names the knob that lifts it; `proximo-core arm` on a fresh state directory makes the served token's directory itself; the one-line description fits the MCP registry.
 >
-> Recent: **0.49.1** routed shell calls across a cluster by target and node (from PR #107) and gave the operator the shell wait; **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.50.0** brought the estate memory back, one SQLite file beside the ledger answering `learn | where | uses | changed` with no model and no network; **0.49.1** routed shell calls across a cluster by target and node (from PR #107) and gave the operator the shell wait; **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -248,9 +248,10 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.50.0**: **The estate memory is back.** One SQLite file beside the ledger, fed by reads that already
-  happened; `learn`, `where`, `uses`, `changed` on the core door with no model and no network; derived, never
-  proof; owner-only and bounded; three adversarial rounds closed on the branch. 4,323 tests.
+- 🩸 **0.50.1**: **The exit ceiling is the operator's to raise.** `PROXIMO_EXIT_MAX_BYTES`, 3072 to 65536, one
+  ceiling for every answer a model is handed; unset is the 0.49 defaults; junk keeps them and `doctor` says so.
+  From alexdelprete's measurements (#114), tested on his setup before it shipped; eleven adversarial rounds
+  closed. 4,386 tests.
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
 **The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,323 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).

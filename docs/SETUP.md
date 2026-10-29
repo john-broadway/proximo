@@ -316,6 +316,25 @@ model sends changes it. When the wait runs out only the local ssh client stops: 
 still be running on the node, and the answer says so. A client may have its own limit per tool
 call, shorter than yours.
 
+Every answer a model is handed leaves the door under a byte ceiling: 1,152 for a read, 2,048 for a
+plan or a call, 3,072 for a diagnosis. One over its ceiling is replaced by a short fixed shape (the
+verdict, the undo id, the task status, counts of what was left out), not truncated, so a command's
+output can be gone whole. Those numbers are set for a small model on a small window. On a client
+whose window is not the constraint, `PROXIMO_EXIT_MAX_BYTES` raises all three to one number, in
+whole bytes from 3072 to 65536; unset is the defaults. Set to anything else, the defaults stand,
+`proximo doctor` flags it, and the replaced answer says so on its `next` line when it has the room. A
+shell exec cut by the raw cap names that knob on its `next` line while neither raw cap is set, the dict
+with the line fits the room the engine's cap leaves after its header and note room, and the whole answer
+with it is under that cap; the line is the first thing dropped when either fails, and the exit above is
+never what drops it. The
+line's room comes out of the streams', one 15% step of a cut stream at the default cap for most text
+(201 to 169 characters of plain text), none or two for some.
+Raising the exit does not raise the cap below it: a read, and a shell exec's stdout and stderr, are
+still trimmed to `PROXIMO_RAW_MAX_BYTES` first (and to `PROXIMO_RAW_MAX_TOKENS` when that is set),
+so set both when a whole answer is the point of the call: both at 16384 carry 8.7 KB of command
+output whole. The refusal ceiling (512) never moves, and no argument a model sends changes any of
+this.
+
 ---
 
 ## The estate memory — `learn`, `where`, `uses`, `changed`

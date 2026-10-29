@@ -271,6 +271,23 @@ def _bounded(result: dict[str, Any]) -> dict[str, Any]:
     room = rawdoor.answer_cap().minus(*ENVELOPE_ROOM)
     if rawdoor.bounded(result, room) is None:
         return result
+    # THE LINE IS SPENT BEFORE THE STREAMS ARE SIZED (lens 5): when a cut will name its knob, its cost comes
+    # off the room first, so the streams are cut a step shorter and the dict with the line lands within a
+    # few bytes of what the dict without it would have been. A BUDGET, NOT A GUARANTEE (lens 6, 7, 8): a
+    # stream shrinks in steps of 15% and the reserve is split over two streams, so the dict with the line is
+    # usually a little larger than the bare one for plain ASCII text (the mode by shape runs 38 to 48 B and
+    # 24 to 41 tokens), more often than not smaller in bytes for multi-byte text (the mode for é, CJK and
+    # emoji is under the bare one in bytes; in tokens emoji under, é level, CJK a few over), and
+    # larger by the whole line (70 B, 58 or 59 tok) when the reserve lands inside the same step and no stream
+    # shortens at all; 28% of 463,585 measured dicts are smaller in bytes or tokens (lens 8, 9). What
+    # guarantees the line never costs the answer its dict is the engine,
+    # which drops a lane's `next` the moment the dict with it is over the room or the answer is over the
+    # cap (engine._envelope).
+    line = rawdoor.raw_cap_line()
+    if line:
+        # Reserved at its FENCED cost (the dict as a string inside the taint fence, quotes escaped), which is
+        # never less than its plain cost; the lane cannot know here whether the engine will fence it.
+        room = room.minus(*rawdoor.cost_of(json.dumps({"next": line})))
     per = max(room.bytes // 2 - 128, 0)
     per_tokens = None if room.tokens is None else max(room.tokens // 2 - 64, 0)
 
@@ -289,4 +306,9 @@ def _bounded(result: dict[str, Any]) -> dict[str, Any]:
                 s = s[: max(int(len(s) * 0.85) - 1, 0)]
             out[name] = s
     out["truncated"] = cut
+    # The cut names the knob that lifts it (alexdelprete, #114: the exit raised, the cap not, 200 bytes kept
+    # and nothing said which), and only while NEITHER raw knob is set: see rawdoor.raw_cap_line for why
+    # anything cleverer was wrong three lens rounds running.
+    if cut and line:
+        out["next"] = line
     return out

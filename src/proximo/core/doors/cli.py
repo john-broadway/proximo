@@ -177,6 +177,15 @@ def _install_atomic(src: str, dst: str) -> None:
     with open(src, "rb") as f:
         data = f.read()
     directory = os.path.dirname(os.path.abspath(dst)) or "."
+    if not os.path.isdir(directory):
+        # A fresh state dir has no served/ yet (alexdelprete, #114: ENOENT on served/.tok.<rand>). The token's
+        # own directory is made, private; a missing grandparent is the operator's path to fix, not ours to build.
+        # Two arms racing: the loser finds the directory the winner made and carries on (lens 3).
+        try:
+            os.mkdir(directory, 0o700)
+        except FileExistsError:
+            if not os.path.isdir(directory):
+                raise
     fd, tmp = tempfile.mkstemp(prefix=".tok.", dir=directory)
     try:
         os.fchmod(fd, 0o600)
