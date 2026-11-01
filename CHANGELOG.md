@@ -2,6 +2,10 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [Unreleased]
+
+**pyasn1 bumped to 0.6.5.** Four decoder CPU-exhaustion advisories (CVE-2026-119194/5/6/7) against 0.6.4 failed `pip-audit`; a dev-only dependency (via pyasn1-modules), not in the runtime set. `uv.lock`, `requirements/dev.txt` and `build.txt`'s input stamp move together.
+
 ## [0.50.1] — 2026-10-28
 
 **The exit ceiling is the operator's to raise.** `PROXIMO_EXIT_MAX_BYTES` sets one byte ceiling for every read, plan and composed answer a model is handed, in whole bytes from 3072 to 65536; unset is the three ceilings 0.49.0 set (1,152 / 2,048 / 3,072), unchanged. From alexdelprete, issue #114: on a large-window client the fixed ceilings replaced the whole output of an exec (85 rows of a container store, fifty log lines, `proximo-core doctor`) with the over-cap shape, and `PROXIMO_RAW_MAX_BYTES` could not move them. Any other value is junk: the defaults stand, `proximo doctor` flags it (`exit-ceiling-garbled`), and the over-cap answer names the variable on its `next` line when the shape has the room, never the value. The refusal ceiling never moves. `doctor` reports the effective ceilings under DIAGNOSE. The raw cap below the exit is a separate knob and still trims first: a shell exec's output or a read comes back whole only when `PROXIMO_RAW_MAX_BYTES` is raised too (both at 16384 carry 8.7 KB of output whole; `PROXIMO_RAW_MAX_TOKENS`, if set, still applies). Two more from his test of the branch: a cut exec stream names `PROXIMO_RAW_MAX_BYTES` on its `next` line while neither raw cap is set, budgeted out of the streams' own room, and the engine drops the line before it would cost the answer its dict (a cap the operator set, valid or not, names nothing: `doctor` flags junk), and `proximo-core arm` on a fresh state directory creates the served token's own directory (0700) instead of dying on it. No argument a model sends changes it. A patch, on 0.49.1's precedent for a new operator variable that is off until set.
