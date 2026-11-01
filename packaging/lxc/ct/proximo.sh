@@ -42,7 +42,7 @@ PROXIMO_BANNER
 }
 # Copyright (c) 2026 John Broadway
 # Author: John Broadway (john-broadway)
-# License: Apache-2.0 | https://github.com/john-broadway/proximo/raw/main/LICENSE
+# License: AGPL-3.0-or-later | https://github.com/john-broadway/proximo/raw/main/LICENSE
 # Source: https://github.com/john-broadway/proximo
 
 APP="Proximo"

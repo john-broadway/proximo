@@ -199,19 +199,19 @@ def test_junk_beside_a_small_valid_cap_keeps_the_dict(armed_plane, monkeypatch, 
     (1, "nl", "nl", True, "pve1", "101", "exec", True),
     (7, "nl", "nl", True, "pve1", "101", "exec", True),
     (1, "wide", "wide", True, "pve1", "101", "exec", True),
-    (255, "leanw", "leanw", True, "pve1", "101", "exec", False),
+    (255, "leanw", "leanw", True, "pve1", "101", "exec", True),  # the lane budgets the fence (10-30)
     # lens 6: a called path of 29 characters (a nine-character node and vmid 101, or three and 999999999)
-    (255, "lean", "lean", True, "naaaaaaaa", "101", "exec", False),
-    (255, "lean", "lean", True, "naa", "999999999", "exec", False),
-    (255, "leanw", "leanw", True, "naaaaaaaa", "101", "exec", False),
+    (255, "lean", "lean", True, "naaaaaaaa", "101", "exec", True),  # the lane budgets the fence (10-30)
+    (255, "lean", "lean", True, "naa", "999999999", "exec", True),  # the lane budgets the fence (10-30)
+    (255, "leanw", "leanw", True, "naaaaaaaa", "101", "exec", True),  # the lane budgets the fence (10-30)
     # lens 7: ONE short token-dense stream beside a cut one, rc 255, no fence: the dict with the line is over
     # the engine's room by a token, and the drop has to run before a description, which always fits, breaks
-    (255, "short_upper", "upper", False, "pve1", "101", "exec", False),
+    (255, "short_upper", "upper", False, "pve1", "101", "exec", True),  # lens 5: header spent
     (1, "short_upper", "upper", False, "pve1", "101", "exec", True),
-    (255, "upper", "short_upper", False, "pve1", "101", "exec", False),   # (fenced, this cell's BARE dict is described)
+    (255, "upper", "short_upper", False, "pve1", "101", "exec", True),  # lens 5: header spent
     (255, "short_digit", "digit", False, "pve1", "999999999", "exec", True),
     # lens 8: the lane's READ row (the probe) through the same drop; d8e413c tipped it at 148 uppercase chars
-    (255, "short_upper148", "upper", False, "pve1", "101", "probe", False),
+    (255, "short_upper148", "upper", False, "pve1", "101", "probe", True),  # lens 5: header spent
     (1, "short_upper", "upper", False, "pve1", "101", "probe", True),
 ])
 def test_the_line_never_costs_the_answer_its_dict(armed_plane, monkeypatch, raw_defaults,
@@ -257,21 +257,18 @@ def test_the_line_never_costs_the_answer_its_dict(armed_plane, monkeypatch, raw_
 def test_the_drop_by_the_cap_retries_the_same_room(monkeypatch, raw_defaults):
     """Lens 8: when the dict with the line fits the room but the answer with it is over the cap, the line is
     dropped and the SAME room is tried; a drop that fell through to a shrink computed from the with-line body
-    (here 134 tokens off the room instead of 10) put the lean dict under the shrunk room in 40,752 cells of
-    1.19M. This is the first of them, the envelope driven as execute drives it: a fenced exec, rc 255, 113
-    digits beside a cut digit stream; the dict without the line keeps its shape, so the dict with it must
-    too. (Both keeps are the loop's stall exit: the kept fenced answer sits one token over the engine's cap
-    at every room, a pre-existing class the byte-only exit never replaces; a change to the stall rule would
-    redden this cell for that reason, not the drop's.)"""
-    EXEC = "/nodes/pve1/lxc/101/exec"                  # the band moves with the called path's length
+    put the lean dict under the shrunk room. Since 2026-10-30 the lane budgets the taint fence and the lane's
+    own output no longer lands in this band (stdout of 1 to 32 digits beside a cut stream keeps the line, under
+    the cap), so the band is built by hand: stdout of 192 to 254 digits, where the lean dict is kept and the
+    answer WITH the line is over the cap. The middle of it is pinned; the dict must come back without the line,
+    never described."""
+    EXEC = "/nodes/pve1/lxc/101/exec"
     monkeypatch.setenv("PROXIMO_TAINT_FENCE", "1")
     row = engine.resolve("pve", "POST", EXEC)
-    result = {"returncode": 255, "stdout": "7" * 113, "stderr": "7" * 20000,
-              "exit_ambiguous": "255 is also ssh's own exit: the command started, and either it exited 255 or the "
-                                "connection dropped before it finished"}
-    with_line = shell._bounded(result)
-    assert "next" in with_line and with_line["truncated"] == {"stderr": 20000}
-    lean = {k: v for k, v in with_line.items() if k != "next"}        # what the drop hands the same room
+    lean = {"returncode": 255, "stdout": "7" * 220, "stderr": "7" * 32, "truncated": {"stderr": 20000},
+            "exit_ambiguous": "255 is also ssh's own exit: the command started, and either it exited 255 or the "
+                              "connection dropped before it finished"}
+    with_line = {**lean, "next": rawdoor.raw_cap_line()}
 
     def data_of(answer):
         d = answer.get("data")
@@ -279,8 +276,12 @@ def test_the_drop_by_the_cap_retries_the_same_room(monkeypatch, raw_defaults):
 
     kept = data_of(engine._envelope(row, EXEC, lean))
     assert isinstance(kept, dict) and kept["returncode"] == 255, "the band is wrong: the lean dict must be kept"
-    got = data_of(engine._envelope(row, EXEC, with_line))
+    out = engine._envelope(row, EXEC, with_line)
+    got = data_of(out)
     assert isinstance(got, dict) and got["returncode"] == 255 and got["truncated"] == {"stderr": 20000}
+    assert "next" not in got, "the band is wrong: the answer with the line must be over the cap"
+    text = json.dumps(out, separators=(",", ":"), default=str)
+    assert rawdoor.fits(len(text.encode()), text, cap=rawdoor.answer_cap())
 
 
 def test_the_drop_is_the_shell_lanes_alone_a_reads_next_field_is_never_stripped(monkeypatch, raw_defaults):
@@ -392,3 +393,14 @@ def test_the_knob_suffix_never_costs_a_fitting_shape_its_fields(monkeypatch):
             with_knob = {**got, "next": got["next"] + "; the operator can raise the exit: " + rawdoor.EXIT_ENV}
             assert _bytes(with_knob) > 1152
     assert dropped_to_floor_while_fitting == [] and crossed                # the band was reached, and held
+
+
+def test_quote_heavy_output_under_the_fence_keeps_its_dict_under_the_cap(armed_plane, monkeypatch, raw_defaults):
+    # fenced, a stream is sent escaped twice: the lane measures it that way (2026-10-30)
+    monkeypatch.setenv("PROXIMO_TAINT_FENCE", "1")
+    got = _exec(armed_plane, monkeypatch, '"' * 20000, '\\' * 20000, rc=1)
+    d = got.get("data")
+    data = json.loads(d["data"]) if isinstance(d, dict) and isinstance(d.get("data"), str) else d
+    assert isinstance(data, dict) and data["returncode"] == 1 and data["truncated"]
+    text = json.dumps(got, separators=(",", ":"), default=str)
+    assert rawdoor.fits(len(text.encode()), text, cap=rawdoor.answer_cap())

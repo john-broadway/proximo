@@ -10,7 +10,7 @@
 <!-- mcp-name: io.github.john-broadway/proximo-proxmox -->
 
 <p align="center">
-  <a href="https://github.com/john-broadway/proximo/actions/workflows/ci.yml"><img src="https://github.com/john-broadway/proximo/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/john-broadway/proximo/actions/workflows/codeql.yml"><img src="https://github.com/john-broadway/proximo/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a> <a href="https://github.com/john-broadway/proximo/releases"><img src="https://img.shields.io/github/v/release/john-broadway/proximo" alt="Release"></a> <a href="https://pypi.org/project/proximo-proxmox/"><img src="https://img.shields.io/pypi/v/proximo-proxmox" alt="PyPI"></a> <a href="./pyproject.toml"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a> <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License Apache-2.0"></a>
+  <a href="https://github.com/john-broadway/proximo/actions/workflows/ci.yml"><img src="https://github.com/john-broadway/proximo/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/john-broadway/proximo/actions/workflows/codeql.yml"><img src="https://github.com/john-broadway/proximo/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a> <a href="https://github.com/john-broadway/proximo/releases"><img src="https://img.shields.io/github/v/release/john-broadway/proximo" alt="Release"></a> <a href="https://pypi.org/project/proximo-proxmox/"><img src="https://img.shields.io/pypi/v/proximo-proxmox" alt="PyPI"></a> <a href="./pyproject.toml"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a> <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License AGPL-3.0-or-later"></a>
 </p>
 
 <p align="center">
@@ -207,11 +207,11 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 **The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing), and the estate memory behind `proximo-core learn | where 105 | uses local | changed 24h`: what the governed reads have seen, answered from one file beside the ledger, no model, no network. Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.50.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.50.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.51.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.51.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.50.1 (the exit ceiling is the operator's to raise).** `PROXIMO_EXIT_MAX_BYTES` lifts the byte ceiling every read, plan and call answer leaves the door under, from the 0.49 defaults up to 64 KiB, for a client whose window is not the constraint; unset, nothing moves. From alexdelprete's measurements on issue #114: a container store of 85 rows, fifty log lines, `proximo-core doctor`, each replaced whole by the fixed over-cap shape. Junk keeps the defaults and `doctor` flags it; a cut stream names the knob that lifts it; `proximo-core arm` on a fresh state directory makes the served token's directory itself; the one-line description fits the MCP registry.
+> **New in 0.51.0 (the license is AGPL-3.0-or-later).** Every release through 0.50.1 stays Apache-2.0, and the code contributors brought in stays available under it too. The rest are fixes. A read's answer stays under its cap: 394,752 reads at twelve cap settings, none over, and a cap set lower than an answer needs is raised to the default and named. In a running door a receipt no longer reads the whole ledger: on 0.50.1 a read cost 486 ms at 37,632 ledger rows, now 1.2 ms (a new process, as each `proximo-core` call is, still reads it once). A cut answer's `fields=` advice names keys its rows really carry.
 >
-> Recent: **0.50.0** brought the estate memory back, one SQLite file beside the ledger answering `learn | where | uses | changed` with no model and no network; **0.49.1** routed shell calls across a cluster by target and node (from PR #107) and gave the operator the shell wait; **0.49.0** put every model-facing answer under a hard byte ceiling at one exit on every door, and made a rollback take a safety snapshot first. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.50.1** let the operator raise the exit ceiling (`PROXIMO_EXIT_MAX_BYTES`, up to 64 KiB, from alexdelprete's measurements on #114); **0.50.0** brought the estate memory back, one SQLite file beside the ledger answering `learn | where | uses | changed` with no model and no network; **0.49.1** routed shell calls across a cluster by target and node (from PR #107) and gave the operator the shell wait. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -248,13 +248,12 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.50.1**: **The exit ceiling is the operator's to raise.** `PROXIMO_EXIT_MAX_BYTES`, 3072 to 65536, one
-  ceiling for every answer a model is handed; unset is the 0.49 defaults; junk keeps them and `doctor` says so.
-  From alexdelprete's measurements (#114), tested on his setup before it shipped; eleven adversarial rounds
-  closed. 4,386 tests.
+- 🩸 **0.51.0**: **AGPL-3.0-or-later from here; a read stays under its cap.** 394,752 reads at twelve cap
+  settings, none over; in a running door a receipt costs 1.2 ms at 37,632 ledger rows, where 0.50.1 took 486 ms. Eleven
+  adversarial rounds closed. 4,651 tests.
 _Every release before it (every pillar, every redteam, every fix) lives in [`CHANGELOG.md`](./CHANGELOG.md)._
 
-**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,323 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
+**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **4,651 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
 
 **Proven live** (not mocks): the governed path end to end against a real PVE 9 node through this door, plans reading the live target, receipts on the keyed chain, before-state captures and their restore. The 0.44 wrappers' live record (a 3-node cluster, PBS, PMG, PDM, a real cross-datacenter move) stays in [`CHANGELOG.md`](./CHANGELOG.md) where it was earned; it is not re-claimed for the core.
 **Not yet proven — said plainly:** a small local model finishing a whole task through this door. Measured and driven on 0.45: a stock 1.5B behind llama.cpp with a 4,096-token context the server enforces, against a real PVE node, read-only. Its calls landed and the door's refusals named the fix each time (an invented field, the real ones listed); the prompt peaked at 3,074 tokens; the model did not finish the task, it invented a number. The window holds; a 1.5B does not. *Hardware*-watchdog fencing (needs physical iTCO/IPMI), and behavior at production scale. The 20 held addresses are never fired: refused by sentence, by design, not a gap.
@@ -276,11 +275,11 @@ _Every release before it (every pillar, every redteam, every fix) lives in [`CHA
 
 ## License
 
-Apache-2.0, chosen for the patent grant that suits infrastructure tooling. Full text in [`LICENSE`](./LICENSE).
+AGPL-3.0-or-later, so nobody can take it closed. Full text in [`LICENSE`](./LICENSE). Every release through 0.50.1 was Apache-2.0 and stays Apache-2.0. The code Alessandro Del Prete (@alexdelprete) and RavenLiao contributed came in under Apache-2.0; their copyright stays theirs, and those portions remain available under Apache-2.0 as well ([`LICENSES/Apache-2.0.txt`](./LICENSES/Apache-2.0.txt)).
 
 ## Credits
 
-Built by **John Broadway** with **Claude** and **Maude**: a human-AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer.
+Built by **John Broadway** with **Claude** and **Maude**: a human-AI partnership, and the first thing we made on this box to give away to the world. **Claude Opus 4.8** built the trust pillars and the original tool surface and has carried the work since; **Claude Fable 5** ran the 101-agent release audit and the first publish. Every commit carries its co-author trailer. Outside contributors: **Alessandro Del Prete** ([@alexdelprete](https://github.com/alexdelprete)), MCP over Streamable HTTP; **RavenLiao** ([@RavenLiao](https://github.com/RavenLiao)), PVE SSH routed by target and node.
 
 ---
 

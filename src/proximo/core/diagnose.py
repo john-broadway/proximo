@@ -241,7 +241,7 @@ def run(plane: str, path: str, *, cfg: wire.Plane | None = None, ledger_cfg: Any
     answer: dict[str, Any] = {
         "address": row.address, "plane": plane, "access": engine.READ,
         "derived": True,           # composed by the door from governed reads, not the vendor's bytes
-        "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "subject": sub.is_,
+        "matched_path": row.path, "called_path": rawdoor.echo_wire(called), "subject": sub.is_,
         "battery": battery, "flags": flags, "incomplete": incomplete,
         **({"shell": shell} if shell else {}), "note": NOTE,
         **({"untrusted": True} if untrusted else {}),

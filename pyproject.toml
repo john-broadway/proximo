@@ -4,11 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "proximo-proxmox"
-version = "0.50.1"
+version = "0.51.0"
 description = "The governed client for Proxmox (PVE, PBS, PMG, PDM): plans, keeps the receipts, puts things back."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "Apache-2.0"
+license = "AGPL-3.0-or-later"
+# LICENSES/Apache-2.0.txt: the outside contributions came in under Apache-2.0 (see README, License).
+license-files = ["LICENSE", "LICENSES/*"]
 authors = [{ name = "John Broadway" }, { name = "Claude (Anthropic)" }]
 keywords = ["proxmox", "pve", "pbs", "pmg", "pdm", "mail-gateway", "datacenter-manager", "mcp", "model-context-protocol", "a2a", "agent2agent", "lxc", "homelab", "infrastructure", "self-hosted", "multi-cluster"]
 classifiers = [
@@ -120,6 +122,7 @@ include = [
     "/docs/SETUP.md",
     "/CHANGELOG.md",
     "/LICENSE",
+    "/LICENSES",
 ]
 
 [tool.ruff]

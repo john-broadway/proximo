@@ -1,3 +1,16 @@
+proximo (0.51.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.51.0 (minor: the license is AGPL-3.0-or-later from
+    this release; every release through 0.50.1 stays Apache-2.0. Fixes: a
+    read's answer stays under its cap on every route measured, 394,752
+    reads at twelve cap settings, none over; a cap below the default is
+    raised to it and named; what is echoed beside the data shares one
+    bound; a receipt in a running door reads the ledger's tail, not the
+    whole file (a new process still reads it once); pyasn1 0.6.5 for the
+    a2a extra. 4,651 tests.)
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 01 Nov 2026 18:00:00 +0000
+
 proximo (0.50.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.50.1 (patch: the exit ceiling is the operator's to

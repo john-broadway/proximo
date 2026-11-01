@@ -136,12 +136,31 @@ def latest(base: str, plane: str, box: str, called: str, args: dict[str, Any]) -
     return _load_or_skip(os.path.join(base, key(plane, box, called, args), _LATEST))
 
 
-def parse_since(since: str) -> int:
-    m = re.fullmatch(r"\s*([0-9]+)\s*([mhd])\s*", since or "", re.ASCII)
-    if not m or int(m.group(1)) == 0:
+#: the longest window a recall answers, ten years: a store keeps far less, and a longer number is no
+#: window but a payload (lens 8: 306 nines rode the note over the cap; 308 crashed the clock's float)
+MAX_WINDOW_S = 3650 * 86400
+_UNIT_S = {"m": 60, "h": 3600, "d": 86400}
+
+
+def _window(since: str) -> tuple[int, str]:
+    m = re.fullmatch(r"\s*0*([0-9]{1,7})\s*([mhd])\s*", since or "", re.ASCII)
+    if not m or int(m.group(1)) == 0 or int(m.group(1)) * _UNIT_S[m.group(2)] > MAX_WINDOW_S:
         shown = repr(since) if len(since or "") <= 40 else f"{since[:40]!r}... ({len(since)} chars)"
-        raise ProximoError(f"since={shown} is not a window: say 30m, 24h or 7d")
-    return int(m.group(1)) * {"m": 60, "h": 3600, "d": 86400}[m.group(2)]
+        raise ProximoError(f"since={shown} is not a window: say 30m, 24h or 7d (at most 3650d)")
+    return int(m.group(1)), m.group(2)
+
+
+def parse_since(since: str) -> int:
+    n, unit = _window(since)
+    return n * _UNIT_S[unit]
+
+
+def said_since(since: str) -> str:
+    """The window as Proximo reads it (`24h`), never as the caller typed it: padding, zeros and
+    whitespace are the caller's bytes, and a note that echoed them rode in a recall's header unbounded
+    (lens 7: 4,623 B at the 1,152 B default)."""
+    n, unit = _window(since)
+    return f"{n}{unit}"
 
 
 def _identity(rows: list[dict]) -> str | None:
@@ -199,7 +218,7 @@ def changes(base: str, plane: str, box: str, called: str, args: dict[str, Any], 
         "window_s": span, "to_age_s": int(_now() - now_snap["ts"]),
     }
     if not older:
-        answer["note"] = (f"asked for {since}; the oldest snapshot kept is only {span}s before the "
+        answer["note"] = (f"asked for {said_since(since)}; the oldest snapshot kept is only {span}s before the "
                           f"newest, so this is the change over that span")
     return answer
 

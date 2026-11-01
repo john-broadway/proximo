@@ -849,7 +849,7 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
     # the wire; the plan diffed them, so `vmid` read as a change on every config plan and a
     # store's own name echoed by its record made a garbage collection a no-op (lens 9).
     compared = {k: v for k, v in args.items() if k not in bind(row, path)}
-    out = _diff(row, compared, path, env["data"], action)
+    out = _diff(row, compared, path, env["data"], action, read_at=concrete, named=not untrusted)
     # A PLAN ANSWER IS AN ANSWER: the receipts fingerprint a secret-named field and the record's
     # fields (`ledgered`), and the plan echoed them raw, the live read's old value under `from`
     # and the caller's new one under `to` (found sweeping B19's 78 newly reachable addresses: a
@@ -864,14 +864,20 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
     return out
 
 
-def _diff(row: Row, args: dict[str, Any], path: str, data: Any, action: str | None) -> dict[str, Any]:
+def _diff(row: Row, args: dict[str, Any], path: str, data: Any, action: str | None,
+          read_at: str | None = None, named: bool = True) -> dict[str, Any]:
     """`current`, `change` and `noop` from the twin's answer. `noop` is claimed only where a
     state is compared: a power action whose status already is the expected one, or arguments
     the record already holds; an action with no arguments is never a no-op (lens 8: a PBS
-    garbage collection read as one)."""
+    garbage collection read as one). `read_at` is the concrete address the plan read."""
     if action is not None:
-        current = (lean(data) if isinstance(data, dict) else summarize(data) if isinstance(data, list)
-                   else {"data": data})
+        current = (lean(data) if isinstance(data, dict) else summarize(data, named=named)
+                   if isinstance(data, list) else {"data": data})
+        if isinstance(data, list) and read_at:
+            # proximo_plan takes no fields=: the rows are a proximo_read away, at the address read here
+            fewer = _fewer(*_keys(data), cut=False, named=named)
+            current["next"] = (f"proximo_read GET {read_at}" + (f" with {fewer}" if fewer else "")
+                               + " lists the rows")
         expect = dict(row.expect or {})
         got = {k: (data.get(k) if isinstance(data, dict) else None) for k in expect}
         change = {k: {"from": got[k], "to": v} for k, v in expect.items()} if expect else {"action": action}
@@ -1180,7 +1186,7 @@ def _download(row: Row, called: str, args: dict[str, Any], cfg: wire.Plane | Non
             called=called, remote=remote)
     return {
         "address": row.address, "plane": row.product, "access": row.access, "derived": False,
-        "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
+        "matched_path": row.path, "called_path": rawdoor.echo_wire(called), "tier": row.tier,
         "untrusted": row.untrusted, "download": got, "cap_bytes": cap,
         "note": "the bytes landed on the Proximo host, never in this answer; verify the sha256 before use",
     }
@@ -1204,7 +1210,8 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
             path: str | None = None, ledger_cfg: Any = None, fields: str | None = None,
             since: str | None = None, wait: int | None = None, restores: str | None = None,
             net_of: tuple[Row, str, str | None] | None = None, asked: str | None = None,
-            evaluating: bool = False, judging: Any = None, rate_prepaid: Any = None) -> dict[str, Any]:
+            evaluating: bool = False, judging: Any = None, rate_prepaid: Any = None,
+            note: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run a governed address and hand back the vendor's data in a labelled envelope.
 
     THE GOVERNANCE RUNS HERE, NOT IN THE CALLER. A door cannot skip it by forgetting to ask:
@@ -1317,7 +1324,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     if row.lane == "download":
         return _download(row, called, args, cfg, ledger_cfg, remote, fields, since, wait)
     if row.access == READ and since is not None:
-        return _recall(row, called, args, since, ledger_cfg, remote, cfg)
+        return _recall(row, called, args, since, ledger_cfg, remote, cfg, note)
     if since is not None:
         raise ProximoError(f"{row.address} mutates; since= is a question about what a read saw")
     if row.access == READ:
@@ -1351,10 +1358,13 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
                         **({"upid": task["upid"], "polls": task["polls"], "seconds": task["seconds"]} if task else {})},
                 called=called, remote=remote)
         _keep(row, called, args, data, ledger_cfg, cfg, judging, fields=fields, evaluating=evaluating)
-        return {**_envelope(row, called, data, fields, rawdoor.evaluation_cap() if evaluating else None, args),
-                **seen.get("envelope", {}),
-                **({"task": task} if task else {}),
-                **({"default_node": {"node": node, "from": NODE_ENV}} if node else {})}
+        # what rides beside the data is SPENT before the data is sized, never merged on after: a sight line
+        # added to a sized answer shipped a capital-path read at 1,241 B against 1,152 (2026-10-30)
+        # a task's upid is the caller's path segment (lens 6: 400 capitals rode raw), its status and exit are
+        # the vendor's words (lens 7: 1,041 tok), and the default node is the operator's: all go in RAW, and
+        # the envelope says them from one purse with the path (lens 9: four bounded fields, 784 tok)
+        return _envelope(row, called, data, fields, rawdoor.evaluation_cap() if evaluating else None, args,
+                         {**seen.get("envelope", {}), **(note or {})}, task=task or None, node=node or None)
 
     # ---- a MUTATION: spend, capture, pre-record, execute, close ---------------------------
     # BUILT BEFORE ANYTHING IS SPENT, and a build that fails is a receipted refusal. Building
@@ -1431,7 +1441,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
                     **({"restores": restores} if restores else {})},
             called=called, remote=remote)
     out = {**_envelope(row, called, data), "undo": undo, "intent": intent,
-           **({"default_node": {"node": node, "from": NODE_ENV}} if node else {}),
+           **({"default_node": {"node": rawdoor.echo_wire(node), "from": NODE_ENV}} if node else {}),
            **({"risk_hint": reading} if reading else {})}
     if submitted:
         out["task"] = _task_of(client, row, called, upid, TASK_WAIT_DEFAULT if wait is None else wait,
@@ -2307,7 +2317,9 @@ def ledgered(value: Any, name: str | None = None,
 
 
 def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
-              cap: rawdoor.Cap | None = None, given: dict[str, Any] | None = None) -> dict[str, Any]:
+              cap: rawdoor.Cap | None = None, given: dict[str, Any] | None = None,
+              beside: dict[str, Any] | None = None, task: dict[str, Any] | None = None,
+              node: str | None = None) -> dict[str, Any]:
     # By the address's OWN line when it has one, else the READ's, whatever the verb: a mutation
     # that echoes its resource (PBS's PUT of an OpenID realm returns the config, client-key
     # included) carries what its read carries; a token mint answers a secret its read never
@@ -2319,59 +2331,152 @@ def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
     if row.access == READ:
         data = project(data, fields)
     fenced = row.untrusted and spine.fence_on()
-    header = {
-        "address": row.address,
-        "plane": row.product,
-        "access": row.access,
-        "derived": False,          # the vendor's bytes, never composed prose
-        "matched_path": row.path,  # the published address that governed this call
-        "called_path": rawdoor.echo(called, 160),     # what went to the wire; a clip carries its length and hash
-        "tier": row.tier,
-        "untrusted": row.untrusted,   # a fact about the address, like the tier; the env gates behaviour
-        **({"total": total} if total is not None else {}),   # counted at the gate, from the raw rows
-        **({"withheld": withheld} if withheld else {}),   # the record's fields this response carried
-        # a response that IS a credential is served whole (the caller asked for it) and says so;
-        # the ledger never holds a read's bytes and the store keeps lists only, so it goes no further
-        **({"bearer_credential": b} if (b := row.secret[4]) else {}),
-    }
+    def headed(purse: tuple[int, int]) -> dict[str, Any]:
+        path, said_task, said_node = _echoes(called, task, node, purse)
+        return {
+            "address": row.address,
+            "plane": row.product,
+            "access": row.access,
+            "derived": False,          # the vendor's bytes, never composed prose
+            "matched_path": row.path,  # the published address that governed this call
+            "called_path": path,       # what went to the wire; a clip carries its length and hash
+            "tier": row.tier,
+            "untrusted": row.untrusted,   # a fact about the address, like the tier; the env gates behaviour
+            **({"total": total} if total is not None else {}),   # counted at the gate, from the raw rows
+            **({"withheld": withheld} if withheld else {}),   # the record's fields this response carried
+            # a response that IS a credential is served whole (the caller asked for it) and says so;
+            # the ledger never holds a read's bytes and the store keeps lists only, so it goes no further
+            **({"bearer_credential": b} if (b := row.secret[4]) else {}),
+            **(beside or {}),     # the read's sight line: the table's words, spent with the header
+            **({"task": said_task} if said_task is not None else {}),
+            **({"default_node": {"node": said_node, "from": NODE_ENV}} if said_node is not None else {}),
+        }
     # THE SIZE LAW, the raw door's: an answer over the cap is reported (a list cut by rows with its
     # count; anything else described by its keys and sizes), never handed to the model whole. The cap is
     # on the WHOLE answer: the header above is spent first, and a FENCED answer is measured as it will
     # be sent (the wrapper and the escaping its JSON string adds) and the data's share shrunk until the
     # whole fits. A MUTATION'S echo (a PUT that returns its resource) is capped too, except a credential
     # served whole on purpose (a token mint): a truncated secret is worse than none.
-    whole = cap or rawdoor.answer_cap()
-    room = whole.minus(*rawdoor.spent(header))
-    answer, last, stalls = header, None, 0
-    for _ in range(10):
-        shown, over = _bounded_data(row, data, fields, room, whole, fenced, given)
-        answer = {**header, **(over if over is not None else {"data": shown})}
-        body = json.dumps(answer, separators=(",", ":"), default=str)
-        fits = rawdoor.fits(len(body.encode()), body, cap=whole)
-        if (over is not None or not fits) and row.wire == "ssh" and isinstance(data, dict) \
-                and isinstance(data.get("next"), str):
-            # A LANE'S OWN LINE IS THE FIRST THING TO GO (lens 5, 6 and 7): the shell lane names its cap on
-            # `next`, and that line must never be what costs the dict its shape. So the moment the dict with
-            # it is over the ROOM (it was described: `over`, and a description always fits, so this is checked
-            # BEFORE the break below; lens 7) or the answer with it is over the CAP, the line is dropped and
-            # the SAME room is tried again: no shrink step is ever computed from a body the line was on, and
-            # from here the loop runs exactly as it would have with no line at all.
-            data = {k: v for k, v in data.items() if k != "next"}
-            continue
-        if fits or row.secret[4]:
-            break           # fits (or a credential kept whole)
-        stalls += last is not None and len(body) >= last
-        if room.bytes <= 48 or stalls >= 3:
-            break           # nothing left to take; or taking more changed nothing
-        last = len(body)
-        room = room.minus(2 * (len(body.encode()) - whole.bytes) + 16,
-                          0 if whole.tokens is None
-                          else 2 * max(rawdoor.estimate_tokens(body) - whole.tokens, 0) + 8, 48)
+    whole = fit = cap or rawdoor.answer_cap()
+    keys = _keys(data) if isinstance(data, list) else None    # weighed once: the loop only shrinks the room
+    answer: dict[str, Any] = {}
+    # THE PURSE IS THE LAST THING TO GIVE (lens 9): when the data has nothing left to give and the answer
+    # is still over, what the caller and the vendor said beside it is said shorter, halved each time, and
+    # the data is sized again from the start. Each clip keeps its mark (length and hash), so at the bottom
+    # every echo is its mark alone.
+    for n, purse in enumerate(ECHO_PURSES):
+        if n and _echoes(called, task, node, purse) == _echoes(called, task, node, ECHO_PURSES[n - 1]):
+            break       # this purse says the same words as the last: it would send the same answer
+        header = headed(purse)
+        room = whole.minus(*rawdoor.spent(header))
+        answer, last, stalls, fits = header, None, 0, False
+        for _ in range(10):
+            shown, over = _bounded_data(row, data, fields, room, fit, fenced, given, keys)
+            answer = {**header, **(over if over is not None else {"data": shown})}
+            body = json.dumps(answer, separators=(",", ":"), default=str)
+            fits = rawdoor.fits(len(body.encode()), body, cap=fit)
+            if (over is not None or not fits) and row.wire == "ssh" and isinstance(data, dict) \
+                    and isinstance(data.get("next"), str):
+                # A LANE'S OWN LINE IS THE FIRST THING TO GO (lens 5, 6 and 7): the shell lane names its cap
+                # on `next`, and that line must never be what costs the dict its shape. So the moment the dict
+                # with it is over the ROOM (it was described: `over`, and a description always fits, so this is
+                # checked BEFORE the break below; lens 7) or the answer with it is over the CAP, the line is
+                # dropped and the SAME room is tried again: no shrink step is ever computed from a body the
+                # line was on, and from here the loop runs exactly as it would have with no line at all.
+                data = {k: v for k, v in data.items() if k != "next"}
+                continue
+            if fits or row.secret[4]:
+                return answer       # fits (or a credential kept whole)
+            stalls += last is not None and len(body) >= last
+            if room.bytes <= 48 or stalls >= 6:
+                # nothing left to take; or six doubling steps changed nothing. A dict had three until lens 5
+                # (2026-10-30): a fenced dict of quotes stalled out at 1,155 B on a 1,152 cap. The shell lane
+                # budgets its fence now, so the returncode the three once guarded keeps (test_exit_ceiling).
+                if isinstance(data, list) and room.bytes:
+                    # A LIST'S LAST PASS IS NO ROWS: the room bottoms out at a sliver, and one short row fits
+                    # a sliver measured bare while the fence around it costs 200 tokens; a 63-character path
+                    # then shipped one row at 899 tokens on a 750 cap where none fits at 735 (2026-10-30)
+                    room = rawdoor.Cap(0, None if fit.tokens is None else 0)
+                    continue
+                break
+            last = len(body)
+            room = _shrink(room, body, fit, stalls)
     return answer
 
 
+#: WHAT IS ECHOED BESIDE THE DATA SHARES ONE PURSE (lens 9): the called path, a task's upid, status and exit,
+#: and the default node were each bounded at 160 B / 150 tokens, so a `wait=` read carried four of them, 600
+#: tokens before the header, and a long PROXIMO_NODE rode beside a path that already held it. Together they
+#: now cost at most what the path alone may, so a read with none of the others is echoed as it always was;
+#: each halving is the envelope's last resort (see `_envelope`).
+ECHO_PURSES = ((160, 150), (80, 75), (40, 38))
+
+
+def _echo_said(v: Any) -> Any:
+    """A task value as it may be said: None, a bool and a short number as they are; any other value that is
+    not a string (a list, a mapping, a 3,000-digit number: lens 8, 5,227 tokens) as its JSON."""
+    if v is None or isinstance(v, bool) or (isinstance(v, (int, float)) and len(repr(v)) <= 20):
+        return v
+    if isinstance(v, str):
+        return v
+    try:
+        return json.dumps(v, default=str)
+    except (TypeError, ValueError):
+        return type(v).__name__
+
+
+def _echoes(called: str, task: dict[str, Any] | None, node: str | None,
+            purse: tuple[int, int]) -> tuple[str, dict[str, Any] | None, str | None]:
+    """(the called path, the task, the default node) as said beside the data, every text among them sharing
+    `purse` (bytes as sent, estimated tokens). Shared fairly: a text that costs less than an even share is
+    said whole and what it leaves goes to the rest, which are clipped (`echo_wire`, mark included) at an
+    even share of what remains. Each clip is made from the RAW value, so its mark is the value's own."""
+    said = {k: _echo_said(v) for k, v in task.items()} if task is not None else None
+    slots: list[tuple[str, str]] = [("path", called)]
+    if said is not None:
+        slots += [(k, said[k]) for k in ("upid", "status", "exitstatus") if isinstance(said.get(k), str)]
+    if node is not None:
+        slots.append(("node", node))
+    def cost(text: str) -> tuple[int, int]:     # as echo_wire measures it: the shown text inside its quotes
+        wire = json.dumps(rawdoor.echo_wire(text, 1 << 30, 1 << 30))[1:-1]
+        return len(wire), rawdoor.estimate_tokens(wire)
+    costs = [cost(text) for _, text in slots]
+    left_b, left_t = purse
+    pending, share = list(range(len(slots))), {}
+    while pending:
+        each_b, each_t = left_b // len(pending), left_t // len(pending)
+        small = [i for i in pending if costs[i][0] <= each_b and costs[i][1] <= each_t]
+        if not small:
+            share.update({i: (max(each_b, 0), max(each_t, 0)) for i in pending})
+            break
+        for i in small:
+            share[i] = None
+            left_b, left_t = left_b - costs[i][0], left_t - costs[i][1]
+            pending.remove(i)
+    out = [rawdoor.echo_wire(text, *(share[i] or (1 << 30, 1 << 30))) for i, (_, text) in enumerate(slots)]
+    by = {name: out[i] for i, (name, _) in enumerate(slots)}
+    if said is not None:
+        said = {k: by.get(k, v) for k, v in said.items()}
+    return by["path"], said, by.get("node")
+
+
+
+def _shrink(room: rawdoor.Cap, body: str, whole: rawdoor.Cap, stalls: int) -> rawdoor.Cap:
+    """The next, smaller room after `body` came back over `whole`. Each overage is taken whole, never
+    negative: an answer over on TOKENS and under on bytes made the byte step negative, so `minus` GREW
+    the room (670 -> 922 -> 1,174 -> 1,426 B) while a flat 10-token step dropped no row, and after three
+    stalls the answer shipped over the cap (lens 4 fuzz, 2026-10-30; main too). The step doubles with
+    every stall so far (`stalls` counts them all, so it never halves back), and a step too small to drop a
+    row grows until one goes."""
+    over_b = max(len(body.encode()) - whole.bytes, 0)
+    over_t = 0 if whole.tokens is None else max(rawdoor.estimate_tokens(body) - whole.tokens, 0)
+    grow = 1 << stalls
+    return room.minus((2 * over_b + 16) * grow, 0 if whole.tokens is None else (2 * over_t + 8) * grow, 48)
+
+
 def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, whole: rawdoor.Cap,
-                  fenced: bool, given: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any] | None]:
+                  fenced: bool, given: dict[str, Any] | None = None,
+                  keys: tuple[tuple[str, ...], tuple[str, ...]] | None = None) -> tuple[Any, dict[str, Any] | None]:
     """(the data to send, or None) and (what stands in for it when it does not fit `room`), fenced as
     the row requires. One pass of the size law; `_envelope` repeats it with a smaller room until the
     whole answer is under the cap."""
@@ -2396,11 +2501,12 @@ def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, wh
         if fenced:
             wrap = rawdoor.cost_of(spine.fence(row.key, ""))
             squeeze = room.minus(wrap[0], wrap[1], 48)
-        summary = summarize(data, squeeze)
+        summary = summarize(data, squeeze, keys, named=not row.untrusted)
         if summary["tally"] and rawdoor.bounded(summary, squeeze) is None:
             over = summary
     if over is not None and "returned" in over and "summarized" not in over:
-        over["next"] = _narrowing(row, fields, over["returned"], over["total"], given)   # never what was asked
+        over["next"] = _narrowing(row, fields, over["returned"], over["total"], given,   # never what was asked
+                                  *(keys or _keys(data)), _advice_room(room))
     if over is not None:
         rawdoor.note_problems(over)
     if over is not None and fenced and "summarized" in over:
@@ -2411,8 +2517,18 @@ def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, wh
     elif over is not None and fenced:
         for part in ("keys", "data"):                         # the vendor's words, in every form it comes in
             if part in over:
-                over[part] = spine.fence(row.key, over[part])
+                over[part] = _fence_part(row.key, over[part])
     return (spine.fence(row.key, data) if fenced else data), over
+
+
+def _fence_part(key: str, value: Any) -> dict[str, Any]:
+    """A cut part of an answer, fenced. AN EMPTY PART KEEPS THE WRAPPER, NOT THE SERMON: no vendor word
+    is inside, and the warning's 230 B put a small operator cap over with nothing to warn of. The shape a
+    client checks (proximo_untrusted, data, _end) stays. A recall's empty changes too (lens 6)."""
+    wrapped = spine.fence(key, value)
+    if wrapped["data"] in ("[]", "{}"):
+        del wrapped["warning"]
+    return wrapped
 
 
 def _bearer_split(data: Any, cap: rawdoor.Cap) -> tuple[Any, dict[str, Any] | None]:
@@ -2435,10 +2551,84 @@ def _bearer_split(data: Any, cap: rawdoor.Cap) -> tuple[Any, dict[str, Any] | No
 _PAGING = ("limit", "start", "offset", "since", "until", "lastentries")
 
 
-def _narrowing(row: Row, fields: str | None, kept: int, total: int, given: dict[str, Any] | None = None) -> str:
+_PLAIN_KEY = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+
+
+def _keys(data: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(the keys the rows carry, cheapest to keep first; the heavy ones, lightest first): what `fields=` will
+    accept by name, weighed by the largest value each holds on the wire. A key over _HEAVY is the one a
+    narrowing should leave out (a certificate's `pem`), so it is named apart, never advised (lens 2026-10-30)."""
+    weight: dict[str, int] = {}
+    for r in data if isinstance(data, list) else ():
+        if isinstance(r, dict):
+            for k, v in r.items():
+                # an ASCII string's wire cost is its length; anything else (é is 6 B escaped) is dumped
+                n = len(v) + 2 if isinstance(v, str) and v.isascii() else len(json.dumps(v, default=str))
+                if n > weight.get(k, -1):
+                    weight[k] = n
+    keys = sorted(weight, key=lambda k: weight[k] + len(k))   # naming a key costs its name too
+    return tuple(k for k in keys if weight[k] <= _HEAVY), tuple(k for k in keys if weight[k] > _HEAVY)
+
+
+#: a value larger than this makes its key the heavy one; the advice is at most _ADVISE_CHARS long, whole
+_HEAVY, _ADVISE_KEYS, _ADVISE_CHARS = 256, 6, 240
+
+
+def _advice_room(room: rawdoor.Cap) -> int:
+    """How long the advice may be: half of what the room holds past the 256 B sliver, at most _ADVISE_CHARS,
+    so none at a small cap's floor (lens 2 and 3, 2026-10-30)."""
+    return max(0, min(_ADVISE_CHARS, (room.bytes - 256) // 2))
+
+
+def _fewer(have: tuple[str, ...], heavy: tuple[str, ...] = (), chars: int = _ADVISE_CHARS,
+           cut: bool = True, named: bool = True) -> str | None:
+    """`fields=` advice that names only keys the rows carry, at most `chars` long, or None when no `fields=`
+    can shrink them or there is no room. `fields=` refuses a name no row has, so 'name,status' is offered only
+    where both are light keys among more (lab 2026-10-29: certificates/info rows carry neither, and the stock
+    advice sent the reader into that refusal on the read that names a node's TLS identity). Lens 2026-10-30:
+    the heaviest key is left out by name; `name` leads; on a `cut`, advice naming every key is no narrowing
+    (on a summary it still turns counts into rows). The keys are the vendor's and `next` is the engine's own
+    words outside the fence: only a plain name rides, never 'all' (`fields=` reads it as every key), and on
+    an untrusted address (`named=False`, guest-authored keys) no name rides at all."""
+    def plain(k: str) -> bool:
+        return bool(_PLAIN_KEY.fullmatch(k)) and k.lower() != "all"
+    light = [k for k in have if plain(k)] if named else []
+    if {"name", "status"} <= set(light) and len(have) + len(heavy) > 2:
+        return "fields='name,status'" if chars >= 20 else None
+    if not named:
+        if not heavy and len(have) < 2:
+            return None
+        out = "fields= naming fewer of the keys the rows carry (their names stay inside the fence)"
+        return out if len(out) <= chars else None
+    if "name" in light:
+        light.remove("name")
+        light.insert(0, "name")
+    hv = [k for k in reversed(heavy) if plain(k)][:2]                 # heaviest first
+    counted = f", leaving out {len(heavy)} heavy key{'s' * (len(heavy) > 1)}" if heavy else ""
+    rest = f" and {len(heavy) - len(hv)} more" if len(heavy) > len(hv) else ""
+    tail = (f", leaving out {', '.join(hv)}{rest} (the heavy one{'s' * (len(heavy) > 1)})" if hv else counted)
+
+    def say(pick: list[str]) -> str:
+        more = f", and {len(light) - len(pick)} more" if len(light) > len(pick) else ""
+        return f"fields= naming a few of the keys the rows carry ({', '.join(pick)}{more}){tail}"
+    if light and len(say(light[:1])) > chars:
+        tail = counted                     # the heavy names do not fit beside one light key: their count does
+    pick: list[str] = []
+    for k in light:
+        if len(pick) == _ADVISE_KEYS or len(say([*pick, k])) > chars:
+            break
+        pick.append(k)
+    if not pick or (cut and not heavy and len(pick) == len(have)):
+        return None         # nothing fits, or (on a cut) naming every key the rows carry: nothing smaller
+    return say(pick)
+
+
+def _narrowing(row: Row, fields: str | None, kept: int, total: int, given: dict[str, Any] | None = None,
+               have: tuple[str, ...] = (), heavy: tuple[str, ...] = (), chars: int = _ADVISE_CHARS) -> str:
     """The `next` of a list cut by rows. It NEVER suggests what was just asked: after `fields=name,status`
     it does not say to ask for `fields=name,status`. It offers a real narrowing the address publishes (its
-    own filters, a paging pair), a concrete path, or says plainly that the first rows are all there is."""
+    own filters, a paging pair), a concrete path, or says plainly that the first rows are all there is.
+    `have` is the keys the rows carry; a `fields=` it offers names only those."""
     what = f"{kept} of {total} rows came back, in the vendor's order"
     placeholders_ = set(placeholders(row.path))
     filters = [n for n, sp in row.params.items()
@@ -2446,10 +2636,11 @@ def _narrowing(row: Row, fields: str | None, kept: int, total: int, given: dict[
     paging = [n for n in _PAGING if n in row.params]
     asked = (fields or "").strip().lower()
     advice = []
-    if not asked:
-        advice.append("fields='name,status' keeps fewer keys per row")
-    elif asked == "all":
-        advice.append("fields='name,status' (fewer keys per row) fits more of them")
+    fewer = _fewer(have, heavy, chars, named=not row.untrusted)
+    if not asked and fewer:
+        advice.append(f"{fewer} keeps fewer keys per row")
+    elif asked == "all" and fewer:
+        advice.append(f"{fewer}: fewer keys per row fits more of them")
     if filters:
         advice.append(f"args narrows by what this address publishes ({', '.join(filters[:4])})")
     if paging:
@@ -2520,7 +2711,14 @@ def _state_keys(records: list[dict]) -> dict[str, dict[str, int]]:
     return tally
 
 
-def summarize(rows: list[Any], cap: rawdoor.Cap | None = None) -> dict[str, Any]:
+def _summary_next(fewer: str | None) -> str:
+    """A summary's `next`: the `fields=` that lists these rows (only keys they carry), then the narrowing."""
+    lead = f"{fewer} lists the rows; " if fewer else ""
+    return lead + "args (this address's filters) or a concrete path narrows"
+
+
+def summarize(rows: list[Any], cap: rawdoor.Cap | None = None,
+              keys: tuple[tuple[str, ...], tuple[str, ...]] | None = None, named: bool = True) -> dict[str, Any]:
     """Counts per state and the rows that are not in the most common one. When every row has a `type`
     (cluster resources: qemu, lxc, node, storage) the states are ALSO counted PER TYPE (`by_type`), because
     "how many containers are running" is a count of (type, status) pairs, not of two marginals."""
@@ -2547,8 +2745,9 @@ def summarize(rows: list[Any], cap: rawdoor.Cap | None = None) -> dict[str, Any]
             minority.append({**{k: v for k, v in r.items() if _identity_key(k)}, **odd})
     out: dict[str, Any] = {"summarized": True, "tally": tally, **({"by_type": by_type} if typed else {}),
                            "minority": minority, "minority_total": len(minority),
-                           "next": "fields='name,status' lists the rows; args (this address's filters) or a "
-                                   "concrete path narrows"}
+                           "next": _summary_next(_fewer(
+                               *(keys or _keys(records)), _ADVISE_CHARS if cap is None else _advice_room(cap),
+                               cut=False, named=named))}
     # The minority gets the room the rest of the summary leaves under the cap, row by row, so
     # the whole summary fits (cut to the full cap, it pushed the summary over and lost it).
     compact = {"default": str, "separators": (",", ":")}
@@ -2608,7 +2807,7 @@ def _keep(row: Row, called: str, args: dict[str, Any], data: Any, ledger_cfg: An
 
 
 def _recall(row: Row, called: str, args: dict[str, Any], since: str, ledger_cfg: Any,
-            remote: str | None, cfg: wire.Plane | None) -> dict[str, Any]:
+            remote: str | None, cfg: wire.Plane | None, note: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         if not store.enabled():
             raise ProximoError("the store is off on this box (PROXIMO_STORE); since= needs it")
@@ -2628,8 +2827,11 @@ def _recall(row: Row, called: str, args: dict[str, Any], since: str, ledger_cfg:
             called=called, remote=remote)
     # CAPPED LIKE ANY ANSWER: the header and the counts are spent first, the changes get the rest, and
     # a cut says so and how to narrow (a recall of a busy cluster is as long as the cluster).
+    # The door's note rides IN the answer, so it is both spent and sent (lens 10: spent in the header
+    # alone, it was never sent; a since= read on "destroy tape media" lost its read-only line).
+    answer = {**answer, **(note or {})}
     header = {"address": row.address, "plane": row.product, "access": row.access, "derived": True,
-              "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
+              "matched_path": row.path, "called_path": rawdoor.echo_wire(called), "tier": row.tier,
               "untrusted": row.untrusted,
               **{k: v for k, v in answer.items() if k != "changes"}}
     fenced = row.untrusted and spine.fence_on()
@@ -2637,16 +2839,21 @@ def _recall(row: Row, called: str, args: dict[str, Any], since: str, ledger_cfg:
     room = whole.minus(*rawdoor.spent(header))
     final: dict[str, Any] = {}
     last, stalls = None, 0
-    for _ in range(6):
+    for _ in range(10):       # as the envelope: ten passes, so six stalls can end it (lens 5)
         final = _recalled(row, called, answer, room, fenced)
         body = json.dumps(final, separators=(",", ":"), default=str)
         stalls += last is not None and len(body) >= last
-        if rawdoor.fits(len(body.encode()), body, cap=whole) or room.bytes <= 48 or stalls >= 3:
+        if rawdoor.fits(len(body.encode()), body, cap=whole):
+            break
+        if room.bytes <= 48 or stalls >= 6:
+            if room.bytes:
+                # THE LAST PASS IS NO CHANGES, as the envelope's (lens 7): one short change fit the sliver
+                # measured bare while its fence's warning cost 230 B, 1,248 B on a 1,152 cap
+                room = rawdoor.Cap(0, None if whole.tokens is None else 0)
+                continue
             break
         last = len(body)
-        room = room.minus(2 * (len(body.encode()) - whole.bytes) + 16,
-                          0 if whole.tokens is None
-                          else 2 * max(rawdoor.estimate_tokens(body) - whole.tokens, 0) + 8, 48)
+        room = _shrink(room, body, whole, stalls)
     return final
 
 
@@ -2662,10 +2869,10 @@ def _recalled(row: Row, called: str, answer: dict[str, Any], room: rawdoor.Cap, 
     if cut is not None:
         rawdoor.note_problems(answer)
     if fenced:
-        answer["changes"] = spine.fence(row.key, answer["changes"])
+        answer["changes"] = _fence_part(row.key, answer["changes"])
     return {"address": row.address, "plane": row.product, "access": row.access,
             "derived": True,           # composed by the door from what it kept, not the vendor's bytes
-            "matched_path": row.path, "called_path": rawdoor.echo(called, 160), "tier": row.tier,
+            "matched_path": row.path, "called_path": rawdoor.echo_wire(called), "tier": row.tier,
             "untrusted": row.untrusted, **answer}
 
 

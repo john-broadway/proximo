@@ -351,8 +351,8 @@ def test_every_probe_failing_is_every_section_an_error_and_every_flag_says_so(bo
 
 
 def test_a_dict_probe_over_the_cap_is_a_section_that_says_so(box, monkeypatch):
-    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "300")
-    _wire(monkeypatch, {"/status/current": FX["qemu_running"]})
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")          # the floor; the evaluation cap follows it
+    _wire(monkeypatch, {"/status/current": {**FX["qemu_running"], "pad": "p" * 3000}})
     out = diagnose.run("pve", QEMU, cfg=box)
     assert "cap" in out["battery"]["status"]["error"]["why"] and out["incomplete"] is True
 
@@ -670,3 +670,14 @@ def test_a_record_probe_answered_the_wrong_shape_says_which_shape(box, monkeypat
         why = out["battery"]["status"]["error"]["why"]
         assert why == f"the read answered {shape}, not the record the battery expects"
         assert out["incomplete"] is True
+
+
+def test_a_diagnosis_echoes_its_called_path_at_what_it_costs(box, monkeypatch):
+    # lens 6: held by what it sends, not by a source grep
+    import json
+
+    from proximo.core import rawdoor
+    _node_wire(monkeypatch)
+    out = diagnose.run("pve", "/nodes/" + "😀" * 80, cfg=box)
+    sent = json.dumps(out["called_path"])[1:-1]
+    assert "sha256:" in sent and len(sent) <= 160 and rawdoor.estimate_tokens(sent) <= 150

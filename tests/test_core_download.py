@@ -277,3 +277,13 @@ def test_the_name_limit_is_two_hundred_bytes_not_characters():
     wide = __import__("base64").b64encode(("/" + "\U0001F600" * 200).encode()).decode()
     name = download.local_name({"filepath": wide})
     assert len(name.encode()) <= 200 and name
+
+
+def test_a_downloads_called_path_is_echoed_at_what_it_costs(lane, cfg, monkeypatch):
+    # lens 6: the four echo sites were held only by a source grep; this one is held by what it sends
+    import json
+    _wire(monkeypatch, _Fake(_streaming(b"x")))
+    path = PVE_DL.replace("pve1", "😀" * 80)
+    out = engine.execute(engine.resolve("pve", "GET", PVE_DL), dict(PVE_ARGS), cfg=cfg, ledger_cfg=cfg, path=path)
+    sent = json.dumps(out["called_path"])[1:-1]
+    assert "sha256:" in sent and len(sent) <= 160 and rawdoor.estimate_tokens(sent) <= 150

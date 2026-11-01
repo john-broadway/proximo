@@ -125,7 +125,8 @@ def test_an_untrusted_answer_from_the_store_marks_the_session_like_the_read(monk
     monkeypatch.setattr(engine.spine, "fence_on", lambda: True)
     out, w = _read(monkeypatch, cfg, None, since="1m")
     assert w.calls == 0 and marks == [row.key] and out["untrusted"] is True
-    assert out["changes"] == engine.spine.fence(row.key, [])
+    empty = {k: v for k, v in engine.spine.fence(row.key, []).items() if k != "warning"}   # no vendor word inside
+    assert out["changes"] == empty
 
 
 # --- 3. since: what changed, from disk ------------------------------------------------------------

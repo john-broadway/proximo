@@ -26,6 +26,7 @@ WORKDIR /app
 # wholesale, so a local `docker build` can't bake stray secrets (.env, keys, tokens)
 # into the published image.
 COPY pyproject.toml README.md LICENSE ./
+COPY LICENSES/ ./LICENSES/
 COPY requirements/build.txt ./requirements/build.txt
 COPY src/ ./src/
 # Hash-pinned build backend, then build the wheel with NO isolated env — the isolated

@@ -25,7 +25,7 @@ import shlex
 import subprocess
 from typing import Any
 
-from proximo.core import rawdoor
+from proximo.core import rawdoor, spine
 from proximo.core.errors import ProximoError
 
 TARGET_ENV = "PROXIMO_SSH_TARGET"
@@ -255,21 +255,40 @@ class ShellClient:
         if rc == SSH_EXIT:   # past the ran marker: the command's own 255, or ssh cut off mid-run
             result["exit_ambiguous"] = ("255 is also ssh's own exit: the command started, and either it "
                                         "exited 255 or the connection dropped before it finished")
-        return _bounded(result)
+        return _bounded(result, path)
 
 
-#: bytes and tokens a mutation's answer spends beside its data: header, undo capture, intent
-ENVELOPE_ROOM = (450, 160)
+#: bytes and tokens the engine's header and note room spend beside the data: 318 B / 164 tokens on the longest
+#: shell row (2026-10-30; 160 tokens was under it, and a stream that fit the lane lost its returncode at the
+#: engine, lens 5). The bytes past that are what keeps a mutation's `undo` and `intent`, merged on after the
+#: engine sizes the answer, under the byte cap at the default (1,111 B fenced, lens 6); the tokens keep only
+#: 6 for them, and at a small token cap they ride over. The called path is spent on top (`_bounded`'s `path`)
+ENVELOPE_ROOM = (450, 170)
+#: bytes and tokens each cut stream spends beside its text: its key, its quotes, its `truncated` count
+#: (the dict's other fields are measured, not reserved)
+STREAM_ROOM = (64, 32)
+#: the shell row whose fence wrapper costs the most (the longest key), so the wrapper is never under-counted;
+#: held to the table by test_door_fixes (a longer shell row turns it red)
+_FENCE_KEY = "pve:POST /nodes/{node}/lxc/{vmid}/exec"
 
 
-def _bounded(result: dict[str, Any]) -> dict[str, Any]:
+def _bounded(result: dict[str, Any], path: str = "") -> dict[str, Any]:
     """The one cap (PROXIMO_RAW_MAX_BYTES), split between the two streams, so the exit code always
     survives and each stream says when it was cut (`truncated`: its original length). The core never
     caps a mutation's answer, so the wire does; `rawdoor.bounded` would fold the code into a head."""
     # THE ENVELOPE IS SPENT FIRST: this result rides in an answer with a header (address, tier, undo ...),
     # so the streams get the cap less what that costs, or the answer would be cut again at the door.
-    room = rawdoor.answer_cap().minus(*ENVELOPE_ROOM)
-    if rawdoor.bounded(result, room) is None:
+    room = rawdoor.answer_cap().minus(*ENVELOPE_ROOM).minus(*rawdoor.problem_cost())   # a cap_problem rides too
+    if path:
+        room = room.minus(*rawdoor.cost_of(rawdoor.echo_wire(path)))   # the header's called_path, as it echoes
+    fenced = spine.fence_on()
+    if fenced:
+        # THE FENCE IS SPENT TOO: guest output is fenced when the fence is on, and its wrapper is ~290 B the
+        # lane never counted. The engine's room used to GROW when an answer was over on tokens alone, which
+        # shipped these one token over the cap; with that fixed (lens 4, 2026-10-30) an unbudgeted fence
+        # turned the dict into a description and lost its returncode.
+        room = room.minus(*rawdoor.cost_of(spine.fence(_FENCE_KEY, "")))
+    if rawdoor.bounded(json.dumps(result) if fenced else result, room) is None:
         return result
     # THE LINE IS SPENT BEFORE THE STREAMS ARE SIZED (lens 5): when a cut will name its knob, its cost comes
     # off the room first, so the streams are cut a step shorter and the dict with the line lands within a
@@ -288,13 +307,21 @@ def _bounded(result: dict[str, Any]) -> dict[str, Any]:
         # Reserved at its FENCED cost (the dict as a string inside the taint fence, quotes escaped), which is
         # never less than its plain cost; the lane cannot know here whether the engine will fence it.
         room = room.minus(*rawdoor.cost_of(json.dumps({"next": line})))
-    per = max(room.bytes // 2 - 128, 0)
-    per_tokens = None if room.tokens is None else max(room.tokens // 2 - 64, 0)
+    # WHAT RIDES BESIDE THE STREAMS IS SPENT (lens 6): a 255's `exit_ambiguous` is 118 characters the empty
+    # stream's half used to cover, and with that half given away it lost the returncode
+    rest = {k: v for k, v in result.items() if k not in ("stdout", "stderr")}
+    room = room.minus(*rawdoor.cost_of(json.dumps(rest) if fenced else rest))
+    # THE ROOM GOES TO THE STREAMS THAT HAVE TEXT (lens 6): an empty stderr held half of it, so a fenced
+    # stdout kept 21 characters at the default cap with 220 B of the cap unused
+    share = max(sum(1 for name in ("stdout", "stderr") if result[name]), 1)
+    per = max(room.bytes // share - STREAM_ROOM[0], 0)
+    per_tokens = None if room.tokens is None else max(room.tokens // share - STREAM_ROOM[1], 0)
 
     def over(text: str) -> bool:
         """Past its half in bytes, or (when a token cap is on) in estimated tokens: command output
-        is the densest text the door returns (hashes, addresses, escapes)."""
-        enc = json.dumps(text)
+        is the densest text the door returns (hashes, addresses, escapes). Fenced, a stream is sent
+        escaped twice (the dict is a JSON string inside the wrapper), so it is measured that way."""
+        enc = json.dumps(json.dumps(text)) if fenced else json.dumps(text)
         return len(enc) > per or (per_tokens is not None and rawdoor.estimate_tokens(enc) > per_tokens)
 
     out, cut = dict(result), {}

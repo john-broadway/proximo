@@ -273,7 +273,7 @@ def _rollback(ref: str, entry: dict, detail: dict, lines: list[str], lcfg: Any, 
                        detail={"reason": str(exc), "needs": "prove", "restores": ref}, called=path, remote=aimed_at)
         raise
     plane_cfg = cfg if cfg is not None else wire.Plane.from_env(product)
-    answer = {"restores": ref, "captured": entry.get("ts"), "snapshot": name, "called_path": rawdoor.echo(path, 160)}
+    answer = {"restores": ref, "captured": entry.get("ts"), "snapshot": name, "called_path": rawdoor.echo_wire(path)}
     # THE GUEST COMES BACK AS IT WAS. The vendor's rollback leaves it stopped (live, lab 10-04), so
     # it is started again only if the capture says it was RUNNING when the net was taken. A stopped
     # guest stays stopped; a state that was never read (or a capture from before it was recorded)

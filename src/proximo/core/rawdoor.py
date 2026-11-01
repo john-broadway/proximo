@@ -228,10 +228,32 @@ def with_query(path: str, params: dict) -> str:
     return f"{path}?{urlencode(params)}" if params else path
 
 
+#: THE SMALLEST CAP EVERY ANSWER CAN HONOUR IS THE DEFAULT. A cut list still carries its header, the path it
+#: was called on, its narrowing, a sight line, a cap problem and (fenced) an empty wrapper. Swept through
+#: `execute` over every published GET with a placeholder on 2026-11-01 (the agent and download lanes off;
+#: 32,896 reads per setting over two bodies, twelve settings): path values of lowercase, capitals, digits,
+#: CJK, emoji, accented letters, quotes and dashes at 1, 63, 84 and 200 characters, the caps unset, floored
+#: and junk, fenced and not, PROXIMO_NODE unset and at 63 letters, the permission map answering as a token
+#: that cannot see all. 0 over in 394,752 reads; the worst is 1,136 B / 737 estimated tokens (fenced, junk
+#: caps, no default node). A `wait=` read with path, upid, status and exit all long, over eight alphabets,
+#: is at most 833 B / 536 tok. It holds for any path because what is echoed beside the data shares one
+#: purse (engine.ECHO_PURSES: the path, a task's words and the default node within 160 bytes and 150 tokens
+#: together, halved when the data has nothing left to give; a sight requirement within sight.ECHO; a
+#: recall's window is said as read and at most 3650d). Four earlier sweeps undercounted: the first
+#: (1024 / 512) skipped `sight_says` and the cap note, the second used only lowercase path values (lens 5),
+#: the third answered the permission map with the rows, so the sight line was the one sentence with no path
+#: in it (lens 6), the fourth never set PROXIMO_NODE or `wait=` (lens 9: 64 reads over). Below this an answer
+#: went over the operator's own cap (0.50.1: past 1,000 B at 675 B, fenced); the cap is raised to the floor
+#: and the raise is named like junk is.
+CAP_FLOORS = {"PROXIMO_RAW_MAX_BYTES": DEFAULT_MAX_BYTES, "PROXIMO_RAW_MAX_TOKENS": DEFAULT_MAX_TOKENS}
+
+
 def _env_number(name: str) -> tuple[int | None, str | None]:
     """(the value, None) for a positive whole number; (None, the problem) for junk; (None, None)
     for unset. Junk FAILS CLOSED: the caller keeps the default cap and the problem is named
-    (`cap_problems`, doctor, the note on a cut answer), never read as 'the operator chose a cap'."""
+    (`cap_problems`, doctor, the note on a cut answer), never read as 'the operator chose a cap'.
+    A number under its CAP_FLOORS entry is (the floor, the problem): still the operator's choice of
+    a small cap, as small as every answer can honour, and said."""
     raw = os.environ.get(name, "")
     if not raw.strip():
         return None, None
@@ -241,6 +263,9 @@ def _env_number(name: str) -> tuple[int | None, str | None]:
         value = 0
     if value < 1:
         return None, f"{name}={raw[:20]!r} is not a positive whole number; the default cap stands"
+    floor = CAP_FLOORS.get(name)
+    if floor is not None and value < floor:
+        return floor, f"{name}={value} is under the floor; {floor} stands"   # the why: SETUP.md, the env example
     return value, None
 
 
@@ -473,6 +498,34 @@ def echo_bytes(text: str, max_bytes: int) -> str:
     return "".join(kept) + mark
 
 
+def echo_wire(text: str, limit: int = 160, tokens: int = 150) -> str:
+    """`echo` bounded by what the shown part costs ON THE WIRE: `limit` bytes as `json.dumps` sends it (ASCII
+    escapes) and `tokens` estimated, not characters as a person reads them. One emoji is a 12-byte escape of
+    mostly digits, so a path clipped at 160 CHARACTERS of emoji was over 2,000 B against a 1,152 B cap at
+    the default, before a single row; 160 capitals are 252 tokens (2026-10-30, main too). The bound holds for
+    the field as sent, mark included: a clip is a little shorter than `echo`'s, and a text that fits is whole."""
+    units = _shown(text)
+
+    def cost(shown: str) -> tuple[int, int]:
+        wire = json.dumps(shown)[1:-1]
+        return len(wire), estimate_tokens(wire)
+
+    whole = "".join(units)
+    if cost(whole)[0] <= limit and cost(whole)[1] <= tokens:
+        return whole
+    # THE MARK IS INSIDE THE BOUND (lens 6): a clip that held its shown part to 160 B sent 197 with its mark.
+    # Measured WITH the mark as one string (lens 7): a digit before the mark's "." prices that dot as a
+    # number's, so the two parts summed came one token under the field as sent
+    mark = _mark(text)
+    kept: list[str] = []
+    for u in units:
+        nbytes, ntokens = cost("".join(kept) + u + mark)
+        if nbytes > limit or ntokens > tokens:
+            break
+        kept.append(u)
+    return "".join(kept) + mark
+
+
 def echo_value(value: Any, limit: int = ECHO_LIMIT) -> Any:
     """A value for display: a string through `echo`; a number, a bool or None as it is; a container
     as its compact JSON through `echo` when that is long (a short one stays a container)."""
@@ -543,16 +596,28 @@ NOTE_ROOM = (120, 45)
 
 
 def spent(header: dict[str, Any]) -> tuple[int, int]:
-    """What the rest of an answer costs before its data goes in: the header, and the room kept back for
-    the notes a door adds beside it. A FENCED answer is not guessed here: `engine._envelope` measures it
-    as it will be sent and shrinks the data's share until the whole fits."""
+    """What the rest of an answer costs before its data goes in: the header, the room kept back for the
+    notes a door adds beside it, and a `cap_problem` at its real length (two junk or floored variables are
+    longer than NOTE_ROOM; lens 4 2026-10-30). A BUDGET, so the first pass is near; the guarantee is the
+    envelope's shrink loop (engine._shrink), which no test can tell from this. A FENCED answer is not
+    guessed here: `engine._envelope` measures it as it will be sent and shrinks the data's share until
+    the whole fits."""
     nbytes, ntokens = _cost(header)
-    return nbytes + NOTE_ROOM[0], ntokens + NOTE_ROOM[1]
+    pb, pt = problem_cost()
+    return nbytes + NOTE_ROOM[0] + pb, ntokens + NOTE_ROOM[1] + pt
+
+
+def problem_cost() -> tuple[int, int]:
+    """(bytes, tokens) a `cap_problem` will add to a cut answer, (0, 0) when no cap variable is junk or
+    floored: every room that a cut answer is sized in spends it first (lens 4 2026-10-30)."""
+    return _cost({"cap_problem": said}) if (said := answer_problem()) else (0, 0)
 
 
 def _note() -> str:
-    problems = cap_problems()
-    return ("over the answer cap" + (f"; {'; '.join(problems)}" if problems else "")) if problems else ""
+    """The cut's own word when a cap variable is junk or floored: the problem itself is said ONCE, on
+    `cap_problem` (`note_problems`); writing it here too put the floor's sentence on an answer twice and
+    the answer over the floor (lens 4 2026-10-30)."""
+    return "over the answer cap; see cap_problem" if answer_problem() else ""
 
 
 def bounded(data: object, cap: Cap | None = None) -> dict | None:
@@ -684,11 +749,23 @@ def _candidates(out: dict[str, Any], protect: frozenset[str],
     return [c for c in found if c[0] > 60]
 
 
+def answer_problem() -> str:
+    """What a cut answer says of the cap variables, in one short lowercase line of fixed words: which cap
+    and what is wrong with it, its value never echoed; doctor names the variable and its value
+    (`cap_problems`). The sentences with the values cost a cut answer 117 tokens for two floored knobs
+    (capitals weigh 1.5 a byte) and more for junk (a value of twenty emoji is 240 escaped bytes), and with
+    a long path that carried the smallest answer past the floor (lens 5, 2026-10-30)."""
+    said = [f"the {dim} cap is {'under its floor' if value is not None else 'not a whole number'}"
+            for dim, name in (("byte", "PROXIMO_RAW_MAX_BYTES"), ("token", "PROXIMO_RAW_MAX_TOKENS"))
+            for value, problem in (_env_number(name),) if problem]
+    return "; ".join(said) + "; proximo doctor says more" if said else ""
+
+
 def note_problems(answer: dict[str, Any]) -> dict[str, Any]:
-    """Name a junk cap variable on an answer that was cut under the default cap (`cap_problem`), so
-    an operator who typed `6k` is told on the answer a model reads, not only in doctor."""
-    if problems := cap_problems():
-        answer["cap_problem"] = "; ".join(problems)
+    """Name a junk or floored cap variable on an answer that was cut (`cap_problem`), so an operator who
+    typed `6k` is told on the answer a model reads, not only in doctor."""
+    if said := answer_problem():
+        answer["cap_problem"] = said
     return answer
 
 

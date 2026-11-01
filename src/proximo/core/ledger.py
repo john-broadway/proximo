@@ -48,6 +48,7 @@ import os
 import re
 import secrets
 import tempfile
+import threading
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -193,6 +194,71 @@ def _algs(path: str) -> list[tuple[int, str]]:
     return out
 
 
+#: A LINE ENDS where a text-mode read ends it (universal newlines: \n, \r\n, a lone \r). Neither byte is
+#: ever inside a UTF-8 sequence, so splitting the raw bytes gives the lines the forward walk reads.
+_EOL = re.compile(rb"[\r\n]")
+_TAIL_BLOCK = 64 * 1024
+
+#: path -> ((st_dev, st_ino, a hash of the first 4 KiB), bytes scanned, kinds seen). WHAT detect_mode HAS READ,
+#: NOT WHAT IT TRUSTS: the file is append-only, so the bytes already scanned cannot change their kinds; a new
+#: inode (a rotation), a smaller file, or a different head (a file deleted and made again, whose inode number
+#: ext4 hands straight back) is read again whole. Per process: a CLI call still reads its ledger once.
+_HEAD_BYTES = 4096
+_MODE_SEEN: dict[str, tuple[tuple[int, int, str], int, frozenset[str]]] = {}
+_MODE_LOCK = threading.Lock()
+
+
+def _line_alg(raw: bytes) -> str | None:
+    """The alg of one raw line as `_algs` reads it ("sha256" for an unkeyed row), or None for no entry."""
+    line = raw.decode("utf-8").strip()
+    if not line:
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return (obj.get("alg") or "sha256") if isinstance(obj, dict) else None
+
+
+def _kinds_seen(path: str) -> frozenset[str]:
+    """Every kind of row the WHOLE file holds (`_algs`' answer as a set), reading only the bytes appended
+    since this process last looked. 2026-10-31: `open_ledger` runs before every receipt and read the whole
+    ledger to say it: on 0.50.1 a read cost 3.2 ms on a new ledger and 486 ms at 37,632 rows (no profiler).
+    WHAT IT ASSUMES IS WHAT THE LEDGER IS, append-only: a file changed in place past its first 4 KiB, and no
+    smaller than when this process last looked (a row rewritten, or the file cut short and grown back on the
+    same inode; lens 10 and 11), is not seen here until the process restarts. Proximo only ever replaces a
+    ledger by rename (a new inode); anything else is tampering, and `verify()` is what names it. This only
+    decides whether a chain needs migrating."""
+    def head_id(f: Any, st: os.stat_result, n: int) -> tuple[int, int, str]:
+        f.seek(0)
+        return st.st_dev, st.st_ino, hashlib.sha256(f.read(min(n, _HEAD_BYTES))).hexdigest()
+
+    with _MODE_LOCK:
+        try:
+            f = open(path, "rb")    # noqa: SIM115 -- closed by the with below
+        except FileNotFoundError:
+            _MODE_SEEN.pop(path, None)
+            return frozenset()
+        with f:
+            st = os.fstat(f.fileno())
+            done, kinds = 0, frozenset()
+            seen = _MODE_SEEN.get(path)
+            # the head checked is the part already scanned (at most 4 KiB): in an append-only file those
+            # bytes never change, so a file that grew past them is still the same file
+            if seen is not None and st.st_size >= seen[1] and seen[0] == head_id(f, st, seen[1]):
+                _, done, kinds = seen
+            f.seek(done)
+            chunk = f.read(st.st_size - done)
+            # only whole lines are cached: the last ends at the last line end; a partial one is read (the
+            # forward walk reads an unterminated last line too) but not kept, since its end is still coming
+            ends = [m.end() for m in _EOL.finditer(chunk)]
+            cut = ends[-1] if ends else 0
+            kinds = kinds | {a for raw in _EOL.split(chunk[:cut]) if (a := _line_alg(raw)) is not None}
+            _MODE_SEEN[path] = (head_id(f, st, done + cut), done + cut, kinds)
+        tail = _line_alg(chunk[cut:])
+        return kinds | ({tail} if tail is not None else set())
+
+
 def detect_mode(path: str) -> str:
     """Inspect an on-disk ledger's chaining mode without trusting it for verification.
 
@@ -205,7 +271,7 @@ def detect_mode(path: str) -> str:
     rows with 25 unkeyed rows appended by a bypass -- "unkeyed", and the custody row written
     from that answer said `prev_alg: sha256` about a file that was 99.7% HMAC.
     """
-    kinds = {alg for _, alg in _algs(path)}
+    kinds = _kinds_seen(path)
     if not kinds:
         return "empty"
     if kinds == {_KEY_ALG}:
@@ -328,24 +394,50 @@ class AuditLedger:
     def _last_entry(f) -> tuple[str, str | None]:
         """(head hash, the last entry's alg) -- `alg` is None for an unkeyed row and "" for an
         empty file, so a caller can tell "nothing to agree with" from "an unkeyed chain"."""
-        # O(n) tail scan. Audit volume is low; optimize to a cached head if it ever isn't.
-        prev, alg = GENESIS_HASH, ""
-        for line in f:
-            line = line.strip()
-            if not line:
+        # READ FROM THE END (2026-10-31): the forward walk parsed every row on every receipt (with the mode
+        # scan, 486 ms a read at 37,632 rows on 0.50.1). The answer is the same one: the LAST line that is
+        # an entry wins, so the first one found walking back is it. Lines end as a text read ends them; a
+        # line longer than a block, or a tail of junk with no entry, is read further back, to byte 0 if so.
+        # EACH BYTE IS SPLIT ONCE (security review, 2026-10-31): a line not yet whole is carried as its
+        # blocks and joined once, when its start is found; gluing each block onto the carry and splitting
+        # again made a megabytes-long tail with no line end quadratic, under the ledger's exclusive lock.
+        fd = f.fileno()
+        pos, carry = os.fstat(fd).st_size, []        # carry: the blocks of the line above, latest first
+        while True:
+            start = max(0, pos - _TAIL_BLOCK)
+            pieces = _EOL.split(os.pread(fd, pos - start, start))
+            if len(pieces) == 1 and start:
+                carry.append(pieces[0])                 # no line end in this block: the line goes on back
+                pos = start
                 continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            # A valid-JSON non-dict line (int/list/str) would raise TypeError on the
-            # subscript below — guard it the same way verify() does, so a corrupt tail
-            # line never crashes record() mid-mutation or DoSes audit_verify/head().
-            # The entry_hash VALUE must also be a str: _hash() does prev_hash.encode("ascii"),
-            # so a crafted {"entry_hash": 123} would set prev to a non-str and brick record().
-            if isinstance(entry, dict) and isinstance(entry.get("entry_hash"), str):
-                prev, alg = entry["entry_hash"], entry.get("alg")
-        return prev, alg
+            pieces[-1] += b"".join(reversed(carry))
+            carry = [pieces.pop(0)] if start else []     # the first piece may begin in the block before
+            for raw in reversed(pieces):
+                hit = AuditLedger._entry_of(raw)
+                if hit is not None:
+                    return hit
+            if not start:
+                return GENESIS_HASH, ""
+            pos = start
+
+    @staticmethod
+    def _entry_of(raw: bytes) -> tuple[str, str | None] | None:
+        """(entry_hash, alg) when one raw line is an entry the chain extends, else None."""
+        line = raw.decode("utf-8").strip()
+        if not line:
+            return None
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        # A valid-JSON non-dict line (int/list/str) would raise TypeError on the
+        # subscript below — guard it the same way verify() does, so a corrupt tail
+        # line never crashes record() mid-mutation or DoSes audit_verify/head().
+        # The entry_hash VALUE must also be a str: _hash() does prev_hash.encode("ascii"),
+        # so a crafted {"entry_hash": 123} would set prev to a non-str and brick record().
+        if isinstance(entry, dict) and isinstance(entry.get("entry_hash"), str):
+            return entry["entry_hash"], entry.get("alg")
+        return None
 
     @classmethod
     def _last_hash(cls, f) -> str:

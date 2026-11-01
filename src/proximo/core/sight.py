@@ -32,12 +32,16 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from proximo.core import rawdoor
+
 SIGHTED, BLIND, UNKNOWN = "sighted", "blind", "unknown"
 NOT_ASKED = "not asked"     # the line does not apply to this question: nothing is judged
 #: A permission map larger than this (serialised) is not judged: a bound on what the check reads.
 MAP_CAP = 256 * 1024
-#: The longest path or name an answer or a receipt echoes from the caller.
-ECHO = 120
+#: The most a path or name echoed from the caller costs AS SENT (bytes as JSON escapes them, tokens
+#: estimated, the clip's mark included). Rides in a read's header at most twice (a requirement path per
+#: alternative): at 120 CHARACTERS a 63-letter storage id put a sight line over the cap with no rows (lens 6)
+ECHO = (64, 48)
 
 _SLOT = re.compile(r"(/?)\{([^{}]+)\}")
 
@@ -68,7 +72,7 @@ def _held(flags: dict[str, dict[str, bool]], priv: str, path: str) -> bool:
 
 
 def _clip(text: str) -> str:
-    return text if len(text) <= ECHO else text[:ECHO] + "..."
+    return rawdoor.echo_wire(text, *ECHO)
 
 
 def _where(template: str, bound: Mapping[str, str], args: Mapping[str, Any]) -> str:
@@ -140,10 +144,14 @@ def judge(line: Mapping[str, Any], bound: Mapping[str, str], args: Mapping[str, 
     for alt in alternatives:
         if all(_held(flags, priv, path) for priv, path in alt):
             return SIGHTED, "", [_clip(f"{priv}@{path}") for priv, path in alt]
-    need = " or ".join(" and ".join(f"{priv} on {'any path' if path == '*' else _clip(path)}" for priv, path in alt)
-                       for alt in alternatives)
+    def needs(alts: Any) -> str:
+        return " or ".join(" and ".join(f"{priv} on {'any path' if path == '*' else _clip(path)}"
+                                        for priv, path in alt) for alt in alts)
     if empty:
         return BLIND, (f"empty list not served as none: this token cannot see {what} here (Proxmox answers 200 "
-                       f"and empty, not a refusal). It would need {need}. The {what} may exist."), []
-    return BLIND, (f"partial: Proxmox filters {what} by what the token holds, so these rows are the token's own, "
-                   f"not all of them. Seeing all needs {need}."), []
+                       f"and empty, not a refusal). It would need {needs(alternatives)}. The {what} may exist."), []
+    # A SERVED ANSWER NAMES THE REQUIREMENT AS THE TABLE WRITES IT (lens 6): this sentence rides in the
+    # read's header, and a filled path echoed the caller's storage id twice beside the called path, which
+    # put a read over the cap with no rows; the called path already says which storage
+    return BLIND, (f"partial: these rows are the token's own (Proxmox filters {what} by its grants); "
+                   f"all of them needs {needs(map(lambda a: map(_split, a), line['sighted']))}."), []

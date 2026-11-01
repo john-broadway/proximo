@@ -351,12 +351,22 @@ def test_the_wires_own_refusal_of_a_readable_secret_is_said_without_its_path(box
 def test_a_read_the_door_cut_is_an_error_never_a_clean_read_of_nothing(box, monkeypatch):
     """LENS, MAJOR: a size-cut envelope has no `data`; the doctor read it as version None and
     "0 permissions" and said complete. A cut is named with its bytes and the report is not whole."""
-    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "50")
+    # the cut is forced by an oversize answer: a cap under the floor (2026-10-30) is raised, so 50 B no longer can
+    monkeypatch.setattr(box, "call", lambda m, p, params=None: {"version": "9.2.2", "pad": "x" * 5000})
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "2048")
     r = _report()
     reach = r["planes"]["pve"]["reach"]
-    assert reach["version"]["error"] == "cut" and reach["version"]["bytes"] > 50 and reach["version"]["cap"] == 50
+    assert reach["version"]["error"] == "cut" and reach["version"]["bytes"] > 2048 and reach["version"]["cap"] == 2048
     assert "permissions" not in reach                                      # a cut version is a closed door too
     assert r["complete"] is False and any("pve" in f and "cut" in f for f in r["flags"])
+
+
+def test_a_cap_under_the_floor_is_raised_and_doctor_says_so(box, monkeypatch):
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "50")
+    r = _report()
+    from proximo.core import rawdoor
+    floor = rawdoor.CAP_FLOORS["PROXIMO_RAW_MAX_BYTES"]
+    assert any("PROXIMO_RAW_MAX_BYTES=50" in f and f"{floor} stands" in f for f in r["flags"])
 
 
 def test_a_cut_permissions_read_says_what_it_holds_is_not_known(box, monkeypatch):

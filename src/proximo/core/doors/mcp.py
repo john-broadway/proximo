@@ -70,14 +70,15 @@ _HELP = "the MCP door needs the mcp SDK: pip install proximo-proxmox"
 def _execute(row: engine.Row, args: dict[str, Any], path: str,
              cfg: wire.Plane | None = None, fields: str | None = None,
              since: str | None = None, wait: int | None = None,
-             asked: str | None = None) -> dict[str, Any]:
+             asked: str | None = None, note: dict[str, Any] | None = None) -> dict[str, Any]:
     """DECIDE BEFORE CONFIGURING. `execute` governs first and builds the plane's client from
     env only after the verdict, so an unarmed mutation on an unconfigured box is refused as
     "not armed" and receipted, never as a missing env var. The env-var error, when it does
     come, is rephrased in the door's words: a RuntimeError inside a tool body is what the 2.x
     SDK sanitizes to a bare tool name."""
     try:
-        return engine.execute(row, args, path=path, cfg=cfg, fields=fields, since=since, wait=wait, asked=asked)
+        return engine.execute(row, args, path=path, cfg=cfg, fields=fields, since=since, wait=wait, asked=asked,
+                              note=note)
     except ProximoError:
         raise
     except (httpx.HTTPStatusError, httpx.TransportError) as e:
@@ -250,7 +251,9 @@ def read(plane: Plane, path: str, args: dict[str, Any] | None = None,
         except RuntimeError as e:
             raise ProximoError(f"{plane} is not configured on this Proximo ({e})") from e
     row = engine.resolve(plane, "GET", path)
-    return {**_execute(row, dict(args or {}), path, cfg, fields=fields, since=since, wait=wait, asked=asked), **note}
+    # the note is SPENT with the header, never merged onto a sized answer (lens 9: 1,194 B on a 1,152 cap)
+    return _execute(row, dict(args or {}), path, cfg, fields=fields, since=since, wait=wait, asked=asked,
+                    note=note or None)
 
 
 def call(plane: Plane, method: str, path: str, args: dict[str, Any] | None = None,

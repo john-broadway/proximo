@@ -243,7 +243,7 @@ def test_a_failed_resources_read_is_incomplete(armed_plane, monkeypatch):
 def test_a_resources_answer_over_the_doors_cap_is_incomplete_not_fewer_guests(armed_plane, monkeypatch):
     """The size law cuts or summarises a read over the door's cap; the consult never reads a cut
     list as the whole estate."""
-    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "400")
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")          # the floor (rawdoor.CAP_FLOORS); 30 guests are over it
     many = [{"id": f"qemu/{i}", "type": "qemu", "vmid": i, "node": "pve1", "name": f"g{i}", "status": "running"}
             for i in range(100, 130)]
     _serve(monkeypatch, _estate_answers(guests=many, configs={}))
@@ -662,7 +662,7 @@ def test_an_envelope_cut_by_the_door_is_not_whole(env):
 def test_a_resources_list_cut_by_rows_is_incomplete(armed_plane, monkeypatch):
     """Rows carrying their own content (a unique tag each) are cut by rows, not summarised: the
     envelope has `data` (the rows that fit), `truncated` and `returned`."""
-    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "600")
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")          # the floor; 30 tagged guests are over it
     many = [{"id": f"qemu/{i}", "type": "qemu", "vmid": i, "node": "pve1", "tags": f"t{i}x{i}"}
             for i in range(100, 130)]
     _serve(monkeypatch, _estate_answers(guests=many, configs={}))
@@ -1103,9 +1103,9 @@ def test_a_pending_row_with_a_key_that_is_no_name_is_a_gap_not_a_crash(armed_pla
 
 
 def test_a_cut_pending_read_is_incomplete(armed_plane, monkeypatch):
-    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "400")
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")          # the floor; the description alone is over it
     vol = _one_guest(monkeypatch, [{"key": "scsi0", "value": "local-lvm:vm-101-disk-0"},
-                                   {"key": "description", "value": "d" * 600},
+                                   {"key": "description", "value": "d" * 3000},
                                    {"key": "scsi1", "value": "local-lvm:vm-101-disk-1"}])
     c = consult.run(_delete_row(), vol, {}, armed_plane, None)
     assert c["complete"] is False and c["raise_to"] == "destructive"

@@ -848,7 +848,10 @@ def test_the_answer_never_grows_with_the_callers_words(cfg, vendor):
     _read(cfg, "/cluster/resources")
     small, big = _where(cfg, "nope"), _where(cfg, "nope" * 2000)
     assert len(json.dumps(big)) == len(json.dumps(small))
-    assert len(json.dumps(memory.changed(cfg.audit_log_path, "pve", BOX, "9" * 40 + "d"))) <= memory.ANSWER_BYTES
+    with pytest.raises(ProximoError, match="at most 3650d") as no:   # a 40-digit window is no window (lens 8)
+        memory.changed(cfg.audit_log_path, "pve", BOX, "9" * 40 + "d")
+    assert len(str(no.value)) <= 160
+    assert len(json.dumps(memory.changed(cfg.audit_log_path, "pve", BOX, "0" * 40 + "7d"))) <= memory.ANSWER_BYTES
 
 
 def test_like_mode_reads_a_wildcard_as_a_letter(cfg, vendor, monkeypatch):

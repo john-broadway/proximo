@@ -327,13 +327,18 @@ shell exec cut by the raw cap names that knob on its `next` line while neither r
 with the line fits the room the engine's cap leaves after its header and note room, and the whole answer
 with it is under that cap; the line is the first thing dropped when either fails, and the exit above is
 never what drops it. The
-line's room comes out of the streams', one 15% step of a cut stream at the default cap for most text
-(201 to 169 characters of plain text), none or two for some.
+line's room comes out of the streams', one or two 15% steps of a cut stream (at the default cap, one
+stream of plain text keeps 547 characters without the line and 463 with it; fenced, 281 and 200).
 Raising the exit does not raise the cap below it: a read, and a shell exec's stdout and stderr, are
 still trimmed to `PROXIMO_RAW_MAX_BYTES` first (and to `PROXIMO_RAW_MAX_TOKENS` when that is set),
 so set both when a whole answer is the point of the call: both at 16384 carry 8.7 KB of command
 output whole. The refusal ceiling (512) never moves, and no argument a model sends changes any of
-this.
+this. The cap cannot go below its default, 1152 bytes and 750 tokens: a cut read still carries its
+header, the path it was called on (with a task's words and the default node, echoed within 160 bytes
+and 150 tokens together), how to narrow it, its sight line, its notes and (fenced) an empty wrapper, up
+to 1,136 bytes / 737 tokens measured over every published read with path values of any script and any
+length, with `PROXIMO_NODE` unset or 63 letters long. A smaller number is raised to the
+default and doctor names it.
 
 ---
 
