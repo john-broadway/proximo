@@ -184,8 +184,10 @@ def tool_annotations_kwargs(read_only: bool) -> dict[str, Any]:
     return {"annotations": ToolAnnotations(readOnlyHint=read_only)}  # pyright: ignore[reportCallIssue] -- alias kwarg
 
 
-def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | None = None) -> Any:
-    """Construct the per-major server, advertising Proximo's OWN version in `initialize`.
+def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | None = None,
+                instructions: str | None = None) -> Any:
+    """Construct the per-major server, advertising Proximo's OWN version in `initialize`, and the
+    operator's `instructions` there when given (both majors take the same kwarg; None sends none).
 
     1.x FastMCP leaves the low-level Server.version=None (the handshake would advertise the
     SDK's version); setting the private attribute after construction is the only seam. 2.x
@@ -219,7 +221,7 @@ def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | No
                 except ToolError as e:
                     raise _bounded(name, e) from _bounded_cause(e)
 
-        server = _CompactFastMCP(name)
+        server = _CompactFastMCP(name, instructions=instructions)
         server._mcp_server.version = version  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue] -- 1.x only
         return server
 
@@ -235,7 +237,7 @@ def make_server(name: str, version: str, unknown_tool: Callable[[str], str] | No
             except ToolError as e:
                 raise _bounded(name, e) from _bounded_cause(e)
 
-    return _GovernedMCPServer(name, version=version)
+    return _GovernedMCPServer(name, instructions=instructions, version=version)
 
 
 def tool_input_schema(tool: Any) -> Any:

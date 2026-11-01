@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from proximo.core import anchor, arm, engine, memory, rawdoor, reach, registry, shell, spine, wire
+from proximo.core import anchor, arm, engine, instructions, memory, rawdoor, reach, registry, shell, spine, wire
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import (
     LedgerConfig,
@@ -51,7 +51,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
     report: dict[str, Any] = {"doctor": "proximo-core"}
     report["record"] = _record(flags)
     report["planes"], configured, unreachable = _planes(lcfg, flags)
-    report["targets"] = _targets(flags)
+    report["targets"], report["instructions"] = _targets(flags), instructions.station(flags)  # core/instructions.py
     report["reach"] = reach.report(lcfg, flags)   # before the ledger: its mirror reads are receipted rows
     report["ledger"], chain_ok = _ledger(lcfg, flags)
     report["anchor"] = anchor.station(lcfg, flags)           # PROVE's off-box station (core/anchor.py)
@@ -77,7 +77,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
 #: and the report must say it is not whole). Each prefix opens one flag.
 _ADVISORY = ("CONSENT is inert", "CONTAIN has no trip path", "CONTAIN: no rate cap", "UNDO is off",
              "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY \
-    + memory.ADVISORY
+    + memory.ADVISORY + instructions.ADVISORY
 
 
 def _said(exc: ProximoError) -> str:
