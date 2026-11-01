@@ -412,7 +412,7 @@ continues to report `ssh_target_configured` for the default box's `PROXIMO_SSH_T
 
 ---
 
-## Your words to every client — `PROXIMO_MCP_INSTRUCTIONS`
+## Your words to every client: `PROXIMO_MCP_INSTRUCTIONS`
 
 One Proximo often serves several clients: a desktop app, a few projects, coding sessions in
 containers. Each needs the same site guidance (which targets exist, your approval rules per tier,

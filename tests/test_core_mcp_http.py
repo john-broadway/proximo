@@ -97,6 +97,21 @@ async def test_the_network_face_serves_the_six_core_tools_and_governs(env, monke
     assert row["action"] == "core.refuse" and row["principal"]["face"] == "mcp-http"
 
 
+async def test_the_operators_instructions_ride_the_network_initialize(env, monkeypatch):
+    """Issue #123 over this face: the `instructions` the stdio door sends, on the MCP-HTTP handshake too."""
+    rules = env / "rules.md"
+    rules.write_text("Every call names a target.\n")
+    monkeypatch.setenv("PROXIMO_MCP_INSTRUCTIONS", str(rules))
+    app = face.build_app(token="t0k")
+    hx = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE,
+                           headers={"Authorization": "Bearer t0k"}, timeout=30)
+    async with app.router.lifespan_context(app):
+        async with streamable_http_client(f"{BASE}/mcp", http_client=hx) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                init = await session.initialize()
+    assert init.instructions == "Every call names a target.\n"
+
+
 async def test_the_bearer_is_the_shared_perimeter(env):
     app = face.build_app(token="t0k")
     async with app.router.lifespan_context(app):
