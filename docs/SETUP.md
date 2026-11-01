@@ -425,9 +425,10 @@ PROXIMO_MCP_INSTRUCTIONS=/etc/proximo/instructions.md
 The file's text is sent as the MCP `instructions` in every session's `initialize`, over stdio and
 the MCP-HTTP door alike; clients that honour the field put it in the model's context. It is read
 when the door starts (restart to change) and held to 8192 bytes, since every session carries it.
-Set and unreadable, not UTF-8, empty or over the cap, the door refuses to start and names the
-variable, never the path. `proximo doctor` reports whether it is configured and its size, and flags
-a file the door would refuse.
+Set and unreadable, not UTF-8, empty or over the cap, the door still starts and sends none: the text
+governs nothing, so a typo or a missing bind mount costs your clients the guidance, never the door.
+It says so on stderr at start, naming the variable, never the path. `proximo doctor` reports whether
+it is configured and its size, and flags a file no client would receive.
 
 The cap is a guard, not a target. Clients may truncate a server's instructions well below it (Claude
 Code has been seen cutting other servers' at a few KB), so aim for under 2 KB and put the rules that

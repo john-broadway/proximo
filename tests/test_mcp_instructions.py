@@ -1,5 +1,5 @@
 """The operator's MCP `instructions` (issue #123): served in `initialize` when set, absent when not,
-and a set-but-unusable file refuses the door without naming its path.
+and a set-but-unusable file sends none, said on stderr and by doctor, without naming its path.
 
 `InitializeResult.instructions` is spelled the same on both SDK majors, so no seam accessor is needed."""
 import asyncio
@@ -71,10 +71,14 @@ def test_set_and_unusable_refuses_and_never_names_the_path(tmp_path, monkeypatch
     assert len(flags) == 1 and str(path) not in flags[0]
 
 
-def test_a_missing_file_refuses_the_door(tmp_path, monkeypatch):
-    monkeypatch.setenv(instructions.ENV, str(tmp_path / "nope.md"))
-    with pytest.raises(ProximoError, match="cannot read"):
-        door.build_server()
+def test_a_missing_file_still_builds_the_door_and_says_so_on_stderr(tmp_path, monkeypatch, capsys):
+    """The text governs nothing: a typo or a lost bind mount costs the guidance, never the door."""
+    path = tmp_path / "nope.md"
+    monkeypatch.setenv(instructions.ENV, str(path))
+    assert instructions.served() is None
+    assert door.build_server() is not None
+    err = capsys.readouterr().err
+    assert instructions.ENV in err and "cannot read" in err and str(path) not in err and path.name not in err
 
 
 def test_doctor_reports_the_section_and_its_flag_is_not_advisory(tmp_path, monkeypatch):
@@ -82,7 +86,7 @@ def test_doctor_reports_the_section_and_its_flag_is_not_advisory(tmp_path, monke
     monkeypatch.setenv("PROXIMO_AUDIT_LOG", str(tmp_path / "audit.log"))
     report = doctor.run()
     assert report["instructions"]["configured"] is True and "empty" in report["instructions"]["error"]
-    assert report["complete"] is False                     # a door that will not start is not a whole box
+    assert report["complete"] is False                     # set, and no client receives it: not a whole box
 
 
 def _params(tmp_path, extra: dict[str, str]) -> StdioServerParameters:
@@ -103,4 +107,9 @@ def test_initialize_carries_the_text_over_the_real_stdio_wire(tmp_path):
 
 def test_initialize_carries_none_when_unset(tmp_path):
     init = asyncio.run(_initialize(_params(tmp_path, {})))
+    assert init.instructions is None
+
+
+def test_a_bad_file_still_serves_the_door_with_none(tmp_path):
+    init = asyncio.run(_initialize(_params(tmp_path, {instructions.ENV: str(_file(tmp_path, b"\xff\xfe"))})))
     assert init.instructions is None

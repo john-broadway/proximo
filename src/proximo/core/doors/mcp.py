@@ -401,7 +401,7 @@ def build_server(name: str = "proximo") -> Any:
     except ImportError as e:
         raise ProximoError(_HELP) from e
     # The operator's words for every client (`core.instructions`): text in `initialize`, read by nothing here.
-    server = make_server(name, __version__, instructions=instructions.load())
+    server = make_server(name, __version__, instructions=instructions.served())
     ro = tool_annotations_kwargs(read_only=True)
     rw = tool_annotations_kwargs(read_only=False)
 

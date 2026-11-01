@@ -11,13 +11,17 @@ It is operator config on the box, the trust of `targets.toml`, so it is not fenc
 It is also TEXT FOR THE CLIENT ONLY: nothing in Proximo reads it, so it can grant nothing, arm
 nothing and move no ceiling. Governance stays where it is.
 
-Set and unusable (unreadable, not UTF-8, empty, over the cap) is loud: the door refuses to start
-and names the variable, never the path or a byte of the file, since a mis-pointed file could be a
-token. It lands in every session's context, so it is held to `CAP` bytes.
+Set and unusable (unreadable, not UTF-8, empty, over the cap), the door still starts and sends
+none: the text governs nothing, so a typo or a missing bind mount costs the clients the guidance,
+never the door (the rule for config that governs nothing: an unreadable registry keeps the selector
+and warns, junk in `PROXIMO_EXIT_MAX_BYTES` keeps the defaults). It is said on stderr at start and
+flagged by doctor, naming the variable, never the path or a byte of the file, since a mis-pointed
+file could be a token. It lands in every session's context, so it is held to `CAP` bytes.
 """
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from proximo.core.errors import ProximoError
@@ -53,6 +57,15 @@ def load() -> str | None:
     return text
 
 
+def served() -> str | None:
+    """What the door sends: `load()`'s text, or None with one stderr line when the file is unusable."""
+    try:
+        return load()
+    except ProximoError as e:
+        print(f"proximo: {e}; no client receives the instructions until it is fixed", file=sys.stderr)
+        return None
+
+
 def station(flags: list[str]) -> dict[str, Any]:
     """Doctor's section: configured, and the bytes served against the cap. Never where."""
     if not os.environ.get(ENV, "").strip():
@@ -60,7 +73,7 @@ def station(flags: list[str]) -> dict[str, Any]:
     try:
         text = load()
     except ProximoError as e:
-        flags.append(f"the MCP instructions are set and unusable, and the doors that serve the six tools refuse: {e}")
+        flags.append(f"the MCP instructions are set and unusable, so no client receives them: {e}")
         return {"configured": True, "error": str(e)}
     size = len((text or "").encode())
     if size > SOFT:
