@@ -77,7 +77,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
 #: and the report must say it is not whole). Each prefix opens one flag.
 _ADVISORY = ("CONSENT is inert", "CONTAIN has no trip path", "CONTAIN: no rate cap", "UNDO is off",
              "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY \
-    + memory.ADVISORY
+    + memory.ADVISORY + instructions.ADVISORY
 
 
 def _said(exc: ProximoError) -> str:

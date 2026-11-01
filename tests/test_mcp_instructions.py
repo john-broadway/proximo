@@ -42,6 +42,18 @@ def test_exactly_the_cap_is_served(tmp_path, monkeypatch):
     assert len(instructions.load() or "") == instructions.CAP
 
 
+def test_over_the_soft_size_is_served_with_advice_not_incompleteness(tmp_path, monkeypatch):
+    monkeypatch.setenv(instructions.ENV, str(_file(tmp_path, b"x" * (instructions.SOFT + 1))))
+    assert instructions.load() is not None                 # served whole: the soft size refuses nothing
+    flags: list[str] = []
+    assert instructions.station(flags)["bytes"] == instructions.SOFT + 1
+    assert len(flags) == 1 and flags[0].startswith(doctor._ADVISORY) and "truncate" in flags[0]
+    at_soft: list[str] = []
+    monkeypatch.setenv(instructions.ENV, str(_file(tmp_path, b"x" * instructions.SOFT)))
+    instructions.station(at_soft)
+    assert at_soft == []
+
+
 @pytest.mark.parametrize(("data", "said"), [
     (b"x" * (instructions.CAP + 1), "over"),
     (b"\xff\xfe not utf-8", "UTF-8"),

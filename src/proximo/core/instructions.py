@@ -25,6 +25,11 @@ from proximo.core.errors import ProximoError
 ENV = "PROXIMO_MCP_INSTRUCTIONS"
 #: Every session pays for these bytes before its first call: about two thousand tokens at most.
 CAP = 8192
+#: Past this, advice only: some clients cut a server's instructions short (Claude Code showed two
+#: servers' cut at a few KB, 2026-11-01), so the rules that matter go first and the file stays short.
+SOFT = 2048
+#: Doctor's flag for a file over SOFT opens with this: advice, not incompleteness.
+ADVISORY = ("the MCP instructions are over",)
 
 
 def load() -> str | None:
@@ -57,4 +62,8 @@ def station(flags: list[str]) -> dict[str, Any]:
     except ProximoError as e:
         flags.append(f"the MCP instructions are set and unusable, and the doors that serve the six tools refuse: {e}")
         return {"configured": True, "error": str(e)}
-    return {"configured": True, "bytes": len((text or "").encode()), "cap": CAP}
+    size = len((text or "").encode())
+    if size > SOFT:
+        flags.append(f"{ADVISORY[0]} {SOFT} bytes ({size}): some clients truncate a server's instructions, "
+                     "so put the rules that matter first, or shorten the file")
+    return {"configured": True, "bytes": size, "cap": CAP}

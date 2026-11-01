@@ -427,7 +427,11 @@ the MCP-HTTP door alike; clients that honour the field put it in the model's con
 when the door starts (restart to change) and held to 8192 bytes, since every session carries it.
 Set and unreadable, not UTF-8, empty or over the cap, the door refuses to start and names the
 variable, never the path. `proximo doctor` reports whether it is configured and its size, and flags
-a file the door would refuse. It is operator config, trusted like `targets.toml`, and text for the
+a file the door would refuse.
+
+The cap is a guard, not a target. Clients may truncate a server's instructions well below it (Claude
+Code has been seen cutting other servers' at a few KB), so aim for under 2 KB and put the rules that
+matter first, so a cut copy still carries them; `doctor` notes a file over 2048 bytes as advice. It is operator config, trusted like `targets.toml`, and text for the
 client only: nothing in Proximo reads it, so no sentence in it can arm, grant or widen anything.
 
 ---
