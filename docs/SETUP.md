@@ -412,6 +412,26 @@ continues to report `ssh_target_configured` for the default box's `PROXIMO_SSH_T
 
 ---
 
+## Your words to every client — `PROXIMO_MCP_INSTRUCTIONS`
+
+One Proximo often serves several clients: a desktop app, a few projects, coding sessions in
+containers. Each needs the same site guidance (which targets exist, your approval rules per tier,
+when to ask for a snapshot), and kept in each client it drifts. Write it once, on the box:
+
+```bash
+PROXIMO_MCP_INSTRUCTIONS=/etc/proximo/instructions.md
+```
+
+The file's text is sent as the MCP `instructions` in every session's `initialize`, over stdio and
+the MCP-HTTP door alike; clients that honour the field put it in the model's context. It is read
+when the door starts (restart to change) and held to 8192 bytes, since every session carries it.
+Set and unreadable, not UTF-8, empty or over the cap, the door refuses to start and names the
+variable, never the path. `proximo doctor` reports whether it is configured and its size, and flags
+a file the door would refuse. It is operator config, trusted like `targets.toml`, and text for the
+client only: nothing in Proximo reads it, so no sentence in it can arm, grant or widen anything.
+
+---
+
 ## No model at all — the shell door
 
 The same install ships `proximo-core`, the engine from a shell or a cron job, with no model, no

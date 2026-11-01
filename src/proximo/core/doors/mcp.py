@@ -43,7 +43,7 @@ from typing import Any, Literal
 import httpx
 
 from proximo import __version__
-from proximo.core import anchor, apitree, engine, prompts, rawdoor, registry, search, wire
+from proximo.core import anchor, apitree, engine, instructions, prompts, rawdoor, registry, search, wire
 from proximo.core import diagnose as diagnose_mod
 from proximo.core import undo as restore_mod
 from proximo.core.doors import BANNER
@@ -400,7 +400,8 @@ def build_server(name: str = "proximo") -> Any:
         from proximo.core.mcpcompat import forbid_undeclared, make_server, slim_schemas, tool_annotations_kwargs
     except ImportError as e:
         raise ProximoError(_HELP) from e
-    server = make_server(name, __version__)
+    # The operator's words for every client (`core.instructions`): text in `initialize`, read by nothing here.
+    server = make_server(name, __version__, instructions=instructions.load())
     ro = tool_annotations_kwargs(read_only=True)
     rw = tool_annotations_kwargs(read_only=False)
 

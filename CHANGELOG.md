@@ -2,6 +2,10 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [Unreleased]
+
+**The operator's words reach every client.** `PROXIMO_MCP_INSTRUCTIONS` names a UTF-8 text file whose content is served as the MCP `instructions` in `initialize`, on both SDK majors and every MCP door, so site guidance (targets, approval rules, conventions) lives once on the box instead of in each client. Read at start, at most 8192 bytes; unset sends nothing, as before. Set and unreadable, not UTF-8, empty or over the cap, the door refuses to start, naming the variable and never the path. `proximo doctor` gains an `instructions` section (configured, bytes, cap) and flags a file the door would refuse. Nothing in Proximo reads the text, so it governs nothing. The door contract stays 3: `instructions` is an optional field of the handshake, and the tools and their answers are unchanged. From alexdelprete, issue #123.
+
 ## [0.51.0] — 2026-11-01
 
 **The license is AGPL-3.0-or-later from this release.** Every release through 0.50.1 was Apache-2.0 and stays Apache-2.0. The portions Alessandro Del Prete (@alexdelprete) and RavenLiao contributed came in under Apache-2.0 and remain available under it as well; its text ships beside the AGPL one (`LICENSES/Apache-2.0.txt`). See the README's license section.
