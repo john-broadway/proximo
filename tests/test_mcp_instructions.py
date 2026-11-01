@@ -59,7 +59,7 @@ def test_over_the_soft_size_is_served_with_advice_not_incompleteness(tmp_path, m
     (b"\xff\xfe not utf-8", "UTF-8"),
     (b"  \n\t\n", "empty"),
 ])
-def test_set_and_unusable_refuses_and_never_names_the_path(tmp_path, monkeypatch, data, said):
+def test_set_and_unusable_is_rejected_by_load_and_never_names_the_path(tmp_path, monkeypatch, data, said):
     path = _file(tmp_path, data)
     monkeypatch.setenv(instructions.ENV, str(path))
     with pytest.raises(ProximoError, match=said) as e:
