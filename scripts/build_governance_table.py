@@ -105,6 +105,9 @@ def build(cache: pathlib.Path) -> list[dict]:
         for node in parse(source):
             for path, method, info in walk(node):
                 props = properties(info.get("parameters") or {})
+                rule = info.get("permissions")   # never `or None`: a published {} is refused, not read as none
+                if wrong := apitree.rule_problem(rule, product):
+                    raise SystemExit(f"{product} {method} {path}: the vendor's permission rule: {wrong}")
                 gate = next((why for prefix, why in gated.get(product, ())
                              if path.startswith(prefix)), None)
                 rows.append({
@@ -130,6 +133,10 @@ def build(cache: pathlib.Path) -> list[dict]:
                     "tier": None,
                     # The vendor's sentence for the address: what `find` ranks on.
                     "description": " ".join((info.get("description") or "").split()),   # one line, as find ranks it
+                    # THE VENDOR'S PERMISSION RULE, VERBATIM: what a token must hold for this call (the
+                    # may/never map lines it up with what the token holds). Never guessed: a shape the
+                    # map does not know refuses the build.
+                    "permissions": rule,
                 })
     rows.sort(key=lambda r: (r["product"], r["path"], r["method"]))
     return rows

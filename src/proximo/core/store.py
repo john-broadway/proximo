@@ -217,10 +217,22 @@ def changes(base: str, plane: str, box: str, called: str, args: dict[str, Any], 
         "from": _iso(then["ts"]), "to": _iso(now_snap["ts"]),
         "window_s": span, "to_age_s": int(_now() - now_snap["ts"]),
     }
+    notes = []
     if not older:
-        answer["note"] = (f"asked for {said_since(since)}; the oldest snapshot kept is only {span}s before the "
-                          f"newest, so this is the change over that span")
+        notes.append(f"asked for {said_since(since)}; the oldest snapshot kept is only {span}s before the "
+                     f"newest, so this is the change over that span")
+    if answer["to_age_s"] >= STALE_S:
+        # A snapshot is kept only when the path is read; nothing after the newest is known
+        # (peer report 2026-11-02: 9.4 h old answered as "0 changes", the age only a number).
+        notes.append(f"the newest snapshot is {answer['to_age_s'] / 3600:.1f} h old and nothing after it is "
+                     f"known: read it live to keep a fresh one")
+    if notes:
+        answer["note"] = "; ".join(notes)
     return answer
+
+
+#: the age at which a since= answer says its newest snapshot is old (a snapshot is kept per read)
+STALE_S = 3600
 
 
 def _iso(ts: float) -> str:

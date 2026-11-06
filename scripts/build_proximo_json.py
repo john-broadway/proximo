@@ -687,7 +687,11 @@ def build(vendor: list[dict], texts: dict[str, str | None]) -> dict[str, Any]:
     """The one JSON from the vendor's rows and the authored records' text (`None` = absent).
     Pure: reads nothing, writes nothing, so a test can plant a record and watch it refuse."""
     rows = [dict(r) for r in vendor]
-    rows += shell_rows(texts.get("shell.toml"), {(r["product"], r["method"], r["path"]) for r in rows})
+    for r in rows:   # the map's rule rides verbatim; a hand-edited stage is refused like any record
+        if wrong := apitree.rule_problem(r.get("permissions"), r["product"]):
+            raise ProximoError(f"vendor.json.gz: the rule on {r['product']}:{r['method']} {r['path']}: {wrong}")
+    rows += [{**s, "permissions": None}   # a shell lane row is Proximo's, not the vendor's: no rule published
+             for s in shell_rows(texts.get("shell.toml"), {(r["product"], r["method"], r["path"]) for r in rows})]
     tier, taint = tiers(texts.get("tiers.toml")), untrusted(texts.get("taint.toml"))
     reads, args = secrets(texts.get("secrets.toml"))
     public = arg_public(texts.get("secrets.toml"))

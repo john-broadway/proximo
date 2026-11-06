@@ -195,45 +195,59 @@ the transcript; PyPI tokens have leaked exactly this way). And minting requires 
 Proxmox, which the confined agent lacks. The token's own `--expire` is the lease: a
 forgotten disarm still fails closed when the vendor stops honouring the credential.
 
-#### `proximo arm` / `proximo disarm` — the swap, for the pre-minted pattern only
+#### `proximo-core arm` / `proximo-core disarm` — a person's ticket; a job's token pair
 
-The recipe above is the mint-and-revoke deployment, and it stays a manual root-on-Proxmox
-act: no write token exists at rest there, so there is nothing on the agent box to swap.
-For the **pre-minted** pattern — one write token kept at rest, swapped in and out — the
-swap is mechanical, and two commands do it:
+A token is an identity: the vendor ships it with `expire` 0 and means a standing credential
+with an ACL (the recipe above). A ticket is a session: `POST /access/ticket`, the vendor's
+two hours, dead on its own. **A person arms by logging in.** `proximo-core arm` runs in a
+terminal of the operator's own, prompts silently for the password (and a second factor when
+the vendor asks), sends them once on the plane's own wire, and serves the vendor's ticket at
+`PROXIMO_TOKEN_PATH` (atomic, 0600, a ledger row that names the user and the hour it dies,
+never the ticket). No write secret exists at rest for a person: not on disk, not in a
+transcript (an agent's shell passthrough has no terminal and is refused). Armed is a
+predicate read per call from the ticket's OWN issue time, signed by the vendor: this
+product's ticket, for this box, under two hours old. A forgotten disarm ends at the vendor's
+two hours; a dead ticket reads not armed here first and 401 there, and the wire serves the
+read-only token in its place when one is configured. The two hours are measured against this
+box's clock from the issue time the vendor signed into the ticket: a box whose clock is more than
+two hours off the vendor's reads a fresh ticket as dead or not yet valid, and says so.
 
 ```sh
-proximo arm       # install the write token's bytes at the served path (atomic, 0600, a ledger row)
-proximo disarm    # put the read-only one back
+proximo-core arm              # log in; serve the ticket (from YOUR terminal, never an agent's)
+proximo-core disarm           # the read-only token back (needs no secret; any shell)
 ```
 
-Point `PROXIMO_ARM_SOURCE` at the write token and `PROXIMO_READONLY_SOURCE` at the
-everyday one; `PROXIMO_TOKEN_PATH` is the served file the two are installed into, and is
-refused as either source (one file in both roles would make the check compare a file to
-itself and read as armed forever). A symlinked source is refused. Armed is a predicate,
-not a flag: the served file's bytes equal the arm source's. It fails closed by
-construction (a garbled, rotated or truncated token is not armed) and self-heals on rotation.
+**A job with nobody at a keyboard holds the vendor's identity**: a scoped write token the
+operator minted on purpose (`proximo mint`: `--privsep 1`, an ACL that names what it may
+touch, an `expire` the operator chose), served by configuration. Point `PROXIMO_ARM_SOURCE`
+at it and `PROXIMO_READONLY_SOURCE` at the everyday one; armed is then the served file's
+bytes equalling the arm source's, failing closed on a garbled, rotated or truncated token.
+That path is unchanged, and `disarm` refuses the one lie in it: a read-only source
+byte-identical to the write token.
 
-**These commands grant no authority the caller did not already have.** Anyone who can run
-`proximo arm` can already read `PROXIMO_ARM_SOURCE` and copy it into place; the command is
-ergonomics over that fact, not a new door. Whether an arm is a real boundary is therefore a
-question of **file ownership, not of software** — the same thing that decides whether the
-CONTAIN breaker is real or advisory. So `arm` reads the source's mode, its owner, **and the
-owner and mode of the directory holding it**, then tells you which one you have:
+**A ticket is the user's whole ACL.** A `--privsep 1` token reaches the intersection of the
+user's grants and its own; a ticket reaches everything the user may do. The scope of an arm is
+therefore the operator user's ACL at the vendor, and `arm` prints who it logs in as before it
+prompts. Narrow the user, not the ticket.
 
-```
-boundary: REAL, conditional on the server not running as uid 0
-boundary: ADVISORY — the arm source is not protected against a second uid
-```
+**The two hours bound the session, not the user.** PVE and PBS let a user manage its own API
+tokens; that is the vendor's rule (`POST /access/users/{userid}/token/{tokenid}`: the user
+itself, or a modify privilege on it), and no ACL grant changes it. A person armed as
+`proximo@pve` can mint `proximo@pve!x` with `expire` 0: a standing credential with the user's
+reach, alive after the ticket dies. Its reach is still the user's ACL, nothing more. Proved in the
+lab on 2026-11-05 under the credentials `proximo mint` installs, on PVE and on PBS (`proximo@pbs`
+with Audit on `/` and DatastoreAdmin on one datastore minted `proximo@pbs!probe`, expire 0); PDM and
+PMG are proven as their lab legs run. Proximo refuses nothing here and adds nothing; the ledger row names
+the mint's user and token name. Narrow the user.
 
-`ADVISORY` is not a warning that something broke; it is the accurate description of a
-single-uid box, where the process that reads the token can also replace it. `disarm`
-resolves every ambiguity toward read-only, and refuses loudly in exactly one case — no
-read-only token to restore — where a false `DISARMED` would be worse than an error.
+**Neither verb grants authority the caller did not already have.** A person who can log in
+can log in; a job's pair is files the operator placed. Whether an arm is a real boundary is a
+question of file ownership and of who holds the password, not of software.
 
 PBS and PDM carry their own pair (`PROXIMO_PBS_ARM_SOURCE` / `PROXIMO_PBS_READONLY_SOURCE`,
-the same with `PDM_`): a mutation on a plane is refused unless that plane's served token is
-its own arm source, and PVE's pair never arms another plane. PMG's pair holds credential
+the same with `PDM_`): a mutation on a plane is refused unless that plane's served file holds
+its own arm source's token or its own live ticket, and PVE's pair, or PVE's ticket, never arms
+another plane. PMG's pair holds credential
 files. A target in the registry carries its own `arm_source`; the default box's arm never
 authorizes another box.
 
@@ -260,6 +274,10 @@ Proximo altogether. The honest fix for that case is the same shape as mint-and-r
 **give the exec path its own ssh identity and swap the key, not just the token** — key
 present only while armed, so the authority itself is absent between arms. Proximo does not
 do that for you; it is a deployment posture, and the stronger one.
+
+### PROVE: the mode sidecar
+
+`audit.log.mode` beside the ledger keeps how far a process scanned the chain to learn its mode (keyed, unkeyed, mixed), so the next process reads only what was appended. It is signed with the ledger key: without the key, nothing writes one Proximo accepts. It decides only whether a chain needs migrating, never whether it verifies. Its blind spot: a ledger rewritten on the same inode strictly between the first and the last 4 KiB of what it scanned, at a size no smaller, keeps its old mode answer in every later process (each append carries it forward), until the sidecar is removed or stops verifying, the key changes, or the ledger is rotated. That is tampering, and `audit_verify` catches it. Anything planted at the sidecar's name (a FIFO, a directory, a link) costs a whole read, never a receipt, and no sidecar is written in a ledger directory that is itself a link. With the key, a signed sidecar can claim any mode, and a false one stops receipts until it is removed; holding the key already lets you forge rows.
 
 ### PROVE: an off-box head
 
@@ -344,7 +362,7 @@ configured paths back — a hijacked session shouldn't learn where you put your 
 | **TIER** | A mutation nobody judged | **On**, always: an address with no authored blast-radius tier is refused for mutation, armed or not; 20 are held by sentence | n/a — the record is `tiers.toml`, changed by a release |
 | **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS`) |
 | **CONTAIN** (kill-switch) | Needing to halt *every* mutation immediately, mid-incident, without a redeploy or restart | **Off** | `PROXIMO_CONTAIN_TRIP_PATH` |
-| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` for the message); per plane `PROXIMO_PBS_*` / `PDM_*` / `PMG_*`; per target `arm_source` |
+| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | a person: `proximo-core arm` (the vendor's ticket, two hours); a job: `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` is what `disarm` restores and what rides when a ticket has died); per plane `PROXIMO_PBS_*` / `PDM_*` / `PMG_*`; per target `arm_source` |
 | **FORBID** | An explicitly forbidden address being mutated by an agent that has gone off-script | **Off** | `PROXIMO_FORBID` (case-insensitive substrings of `plane:METHOD /path`) |
 | **RATE** | Blast radius under hijack — unlimited-speed mutation | **Off** | `PROXIMO_RATE_MAX` (+ `PROXIMO_RATE_WINDOW`, default 60 s) |
 | **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK`, `PROXIMO_TAINT_FORBID`, `PROXIMO_TAINT_REQUIRE_CONSENT`, `PROXIMO_TAINT_FENCE` |

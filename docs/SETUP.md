@@ -216,22 +216,29 @@ pveum acl modify /sdn/zones/localnetwork/vmbr0 --users 'proximo@pve' --roles PVE
 Re-running `mint` rotates the token, and the new token needs these grants again. Both rules were
 reported, with reproductions, by kevwillow in issue #100.
 
-### Turning write on and off — `proximo arm` / `proximo disarm`
+### Turning write on and off — `proximo-core arm` / `proximo-core disarm`
 
-Armed means one thing: the token the door serves (`PROXIMO_TOKEN_PATH`) is byte-for-byte the write
-token. The two verbs install one or the other at the served path, atomically, mode 600, and write a
-row to the ledger saying so:
+A person arms by logging in. In a terminal of your own (never an agent's shell passthrough, which
+has no terminal and is refused):
 
 ```bash
-proximo arm       # the write token in; a mutation may now run, if its address carries a tier
-proximo disarm    # the read-only token back
+proximo-core arm                      # password at a silent prompt; the vendor's ticket is served
+proximo-core arm --user proximo@pve   # who logs in; the default is the served token's own user
+proximo-core disarm                   # the read-only token back (needs no secret; any shell)
 ```
 
-`arm` tells you whether the arm is a **real** boundary or only **advisory**: on a single-user box
-the process that reads the token can also replace it, so it says so rather than implying more. The
-stronger pattern keeps no write token at rest at all: mint at arm, revoke at disarm, as root on the
-Proxmox host ([SECURITY.md](../SECURITY.md), "ARM"). A `disarm` that cannot find a read-only token
-to restore refuses loudly, because a reported success that leaves write authority live would be worse.
+`arm` sends the password once on the plane's own wire (`POST /access/ticket`, a second factor when
+the vendor asks), writes the ticket at `PROXIMO_TOKEN_PATH` (atomic, 0600; `--serve PATH` names
+another served file) and records a row naming the user and the hour the ticket dies, never the
+ticket. Armed is read per call from the ticket's own issue time: this product's ticket, for this
+box, under the vendor's two hours. After that it is not armed here and refused there; the wire
+serves the read-only token in its place when one is configured. A login the vendor refuses arms nothing (rc 2) and is
+recorded as refused.
+
+A job with nobody at a keyboard holds a scoped write token instead (`mint`, above), served by
+configuration: `PROXIMO_ARM_SOURCE` names it, `PROXIMO_READONLY_SOURCE` the everyday token, and
+armed is the served file's bytes equalling the write token's. `disarm` refuses the one lie in that
+pair: a read-only source byte-identical to the write token.
 
 PBS and PDM have their own pair (`PROXIMO_PBS_ARM_SOURCE` / `PROXIMO_PBS_READONLY_SOURCE`, the same
 with `PDM_`): a mutation on a plane is refused unless that plane's served token is its own arm

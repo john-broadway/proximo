@@ -36,6 +36,7 @@ from proximo.core import (
     arm,
     consult,
     download,
+    maynever,
     memory,
     rawdoor,
     risk,
@@ -73,6 +74,10 @@ TIERS = frozenset({
 Rule = tuple[frozenset[str], frozenset[str], frozenset[str], bool, str | None]
 _NO_RULE: Rule = (frozenset(), frozenset(), frozenset(), False, None)
 
+#: A Row built by hand (a test, a probe) carries no vendor rule at all, which is not "the vendor
+#: publishes none" (None: root@pam only). The plan says nothing of the vendor's door for it.
+RULE_NOT_CARRIED: Any = object()
+
 
 @dataclass(frozen=True)
 class Row:
@@ -107,6 +112,7 @@ class Row:
     sight: Mapping[str, Any] | None = None      # an empty answer here is judged by what the token holds (sight.toml)
     consult: str | None = None   # the judge the plan consults before the change (consult.toml; proximo.core.consult)
     one_of: Mapping[str, Any] | None = None     # a call must name at least one of these parameters (args.toml)
+    permissions: Any = RULE_NOT_CARRIED         # the vendor's rule verbatim (the may/never map); None = none
 
     @property
     def address(self) -> str:
@@ -157,7 +163,8 @@ def row_of(r: Mapping[str, Any]) -> Row:
                                        "when": MappingProxyType({k: tuple(v) for k, v in r["sight"]["when"].items()})})
                if r["sight"] else None,
                consult=r["consult"],
-               one_of=MappingProxyType({**r["one_of"], "names": tuple(r["one_of"]["names"])}) if r["one_of"] else None)
+               one_of=MappingProxyType({**r["one_of"], "names": tuple(r["one_of"]["names"])}) if r["one_of"] else None,
+               permissions=r["permissions"])
 
 
 @cache
@@ -443,6 +450,11 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         verdict = _net_verdict(row, path, args, cfg, ledger_cfg, verdict, view)
     elif not route_refused:
         verdict = _shell_net_verdict(row, args, path, cfg, ledger_cfg, verdict)
+    # A HELD address is never read for its live state: the plan's answer is the sentence, and a
+    # read of its twin (a login's GET) would dial the vendor for a call that will not run.
+    live = (_live_state(row, args, path, cfg, ledger_cfg, env)
+            if row.access != READ and verdict.needs not in ("arguments", "held") and not route_refused else None)
+    verdict = _under_the_vendors_lock(row, verdict, args, path, cfg, ledger_cfg, live)
     out = {
         "address": row.address, "plane": row.product, "access": row.access, "tier": row.tier,
         "why": row.why, "untrusted": row.untrusted, "channel": row.channel,
@@ -475,12 +487,12 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         out["also"] = {"address": snap.address, "tier": snap.tier, "consent": "covered by this plan's grant",
                        "why": "snapshot=true takes the container's snapshot first; if it does not land, "
                               "the command is not run"}
-    # A HELD address is never read for its live state: the plan's answer is the sentence, and a
-    # read of its twin (a login's GET) would dial the vendor for a call that will not run.
-    if row.access != READ and verdict.needs not in ("arguments", "held") and not route_refused:
-        out.update(_live_state(row, args, path, cfg, ledger_cfg, env))
+    if live is not None:
+        out.update(live)
         if row.consult:
             _plan_consult(row, verdict, out, path, args, cfg, ledger_cfg)
+    # judged on the plan's LAST word: a consult's second look can refuse it again (lens 3s2: taint)
+    out.update(_vendor_door(row, path, args, cfg, ledger_cfg, Verdict(out["allowed"], out["reason"], out["needs"])))
     if row.lane == "download" and verdict.allowed:
         # where the bytes would land; nothing is dialled, and a refused lane learns no path (lens 3)
         try:
@@ -489,6 +501,100 @@ def plan(row: Row, args: dict[str, Any] | None = None, path: str | None = None,
         except ProximoError as exc:
             out["download"] = {"refused": str(exc)}
     return _displayed(out, row)
+
+
+def _vendor_door(row: Row, path: str | None, args: Mapping[str, Any], cfg: wire.Plane | None,
+                 ledger_cfg: Any, verdict: Verdict) -> dict[str, Any]:
+    """`{"vendor_door": ...}`, or nothing: what the VENDOR'S OWN DOOR would answer the served token for this
+    call (the may/never map, core/maynever.py): may, never, filtered, in words or unknown, and why. IT GOVERNS
+    NOTHING. The verdict is `allowed`; this is the vendor's half, said beside it, so a never is named and the
+    call still goes when Proximo allows it (the vendor stays the lock). Every product's door (PMG's role
+    rules answer in words until the served user's role is read). The token is the SERVED one: on an unarmed box that is
+    the read-only token, so a write's answer here is about that token, and the answer says so. Any failure is unknown;
+    the plan never breaks for it. The
+    path's own values win over an argument of the same name (bind decodes them); a template path's slots are
+    never filled from the arguments, and only what the path does not bind is coerced, as execute does. Not
+    asked where the token's holdings change nothing: any refusal but the arm's or consent's (DOOR_ASKED_WHEN;
+    a refused route is `config`)."""
+    if row.permissions is RULE_NOT_CARRIED:
+        return {}
+    if not verdict.allowed and verdict.needs not in DOOR_ASKED_WHEN:
+        return {}       # lens 3s1: a gated lane, an untiered line, no configuration: the holdings change none of it
+    if cfg is not None and cfg.product != row.product:     # lens 3s2: another box's token (not the M05 gate: advice)
+        return {"vendor_door": {"verdict": maynever.UNKNOWN, "token": "none served",
+                                "why": f"the box given is a {rawdoor.echo(str(cfg.product), 8)} box, not this "
+                                       "address's: what a token holds is not read"}}
+    try:            # None is the env box (as `_live_state` reads it), not "no credential"
+        plane = cfg if cfg is not None else wire.Plane.from_env(row.product)
+    except (RuntimeError, ProximoError):
+        return {"vendor_door": {"verdict": maynever.UNKNOWN, "token": "none served",
+                                "why": "no usable credential on this box (none set, or the file floor refused "
+                                       "it): what a token holds is not read"}}
+    try:
+        served = served_label(arm.arm_state(plane))
+    except Exception:  # noqa: BLE001 -- the label is advice; the answer stands without it
+        served = "the served token"
+    try:
+        # lens 3s1/3s2: a template path, or none, is refused by execute, so its slots are not filled from the
+        # arguments ("depends on"); a concrete path's own values are what execute sends for them (lens 3s3)
+        bound = bind(row, path) if path and "{" not in path else {}
+        slots = set(bound) or set(placeholders(row.path))
+        unbound = {k: v for k, v in args.items() if k not in slots}
+    except Exception:  # noqa: BLE001 -- lens 4s3: the path's fault, not the map's; unknown, never a broken plan
+        return {"vendor_door": {"verdict": maynever.UNKNOWN, "token": served,
+                                "why": "the path given does not fit this address: what the vendor would answer "
+                                       "is not asked"}}
+    try:
+        fill = {**coerce_args(row, unbound), **bound}   # lens 3s2: asked as SENT ("0200" goes as 200)
+    except ProximoError:                                # lens 3s3: the argument, not the map
+        return {"vendor_door": {"verdict": maynever.UNKNOWN, "token": served,
+                                "why": "an argument does not read as its published type (execute refuses it): "
+                                       "what the vendor would answer is not asked"}}
+    try:
+        holdings = maynever.Holdings(plane, ledger_cfg)
+        got = maynever.answer(row.permissions, row.product, row.method, fill, holdings.at, wire=row.wire,
+                              who=holdings.user, path_slots=frozenset(placeholders(row.path)))
+    except Exception:  # noqa: BLE001 -- the map is advice: unknown, never a broken plan
+        got = maynever.Answer(maynever.UNKNOWN, "the map could not be read")
+    why = got.why or "the vendor's own rule passes for this token"     # lens 3s1: a may says why too
+    return {"vendor_door": {"verdict": got.verdict, "token": served, "why": why}}   # one shape, every answer
+
+
+#: A refused plan asks the vendor's door only when the refusal is one the token's holdings speak to: the
+#: arm (which token is served) and consent (whether the write goes). Every other refusal dials nothing more.
+DOOR_ASKED_WHEN = ("arm", "consent")
+
+
+def served_label(state: Any) -> str:
+    """Which token the vendor's door answered for, as the arm state read it at plan time. "(the read-only
+    token)" only when the arm said so: a token that matches neither source, or a misconfigured pair, is
+    not called the read-only one (lens 3s1). The state is read before the map reads the token's bytes, so
+    an arm landing between the two can leave the label one state behind; the bytes asked about are still
+    the bytes sent."""
+    reason = str(state.reason)
+    if not state.enforced:
+        return "the served token"
+    if state.armed:
+        return "the served ticket, armed at plan time" if reason.startswith("a ticket") else \
+            "the served token, armed at plan time"
+    if reason.startswith("disarmed"):
+        return "the served token, not armed at plan time (the read-only token)"
+    if reason.startswith("the ticket died"):
+        return "the served credential, not armed at plan time (the ticket died; the read-only token when configured)"
+    return "the served token, not armed at plan time"
+
+
+def with_vendor_door(fitted: dict[str, Any], door: Any, cap: Any) -> dict[str, Any]:
+    """`fitted` with the door's answer in the room left under `cap`: whole, else its verdict alone, else not
+    at all. Advice never costs an answer a byte: every caller that fits a plan again (undo's) fits it
+    WITHOUT the door and calls this after (lens 3s1)."""
+    if not isinstance(door, dict):
+        return fitted
+    for said in (door, {"verdict": door.get("verdict")}):
+        body = json.dumps({**fitted, "vendor_door": said}, separators=(",", ":"), default=str)
+        if rawdoor.fits(len(body.encode()), body, cap=cap):
+            return {**fitted, "vendor_door": said}
+    return fitted
 
 
 _PLAN_ENTRIES = (10, 6, 4, 3, 2, 1)
@@ -529,10 +635,14 @@ def _mutation_arguments(args: dict[str, Any], consent_id: str | None) -> dict[st
     long one as `[N chars sha256:<12 hex>]` in place, and the operator's command with the id."""
     shown: dict[str, Any] = {}
     long_ones: list[str] = []
-    for k, v in list(args.items())[:NAMES_SHOWN]:
+    # THE VENDOR'S LOCK IS SHOWN WHOLE, AND FIRST: a PBS or PDM digest is 64 characters, over the short-value
+    # cut, and a model that replayed the placeholder sent it to the vendor as the digest (lens, 2026-11-05).
+    names = (["digest"] if "digest" in args else []) + [k for k in args if k != "digest"]
+    for k in names[:NAMES_SHOWN]:
+        v = args[k]
         key = rawdoor.echo(str(k), 64)
         text = v if isinstance(v, str) else json.dumps(v, separators=(",", ":"), default=str)
-        if v is None or isinstance(v, (bool, int, float)) or len(text) <= SHORT_VALUE:
+        if v is None or isinstance(v, (bool, int, float)) or len(text) <= SHORT_VALUE or k == "digest":
             shown[key] = rawdoor.plain_deep(v)
         else:
             shown[key] = f"[{len(text)} chars sha256:{rawdoor.fingerprint(text)}]"
@@ -555,6 +665,9 @@ def _displayed(out: dict[str, Any], row: Row | None = None) -> dict[str, Any]:
     are not echoed back; the operator's whole view is `proximo-core consent show`."""
     if rawdoor.operator_view():
         return out
+    if "vendor_door" in out:        # advice rides only in the room left: it never costs the plan a byte
+        fitted = _displayed({k: v for k, v in out.items() if k != "vendor_door"}, row)
+        return with_vendor_door(fitted, out["vendor_door"], rawdoor.plan_cap())
     cap = rawdoor.plan_cap()
     mutation = row is not None and row.access != READ
     base = out
@@ -635,7 +748,12 @@ def _plan_consult(row: Row, verdict: Verdict, out: dict[str, Any], path: str | N
         # marked the session before it failed.
         again = govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=_has_api_net(row))
         marked_here = not marked_before and _marked(ledger_cfg)
-        if not again.allowed and (verdict.allowed, verdict.needs) != (again.allowed, again.needs):
+        # Only a verdict govern itself could give back is replaced. The plan's own refusal (a default node it
+        # cannot use: needs config) is one govern never sees, so its second answer is about another call; and
+        # a refusal govern makes after the arm (tier, contain, forbid, taint) is judged the same way again.
+        # The plan's refusal stands, and arming is never named for a call arming cannot open (lens 4s3).
+        judged_again = verdict.allowed or verdict.needs in ("arm", "consent")
+        if judged_again and not again.allowed and (verdict.allowed, verdict.needs) != (again.allowed, again.needs):
             out.update(allowed=False, needs=again.needs,
                        reason=f"{again.reason} ({_why_again(again.needs, marked_here, 'plan')})")
         elif (wall := _taint_wall(row, path, args, ledger_cfg)) is not None and out.get("needs") != wall.needs:
@@ -805,6 +923,36 @@ def _read_of(row: Row) -> tuple[Row | None, str | None, str | None, str | None]:
     if row.state:
         return t[(row.product, "GET", row.state)], row.state, row.path.rpartition("/")[2], None
     return None, None, None, f"{row.product} publishes no GET {row.path}"
+
+
+def _vendor_lock(row: Row, args: Mapping[str, Any], record: Any) -> str | None:
+    """The digest the vendor's record carries, when this write accepts one and the caller sent none.
+
+    Proxmox publishes a `digest` on a config record and refuses a write at that path whose digest is
+    not the record's ("detected modified configuration file"): the vendor is the lock. Proximo only
+    carries the value from the read to the write; the caller's own digest always wins, and a record
+    the door could not show whole (over the cap, fenced, a collection, no twin) lends none. Nothing
+    is invented where the vendor publishes no such parameter."""
+    if "digest" not in row.params or "digest" in args or not isinstance(record, dict):
+        return None
+    value = record.get("digest")
+    return value if isinstance(value, str) and value else None
+
+
+def _under_the_vendors_lock(row: Row, verdict: Verdict, args: dict[str, Any], path: str | None,
+                            cfg: wire.Plane | None, ledger_cfg: Any, live: Mapping[str, Any] | None) -> Verdict:
+    """THE VENDOR'S LOCK RIDES AS AN ARGUMENT (2026-11-05). The record's digest the plan's read just
+    showed is what the call will send, so the consent id, a hash over the arguments, binds the
+    operator's approval to THIS version of the record, and `consent show` recomputes the same id from
+    the same arguments. `args` is the plan's own copy and gains the key here. The verdict is then
+    GOVERNED AGAIN over the filled arguments (pure, like the first time): a verdict judged on the
+    digest-less id and shown with the locked one named one grant in its reason and another in
+    `consent_id` (lens, 2026-11-05). A row that reaches the read passed its argument, route and net
+    checks already, and no row with a net publishes a digest, so `govern`'s answer is the plan's."""
+    if live is None or (lock := _vendor_lock(row, args, live.get("current"))) is None:
+        return verdict
+    args["digest"] = lock
+    return govern(row, cfg=cfg, path=path, args=args, ledger_cfg=ledger_cfg, consent_covered=_has_api_net(row))
 
 
 def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plane | None,
@@ -1364,7 +1512,8 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
         # the vendor's words (lens 7: 1,041 tok), and the default node is the operator's: all go in RAW, and
         # the envelope says them from one purse with the path (lens 9: four bounded fields, 784 tok)
         return _envelope(row, called, data, fields, rawdoor.evaluation_cap() if evaluating else None, args,
-                         {**seen.get("envelope", {}), **(note or {})}, task=task or None, node=node or None)
+                         {**seen.get("envelope", {}), **(note or {})}, task=task or None, node=node or None,
+                         evaluating=evaluating)
 
     # ---- a MUTATION: spend, capture, pre-record, execute, close ---------------------------
     # BUILT BEFORE ANYTHING IS SPENT, and a build that fails is a receipted refusal. Building
@@ -1390,6 +1539,10 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # a taint marker that cannot be written refuses HERE, with nothing spent
     _taint_before_the_wire(row, ledger_cfg, called, remote, mutation=True)
     before = _read_back(row, client, called, ledger_cfg, remote, view, net_of is not None)
+    if before is not None and (lock := _vendor_lock(row, args, before.get("before"))) is not None:
+        # The consent id was judged on `submitted`, above; a caller that sent no digest (consent inert, or
+        # a plan that could not read the record) still writes under the vendor's lock as of this read-back.
+        args["digest"] = lock
     give_back = _spend_gates(row, verdict, called, cfg, ledger_cfg, remote, view, net_of is not None, rate_prepaid)
     intent = intent_id(called)
     # UNDO: read back what the vendor publishes about this address BEFORE changing it. Where
@@ -1541,11 +1694,26 @@ def _read_back(row: Row, client: Any, called: str, ledger_cfg: Any, remote: str 
     except Exception as exc:
         if not row.creates:
             reason = (f"undo unavailable: the read-back {twin.address} the vendor publishes could "
-                      f"not be taken ({type(exc).__name__}); the mutation was not run")
+                      f"not be taken ({_readback_why(exc)}); the mutation was not run")
             _record(ledger_cfg, "core.refuse", row, outcome="refused",
                     detail={"reason": reason, "needs": "undo", **wire_error(exc)}, called=called, remote=remote)
             raise ProximoError(reason) from exc
         return {"absent": True, "read_back": wire_error(exc)}          # its own key: never a record's value
+
+
+def _readback_why(exc: BaseException) -> str:
+    """Why the read-back failed, in words: the vendor's status when it answered. An armed write token
+    whose lease (its own expire) ran out answered 401 on every read-back and the refusal said only
+    "HTTPStatusError" (peer report 2026-11-02: 11 writes refused, the cause hidden)."""
+    status = wire_error(exc).get("status")
+    if status == 401:
+        return ("401: the vendor did not accept the token (an expired lease, a wrong or revoked secret); "
+                "a write token's lease is its expire, check that first")
+    if status == 403:
+        return "403: the token lacks the privilege to read it"
+    if status is not None:
+        return f"the vendor answered {status}"
+    return type(exc).__name__
 
 
 def _undo_before(row: Row, args: dict[str, Any], client: Any, called: str, cfg: Any, ledger_cfg: Any,
@@ -2319,7 +2487,7 @@ def ledgered(value: Any, name: str | None = None,
 def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
               cap: rawdoor.Cap | None = None, given: dict[str, Any] | None = None,
               beside: dict[str, Any] | None = None, task: dict[str, Any] | None = None,
-              node: str | None = None) -> dict[str, Any]:
+              node: str | None = None, evaluating: bool = False) -> dict[str, Any]:
     # By the address's OWN line when it has one, else the READ's, whatever the verb: a mutation
     # that echoes its resource (PBS's PUT of an OpenID realm returns the config, client-key
     # included) carries what its read carries; a token mint answers a secret its read never
@@ -2329,7 +2497,7 @@ def _envelope(row: Row, called: str, data: Any, fields: str | None = None,
     data, withheld = withhold(data, row.secret)
     total = len(data) if isinstance(data, list) else None
     if row.access == READ:
-        data = project(data, fields)
+        data = project(data, fields, record=not evaluating, named=not row.untrusted)
     fenced = row.untrusted and spine.fence_on()
     def headed(purse: tuple[int, int]) -> dict[str, Any]:
         path, said_task, said_node = _echoes(called, task, node, purse)
@@ -2486,7 +2654,8 @@ def _bounded_data(row: Row, data: Any, fields: str | None, room: rawdoor.Cap, wh
         # fields (the value, its id) stay whole; its objects and lists beside them are capped.
         data, over = _bearer_split(data, room)
     else:
-        over = rawdoor.bounded(data, room)
+        # a READ's record names its narrowing: fields= picks keys from one record too (peer report 2026-11-02)
+        over = rawdoor.bounded(data, room, object_next=_OBJECT_NEXT if row.access == READ else None)
     if over is not None and "cap" in over:
         over["cap"] = whole.bytes            # the cap the operator knows, not what is left after the header
     if over is not None and "returned" in over and fields is None and not bearer:
@@ -2891,11 +3060,68 @@ def lean(row: dict) -> dict:
     return kept or row
 
 
-def project(data: Any, fields: str | None) -> Any:
+_OBJECT_NEXT = "too big: name the keys you want with fields=, or read a child path"
+
+
+def _carries(names: set[str], named: bool) -> str:
+    """The keys a `fields=` refusal lists. A refusal is the door's OWN words, the same channel as a
+    cut's `next`, so it keeps `_fewer`'s law: on an untrusted address (guest-authored keys) no name
+    rides at all, only their count, fence or no fence (lens 2 on 10fec53). On a trusted one each name
+    is quoted and bounded, in a byte budget under the refusal ceiling, the count tail always kept
+    (lens 1: 20 keys of 10 KB made a 153 KB refusal; lens 2: a 1.3 KB list the door's cut split)."""
+    if not named:
+        return f"{len(names)} keys (the vendor's words on an untrusted address, not echoed; fields='all' shows them)"
+    shown: list[str] = []
+    used = 0
+    for name in sorted(names):
+        item = _said(name)
+        if used + len(item.encode()) + 2 > _CARRIES_BYTES:
+            break
+        shown.append(item)
+        used += len(item.encode()) + 2
+    rest = len(names) - len(shown)
+    return ", ".join(shown) + (f" (and {rest} more)" if rest else "")
+
+
+def _said(name: str) -> str:
+    """A name in a `fields=` refusal, the asked one or a key: escaped and bounded in BYTES, then quoted.
+    `rawdoor.quote` bounds characters and its repr escapes again, so 40 tag characters the caller typed
+    cost 400 B before the key list began (lens 3 on f585514: 760 B, the door's cut took the count)."""
+    # THE FENCE FIRST: the backslash, the quote and the line breaks escaped BEFORE the byte cut, so the
+    # result never holds a bare quote or a raw newline. Hand-quoting with none of them escaped let a key
+    # "a', 'b" read as two names and a newline forge a second refusal line (lens 4 + security review,
+    # 3cc63bd). A cut through an escape pair is followed by echo's mark, never by the closing quote.
+    fenced = name.translate(_SAID_ESCAPES)
+    return "'" + rawdoor.echo_bytes(fenced, _CARRIES_KEY_BYTES, mark_of=name) + "'"
+
+
+_SAID_ESCAPES = str.maketrans({"\\": "\\\\", "'": "\\'", "\n": "\\n", "\r": "\\r", "\t": "\\t"})
+
+
+#: a `fields=` refusal's key list: bytes in all, bytes a name (the refusal ceiling is 512 and the MCP
+#: door spends about 35 of it on its own head: the fixed words + the asked name + this list fit 470)
+_CARRIES_BYTES, _CARRIES_KEY_BYTES = 280, 64
+
+
+def project(data: Any, fields: str | None, *, record: bool = True, named: bool = True) -> Any:
     """Row by row: a record (a dict) is projected, anything else in the list rides through as
-    it came (lens 2026-09-27: one stray None used to switch lean OFF for the whole list)."""
+    it came (lens 2026-09-27: one stray None used to switch lean OFF for the whole list). ONE record
+    (a node's status) is projected by the keys NAMED, and only then: left out, it comes as the vendor
+    sent it (peer report 2026-11-02: fields= on one record was ignored, so node swap was unreachable).
+    `record=False` is the door's own read for a verdict (diagnose): a record where it wanted rows rides
+    through to its shape check, read once (lens 1 on de72c12). `named=False` is an untrusted
+    address: the keys are counted, never named."""
     if fields is not None and fields.strip().lower() == "all":
         return data
+    if isinstance(data, dict) and fields is not None and record:
+        want = [f.strip() for f in fields.split(",") if f.strip()]
+        if not want:
+            raise ProximoError("fields: give names ('a,b'), 'all', or leave it out for the whole record")
+        for name in want:
+            if name not in data:
+                raise ProximoError(f"fields: no key {_said(name)} in this record; it carries: "
+                                   f"{_carries(set(data), named)}")
+        return {k: data[k] for k in want}
     if not isinstance(data, list):
         return data
     records = [r for r in data if isinstance(r, dict)]
@@ -2909,10 +3135,8 @@ def project(data: Any, fields: str | None) -> Any:
     have = {k for r in records for k in r}
     for name in want:
         if name not in have:
-            names = sorted(have)
-            more = f" (and {len(names) - 15} more)" if len(names) > 15 else ""
-            raise ProximoError(f"fields: no row carries {rawdoor.quote(name, 40)}; the rows carry: "
-                               f"{', '.join(names[:15])}{more}")
+            raise ProximoError(f"fields: no row carries {_said(name)}; the rows carry: "
+                               f"{_carries(have, named)}")
     return [{k: r[k] for k in want if k in r} if isinstance(r, dict) else r for r in data]
 
 

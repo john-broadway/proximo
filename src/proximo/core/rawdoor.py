@@ -479,14 +479,16 @@ def echo(text: str, limit: int = ECHO_LIMIT) -> str:
     return "".join(kept) + _mark(text)
 
 
-def echo_bytes(text: str, max_bytes: int) -> str:
+def echo_bytes(text: str, max_bytes: int, mark_of: str | None = None) -> str:
     """`echo` bounded in ENCODED BYTES, mark included: the whole result is at most `max_bytes` UTF-8
-    bytes whatever the characters (an escape is ten bytes for one character, a CJK one three)."""
+    bytes whatever the characters (an escape is ten bytes for one character, a CJK one three).
+    `mark_of`: the value the mark counts and fingerprints when `text` is that value already escaped
+    by its caller (engine._said), so the mark still names the whole of the value, not its rendering."""
     units = _shown(text)
     whole = "".join(units)
     if len(whole.encode()) <= max_bytes:
         return whole
-    mark = _mark(text)
+    mark = _mark(text if mark_of is None else mark_of)
     budget = max_bytes - len(mark.encode())
     kept, used = [], 0
     for u in units:
@@ -620,7 +622,7 @@ def _note() -> str:
     return "over the answer cap; see cap_problem" if answer_problem() else ""
 
 
-def bounded(data: object, cap: Cap | None = None) -> dict | None:
+def bounded(data: object, cap: Cap | None = None, object_next: str | None = None) -> dict | None:
     """None when `data` fits the cap; else what stands in for it, and THAT fits the cap too (its
     own keys are measured). ONE copy, both doors: a body over the cap is reported, never handed back
     as a silent prefix and never whole. A LIST is cut by rows, with `total` and `returned` beside
@@ -655,7 +657,7 @@ def bounded(data: object, cap: Cap | None = None) -> dict | None:
         return head
     if isinstance(data, dict):
         head.update(keys_total=len(data), keys_returned=0, keys={},
-                    next="too big: read a child path or narrow with args")
+                    next=object_next or "too big: read a child path or narrow with args")
         room = cap.minus(*_cost(head), 64)
         keys, used, spent = {}, 2, 2
         for k, v in data.items():

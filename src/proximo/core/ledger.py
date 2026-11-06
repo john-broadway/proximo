@@ -47,6 +47,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import tempfile
 import threading
 import warnings
@@ -199,13 +200,132 @@ def _algs(path: str) -> list[tuple[int, str]]:
 _EOL = re.compile(rb"[\r\n]")
 _TAIL_BLOCK = 64 * 1024
 
-#: path -> ((st_dev, st_ino, a hash of the first 4 KiB), bytes scanned, kinds seen). WHAT detect_mode HAS READ,
-#: NOT WHAT IT TRUSTS: the file is append-only, so the bytes already scanned cannot change their kinds; a new
-#: inode (a rotation), a smaller file, or a different head (a file deleted and made again, whose inode number
-#: ext4 hands straight back) is read again whole. Per process: a CLI call still reads its ledger once.
+#: path -> (the scanned region's identity, bytes scanned, kinds seen). WHAT detect_mode HAS READ, NOT WHAT IT
+#: TRUSTS: the file is append-only, so the bytes already scanned cannot change their kinds. The identity is
+#: (st_dev, st_ino, a hash of the scanned region's first 4 KiB, a hash of its last 4 KiB): a new inode (a
+#: rotation), a smaller file, a different head (a file deleted and made again, whose inode number ext4 hands
+#: straight back) or a different tail (a file cut short and grown back on the same inode; lens 11) is read
+#: again whole.
 _HEAD_BYTES = 4096
-_MODE_SEEN: dict[str, tuple[tuple[int, int, str], int, frozenset[str]]] = {}
+_MODE_SEEN: dict[str, tuple[tuple[int, int, str, str], int, frozenset[str]]] = {}
 _MODE_LOCK = threading.Lock()
+#: THE SIDECAR (2026-11-01): what a process scanned, kept beside the ledger and signed with the ledger's own
+#: key, so the NEXT process starts where it ended. A cold `proximo-core` call read the whole ledger to learn
+#: the chain's mode: 438 ms on John's 46,234-row ledger, and 421 ms on a copy of it taken minutes later
+#: (46,236 rows), on one machine, 2026-11-01. Without the key nothing can write a
+#: sidecar this accepts, the same reason nothing can write a row `verify()` accepts.
+_SIDECAR = ".mode"
+_SIDECAR_V = 1
+_SIDECAR_MAX = 4096
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+def _region_id(f: Any, st: os.stat_result, done: int) -> tuple[int, int, str, str]:
+    """(dev, inode, sha256 of the first and of the last min(done, 4 KiB) of the scanned region)."""
+    n = min(done, _HEAD_BYTES)
+    f.seek(0)
+    head = hashlib.sha256(f.read(n)).hexdigest()
+    f.seek(done - n)
+    tail = hashlib.sha256(f.read(n)).hexdigest()
+    return st.st_dev, st.st_ino, head, tail
+
+
+def _sidecar_mac(key: bytes, body: dict[str, Any]) -> str:
+    msg = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(key, b"proximo-ledger-mode\0" + msg, hashlib.sha256).hexdigest()
+
+
+def _sidecar_dir_ok(path: str) -> bool:
+    """The sidecar is used only in a ledger directory that is not itself a link, the same test `AuditLedger`
+    applies: `detect_mode` runs before it, so a write here would land through the link first (lens 13). A link
+    higher up the path is outside both checks, as it was before (lens 14)."""
+    directory = os.path.dirname(path)
+    return not (directory and os.path.islink(directory))
+
+
+def _sidecar_read(path: str, key: bytes) -> tuple[tuple[int, int, str, str], int, frozenset[str]] | None:
+    """`_sidecar_parse`, and NOTHING it meets raises out of here: four lens rounds each found one more way a
+    file at this name could raise (a FIFO, a directory, a signed Infinity, a non-ASCII mac). Whatever is
+    there, the worst it costs is a whole read; that is now a property of this function, not of each check."""
+    try:
+        return _sidecar_parse(path, key)
+    except Exception:          # noqa: BLE001 -- a sidecar is a cache: any failure in reading it is a whole read
+        return None
+
+
+def _sidecar_parse(path: str, key: bytes) -> tuple[tuple[int, int, str, str], int, frozenset[str]] | None:
+    """The sidecar's (identity, bytes scanned, kinds) when the key signed it, else None (read whole). Only a
+    regular file is read, never blocking: a FIFO planted at the name hung every keyed open, a directory raised
+    out of it (lens 13). Whatever is there, the worst it costs is a whole read."""
+    if not _sidecar_dir_ok(path):
+        return None
+    try:
+        fd = os.open(path + _SIDECAR, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        raw = os.read(fd, _SIDECAR_MAX + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    try:
+        body = json.loads(raw.decode("utf-8")) if len(raw) <= _SIDECAR_MAX else None
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    # THE MAC IS THE SHAPE THE WRITER MAKES, checked before it is compared (lens 16: compare_digest RAISES on a
+    # non-ASCII str, so a planted {"mac":"é"}, no key needed, stopped every receipt)
+    if not isinstance(body, dict) or not isinstance(mac := body.pop("mac", None), str) \
+            or not _HEX64.fullmatch(mac):
+        return None
+    if not hmac.compare_digest(_sidecar_mac(key, body), mac):
+        return None
+    # EVERY VALUE IS TYPED BEFORE IT IS USED, nothing is converted (lens 15: a signed "done": Infinity raised
+    # OverflowError out of int() on every keyed open): a field of any other shape costs a whole read.
+    dev, ino, head, tail, done, kinds = (body.get(k) for k in ("dev", "ino", "head", "tail", "done", "kinds"))
+    v = body.get("v")
+    if isinstance(v, bool) or not isinstance(v, int) or v != _SIDECAR_V:
+        return None
+    if isinstance(dev, bool) or isinstance(ino, bool) or isinstance(done, bool):
+        return None
+    if not (isinstance(dev, int) and isinstance(ino, int) and isinstance(done, int) and done >= 0):
+        return None
+    if not (isinstance(head, str) and isinstance(tail, str) and isinstance(kinds, list)
+            and all(isinstance(k, str) for k in kinds)):
+        return None
+    if done == 0 and kinds:
+        return None           # nothing scanned saw nothing: a point of 0 that names a kind is a lie (lens 18)
+    return (dev, ino, head, tail), done, frozenset(kinds)
+
+
+def _sidecar_write(path: str, key: bytes, ident: tuple[int, int, str, str], done: int,
+                   kinds: frozenset[str]) -> None:
+    """Keep what was scanned, atomically (a temp file in the ledger's directory, then a rename over the
+    sidecar, never through a link). A sidecar that cannot be written costs the next process a full read,
+    never an answer: nothing here raises."""
+    if not _sidecar_dir_ok(path):
+        return
+    dev, ino, head, tail = ident
+    body: dict[str, Any] = {"v": _SIDECAR_V, "dev": dev, "ino": ino, "head": head, "tail": tail,
+                            "done": done, "kinds": sorted(kinds)}
+    body["mac"] = _sidecar_mac(key, body)
+    tmp = None
+    try:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=os.path.basename(path) + ".mode.")
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            out.write(json.dumps(body, separators=(",", ":")))
+        os.replace(tmp, path + _SIDECAR)
+        tmp = None
+    except (OSError, TypeError, ValueError):
+        pass
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def _line_alg(raw: bytes) -> str | None:
@@ -217,22 +337,30 @@ def _line_alg(raw: bytes) -> str | None:
         obj = json.loads(line)
     except json.JSONDecodeError:
         return None
-    return (obj.get("alg") or "sha256") if isinstance(obj, dict) else None
+    if not isinstance(obj, dict):
+        return None
+    alg = obj.get("alg") or "sha256"
+    # A KIND IS ALWAYS TEXT (lens 14): a bypass row with "alg": 5 or true put a number into the kinds, and
+    # sorting them for the sidecar raised on every keyed open, the migration that would clear it included.
+    # Any alg that is not a string is a kind of its own, never the keyed one: the chain reads as mixed (or
+    # unkeyed, with no keyed row beside it). As the chain's last row it is sealed, as main sealed a number or a
+    # bool; with keyed rows after it, the seal refuses, as main refused (lens 16). Main crashed on a list or a
+    # mapping (unhashable) whatever came after.
+    return alg if isinstance(alg, str) else f"not-a-string:{type(alg).__name__}"
 
 
-def _kinds_seen(path: str) -> frozenset[str]:
-    """Every kind of row the WHOLE file holds (`_algs`' answer as a set), reading only the bytes appended
-    since this process last looked. 2026-10-31: `open_ledger` runs before every receipt and read the whole
-    ledger to say it: on 0.50.1 a read cost 3.2 ms on a new ledger and 486 ms at 37,632 rows (no profiler).
-    WHAT IT ASSUMES IS WHAT THE LEDGER IS, append-only: a file changed in place past its first 4 KiB, and no
-    smaller than when this process last looked (a row rewritten, or the file cut short and grown back on the
-    same inode; lens 10 and 11), is not seen here until the process restarts. Proximo only ever replaces a
-    ledger by rename (a new inode); anything else is tampering, and `verify()` is what names it. This only
-    decides whether a chain needs migrating."""
-    def head_id(f: Any, st: os.stat_result, n: int) -> tuple[int, int, str]:
-        f.seek(0)
-        return st.st_dev, st.st_ino, hashlib.sha256(f.read(min(n, _HEAD_BYTES))).hexdigest()
-
+def _kinds_seen(path: str, key: bytes | None = None) -> frozenset[str]:
+    """Every kind of row the WHOLE file holds (`_algs`' answer as a set), reading only the bytes appended since
+    the last look: this process's, else (given the key) the signed sidecar's. 2026-10-31: `open_ledger` runs
+    before every receipt and read the whole ledger to say it: on 0.50.1 a read cost 3.2 ms on a new ledger and
+    486 ms at 37,632 rows (no profiler, one machine).
+    WHAT IT ASSUMES IS WHAT THE LEDGER IS, append-only: a file changed strictly between the first and the
+    last 4 KiB of what was scanned, at a size no smaller, on the same inode, keeps its old answer here, in
+    this process and (through the sidecar, which each append carries forward) in every later one, until the
+    sidecar is removed or stops verifying, the key changes, or the ledger is rotated (lens 13, 14). A process
+    that has already looked shares that answer with a keyless caller in it (doctor after a receipted read).
+    Proximo only ever replaces a ledger by rename (a new inode); anything else is tampering, and `verify()`
+    is what names it. This only decides whether a chain needs migrating."""
     with _MODE_LOCK:
         try:
             f = open(path, "rb")    # noqa: SIM115 -- closed by the with below
@@ -241,25 +369,54 @@ def _kinds_seen(path: str) -> frozenset[str]:
             return frozenset()
         with f:
             st = os.fstat(f.fileno())
-            done, kinds = 0, frozenset()
-            seen = _MODE_SEEN.get(path)
-            # the head checked is the part already scanned (at most 4 KiB): in an append-only file those
-            # bytes never change, so a file that grew past them is still the same file
-            if seen is not None and st.st_size >= seen[1] and seen[0] == head_id(f, st, seen[1]):
-                _, done, kinds = seen
-            f.seek(done)
-            chunk = f.read(st.st_size - done)
-            # only whole lines are cached: the last ends at the last line end; a partial one is read (the
-            # forward walk reads an unterminated last line too) but not kept, since its end is still coming
-            ends = [m.end() for m in _EOL.finditer(chunk)]
-            cut = ends[-1] if ends else 0
-            kinds = kinds | {a for raw in _EOL.split(chunk[:cut]) if (a := _line_alg(raw)) is not None}
-            _MODE_SEEN[path] = (head_id(f, st, done + cut), done + cut, kinds)
-        tail = _line_alg(chunk[cut:])
+            def scan(start: int) -> tuple[int, frozenset[str], str | None]:
+                # only whole lines are cached: the last ends at the last line end; a partial one is read (the
+                # forward walk reads an unterminated last line too) but not kept, since its end is still coming
+                f.seek(start)
+                chunk = f.read(st.st_size - start)
+                ends = [m.end() for m in _EOL.finditer(chunk)]
+                cut = ends[-1] if ends else 0
+                more = frozenset(a for raw in _EOL.split(chunk[:cut]) if (a := _line_alg(raw)) is not None)
+                return cut, more, _line_alg(chunk[cut:])
+
+            def at_line_start(n: int) -> bool:
+                if n == 0:
+                    return True
+                f.seek(n - 1)
+                return f.read(1) in (b"\n", b"\r")
+
+            done, kinds, kept = 0, frozenset(), False
+            side = _sidecar_read(path, key) if key is not None else None
+            for seen in (_MODE_SEEN.get(path), side):
+                try:
+                    fits = seen is not None and st.st_size >= seen[1] and at_line_start(seen[1]) \
+                        and seen[0] == _region_id(f, st, seen[1])
+                except Exception:      # noqa: BLE001 -- a remembered point that cannot be checked is not used
+                    fits = False
+                if fits and seen is not None:
+                    _, done, kinds = seen
+                    kept = seen == side       # the sidecar already says this: nothing to rewrite
+                    break
+            # NEVER WORSE THAN THE WHOLE READ (lens 16): anything that fails reading on from a remembered point
+            # (a signed `done` inside a multibyte character raised UnicodeDecodeError) is read again from byte 0,
+            # which is exactly what main does, and fails, if it fails, exactly as main does
+            try:
+                cut, more, tail = scan(done)
+            except Exception:          # noqa: BLE001 -- the fallback is the whole read, re-raising main's error
+                if not done:
+                    raise
+                done, kinds, kept = 0, frozenset(), False
+                cut, more, tail = scan(0)
+            moved = cut > 0 or not kept           # rewrite only what the sidecar does not already say (lens 13)
+            kinds = kinds | more
+            ident = _region_id(f, st, done + cut)
+            _MODE_SEEN[path] = (ident, done + cut, kinds)
+            if key is not None and moved:
+                _sidecar_write(path, key, ident, done + cut, kinds)
         return kinds | ({tail} if tail is not None else set())
 
 
-def detect_mode(path: str) -> str:
+def detect_mode(path: str, key: bytes | None = None) -> str:
     """Inspect an on-disk ledger's chaining mode without trusting it for verification.
 
     Returns "empty" (absent / no parseable entries), "keyed" (every entry is HMAC-keyed),
@@ -271,7 +428,7 @@ def detect_mode(path: str) -> str:
     rows with 25 unkeyed rows appended by a bypass -- "unkeyed", and the custody row written
     from that answer said `prev_alg: sha256` about a file that was 99.7% HMAC.
     """
-    kinds = _kinds_seen(path)
+    kinds = _kinds_seen(path, key)
     if not kinds:
         return "empty"
     if kinds == {_KEY_ALG}:
@@ -305,7 +462,7 @@ def seal_and_rotate(log_path: str, key: bytes) -> tuple[str, str]:
               opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW, 0o600)) as lf:
         fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
         try:
-            mode = detect_mode(log_path)
+            mode = detect_mode(log_path, key)
             if mode not in ("unkeyed", "mixed"):
                 return "", AuditLedger(log_path, key=key).head()
             # A MIXED chain (keyed rows, then unkeyed rows from a bypass) has an unkeyed TAIL,
@@ -752,7 +909,7 @@ def open_ledger(cfg: Any) -> AuditLedger:
             f"cannot create audit key at {key_path}: {e}; the ledger is keyed, always: "
             "fix the key path (PROXIMO_AUDIT_KEY_PATH) or its directory's permissions"
         ) from e
-    mode = detect_mode(log)
+    mode = detect_mode(log, key)
     if mode in ("unkeyed", "mixed"):
         archive_path, sealed_head = seal_and_rotate(log, key)
         ledger = AuditLedger(log, key=key)

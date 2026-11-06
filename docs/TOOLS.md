@@ -1,6 +1,6 @@
 # Proximo — tool reference
 
-The complete external interface of Proximo **v0.51.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
+The complete external interface of Proximo **v0.52.0**: every MCP tool it exposes, with its inputs. This file is generated from the live server's `tools/list` output (via `lhm.plugin.json`) by [`scripts/gen_tools_doc.py`](../scripts/gen_tools_doc.py) — do not hand-edit.
 
 **Interface conventions.** Proximo speaks the [Model Context Protocol](https://modelcontextprotocol.io); each tool is also self-describing at runtime over the standard `tools/list` method. **Inputs** are the typed parameters listed per tool below. **Output** is a structured JSON result: reads return the requested data; `proximo_call` without `confirm=true` returns the **PLAN** (the verdict, the consent id, the target as it stands, the change) rather than acting, and every call is recorded in the tamper-evident audit ledger. The six tools are always registered; `target` appears on `proximo_plan`, `proximo_read` and `proximo_call` only where `PROXIMO_TARGETS` configures a registry.
 
@@ -69,7 +69,7 @@ READ-ONLY, mutates nothing: the governed verdict (armed, tier, consent) for one 
 
 #### `proximo_read`
 
-READ-ONLY: run a GET by path or words (no leading slash). args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.
+READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

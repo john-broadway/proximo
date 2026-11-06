@@ -455,6 +455,18 @@ def test_the_mcp_door_diagnoses_through_proximo_read_with_diagnose_true(box, mon
         door.read("pve", f"{NODE}/storage", cfg=box, diagnose=True)
 
 
+def test_a_path_with_no_diagnosis_is_said_as_that_never_as_an_unconfigured_plane(box, monkeypatch):
+    """A configured plane, a path nobody wrote a battery for: the refusal LEADS with that. It once
+    came back as "pve is not configured on this Proximo (no diagnosis is authored ...)": ProximoError
+    is a RuntimeError, and the door's catch for a missing env var caught it too (peer report,
+    2026-11-02). `match=` searches, so it passed on the wrapped text; this holds the lead."""
+    _node_wire(monkeypatch)
+    with pytest.raises(ProximoError) as got:
+        door.read("pve", f"{NODE}/storage", cfg=box, diagnose=True)
+    assert str(got.value).startswith("no diagnosis is authored"), str(got.value)
+    assert "not configured" not in str(got.value)
+
+
 def test_the_mcp_door_rephrases_the_vendors_failure_of_the_whole_plane_in_its_own_words(monkeypatch):
     """A plane with no credential: the RuntimeError inside a tool body is what the SDK sanitizes
     to a bare tool name (the door's `_execute` note); the diagnose path says it the same way."""
@@ -681,3 +693,13 @@ def test_a_diagnosis_echoes_its_called_path_at_what_it_costs(box, monkeypatch):
     out = diagnose.run("pve", "/nodes/" + "😀" * 80, cfg=box)
     sent = json.dumps(out["called_path"])[1:-1]
     assert "sha256:" in sent and len(sent) <= 160 and rawdoor.estimate_tokens(sent) <= 150
+
+
+def test_a_rows_probe_answered_a_record_is_read_once(box, monkeypatch):
+    """Lens 1 on de72c12: fields= now projects ONE record too, so a rows probe answered a dict was
+    refused by the projection and read again raw: two vendor reads, two receipts, for one probe. The
+    door's own reads for a verdict (`evaluating`) never project a record: one read, as before."""
+    w = _wire(monkeypatch, {"/status": FX["node_status"], "/storage": {"errors": "boom"}, "/tasks": []})
+    out = diagnose.run("pve", NODE, cfg=box)
+    assert [c for c in w.calls if c[1].endswith("/storage")].__len__() == 1, w.calls
+    assert out["battery"]["storage"]["error"]["why"] == "the read answered a record, not the list the battery expects"

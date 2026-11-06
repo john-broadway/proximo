@@ -173,9 +173,21 @@ def _install_atomic(src: str, dst: str) -> None:
     """Copy `src` over `dst` by temp + rename in `dst`'s own directory, mode 600: a door reading the
     token per call sees the old bytes or the new ones, never a partial write; the source is read
     whole before the destination is touched, so an unreadable source leaves no truncated token."""
-    import tempfile  # noqa: PLC0415
     with open(src, "rb") as f:
         data = f.read()
+    tmp = _stage(data, dst)
+    try:
+        os.replace(tmp, dst)
+    except BaseException:
+        _discard(tmp)       # lens 3 on e17e8b6: the rename sat outside the cleanup and left the bytes
+        raise
+
+
+def _stage(data: bytes, dst: str) -> str:
+    """`data` in a new mode-600 temp file in `dst`'s own directory (made, private, when missing), its
+    path returned for a rename over `dst`, or for `arm` to check first. A failure leaves no staged file (a
+    directory it made stays, empty and private)."""
+    import tempfile  # noqa: PLC0415
     directory = os.path.dirname(os.path.abspath(dst)) or "."
     if not os.path.isdir(directory):
         # A fresh state dir has no served/ yet (alexdelprete, #114: ENOENT on served/.tok.<rand>). The token's
@@ -191,13 +203,17 @@ def _install_atomic(src: str, dst: str) -> None:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "wb") as out:
             out.write(data)
-        os.replace(tmp, dst)
     except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        _discard(tmp)
         raise
+    return tmp
+
+
+def _discard(tmp: str) -> None:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
 
 
 def _source(env: str, what: str) -> str:
@@ -212,34 +228,50 @@ def _source(env: str, what: str) -> str:
 
 
 def arm_main(verb: str, argv: list[str]) -> int:
-    """`proximo-core arm|disarm [--json]`: CONSENT's switch, the operator's hand. `arm` installs the
-    write token's bytes (`PROXIMO_ARM_SOURCE`) at the served token path (`PROXIMO_TOKEN_PATH`);
-    `disarm` installs the read-only token's (`PROXIMO_READONLY_SOURCE`). The engine's arm predicate
-    reads the served file per call (`core.arm`: armed <=> served bytes == arm source bytes), so the
-    swap takes effect on the next call, no restart. Refusals, rc 3: an unset or unusable source;
-    a disarm whose read-only source is byte-identical to the write token (it would install write
-    authority and report DISARMED). Each swap is a ledger row. The 0.44 verb's per-session arms
-    and the `reap` of stale ones were LEASE (retired to the vendor's own `expire`); this verb is
-    global, as the predicate is."""
+    """`proximo-core arm|disarm [--plane P] [--serve PATH] [--user USER] [--json]`: CONSENT's switch, the
+    operator's hand. THE TICKET IS THE ARM (2026-11-05): `arm` logs the operator in (`POST /access/ticket`,
+    the vendor's own call, from a terminal of their own: the password is typed at a silent prompt and sent
+    once) and serves the vendor's ticket at the plane's served path; the engine's predicate reads the
+    ticket's own issue time, so it is armed for the vendor's two hours and dies on its own. `disarm`
+    installs the plane's read-only token (`PROXIMO_[<PLANE>_]READONLY_SOURCE`). Each plane has its own
+    served path and its own pair; `--plane` says which (pve by default), `--serve` names another file. A
+    job with nobody at a keyboard keeps the token pair (`PROXIMO_[<PLANE>_]ARM_SOURCE`, served by
+    configuration); this verb is for a person. Refusals: no terminal on stdin (rc 3, nothing written); a
+    login the vendor refuses (rc 2, nothing written, a refused row)."""
     import json as _json  # noqa: PLC0415
 
-    from proximo.core.arm import ARM_SOURCE_ENV, READONLY_SOURCE_ENV, TOKEN_PATH_ENV  # noqa: PLC0415
+    from proximo.core import wire  # noqa: PLC0415
+    from proximo.core.arm import TICKET_LIFETIME, served_credential  # noqa: PLC0415
     from proximo.core.doors.network import recorder  # noqa: PLC0415
 
     ap = argparse.ArgumentParser(prog=f"proximo-core {verb}")
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
+    ap.add_argument("--plane", default="pve", choices=("pve", "pbs", "pdm"), help="which box (default pve)")
+    ap.add_argument("--serve", default=None, help="the served credential path (default: the plane's own)")
+    if verb == "arm":
+        ap.add_argument("--user", default=None, help="who logs in (default: the served token's own user)")
+        ap.add_argument("--target", default=None, help="a registered target's name: its box, its file, its user")
     ns = ap.parse_args(argv)
+    token_var = "PROXIMO_TOKEN_PATH" if ns.plane == "pve" else f"PROXIMO_{ns.plane.upper()}_TOKEN_PATH"
+    ro_var, arm_var = wire._pair_var(ns.plane, "READONLY_SOURCE"), wire._pair_var(ns.plane, "ARM_SOURCE")
     try:
-        target = os.environ.get(TOKEN_PATH_ENV, "").strip()
+        if verb == "arm" and ns.target:
+            from proximo.core import registry  # noqa: PLC0415
+            registered = registry.plane(ns.plane, ns.target)
+            if registered is None:
+                raise ValueError("--target names a registered target")
+            ns.registered = registered
+            target = (ns.serve or registered.token_path or "").strip()
+        else:
+            ns.registered = None
+            target = (ns.serve or wire.env_token_path(ns.plane) or "").strip()
         if not target:
-            raise ValueError(f"{TOKEN_PATH_ENV} is unset: there is no served token path to install at")
+            raise ValueError(f"{token_var} is unset and --serve not given: there is no served path to write")
         if os.path.islink(target):
             raise ValueError(f"refusing to install over a symlink: {target}")
-        if verb == "arm":
-            src = _source(ARM_SOURCE_ENV, "write token (arm source)")
-        else:
-            src = _source(READONLY_SOURCE_ENV, "read-only token")
-            armed = os.environ.get(ARM_SOURCE_ENV, "").strip()
+        if verb != "arm":
+            src = _source(ro_var, "read-only token")
+            armed = os.environ.get(arm_var, "").strip()      # a job's pair, when the box has one
             if armed:
                 try:
                     with open(armed, "rb") as a, open(src, "rb") as r:
@@ -248,18 +280,112 @@ def arm_main(verb: str, argv: list[str]) -> int:
                     same = False   # nothing to compare; refusing here would leave write authority live
                 if same:
                     raise ValueError("refusing to disarm: the read-only source is byte-identical to the write "
-                                     f"token at {ARM_SOURCE_ENV}, so restoring it would install write authority "
-                                     f"and report DISARMED. Point {READONLY_SOURCE_ENV} at a genuinely read-only "
+                                     f"token at {arm_var}, so restoring it would install write authority "
+                                     f"and report DISARMED. Point {ro_var} at a genuinely read-only "
                                      "credential. Nothing was changed.")
-        _install_atomic(src, target)
-    except (OSError, ValueError, RuntimeError) as e:   # RuntimeError: an exposed source, refuse_exposed_secret's
+            _install_atomic(src, target)
+    except (OSError, ValueError, RuntimeError, ProximoError) as e:   # RuntimeError: an exposed source
         print(f"proximo-core {verb}: {safe_text(str(e))}", file=sys.stderr)
         return EXIT_USAGE
-    recorder("proximo-core")(f"core.{verb}", target="token", detail={"armed": verb == "arm"})
-    result = {"armed": verb == "arm", "target": target}
-    print(_json.dumps(result, indent=2) if ns.json else
-          ("ARMED: the served token is the write token; every mutation still plans first and is recorded."
-           if verb == "arm" else "DISARMED: the served token is the read-only token."))
+    record = recorder("proximo-core")
+    if verb != "arm":
+        record("core.disarm", target="token", detail={"armed": False, "plane": ns.plane})
+        print(_json.dumps({"armed": False, "target": target, "plane": ns.plane}, indent=2) if ns.json else
+              "DISARMED: the served credential is the read-only token.")
+        return EXIT_OK
+    return _arm_with_a_ticket(ns, target, served_credential, TICKET_LIFETIME, record)
+
+
+def _prompt_secret(label: str) -> str:
+    """A silent prompt on the operator's own terminal. A seam for the suite; never patched outside it."""
+    import getpass  # noqa: PLC0415
+    return getpass.getpass(label)
+
+
+def _arm_with_a_ticket(ns: argparse.Namespace, target: str, served_credential: Any, lifetime: int,
+                       record: Any) -> int:
+    import json as _json  # noqa: PLC0415
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
+
+    from proximo.core import wire  # noqa: PLC0415
+    from proximo.core.arm import credential_from_bytes  # noqa: PLC0415
+    from proximo.core.spine import wire_error  # noqa: PLC0415
+    if not sys.stdin.isatty():
+        print("proximo-core arm: run this from a terminal of your own: the password is typed at a silent prompt "
+              "there and nowhere else (an agent's shell passthrough has no terminal and would keep it in its "
+              "transcript). Nothing was changed.", file=sys.stderr)
+        return EXIT_USAGE
+    plane = getattr(ns, "registered", None)
+    if plane is None:
+        try:
+            plane = wire.Plane.from_env(ns.plane)
+        except RuntimeError as e:
+            print(f"proximo-core arm: the {ns.plane} plane is not usable here: {safe_text(str(e))}", file=sys.stderr)
+            return EXIT_USAGE
+    user = ns.user
+    for path in ([target, plane.token_path or ""] if not user else []):
+        # the served file's own user, then the plane's own: the identity the vendor already knows this box by.
+        # A token line is `user@realm!name=secret`; a line with no `!` names no user (and is not echoed).
+        kind, cred = served_credential(path) if path else ("unreadable", "")
+        if kind == "token" and isinstance(cred, bytes):
+            line = cred.decode("utf-8", errors="replace")
+            user = line.split("!", 1)[0].strip() if "!" in line else None
+        elif kind == "ticket" and isinstance(cred, dict):
+            user = str(cred["user"])
+        if user:
+            break
+    if not user or "@" not in user or "!" in user or not user.isprintable():
+        print("proximo-core arm: say who logs in with --user user@realm (the served file names no user)",
+              file=sys.stderr)
+        return EXIT_USAGE
+    print(f"logging in as {safe_text(user)} ({ns.plane})", file=sys.stderr)
+    try:
+        try:
+            out = wire.ticket_login(plane, user, _prompt_secret("password: "))
+            if "tfa_challenge" in out:
+                out = wire.ticket_login(plane, user, _prompt_secret("second factor: "),
+                                        tfa_challenge=out["tfa_challenge"])
+        except (EOFError, KeyboardInterrupt):
+            print("proximo-core arm: no password given. Nothing was changed.", file=sys.stderr)
+            return EXIT_USAGE
+        # THE VENDOR'S ANSWER IS READ BEFORE IT IS SERVED: what the one reader cannot read is never written
+        # (lens 3: a ticket the reader rejected clobbered the served file and died uncaught).
+        data = _json.dumps({"ticket": out["ticket"], "csrf": out["csrf"], "box": plane.base_url}).encode("utf-8")
+        kind, cred = credential_from_bytes(data)
+        if kind != "ticket" or not isinstance(cred, dict):
+            raise ProximoError(f"the vendor's ticket cannot be served: {cred}")
+    except httpx.HTTPStatusError as exc:
+        status = wire_error(exc).get("status")
+        why = (f"{status}: the vendor did not accept the login (a wrong password or second factor, or a user "
+               f"with none)" if status == 401 else f"the vendor answered {status} to the login")
+        record("core.arm", target="ticket", outcome="refused", detail={"armed": False, "user": user, "status": status})
+        if ns.json:
+            print(_json.dumps({"armed": False, "target": target, "status": status, "why": why}, indent=2))
+        print(f"proximo-core arm: NOT ARMED: {why}. Nothing was changed.", file=sys.stderr)
+        return EXIT_REFUSED
+    except (httpx.TransportError, ProximoError) as exc:
+        record("core.arm", target="ticket", outcome="refused", detail={"armed": False, "user": user,
+                                                                       "why": safe_text(str(exc))})
+        print(f"proximo-core arm: NOT ARMED: {safe_text(str(exc))}. Nothing was changed.", file=sys.stderr)
+        return EXIT_REFUSED
+    try:
+        staged = _stage(data, target)
+        try:
+            os.replace(staged, target)
+        except BaseException:
+            _discard(staged)
+            raise
+    except OSError as e:
+        print(f"proximo-core arm: the ticket could not be served: {safe_text(str(e))}", file=sys.stderr)
+        return EXIT_USAGE
+    until = datetime.fromtimestamp(cred["issued"] + lifetime, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    record("core.arm", target="ticket", detail={"armed": True, "plane": ns.plane, "user": user, "box": plane.base_url,
+                                                "until": until})
+    print(_json.dumps({"armed": True, "target": target, "user": user, "until": until}, indent=2) if ns.json
+          else f"ARMED: a ticket for {user}, until {until} (the vendor's two hours). Every mutation still plans "
+               "first and is recorded. Put it back sooner: proximo-core disarm")
     return EXIT_OK
 
 
@@ -433,8 +559,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("path", help="API path, concrete or templated; with `undo`, the id a call returned under undo.id")
     ap.add_argument("args", nargs="*", help="k=v parameters published by the vendor")
     ap.add_argument("--plan", action="store_true",
-                    help="show the governed decision, the published schema and the target as it "
-                         "stands (one governed read, receipted); mutate nothing")
+                    help="show the governed decision, the published schema, the target as it "
+                         "stands and, on PVE, what the vendor's own door answers the served token "
+                         "(governed reads, receipted); mutate nothing")
     ap.add_argument("--fields", default=None,
                     help="a read's rows are LEAN by default (names, states, ids); 'all' for the "
                          "vendor's rows, 'a,b' for exactly those")

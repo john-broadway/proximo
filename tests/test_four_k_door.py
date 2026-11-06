@@ -107,7 +107,9 @@ def test_fields_names_exact_keys_in_order_and_refuses_a_name_no_row_carries(monk
     assert list(out["data"][0]) == ["status", "name"] and list(out["data"][-1]) == ["status"]   # the zone has no name
     with pytest.raises(ProximoError, match="no row carries 'nme'") as e:
         _serve(monkeypatch, cfg, _resources(), fields="nme")
-    assert "name" in str(e.value)                       # the refusal teaches the available names
+    # /cluster/resources is untrusted: a refusal is the door's own words, so it counts the keys and
+    # names none (lens 2 on 10fec53, `_fewer`'s law); it says how to see them
+    assert "keys" in str(e.value) and "fields='all'" in str(e.value) and "'name'" not in str(e.value)
 
 
 def test_a_row_with_no_lean_key_stays_whole(monkeypatch, cfg):

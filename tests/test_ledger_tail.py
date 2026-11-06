@@ -272,3 +272,257 @@ def test_a_ledger_cut_short_in_place_is_read_again_whole(tmp_path):
         f.write("\n" + json.dumps(_entry(999, None)) + "\n")
     assert os.stat(path).st_ino == ino and os.path.getsize(path) < 200 * 100
     assert L.detect_mode(path) == "mixed"
+
+
+# --- the sidecar (2026-11-01): a new process starts where the last one ended, by the key's word only ---------
+
+def _ledger(tmp_path, n: int):
+    cfg = LedgerConfig(audit_log_path=str(tmp_path / "audit.log"))
+    led = open_ledger(cfg)
+    for i in range(n):
+        led.record("core.execute", target=f"/r{i}")
+    open_ledger(cfg)            # the look that writes the sidecar, as engine._record does before a receipt
+    return cfg, led
+
+
+def _cold(monkeypatch):
+    monkeypatch.setattr(L, "_MODE_SEEN", {})     # what a new CLI process starts with
+    return _Count(monkeypatch)
+
+
+def test_a_new_process_reads_only_what_was_appended_since_the_sidecar(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 5000)
+    assert os.path.exists(cfg.audit_log_path + ".mode")
+    count = _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/cold")
+    assert count.n <= 8, count.n                   # the cold walk parsed 5,000 lines here
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and led.verify().ok
+
+
+def test_the_0921_bypass_after_a_sidecar_is_still_mixed(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 50)
+    _forge_unkeyed(cfg.audit_log_path, led.head())
+    _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "mixed"
+
+
+@pytest.mark.parametrize("spoil", ["byte", "other_key", "deleted", "garbage", "huge", "done_past_end"])
+def test_a_sidecar_the_key_did_not_sign_or_that_no_longer_fits_is_read_whole(tmp_path, monkeypatch, spoil):
+    cfg, led = _ledger(tmp_path, 300)
+    side = cfg.audit_log_path + ".mode"
+    body = json.loads(open(side, encoding="utf-8").read())
+    if spoil == "byte":
+        body["kinds"] = []                         # claim nothing was seen: the MAC no longer matches
+        open(side, "w", encoding="utf-8").write(json.dumps(body))
+    elif spoil == "other_key":
+        L._sidecar_write(cfg.audit_log_path, b"k" * 32, (body["dev"], body["ino"], body["head"], body["tail"]),
+                         body["done"], frozenset())
+    elif spoil == "deleted":
+        os.remove(side)
+    elif spoil == "garbage":
+        open(side, "wb").write(b"\x00not json")
+    elif spoil == "huge":
+        open(side, "w", encoding="utf-8").write(" " * (L._SIDECAR_MAX + 10))
+    elif spoil == "done_past_end":
+        del body["mac"]
+        body["done"] = 10 ** 9
+        L._sidecar_write(cfg.audit_log_path, led.key, (body["dev"], body["ino"], body["head"], body["tail"]),
+                         body["done"], frozenset(body["kinds"]))
+    count = _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed"
+    assert count.n >= 300                          # read whole, never trusted
+    count.n = 0
+    monkeypatch.setattr(L, "_MODE_SEEN", {})
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and count.n <= 2   # and written afresh
+
+
+def test_a_ledger_cut_and_grown_back_past_the_sidecar_is_read_whole(tmp_path, monkeypatch):
+    # lens 11 MINOR-3, now for the next process too: same inode, the first 4 KiB unchanged, the size not
+    # smaller than what was scanned; only the tail of the scanned region tells it apart
+    cfg, led = _ledger(tmp_path, 400)
+    path = cfg.audit_log_path
+    done = json.loads(open(path + ".mode", encoding="utf-8").read())["done"]
+    os.truncate(path, 8192)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("\n")
+        while os.path.getsize(path) < done:            # the unkeyed rows sit INSIDE what the sidecar says
+            f.write(json.dumps(_entry(1, None)) + "\n")   # was scanned; everything after it is keyed
+            f.flush()                                     # (unflushed, the size lags and they spill past it)
+        for i in range(5):
+            f.write(json.dumps(_entry(900 + i)) + "\n")
+    _cold(monkeypatch)
+    assert L.detect_mode(path, led.key) == "mixed"
+
+
+def test_a_rotated_ledger_does_not_take_the_old_sidecar(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 100)
+    path = cfg.audit_log_path
+    os.rename(path, path + ".old")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("".join(json.dumps(_entry(i, None)) + "\n" for i in range(150)))
+    _cold(monkeypatch)
+    assert L.detect_mode(path, led.key) == "unkeyed"
+
+
+def test_a_symlinked_sidecar_is_not_followed(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 100)
+    side = cfg.audit_log_path + ".mode"
+    elsewhere = tmp_path / "elsewhere.json"
+    os.rename(side, elsewhere)
+    os.symlink(elsewhere, side)
+    count = _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and count.n >= 100   # not read through it
+    assert not os.path.islink(side) and json.loads(open(elsewhere, encoding="utf-8").read())  # replaced, target kept
+
+
+def test_without_the_key_the_sidecar_is_never_read(tmp_path, monkeypatch):
+    cfg, _ = _ledger(tmp_path, 120)
+    count = _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path) == "keyed" and count.n >= 120   # doctor's path: as before
+
+
+# --- lens 13 (2026-11-01): what is planted at the sidecar's name costs a whole read, never the receipt ---
+
+@pytest.mark.parametrize("plant", ["fifo", "directory"])
+def test_a_fifo_or_a_directory_at_the_sidecar_costs_only_a_whole_read(tmp_path, monkeypatch, plant):
+    # b603bbd: a FIFO blocked every keyed open (no O_NONBLOCK, under the mode lock); a directory raised out
+    cfg, led = _ledger(tmp_path, 50)
+    side = cfg.audit_log_path + ".mode"
+    os.remove(side)
+    os.mkfifo(side) if plant == "fifo" else os.mkdir(side)
+    _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/after")      # must return, and receipt
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and led.verify().ok
+
+
+def test_a_symlinked_ledger_directory_gets_no_sidecar_written_through_it(tmp_path, monkeypatch):
+    # b603bbd: detect_mode ran before AuditLedger's directory refusal and wrote audit.log.mode through the link
+    real, link = tmp_path / "elsewhere", tmp_path / "ledgerdir"
+    real.mkdir()
+    (real / "audit.log").write_text(json.dumps(_entry(1)) + "\n", encoding="utf-8")
+    link.symlink_to(real)
+    cfg = LedgerConfig(audit_log_path=str(link / "audit.log"), audit_key_path=str(tmp_path / "audit.key"))
+    _cold(monkeypatch)
+    with pytest.raises(OSError, match="symlinked"):
+        open_ledger(cfg).record("core.execute", target="/x")
+    assert sorted(os.listdir(real)) == ["audit.log"]
+
+
+def test_a_cold_process_with_nothing_appended_leaves_the_sidecar_as_it_is(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 50)
+    side = cfg.audit_log_path + ".mode"
+    before = os.stat(side).st_ino
+    _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed"
+    assert os.stat(side).st_ino == before          # b603bbd rewrote it on every cold process
+
+
+def test_a_sidecar_of_another_version_is_read_whole(tmp_path, monkeypatch):
+    cfg, led = _ledger(tmp_path, 120)
+    side = cfg.audit_log_path + ".mode"
+    body = json.loads(open(side, encoding="utf-8").read())
+    del body["mac"]
+    body["v"] = 99
+    body["mac"] = L._sidecar_mac(led.key, body)
+    open(side, "w", encoding="utf-8").write(json.dumps(body))
+    count = _cold(monkeypatch)
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and count.n >= 120
+
+
+@pytest.mark.parametrize("alg", [5, 1.5, True, [1], {"a": 1}])
+def test_a_bypass_row_whose_alg_is_not_text_is_sealed_never_a_stuck_ledger(tmp_path, monkeypatch, alg):
+    # lens 14 (172a87c): "alg": 5 put a number among the kinds; sorting them for the sidecar raised on every
+    # keyed open, the seal that would clear it included. main sealed it. ([1] and {"a": 1} raised on main too.)
+    cfg, led = _ledger(tmp_path, 20)
+    with open(cfg.audit_log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({**_entry(500), "alg": alg}) + "\n")
+    _cold(monkeypatch)
+    with pytest.warns(UserWarning, match="sealed and archived"):
+        open_ledger(cfg).record("core.execute", target="/after")      # sealed once, as main does
+    _cold(monkeypatch)
+    fresh = open_ledger(cfg)                                          # and every open after receipts
+    fresh.record("core.execute", target="/again")
+    assert fresh.verify().ok and L.detect_mode(cfg.audit_log_path, fresh.key) == "keyed"
+    assert any(n.startswith("audit.log.unkeyed-") for n in os.listdir(tmp_path))
+
+
+@pytest.mark.parametrize("field,value", [("done", "Infinity"), ("done", "1e400"), ("dev", "-Infinity"),
+                                         ("ino", "Infinity"), ("kinds", '"hmac-sha256"'), ("kinds", "[1]"),
+                                         ("v", "true"), ("done", '"10"')])
+def test_a_signed_sidecar_with_a_field_of_the_wrong_shape_costs_a_whole_read(tmp_path, monkeypatch, field, value):
+    # lens 15 (21de491): a signed "done": Infinity raised OverflowError out of int() on every keyed open
+    cfg, led = _ledger(tmp_path, 60)
+    side = cfg.audit_log_path + ".mode"
+    body = json.loads(open(side, encoding="utf-8").read())
+    del body["mac"]
+    raw = json.dumps(body, separators=(",", ":"))
+    raw = raw.replace(f'"{field}":{json.dumps(body[field], separators=(",", ":"))}', f'"{field}":{value}', 1)
+    signed = json.loads(raw)                                      # Python reads Infinity / 1e400 as floats
+    mac = L._sidecar_mac(led.key, signed)
+    open(side, "w", encoding="utf-8").write(raw[:-1] + f',"mac":"{mac}"}}')
+    count = _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/after")      # never raises
+    assert count.n >= 60 and L.detect_mode(cfg.audit_log_path, led.key) == "keyed"
+
+
+_NON_ASCII_MACS = [
+    '{"mac":"\u00e9"}'.encode(),                       # raw é: compare_digest raised on it
+    b'{"mac":"\\ud800"}',                              # pure-ASCII bytes, a lone surrogate once decoded
+    ('{"mac":"' + "\u00e9" * 64 + '"}').encode(),      # the right length, the wrong characters
+]
+
+
+@pytest.mark.parametrize("planted", _NON_ASCII_MACS)
+def test_a_planted_sidecar_with_a_mac_of_the_wrong_shape_costs_a_whole_read(tmp_path, monkeypatch, planted):
+    # lens 16 (ddd608b), NO KEY NEEDED: compare_digest raises on a non-ASCII str, so {"mac":"\u00e9"} at the
+    # sidecar's name stopped every receipt; main never read the name
+    cfg, led = _ledger(tmp_path, 40)
+    open(cfg.audit_log_path + ".mode", "wb").write(planted)
+    count = _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/after")
+    assert count.n >= 40 and L.detect_mode(cfg.audit_log_path, led.key) == "keyed"
+
+
+def test_a_signed_sidecar_that_stops_inside_a_character_reads_the_ledger_whole(tmp_path, monkeypatch):
+    # lens 16 M1: a done of the right shape inside a multibyte character (rows carry raw UTF-8) raised
+    # UnicodeDecodeError on every keyed open; now any failure reading on from a remembered point is main's read
+    cfg = LedgerConfig(audit_log_path=str(tmp_path / "audit.log"))
+    led = open_ledger(cfg)
+    for i in range(30):
+        led.record("core.execute", target=f"/r{i}", detail={"n": "\u00e9\u4e2d" * 5})
+    raw = open(cfg.audit_log_path, "rb").read()
+    done = raw.index("\u4e2d".encode()) + 1                     # inside the three-byte character
+    with open(cfg.audit_log_path, "rb") as f:
+        ident = L._region_id(f, os.fstat(f.fileno()), done)
+    L._sidecar_write(cfg.audit_log_path, led.key, ident, done, frozenset({"hmac-sha256"}))
+    count = _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/after")
+    assert count.n >= 30 and L.detect_mode(cfg.audit_log_path, led.key) == "keyed" and led.verify().ok
+
+
+def test_a_ledger_with_no_line_end_yet_keeps_its_sidecar_as_it_is(tmp_path, monkeypatch):
+    # lens 17 m1: at_line_start seeked to -1 before testing 0, so a point of 0 never fitted and the sidecar
+    # was rewritten on every open of a ledger whose only row has no line end yet
+    path = tmp_path / "audit.log"
+    path.write_text(json.dumps(_entry(1)), encoding="utf-8")
+    key = b"k" * 32
+    assert L.detect_mode(str(path), key) == "keyed"
+    writes = []
+    real_write = L._sidecar_write
+    monkeypatch.setattr(L, "_sidecar_write", lambda *a: writes.append(a) or real_write(*a))
+    for _ in range(3):                             # counted per open: an inode compare at the end can alternate
+        _cold(monkeypatch)                         # back on some filesystems and pass on the old order (lens 18)
+        assert L.detect_mode(str(path), key) == "keyed"
+        assert writes == [], writes
+
+
+def test_a_signed_point_of_zero_that_names_a_kind_is_refused(tmp_path, monkeypatch):
+    # lens 18 (742da0e): with at_line_start(0) true, a signed {"done": 0, "kinds": ["sha256"]} fitted any
+    # ledger on its inode and added its lie to the whole read's answer, so every receipt refused
+    cfg, led = _ledger(tmp_path, 5)
+    with open(cfg.audit_log_path, "rb") as f:
+        ident = L._region_id(f, os.fstat(f.fileno()), 0)
+    L._sidecar_write(cfg.audit_log_path, led.key, ident, 0, frozenset({"sha256"}))
+    _cold(monkeypatch)
+    open_ledger(cfg).record("core.execute", target="/after")
+    assert L.detect_mode(cfg.audit_log_path, led.key) == "keyed"

@@ -68,6 +68,22 @@ def _refusals():
     return [r for r in _rows() if r["action"] == "core.refuse"]
 
 
+#: The plan's `vendor_door` asks the vendor what the token holds (core/maynever.py). A test about
+#: the plan's look at its target counts that read apart, never hides it.
+DOOR_READ = "/access/permissions"
+
+
+def _resolve_only(monkeypatch, row):
+    """`engine.resolve` answers `row` for the call under test and the real row for anything else: a
+    blanket stand-in also sent the map's own GET /access/permissions down the PUT's row."""
+    real = engine.resolve
+    monkeypatch.setattr(engine, "resolve", lambda p, m, pa: real(p, m, pa) if pa == DOOR_READ else row)
+
+
+def _target_calls(rec):
+    return [c for c in rec.calls if c[1] != DOOR_READ]
+
+
 CFG_PATH = "/nodes/pve1/qemu/101/config"
 
 
@@ -1046,15 +1062,15 @@ def test_plan_reports_the_pillars_and_touches_nothing(armed, monkeypatch, tmp_pa
     monkeypatch.setenv("PROXIMO_TOKEN_PATH", cfg.token_path)
     monkeypatch.setattr(engine.wire.Plane, "from_env", classmethod(lambda cls, p: cfg))
     row = _config_row(monkeypatch)
-    monkeypatch.setattr(engine, "resolve", lambda p, m, pa: row)
+    _resolve_only(monkeypatch, row)
     out = door.plan("pve", "PUT", CFG_PATH, {"memory": "2048"})
     assert out["needs"] == "consent"
     assert out["consent_id"] == spine.consent_id("pve", "PUT", row.path, CFG_PATH, {"memory": "2048"}, box=cfg.base_url)
     assert out["grant_path"] == str(grants / out["consent_id"])
     # B1 (2026-09-30): a mutation's plan reads the target as it stands, ONE governed GET of the
     # twin, receipted as the read it is; the plan itself still writes nothing and places no grant.
-    assert rec.calls == [("GET", CFG_PATH, {})] and not list(grants.iterdir())
-    assert [(r["action"], r["outcome"]) for r in _rows()] == [("core.execute", "ok")]
+    assert _target_calls(rec) == [("GET", CFG_PATH, {})] and not list(grants.iterdir())
+    assert [(r["action"], r["outcome"]) for r in _rows() if r.get("target") != DOOR_READ] == [("core.execute", "ok")]
     assert out["change"] == {"memory": {"from": None, "to": "2048"}}   # a key the record lacks is new
     assert out["noop"] is False
 
@@ -1284,6 +1300,6 @@ def test_plan_reports_the_classification_and_the_taint_wall(armed, monkeypatch):
     monkeypatch.setenv("PROXIMO_TAINT_FORBID", "config")
     spine.mark_tainted(_audit_dir(), "x")
     row = _config_row(monkeypatch)
-    monkeypatch.setattr(engine, "resolve", lambda p, m, pa: row)
+    _resolve_only(monkeypatch, row)
     out = door.plan("pve", "PUT", CFG_PATH, {"memory": "2048"})
-    assert out["needs"] == "taint" and rec.calls == [("GET", CFG_PATH, {})]   # B1: the read, not the PUT
+    assert out["needs"] == "taint" and _target_calls(rec) == [("GET", CFG_PATH, {})]   # B1: the read, not the PUT

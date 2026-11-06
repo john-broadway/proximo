@@ -156,6 +156,8 @@ def _pve(user: str, name: str, file: str, write: bool, scope: list[str], ttl: in
     create = "\n".join([
         f"pvesh get /access/users/{user} >/dev/null 2>&1 || "
         f"pveum user add {user} --comment 'Proximo (least-privilege)'",
+        *([f"pveum passwd {user}   # a person arms by logging in (proximo-core arm): the ticket is this user's; "
+           "a job with no one at a keyboard needs none"] if not write else []),
         f"pvesh delete /access/users/{user}/token/{name} 2>/dev/null || true  # rotate",
         *_open(file),
         f"pvesh create /access/users/{user}/token/{name} --privsep 1 --expire {_epoch(ttl)} "

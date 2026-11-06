@@ -194,7 +194,10 @@ def _reported(d: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fit(answer: dict[str, Any]) -> dict[str, Any]:
-    return rawdoor.fit_answer(answer)
+    """The answer under the model's cap. A plan's `vendor_door` is advice: the rest is fitted WITHOUT it and
+    it rides only in the room left, so it never costs a restore's `current` a byte (lens 3s1)."""
+    fitted = rawdoor.fit_answer({k: v for k, v in answer.items() if k != "vendor_door"})
+    return engine.with_vendor_door(fitted, answer.get("vendor_door"), rawdoor.answer_cap())
 
 
 def _capture(ref: str, plane: str | None, cfg: wire.Plane | None, lcfg: Any) -> tuple:
@@ -350,13 +353,19 @@ def _delete_back(ref: str, entry: dict, entries: list[dict], lines: list[str], l
         raise
     plane_cfg = cfg if cfg is not None else wire.Plane.from_env(product)
     answer = {"restores": ref, "captured": entry.get("ts"), "removes": target}
+    planned = engine.plan(row, {}, target, cfg=plane_cfg, ledger_cfg=ledger_cfg)
     if not confirm:
-        return _fit({**engine.plan(row, {}, target, cfg=plane_cfg, ledger_cfg=ledger_cfg), "status": "plan", **answer})
+        return _fit({**planned, "status": "plan", **answer})
+    # THE ACT IS THE PLAN: a token's record carries the vendor's digest (PBS, PDM) and its DELETE accepts one,
+    # so the plan the operator approved carries it among its arguments; a delete sent with none was a
+    # different id and was refused under consent (lens, 2026-11-05). Plan again now, act on that plan.
+    shown = planned.get("arguments")
+    args = {"digest": shown["digest"]} if isinstance(shown, dict) and isinstance(shown.get("digest"), str) else {}
     with contextlib.ExitStack() as held:
         with _receipted(row, ledger_cfg, target, aimed_at, canonical):
             held.enter_context(_once_lock(lcfg, canonical))
             _refuse_a_second(parse_lines(read_log(lcfg.audit_log_path)), canonical, ref, "put back", harm)
-        out = engine.execute(row, {}, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait,
+        out = engine.execute(row, args, cfg=plane_cfg, path=target, ledger_cfg=ledger_cfg, wait=wait,
                              restores=canonical)
     state = _task_state(out)
     return {**out, **answer, **({"status": state} if state else {})}

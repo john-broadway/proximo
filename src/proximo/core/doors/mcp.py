@@ -248,6 +248,8 @@ def read(plane: Plane, path: str, args: dict[str, Any] | None = None,
             raise ProximoError("diagnose takes the path alone: no args, fields, since or wait")
         try:
             return {**diagnose_mod.run(plane, path, cfg=cfg), **note}
+        except ProximoError:
+            raise           # its own words (a ProximoError IS a RuntimeError; peer report 2026-11-02)
         except RuntimeError as e:
             raise ProximoError(f"{plane} is not configured on this Proximo ({e})") from e
     row = engine.resolve(plane, "GET", path)
@@ -453,7 +455,7 @@ def build_server(name: str = "proximo") -> Any:
         "vendor's full schema. A mutation's plan also reads the target: current, change, noop. Run "
         "before proximo_call. path may be words: one match is planned, several come back to pick from."), **ro)(_plan)
     server.tool(name="proximo_read", description=(
-        "READ-ONLY: run a GET by path or words (no leading slash). args = query parameters (params: old "
+        "READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old "
         "name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you "
         "get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on "
         ".../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health "

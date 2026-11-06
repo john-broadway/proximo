@@ -324,7 +324,8 @@ def _excluded_read(rows):        # lens 6 L6-4: an excluded read beside a served
 
 
 def _agent_path_elsewhere(rows):  # lens 6 L6-5: the agent lane is pve's; a gated pbs row under that prefix has none
-    rows.append({**_at(rows, _GETCFG), "product": "pbs", "path": "/nodes/{node}/qemu/{vmid}/agent/ping", "gate": "x"})
+    rows.append({**_at(rows, _GETCFG), "product": "pbs", "path": "/nodes/{node}/qemu/{vmid}/agent/ping", "gate": "x",
+                 "permissions": None})   # a PVE rule is not PBS's grammar; the build would refuse it too
 
 
 @pytest.mark.parametrize("forge", [_ungated_ssh, _excluded_twin, _excluded_read, _agent_path_elsewhere])

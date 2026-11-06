@@ -25,7 +25,7 @@ import os
 import httpx
 import pytest
 
-from proximo.core import engine, spine, undo, wire
+from proximo.core import engine, rawdoor, spine, undo, wire
 from proximo.core.doors import mcp as door
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import in_flight
@@ -148,7 +148,8 @@ def test_a_restore_plans_the_put_that_writes_the_capture_back_with_the_current_d
     w = _wire(monkeypatch, drifted)
     plan = undo.restore(out["undo"]["id"], cfg=box)
     assert plan["status"] == "plan" and plan["restores"] == out["undo"]["id"]
-    assert w.calls == [("GET", QEMU_PATH, {})] and w.mutations() == []      # read now; nothing written
+    assert [c for c in w.calls if c[1] != "/access/permissions"] == [("GET", QEMU_PATH, {})]   # read now
+    assert w.mutations() == []                                                                 # nothing written
     assert plan["address"] == "PUT /nodes/{node}/qemu/{vmid}/config" and plan["allowed"] is True
     assert plan["arguments"] == {"memory": "4096", "digest": drifted["digest"]}   # the lock is the CURRENT one
     assert plan["change"] == {"memory": {"from": "8192", "to": "4096"}} and plan["noop"] is False
@@ -1065,3 +1066,56 @@ def test_every_judged_create_captures_absent_runs_and_is_put_back_by_its_own_del
     assert plan["status"] == "plan" and plan["address"] == f"DELETE {template}" and plan["removes"] == path
     done = undo.restore(out["undo"]["id"], cfg=cfg, confirm=True)
     assert done["removes"] == path and w2.mutations() == [("DELETE", path, {})]
+
+
+@pytest.mark.parametrize("status, says", [(401, "401: the vendor did not accept the token"),
+                                          (403, "403: the token lacks the privilege to read it"),
+                                          (500, "the vendor answered 500")])
+def test_a_failed_read_back_names_the_vendors_status(box, monkeypatch, status, says):
+    """An armed write token whose lease (its expire) ran out answered 401 on every read-back, and the
+    refusal said only "(HTTPStatusError)": 11 writes refused, the cause hidden (peer report 2026-11-02).
+    The status was already on the ledger row; the words now carry it too."""
+    w = _create_wire(monkeypatch, _status_error(status, path="/cluster/firewall/groups/g1"), answer=None)
+    with pytest.raises(ProximoError) as got:
+        engine.execute(_tiered("pve", "POST", "/cluster/firewall/groups/{group}"), {"action": "ACCEPT", "type": "in"},
+                       cfg=box, path="/cluster/firewall/groups/g1")
+    assert says in str(got.value) and "the mutation was not run" in str(got.value), str(got.value)
+    if status == 401:
+        assert "expire" in str(got.value) and "revoked" in str(got.value)      # lens 3: the new words pinned
+    assert w.mutations() == []
+
+
+def test_a_restore_plans_vendor_door_never_costs_the_rest_a_byte(box, monkeypatch):
+    """Lens 3s1: undo fits the plan again at the model's cap, and the door was an ordinary key there, so
+    the halving cut `current` from 3 of 5 to 1 of 5. Now the rest is the same with the door or without."""
+    rec = {"memory": "4096", "digest": "f" * 40, "description": "d" * 60}
+    out = _mutate(box, monkeypatch, QEMU_PATH, {"memory": "8192"}, rec)
+    shown = {}
+    for with_door in (True, False):
+        w = Wire({**rec, "memory": "8192", "digest": "1" * 40})
+        monkeypatch.setattr(engine, "_client", lambda product, c=None, w=w: w)
+        if not with_door:
+            monkeypatch.setattr(engine, "_vendor_door", lambda *a, **k: {})
+        p = undo.restore(out["undo"]["id"], cfg=box)
+        assert len(json.dumps(p, separators=(",", ":"), default=str).encode()) <= rawdoor.answer_cap().bytes
+        shown[with_door] = p
+    assert {k: v for k, v in shown[True].items() if k != "vendor_door"} == shown[False]
+
+
+def test_a_restore_plan_carries_the_vendor_door_when_there_is_room(box, monkeypatch):
+    """The other half of the test above: undo fits the door in, it does not just drop it (lens 3s2)."""
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "20000")
+    rec = {"memory": "4096", "digest": "f" * 40}
+    out = _mutate(box, monkeypatch, QEMU_PATH, {"memory": "8192"}, rec)
+    _wire(monkeypatch, {**rec, "memory": "8192", "digest": "1" * 40})
+    p = undo.restore(out["undo"]["id"], cfg=box)
+    assert p["status"] == "plan" and set(p["vendor_door"]) == {"verdict", "token", "why"}, p
+
+
+@pytest.mark.parametrize("door_value", [None, "may", ["never"], 0])
+def test_an_answer_with_no_door_dict_gains_no_vendor_door(door_value):
+    """Lens 3s3 (M24): a noop or an executed restore carries no door; nothing that is not a door's answer
+    is wrapped into one."""
+    fitted = {"allowed": True, "noop": True}
+    assert engine.with_vendor_door(fitted, door_value, rawdoor.answer_cap()) == fitted
+    assert "vendor_door" not in undo._fit({"allowed": True, "noop": True})

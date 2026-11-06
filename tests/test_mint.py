@@ -523,3 +523,12 @@ def test_the_read_recipe_and_the_other_planes_are_unchanged_by_the_pool_rule():
     for product in ("pbs", "pdm"):
         r = mint.build_recipe(product, write=True, scope=["/pool/lab"] if product == "pdm" else ["/datastore/x"])
         assert "Pool.Audit" not in " ".join(_step(r, "grant")["notes"])
+
+
+def test_the_read_recipe_gives_the_user_a_password_so_a_person_can_arm_and_the_write_recipe_does_not():
+    """The ticket is the arm (2026-11-05): a person logs in as the realm user mint creates, so the read token's
+    recipe sets that user's password; a job holds a write token and needs none."""
+    read = mint.render_text(_recipe("pve", write=False))
+    assert "pveum passwd proximo@pve" in read and "proximo-core arm" in read
+    write = mint.render_text(_recipe("pve", write=True))
+    assert "pveum passwd" not in write

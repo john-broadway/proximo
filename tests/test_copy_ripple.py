@@ -175,10 +175,14 @@ def test_description_must_fit_the_registry_cap():
     assert copy_ripple_check.check_description_length({"README.md": "no description key here"}) == []
 
 
-def test_satellite_must_carry_current_version():
-    problems = copy_ripple_check.check_satellite_text("v0.1.0 is live", "0.2.0", "index.html")
-    assert problems and "0.2.0" in problems[0]
-    assert copy_ripple_check.check_satellite_text("v0.2.0 is live", "0.2.0", "x") == []
+def test_a_satellite_needs_no_version_but_one_it_names_is_current():
+    # John 2026-11-01: the satellites carry no version
+    assert copy_ripple_check.check_satellite_text("Proximo plans every move. AGPL-3.0-or-later.", "0.2.0", "x") == []
+    problems = copy_ripple_check.check_satellite_text("Proximo v0.1.0 is live", "0.2.0", "index.html")
+    assert problems and "0.1.0" in problems[0] and "0.2.0" in problems[0]
+    assert copy_ripple_check.check_satellite_text("proximo-proxmox 0.2.0 on PyPI", "0.2.0", "x") == []
+    # a version on a line without Proximo (another project's) is not Proximo's
+    assert copy_ripple_check.check_satellite_text("Pacioli 0.35.0\nProximo plans.", "0.2.0", "x") == []
 
 
 _TABLE = (

@@ -2,7 +2,7 @@
   "identifier": "john-broadway-proximo",
   "name": "Proximo — the governed client for Proxmox",
   "description": "The governed client for Proxmox (PVE, PBS, PMG, PDM): plans, keeps the receipts, puts things back.",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "tools": [
     {
       "name": "proximo_find",
@@ -69,7 +69,7 @@
     },
     {
       "name": "proximo_read",
-      "description": "READ-ONLY: run a GET by path or words (no leading slash). args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
+      "description": "READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
       "inputSchema": {
         "properties": {
           "plane": {

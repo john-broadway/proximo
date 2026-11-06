@@ -93,7 +93,9 @@ def test_set_the_plan_says_the_node_came_from_the_environment(armed_plane, w, mo
     out = engine.plan(row, {}, START_T, cfg=armed_plane)
     assert out["default_node"] == {"node": "pve1", "from": "PROXIMO_NODE", "path": START_C}
     assert out["allowed"] is True
-    assert w.calls and all(c[1].startswith("/nodes/pve1/") for c in w.calls)      # the live read went there too
+    target = [c for c in w.calls if c[1] != "/access/permissions"]       # the map's own read is the vendor_door's
+    assert target and all(c[1].startswith("/nodes/pve1/") for c in target)  # the live read went there too
+    assert ("GET", "/access/permissions", {"path": "/vms/100"}) in w.calls  # and the map asked the bound vmid
     # the grant the operator places is for the call as it runs: the same id as the concrete spelling
     concrete = engine.plan(row, {}, START_C, cfg=armed_plane)
     assert out["consent_id"] == concrete["consent_id"]

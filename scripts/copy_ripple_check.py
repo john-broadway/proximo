@@ -250,10 +250,19 @@ def _security_text(root: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+#: A version named on a line that names Proximo: "proximo-proxmox 0.49.0", "Proximo v0.49.0", "proximo:0.49.0".
+_SATELLITE_VERSION = re.compile(r"proximo[^\n]*?\bv?(\d+\.\d+\.\d+)\b", re.IGNORECASE)
+
+
 def check_satellite_text(text: str, current: str, name: str) -> list[str]:
+    """The satellites (profile README, github.io) are John's words about Proximo and carry NO version by his
+    ruling (2026-11-01: "no they shouldnt"), so none is required. One that a line does name beside Proximo
+    must be the current release: a stale version on the public face is still a wrong one."""
     problems = check_control_counts({name: text}, canonical_control_count(_security_text(REPO_ROOT)))
-    if current not in text:
-        problems.append(f"{name}: does not mention {current} — satellite copy is stale.")
+    for m in _SATELLITE_VERSION.finditer(text):
+        if m.group(1) != current:
+            problems.append(f"{name}: names Proximo {m.group(1)}, the current release is {current} "
+                            "(the satellites need no version; one they name must be current).")
     return problems
 
 

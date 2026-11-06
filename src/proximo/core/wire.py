@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 
+from . import arm
 from .errors import ProximoError, fingerprint_refused
 from .secretfile import read_secret, refuse_exposed_secret, register_secret
 from .tls import fingerprint_pinned_context, httpx_verify, parse_verify_tls
@@ -273,6 +275,42 @@ def pmg_login(cfg: Plane) -> tuple[str, str]:
     return user, password
 
 
+def ticket_login(cfg: Plane, username: str, password: str, *, tfa_challenge: str | None = None) -> dict[str, str]:
+    """`POST /access/ticket`, the vendor's own login, on this plane's wire (its TLS, its pin, its body
+    encoding). Returns `{"ticket", "csrf", "username"}`, or `{"tfa_challenge": <the challenge ticket>}` when
+    the vendor wants a second factor: call again with that challenge and the code as the password. The
+    password is sent once and kept nowhere; the ticket and CSRF token are registered as secrets."""
+    register_secret(password)           # the one thing typed; an error text must never carry it
+    client = Client(cfg)
+    form: dict[str, Any] = {"username": username, "password": password}
+    if tfa_challenge:
+        form["tfa-challenge"] = tfa_challenge
+    if cfg.product == "pve":
+        form["new-format"] = 1          # PVE's current TFA challenge shape; a box without TFA ignores it
+    if client.spec["body"] == "json":
+        r = client._client.post("/access/ticket", json=form)
+    else:
+        r = client._client.post("/access/ticket", data=_form(form))
+    r.raise_for_status()
+    try:
+        data = r.json().get("data")
+    except (ValueError, AttributeError) as exc:
+        raise ProximoError("the vendor answered the login with something that is not its login answer") from exc
+    if not isinstance(data, dict):
+        raise ProximoError("the vendor answered the login without a ticket")
+    ticket = str(data.get("ticket") or "")
+    register_secret(ticket)
+    if ticket.startswith(f"{arm.TICKET_PREFIX[cfg.product]}:!tfa!"):
+        if tfa_challenge:
+            raise ProximoError("the vendor asked for a second factor twice; the code was not accepted")
+        return {"tfa_challenge": ticket}
+    csrf = str(data.get("CSRFPreventionToken") or "")
+    register_secret(csrf)
+    if arm.ticket_fields(ticket) is None or not csrf or not arm._PRINTABLE.match(csrf):
+        raise ProximoError("the vendor answered the login with a ticket or CSRF token this door cannot carry")
+    return {"ticket": ticket, "csrf": csrf, "username": str(data.get("username") or username)}
+
+
 def _form(d: dict[str, Any]) -> dict[str, Any]:
     """The PVE family's type-checker wants booleans as 1/0 and rejects 'true'/'false'.
     None is DROPPED, not sent: an unset optional must be omitted, never serialized as "None"."""
@@ -297,7 +335,35 @@ class Client:
 
     def _headers(self, mutation: bool) -> dict[str, str]:
         if self.spec["auth"] == "token":
-            # Read at call time; never logged; registered with the scrubber on first read.
+            # Read at call time; never logged; registered with the scrubber on first read. THE SERVED FILE
+            # HOLDS A TOKEN OR A TICKET (arm.served_credential, the one reader the predicate uses too): a
+            # ticket rides as the vendor's cookie, with its CSRF token on a mutation; a dead ticket sends the
+            # read-only token when one is configured (the vendor disarmed us), else goes out as it is and the
+            # 401 is the vendor's word.
+            kind, cred = arm.served_credential(self.cfg.token_path)
+            if kind == "ticket":
+                prefix = arm.TICKET_PREFIX[self.cfg.product]
+                # A TICKET GOES ONLY TO THE BOX THAT ISSUED IT. The predicate refuses a ticket for another box or
+                # product; the wire must too, or a served file shared by two planes would hand one box's session
+                # to the other (security review, 2026-11-05). Wrong box, or dead: the read-only token when one is
+                # configured, else refused here, before the wire.
+                age = time.time() - cred["issued"]
+                dead = age < 0 or age >= arm.TICKET_LIFETIME            # from the future is not trusted either
+                elsewhere = cred["prefix"] != prefix or cred["box"] != arm._box_url(self.cfg.base_url)
+                if dead or elsewhere:
+                    if self.cfg.readonly_source:
+                        what = f"{self.cfg.product.upper()} read-only token file"
+                        token = read_secret(self.cfg.readonly_source, what, floor=True)   # sent: the floor applies
+                        return {"Authorization": self.spec["header"].format(t=token)}
+                    if elsewhere:
+                        raise ProximoError("the served ticket is for another box or product and is not sent here")
+                headers = {"Cookie": f"{prefix}AuthCookie={cred['ticket']}"}
+                if mutation:
+                    headers["CSRFPreventionToken"] = cred["csrf"]
+                return headers
+            if kind == "unreadable" and arm.raw_is_ticket_shaped(self.cfg.token_path):
+                raise ProximoError(f"the served credential cannot be sent: {cred}")   # a malformed ticket file
+            # a missing or unreadable TOKEN file raises here as it always has (the wire's own error, receipted)
             token = read_secret(self.cfg.token_path, f"{self.cfg.product.upper()} token file")
             return {"Authorization": self.spec["header"].format(t=token)}
         self._ensure_ticket()
@@ -339,7 +405,14 @@ class Client:
             self._relogin()
             r = self._send(method, path, params, self._headers(mutation))
         r.raise_for_status()
-        return r.json().get("data")
+        body = r.json()
+        data = body.get("data")
+        if isinstance(data, dict) and isinstance(body.get("digest"), str) and "digest" not in data:
+            # THE DIGEST RIDES WITH ITS RECORD. PVE puts a config record's digest inside the record; PBS and
+            # PDM hand it beside it, `{"data": record, "digest": hex}` (read live on the lab's PBS, 2026-11-05:
+            # a datastore, a user, a token, all so). One shape for the plan, the lock and the restore.
+            data = {**data, "digest": body["digest"]}
+        return data
 
     def _send(self, method: str, path: str, params: dict[str, Any], headers: dict[str, str]) -> httpx.Response:
         if method in ("GET", "DELETE"):

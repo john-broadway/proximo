@@ -12,12 +12,29 @@ not inequality) is in the ARM section of SECURITY.md.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import stat
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from .secretfile import register_secret
+
+#: THE TICKET IS THE ARM (2026-11-05). A token is an identity (the vendor ships it with `expire` 0 and
+#: means a standing credential with an ACL); a ticket is a session (`POST /access/ticket`, the vendor's
+#: two hours, dead on its own). A person arms by logging in; the served file then holds the ticket, and
+#: the predicate reads the ticket's OWN issue time: hex seconds in its text, signed by the vendor. A job
+#: with nobody at a keyboard keeps the token pair below, unchanged.
+TICKET_LIFETIME = 7200            # the vendor's ticket lifetime, seconds; not a knob of ours
+TICKET_PREFIX = {"pve": "PVE", "pbs": "PBS", "pdm": "PDM"}   # the planes whose wire sends a ticket; PMG logs in itself
+#: The vendor's ticket, exactly: PREFIX:user@realm:<8 hex>::<base64 signature>. A user with `!` is a token, not a
+#: login; a `!tfa!` marker is a challenge, never a credential; any other byte (a newline that h11 then echoed with
+#: the whole ticket, lens 2026-11-05) is not a ticket.
+TICKET_RE = re.compile(r"^(PVE|PBS|PDM|PMG):([^:!\s@]+@[^:!\s@]+):([0-9A-Fa-f]{8})::([A-Za-z0-9+/=_-]+)$")
+_PRINTABLE = re.compile(r"^[!-~]+$")
 
 ARM_SOURCE_ENV = "PROXIMO_ARM_SOURCE"  # noqa: S105 -- env var NAME, not a secret value
 READONLY_SOURCE_ENV = "PROXIMO_READONLY_SOURCE"  # noqa: S105 -- env var NAME
@@ -58,6 +75,86 @@ def _read_token(path: str) -> bytes | None:
         return None
 
 
+def served_credential(path: str) -> tuple[str, Any]:
+    """What the served file holds: ("token", bytes), ("ticket", {ticket, csrf, box, prefix, user, issued}) or
+    ("unreadable", why). THE ONE READER for the predicate and the wire, so they never disagree. A ticket file
+    is JSON `{"ticket", "csrf", "box"}` written by `proximo-core arm`; `issued` is parsed from the ticket's
+    own text (`PREFIX:user@realm:<hex seconds>::<sig>`), nothing of ours is stored. A TFA challenge
+    (`PREFIX:!tfa!...`) is never a served credential."""
+    raw = _read_token(path)
+    if raw is None:
+        return "unreadable", "the served credential is missing, unreadable, or not a regular file"
+    return credential_from_bytes(raw)
+
+
+def credential_from_bytes(raw: bytes) -> tuple[str, Any]:
+    """`served_credential` on bytes already in hand: the verb reads the vendor's answer through this before it
+    serves it, so what the file reader would refuse is never written."""
+    if not raw:
+        return "unreadable", "the served credential is empty"
+    if raw[:1] != b"{":
+        return "token", raw
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return "unreadable", "the served ticket file is not JSON"
+    if not isinstance(doc, dict):
+        return "unreadable", "the served ticket file is not a JSON object"
+    ticket, csrf, box = doc.get("ticket"), doc.get("csrf"), doc.get("box")
+    if not (isinstance(ticket, str) and ticket and isinstance(csrf, str) and csrf and isinstance(box, str) and box):
+        return "unreadable", "the served ticket file lacks ticket, csrf or box"
+    fields = ticket_fields(ticket)
+    if fields is None:
+        return "unreadable", "the served ticket is not a vendor ticket"
+    if not _PRINTABLE.match(csrf):
+        return "unreadable", "the served CSRF token is not one a header can carry"
+    if not _box_url(box):
+        return "unreadable", "the served ticket names no box"
+    register_secret(ticket)
+    register_secret(csrf)
+    prefix, user, issued = fields
+    return "ticket", {"ticket": ticket, "csrf": csrf, "box": _box_url(box), "prefix": prefix, "user": user,
+                      "issued": issued}
+
+
+def ticket_fields(text: object) -> tuple[str, str, int] | None:
+    """(prefix, user, issued) when `text` is exactly a vendor ticket, else None."""
+    m = TICKET_RE.fullmatch(text) if isinstance(text, str) else None     # fullmatch: `$` forgives a trailing newline
+    return (m.group(1), m.group(2), int(m.group(3), 16)) if m else None
+
+
+def ticket_state(cred: dict[str, Any], product: str, box: str) -> ArmGateState:
+    """The predicate for a served ticket: armed iff it is this product's ticket, for this box, and the vendor's
+    two hours have not passed since its own issue time. Everything else is not armed and says why; nothing of
+    ours extends it."""
+    prefix = TICKET_PREFIX.get(product)
+    if prefix is None:
+        return ArmGateState(enforced=True, armed=False,
+                            reason=f"a ticket file is not {product.upper()}'s credential: its wire logs in itself")
+    if not _box_url(box):
+        return ArmGateState(enforced=True, armed=False, reason="this plane names no box, so no ticket can be its own")
+    if cred["prefix"] != prefix:
+        return ArmGateState(enforced=True, armed=False,
+                            reason=f"the served ticket is a {cred['prefix']} ticket and this box is {product}")
+    if cred["box"] != _box_url(box):
+        return ArmGateState(enforced=True, armed=False, reason="the served ticket is for another box")
+    age = time.time() - cred["issued"]
+    dies = datetime.fromtimestamp(cred["issued"] + TICKET_LIFETIME, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if age < 0:
+        return ArmGateState(enforced=True, armed=False, reason="the served ticket is from the future; not trusted")
+    if age >= TICKET_LIFETIME:
+        return ArmGateState(enforced=True, armed=False,
+                            reason=f"the ticket died at {dies} (the vendor's two hours); arm again")
+    return ArmGateState(enforced=True, armed=True, reason=f"a ticket for {cred['user']}, armed until {dies}")
+
+
+def raw_is_ticket_shaped(path: str) -> bool:
+    """True when the served file starts like a ticket file (`{`): a malformed one fails closed with its own
+    words instead of being compared as a token to the pair."""
+    raw = _read_token(path)
+    return raw is not None and raw[:1] == b"{"
+
+
 def _box_url(value: object) -> str:
     """A base_url as a box identity: stripped, no trailing slash; "" when there is none to compare."""
     return value.strip().rstrip("/") if isinstance(value, str) else ""
@@ -94,6 +191,16 @@ def arm_state(cfg: Any | None = None) -> ArmGateState:
 
     if conflict := getattr(cfg, "conflict", None):
         return ArmGateState(enforced=True, armed=False, reason=f"misconfigured: {conflict}")
+    # A SERVED TICKET IS JUDGED FIRST, by its own clock; it needs no pair. The file is read once more below
+    # for the token path, as it always was (the token branch is unchanged).
+    served_path = env_token if cfg is None else (cfg.token_path or "").strip()
+    kind, cred = served_credential(served_path) if served_path else ("unreadable", "no served path")
+    if kind == "ticket" and isinstance(cred, dict):
+        box = os.environ.get(BASE_URL_ENV, "") if cfg is None else \
+            (getattr(cfg, "base_url", None) or getattr(cfg, "api_base_url", None) or "")
+        return ticket_state(cred, "pve" if cfg is None else (getattr(cfg, "product", None) or "pve"), box)
+    if kind == "unreadable" and served_path and raw_is_ticket_shaped(served_path):
+        return ArmGateState(enforced=True, armed=False, reason=f"not armed: {cred}")
     if cfg is None:
         arm_source, token_path, readonly = env_arm, env_token, env_ro
     else:

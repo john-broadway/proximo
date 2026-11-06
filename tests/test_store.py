@@ -164,6 +164,24 @@ def test_since_says_when_it_cannot_reach_back_as_far_as_asked(monkeypatch, cfg):
     assert out["counts"]["added"] == 1
 
 
+def test_since_says_when_the_newest_snapshot_is_old(monkeypatch, cfg):
+    """`to_age_s` was a number nobody reads: a 9.4 h old snapshot answered "0 changes" with a note
+    about the window and none about the age (peer report, 2026-11-02, /cluster/tasks since=24h)."""
+    clock = [1_000_000.0]
+    monkeypatch.setattr(store, "_now", lambda: clock[0])
+    _read(monkeypatch, cfg, _guests(2))
+    clock[0] += 34000                                                  # 9.44 h, nothing read since
+    out, w = _read(monkeypatch, cfg, None, since="24h")
+    assert w.calls == 0 and out["to_age_s"] == 34000
+    assert "9.4 h old" in out["note"] and "read it live" in out["note"], out["note"]
+    assert "only 0s" in out["note"], "the window's own sentence stays"
+    clock[0] += 1                                                       # a fresh one says nothing of age
+    _read(monkeypatch, cfg, _guests(2))
+    clock[0] += 60
+    fresh, _ = _read(monkeypatch, cfg, None, since="24h")
+    assert "h old" not in fresh.get("note", ""), fresh.get("note")
+
+
 def test_since_is_refused_on_a_bad_spelling_and_a_store_that_is_off(monkeypatch, cfg):
     with pytest.raises(ProximoError, match="30m, 24h or 7d"):
         _read(monkeypatch, cfg, None, since="yesterday")
@@ -292,3 +310,13 @@ def test_a_kept_read_withholds_what_the_rows_own_line_drops(monkeypatch, cfg):
     assert len(kept) == 1
     with gzip.open(kept[0]) as f:
         assert json.load(f)["rows"] == [{"userid": "root@pam", "enable": True}]
+
+
+@pytest.mark.parametrize("age, old", [(3599, False), (3600, True)])
+def test_since_calls_a_snapshot_old_at_exactly_an_hour(monkeypatch, cfg, age, old):
+    clock = [1_000_000.0]
+    monkeypatch.setattr(store, "_now", lambda: clock[0])
+    _read(monkeypatch, cfg, _guests(2))
+    clock[0] += age
+    out, _ = _read(monkeypatch, cfg, None, since="24h")
+    assert ("h old" in out.get("note", "")) is old, out.get("note")

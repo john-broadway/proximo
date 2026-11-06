@@ -30,6 +30,8 @@ _SHAPES = (
     re.compile(r"(PBSAPIToken=)\S+"),
     re.compile(r"(PDMAPIToken )\S+"),
     re.compile(r"(Bearer )\S+"),
+    re.compile(r"((?:PVE|PBS|PDM|PMG)AuthCookie=)\S+"),      # a served ticket on the wire (2026-11-05)
+    re.compile(r"(CSRFPreventionToken[=:]\s*)\S+"),
 )
 
 
