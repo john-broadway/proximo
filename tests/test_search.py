@@ -209,4 +209,10 @@ def test_the_stopword_cache_is_cleared_with_every_other_cache_built_from_the_tab
     index = ((row, frozenset({"the"}), frozenset(), frozenset()),)
     monkeypatch.setattr(search, "_index", functools.cache(lambda: index))
     _clear_data_caches()
-    assert "the" not in search._stopwords(), "the stopword cache survived the clear"
+    try:
+        assert "the" not in search._stopwords(), "the stopword cache survived the clear"
+    finally:
+        # the cache now holds the PLANTED table's stopwords; the patch's undo restores `_index` only, so
+        # clear again after it or the next file ranks against a one-row table (test_door_fixes did)
+        monkeypatch.undo()
+        _clear_data_caches()

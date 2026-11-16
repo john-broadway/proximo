@@ -92,7 +92,7 @@ class Plane:
     def from_env(cls, product: str) -> Plane:
         spec = _spec(product)
         p = f"PROXIMO_{spec['prefix']}"
-        base_var = f"{p}BASE_URL" if product != "pve" else "PROXIMO_API_BASE_URL"
+        base_var = base_url_var(product)
         cred = product == "pmg" and bool(os.environ.get(f"{p}CREDENTIAL_PATH"))
         if cred and os.environ.get(f"{p}PASSWORD_PATH"):
             raise RuntimeError(f"set {p}CREDENTIAL_PATH or {p}PASSWORD_PATH, not both: "
@@ -163,11 +163,15 @@ def env_arm_view(product: str) -> SimpleNamespace:
         readonly_source=os.environ.get(_pair_var(product, "READONLY_SOURCE")) or None if pairs else None)
 
 
+def base_url_var(product: str) -> str:
+    """The env variable a plane's base URL is read from: the one name every reader and message uses."""
+    return "PROXIMO_API_BASE_URL" if product == "pve" else f"PROXIMO_{_spec(product)['prefix']}BASE_URL"
+
+
 def env_base_url(product: str) -> str | None:
     """The plane's base URL from env, or None. A plain read: no secret is touched, nothing raises,
     so the spine can name the box for a rate budget before any config is built."""
-    spec = _spec(product)
-    return os.environ.get("PROXIMO_API_BASE_URL" if product == "pve" else f"PROXIMO_{spec['prefix']}BASE_URL") or None
+    return os.environ.get(base_url_var(product)) or None
 
 
 def env_token_path(product: str) -> str | None:

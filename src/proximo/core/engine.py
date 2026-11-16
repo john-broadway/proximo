@@ -113,6 +113,7 @@ class Row:
     consult: str | None = None   # the judge the plan consults before the change (consult.toml; proximo.core.consult)
     one_of: Mapping[str, Any] | None = None     # a call must name at least one of these parameters (args.toml)
     permissions: Any = RULE_NOT_CARRIED         # the vendor's rule verbatim (the may/never map); None = none
+    row: tuple[str, ...] | None = None          # the fields the vendor publishes on every row of this list read
 
     @property
     def address(self) -> str:
@@ -164,7 +165,7 @@ def row_of(r: Mapping[str, Any]) -> Row:
                if r["sight"] else None,
                consult=r["consult"],
                one_of=MappingProxyType({**r["one_of"], "names": tuple(r["one_of"]["names"])}) if r["one_of"] else None,
-               permissions=r["permissions"])
+               permissions=r["permissions"], row=tuple(r["row"]) if r["row"] is not None else None)
 
 
 @cache
@@ -1478,6 +1479,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     if row.access == READ:
         _taint_before_the_wire(row, ledger_cfg, called, remote, judging=judging)
         client = _built_client(row, cfg, ledger_cfg, called, remote)   # a read spends nothing first
+        who = _served_id(row, cfg)      # the token asking, by its public id, read BEFORE the wire (see _keep)
         try:
             data = client.call(row.method, called, args)
         except Exception as exc:
@@ -1505,7 +1507,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
                         **seen.get("receipt", {}), **({"asked": asked[:120]} if asked else {}),
                         **({"upid": task["upid"], "polls": task["polls"], "seconds": task["seconds"]} if task else {})},
                 called=called, remote=remote)
-        _keep(row, called, args, data, ledger_cfg, cfg, judging, fields=fields, evaluating=evaluating)
+        _keep(row, called, args, data, ledger_cfg, cfg, judging, fields=fields, evaluating=evaluating, who=who)
         # what rides beside the data is SPENT before the data is sized, never merged on after: a sight line
         # added to a sized answer shipped a capital-path read at 1,241 B against 1,152 (2026-10-30)
         # a task's upid is the caller's path segment (lens 6: 400 capitals rode raw), its status and exit are
@@ -2940,9 +2942,22 @@ def _box(row: Row, cfg: wire.Plane | None) -> str:
     return (cfg.base_url if cfg is not None else wire.env_base_url(row.product)) or ""
 
 
+def _served_id(row: Row, cfg: wire.Plane | None) -> str | None:
+    """The served token's PUBLIC id (`arm.served_id`: `user@realm!name`, never a secret byte) when this
+    read feeds a memory shape whose owning hangs on the token's sight; else None, and nothing is read.
+    Never raises: an id that cannot be read is unknown, and unknown is blind."""
+    try:
+        s = memory.shape(row.product)
+        if s is None or not s.token_sight or row.path not in s.feeds or not memory.enabled():
+            return None
+        return arm.served_id(cfg if cfg is not None else wire.env_arm_view(row.product))
+    except Exception:  # noqa: BLE001 -- see the docstring
+        return None
+
+
 def _keep(row: Row, called: str, args: dict[str, Any], data: Any, ledger_cfg: Any,
           cfg: wire.Plane | None, judging: bool = False, *, fields: str | None = None,
-          evaluating: bool = False) -> None:
+          evaluating: bool = False, who: str | None = None) -> None:
     """Best-effort and silent: a convenience must never fail the read it rides on. Two keepers, each
     on its own (one off, or failing, never stops the other): the store's snapshot of a list
     (`since=`), and the estate memory (`proximo.core.memory`: where, uses, changed), which also takes
@@ -2950,16 +2965,21 @@ def _keep(row: Row, called: str, args: dict[str, Any], data: Any, ledger_cfg: An
     (the engine's own read for a judgement it makes) keeps NOTHING in either. How the read was asked
     rides with it: a field subset (`fields`, with `all` and unset both the whole rows) or the door's
     own look for a verdict (`evaluating`) feeds memory but may not retire what it does not list
-    (lens 2026-10-27: neither reached the feed, so a projected read and a plan's twin read retired)."""
+    (lens 2026-10-27: neither reached the feed, so a projected read and a plan's twin read retired).
+    `who` is the served token's public id read before the wire; it is read again here and rides into the
+    feed only when the two agree, so an arm or a disarm between them (the served file swapped behind one
+    box URL) leaves this read unattributed, and an unattributed read owns nothing where sight decides."""
     if judging:
         return
     try:
-        if row.product == "pve" and row.path in memory.FEEDS and memory.enabled():
+        if row.path in memory.feeds(row.product) and memory.enabled():
             kept, _ = withhold(data, row.secret)
             subset = None if fields is None or fields.strip().lower() == "all" else fields
+            if who is not None and _served_id(row, cfg) != who:
+                who = None
             memory.feed((ledger_cfg or LedgerConfig.from_env()).audit_log_path, row.product, _box(row, cfg),
                         row.path, bind(row, called), args, kept, source=row.key, untrusted=row.untrusted,
-                        fields=subset, evaluating=evaluating)
+                        fields=subset, evaluating=evaluating, who=who)
     except Exception:  # noqa: BLE001, S110 -- see the docstring
         pass
     if not store.enabled() or not isinstance(data, list):

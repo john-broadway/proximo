@@ -1252,3 +1252,9 @@ def test_pmg_in_password_mode_is_its_configured_user_never_the_files_bytes(tmp_p
 
 def test_an_unreadable_credential_has_no_user(tmp_path):
     assert maynever.Holdings(_Box(str(tmp_path / "absent"))).user is None
+
+
+def test_pmgs_no_rule_reason_names_the_user_not_a_token():
+    """PMG has no API tokens; its refusal on no rule is `user != root@pam` (lab, pmg-test, 2026-11-06)."""
+    got = _answer(None, "pmg", "PUT", {}, HELD, who="proximo-rw@pmg")
+    assert got.verdict == NEVER and "root@pam" in got.why and "token" not in got.why

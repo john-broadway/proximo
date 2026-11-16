@@ -86,6 +86,69 @@ def properties(params: dict) -> dict:
     return out
 
 
+#: Every keyword the four api-viewers write on a list's row schema (surveyed 2026-11-13). `properties`,
+#: `allOf`, `oneOf` and `type-property` say what a row carries and are read; the rest describe it.
+_ROW_WORDS = frozenset({"type", "description", "additionalProperties", "properties", "allOf", "oneOf",
+                        "type-property", "type-property-schema", "instance-type", "links", "format"})
+
+
+def _is_optional(spec: object) -> bool:
+    """The vendor writes `optional` as 1, 0, "1" or leaves it out; only a set flag is optional."""
+    return isinstance(spec, dict) and spec.get("optional") in (1, True, "1", "true")
+
+
+def _required(schema: dict, where: str) -> set[str] | None:
+    """The fields the vendor publishes as present on every object this schema describes, or None when it
+    names no field at all. `properties`: each field not marked optional. `allOf` (PBS and PDM nest a
+    row this way): every block describes the row, so the union. `oneOf` (a row that is one of several
+    kinds): only what every kind requires, so the intersection; a kind that names no field requires
+    nothing; and the field the vendor names the kind by (`type-property`), which every such row carries
+    unless its own schema marks it optional. A keyword outside the ones the four trees carry (`_ROW_WORDS`)
+    is a shape this reader does not know and refuses the build: never read past, never guessed."""
+    if unknown := sorted(k for k in schema if k not in _ROW_WORDS):
+        raise SystemExit(f"{where}: the vendor's returns uses {', '.join(unknown)}, a form this build does not read")
+    found: set[str] | None = None
+    props = schema.get("properties")
+    if props is not None:
+        if not isinstance(props, dict):
+            raise SystemExit(f"{where}: the vendor's returns carries properties that are not a table")
+        found = {name for name, spec in props.items() if not _is_optional(spec)}
+    for combinator in ("allOf", "oneOf"):
+        blocks = schema.get(combinator)
+        if blocks is None:
+            continue
+        if not (isinstance(blocks, list) and blocks and all(isinstance(b, dict) for b in blocks)):
+            raise SystemExit(f"{where}: the vendor's returns carries a {combinator} that is not a list of schemas")
+        parts = [_required(b, where) for b in blocks]
+        if combinator == "allOf":
+            named = [x for x in parts if x is not None]
+            got = set().union(*named) if named else None
+        else:
+            got = set.intersection(*(x or set() for x in parts))
+        if got is not None:
+            found = got if found is None else found | got
+    kind = schema.get("type-property")
+    if kind is not None:
+        if not (isinstance(kind, str) and kind and "oneOf" in schema):
+            raise SystemExit(f"{where}: the vendor's returns names a type-property that is not a field of a oneOf")
+        if not _is_optional(schema.get("type-property-schema")):
+            found = (found or set()) | {kind}
+    return found
+
+
+def row_fields(returns: object, where: str) -> list[str] | None:
+    """THE VENDOR'S ROW, as published: for a call whose `returns` is an array of objects, the fields the
+    vendor says every row carries (not marked `optional`), sorted. None when the answer is not a list of
+    objects or the vendor names no field for its rows; `[]` when it names fields and requires none."""
+    if not isinstance(returns, dict) or returns.get("type") != "array":
+        return None
+    items = returns.get("items")
+    if not isinstance(items, dict):
+        return None
+    found = _required(items, where)
+    return None if found is None else sorted(found)
+
+
 def gates() -> dict[str, list[tuple[str, str]]]:
     """The address-independent policy Proximo ALREADY enforces, read out of the code that owns it.
 
@@ -137,6 +200,10 @@ def build(cache: pathlib.Path) -> list[dict]:
                     # may/never map lines it up with what the token holds). Never guessed: a shape the
                     # map does not know refuses the build.
                     "permissions": rule,
+                    # THE VENDOR'S ROW: the fields it publishes as present on every row a list read
+                    # answers (`returns.items`, each not marked optional). None = not a list of objects, or
+                    # no field named. What the estate memory holds a list to before it may retire by it.
+                    "row": row_fields(info.get("returns"), f"{product} {method} {path}") if method == "GET" else None,
                 })
     rows.sort(key=lambda r: (r["product"], r["path"], r["method"]))
     return rows

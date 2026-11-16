@@ -19,7 +19,7 @@
 # multi-stage removed the SOURCE tree but the runtime stage still installed with pip and left
 # it there. The strip at the end of the runtime RUN is what makes the sentence true.
 
-FROM python:3.13-slim@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915fd88ded1d86bb AS build
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS build
 
 WORKDIR /app
 # Allow-list copy: only what the wheel build needs. The working tree is never copied
@@ -35,7 +35,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir --require-hashes -r requirements/build.txt \
  && python -m build --wheel --no-isolation --outdir dist .
 
-FROM python:3.13-slim@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915fd88ded1d86bb
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 
 # openssh-client powers the in-container exec edge (ssh -> pct). Everything else is bundled by pip,
 # so the image is self-contained and the host stays untouched.
@@ -55,7 +55,7 @@ FROM python:3.13-slim@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915
 # 2026-09-13 and shipped the 2026-09-04 apt layer, byte-identical to 0.40.0's (same diff_id), so
 # the two scan identically at 3 CRITICAL + 9 HIGH Debian CVEs. Debian 13.7 published every one of
 # those fixes on 2026-09-12. The image was one day behind the archive at release, and would have
-# stayed behind indefinitely: the pin below is ALREADY the newest python:3.13-slim, so there is no
+# stayed behind indefinitely: the pin was then ALREADY the newest python:3.13-slim, so there was no
 # digest bump pending to carry them, and the digest bump was the only thing that ever did.
 #
 # APT_SECURITY_EPOCH decouples the two for real. CI passes the run id, so the value differs per

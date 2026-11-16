@@ -238,7 +238,7 @@ reach, alive after the ticket dies. Its reach is still the user's ACL, nothing m
 lab on 2026-11-05 under the credentials `proximo mint` installs, on PVE and on PBS (`proximo@pbs`
 with Audit on `/` and DatastoreAdmin on one datastore minted `proximo@pbs!probe`, expire 0); PDM and
 PMG are proven as their lab legs run. Proximo refuses nothing here and adds nothing; the ledger row names
-the mint's user and token name. Narrow the user.
+the mint's user and token name. Narrow the user. A token cannot do the same: the vendor compares the whole auth id, and a token's is `user@realm!name`, so `proximo@pbs!read` asking to mint for `proximo@pbs` is the vendor's 403 (lab, 2026-11-06). The session can leave a standing credential behind; a standing credential cannot make another.
 
 **Neither verb grants authority the caller did not already have.** A person who can log in
 can log in; a job's pair is files the operator placed. Whether an arm is a real boundary is a

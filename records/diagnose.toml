@@ -16,11 +16,15 @@
 # Flag shapes (`proximo.core.diagnose`):
 #   { over = [used, total], at = 0.9, says = "..." }   the ratio of two fields past `at`; a
 #                                                       `fraction` field, when the vendor publishes
-#                                                       one, is read instead of dividing
+#                                                       one, is read instead of dividing; with
+#                                                       `absent = "..."`, a row that carries none of
+#                                                       those fields is named by that sentence
 #   { off = "active", says = "..." }                   a row whose field is 0 is named and its other
 #                                                       flags are not evaluated (an offline storage's
 #                                                       cached usage is stale, not full)
 #   { is = "status", expect = "running", says = "..." } the field is not the expected value
+#   { is = "state", never = "failed", says = "..." }    the field is exactly that value (the other
+#                                                       form of `is`: one of `expect`, `never`)
 #   { lines = "stdout", says = "..." }                 the field is text with at least one
 #                                                       non-blank line ({n} = how many)
 #   { failed = true, says = "..." }                    task rows whose outcome is `failed`
@@ -150,3 +154,133 @@ flag = [
   { is = "status", expect = "running", says = "guest is {value} (not running)" },
   { over = ["disk", "maxdisk"], at = 0.9, says = "root disk at {pct}% (API)" },
 ]
+
+# ---- PBS and PDM: the node's own reads, on the fields those products publish ------------------------
+# The same judgements PVE's node carries, carried over, never a new number: memory and a filesystem
+# past 0.9, failed tasks among the 50 most recent (the vendor's exit text, `task_outcome`). A PBS
+# node's status publishes `memory` and `root` (the root filesystem) as {total, used, ...}; its task
+# rows publish `status` and `endtime` as optional and carry them on a finished task, as PVE's do.
+# The datastore list rides the node, as PVE's storage does: `/status/datastore-usage` publishes
+# `store` and, when the store is readable, `total` and `used`; a store it cannot read answers no
+# usage: it is named (`absent`), never read as under the threshold. The row's `history` (a month of samples) and its `error` are not
+# asked for: a field no row carries refuses the projection, and the raw row is over the door's cap. PDM is built on the same framework and publishes the
+# same node status and task rows; it has no datastore of its own. No shell half: neither product has
+# a shell lane here.
+
+[subject."pbs:GET /nodes/{node}"]
+is = "a PBS node"
+shell = "PBS has no shell lane here; the node's API reads are the whole battery"
+
+[subject."pbs:GET /nodes/{node}".probe.status]
+path = "/nodes/{node}/status"
+keep = ["uptime", "cpu", "loadavg", "memory", "root"]
+flag = [
+  { over = ["memory.used", "memory.total"], at = 0.9, says = "node memory at {pct}%" },
+  { over = ["root.used", "root.total"], at = 0.9, says = "root filesystem at {pct}%" },
+]
+
+[subject."pbs:GET /nodes/{node}".probe.datastores]
+path = "/status/datastore-usage"
+rows = ["store", "total", "used", "avail", "mount-status"]
+flag = [{ over = ["used", "total"], at = 0.9, says = "datastore {store} at {pct}%", absent = "datastore {store} is without usage figures; not evaluated" }]
+
+# Garbage collection, every datastore's last run (`/admin/gc`, published). The vendor's own words decide:
+# a last run that did not end `OK` (a `WARNINGS: n` or an `unknown` is named as the vendor wrote it), and
+# chunks it found bad and still referenced. A store never collected carries no last-run fields: only its
+# `still-bad` (published on every row) is read.
+[subject."pbs:GET /nodes/{node}".probe.gc]
+path = "/admin/gc"
+rows = ["store", "last-run-state", "last-run-endtime", "still-bad", "removed-bad", "pending-bytes"]
+flag = [
+  { is = "last-run-state", expect = "OK", says = "garbage collection on {store} ended {value}" },
+  { is = "still-bad", expect = 0, says = "datastore {store}: {value} bad chunk(s) still referenced after garbage collection" },
+]
+
+# The node's services (published: `service`, `state`, `unit-state`). Only the unit manager's own `failed`
+# is named: `dead` is a unit that is not installed (`unit-state` not-found) or simply not running.
+[subject."pbs:GET /nodes/{node}".probe.services]
+path = "/nodes/{node}/services"
+rows = ["service", "state", "unit-state"]
+flag = [{ is = "state", never = "failed", says = "service {service} is in the failed state" }]
+
+[subject."pbs:GET /nodes/{node}".probe.tasks]
+path = "/nodes/{node}/tasks"
+params = { limit = 50 }
+rows = ["upid", "worker_type", "worker_id", "status", "starttime", "endtime"]
+flag = [{ failed = true, says = "{n} failed task(s) among the {seen} most recent" }]
+
+[subject."pdm:GET /nodes/{node}"]
+is = "a PDM node"
+shell = "PDM has no shell lane here; the node's API reads are the whole battery"
+
+[subject."pdm:GET /nodes/{node}".probe.status]
+path = "/nodes/{node}/status"
+keep = ["uptime", "cpu", "loadavg", "memory", "root"]
+flag = [
+  { over = ["memory.used", "memory.total"], at = 0.9, says = "node memory at {pct}%" },
+  { over = ["root.used", "root.total"], at = 0.9, says = "root filesystem at {pct}%" },
+]
+
+[subject."pdm:GET /nodes/{node}".probe.tasks]
+path = "/nodes/{node}/tasks"
+params = { limit = 50 }
+rows = ["upid", "worker_type", "worker_id", "status", "starttime", "endtime"]
+flag = [{ failed = true, says = "{n} failed task(s) among the {seen} most recent" }]
+
+# ---- PMG: the node's own reads, on what the box answers ---------------------------------------------
+# PMG's api-viewer names little here: the node status publishes `insync`, `time`, `uptime` and the boot
+# fields and says `additionalProperties`, and a task row publishes `upid` alone. The box answers more,
+# read on the lab's PMG 9.1 (2026-11-13): the status carries `memory` {free, total, used} and `rootfs`
+# {avail, free, total, used} (PMG's word for the root filesystem; PBS and PDM say `root`), and a task
+# row carries `type`, `status`, `starttime` and `endtime` as PVE's does. So each field below is marked:
+# published by the vendor's doc, or seen in the vendor's answer. The judgements are PVE's, carried
+# over: 0.9 on memory and the root filesystem, failed tasks by the vendor's exit text.
+
+[subject."pmg:GET /nodes/{node}"]
+is = "a PMG node"
+shell = "PMG has no shell lane here; the node's API reads are the whole battery"
+
+[subject."pmg:GET /nodes/{node}".probe.status]
+path = "/nodes/{node}/status"
+# published: uptime, insync. seen in the answer: cpu, loadavg, memory, rootfs.
+keep = ["uptime", "insync", "cpu", "loadavg", "memory", "rootfs"]
+# `insync` is the vendor's own word for the node's database against its cluster ("used by the cluster
+# manager to test the node health"). It is last: an `off` flag ends its record's evaluation.
+flag = [
+  { over = ["memory.used", "memory.total"], at = 0.9, says = "node memory at {pct}%" },
+  { over = ["rootfs.used", "rootfs.total"], at = 0.9, says = "root filesystem at {pct}%" },
+  { off = "insync", says = "node is not in sync with its cluster (the vendor's insync is 0)" },
+]
+
+# seen in the answer (the doc names no field of a service row): service, state, unit-state.
+[subject."pmg:GET /nodes/{node}".probe.services]
+path = "/nodes/{node}/services"
+rows = ["service", "state", "unit-state"]
+flag = [{ is = "state", never = "failed", says = "service {service} is in the failed state" }]
+
+# published: channel, update_avail. The vendor's own boolean: an update is waiting for that channel.
+[subject."pmg:GET /nodes/{node}".probe.spam_rules]
+path = "/nodes/{node}/spamassassin/rules"
+rows = ["channel", "update_avail"]
+flag = [{ is = "update_avail", expect = 0, says = "spam rules: an update is waiting on {channel}" }]
+
+# EVIDENCE, NO FLAG: how old a signature set may be, and how many queued mails are too many, are numbers
+# nobody has authored. The battery shows the vendor's values; it judges none of them.
+# published: type, build_time, nsigs, version. seen in the answer: name.
+[subject."pmg:GET /nodes/{node}".probe.virus_db]
+path = "/nodes/{node}/clamav/database"
+rows = ["name", "type", "build_time", "nsigs", "version"]
+
+# seen in the answer (the doc names no field): one row per recipient domain and a TOTAL row, `total` the
+# mails in the queue the vendor reads by default, the `deferred` one. The domains are whoever mail was
+# sent to: the address is untrusted (taint.toml), and so is this section.
+[subject."pmg:GET /nodes/{node}".probe.mail_queue]
+path = "/nodes/{node}/postfix/qshape"
+rows = ["domain", "total"]
+
+[subject."pmg:GET /nodes/{node}".probe.tasks]
+path = "/nodes/{node}/tasks"
+params = { limit = 50 }
+# published: upid. seen in the answer: type, id, status, starttime, endtime.
+rows = ["upid", "type", "id", "status", "starttime", "endtime"]
+flag = [{ failed = true, says = "{n} failed task(s) among the {seen} most recent" }]

@@ -139,7 +139,11 @@ def test_a_diagnosis_with_many_flags_is_capped(box, monkeypatch):  # noqa: F811
                 "avail": 9 * 10**11, "content": "iso,backup", "shared": 1} for i in range(80)]
     _node_wire(monkeypatch, storage=storage)
     out = diagnose.run("pve", NODE, cfg=box)
-    assert len(out["flags"]) == 1 and out["flags"][0].split(" ", 1)[1].startswith("storages are inactive")
+    # one grouped line for the inactive ones, and one saying the cap cut the list: the storages past the cut
+    # were never read, so the diagnosis is not complete (it said nothing of them before 2026-11-13)
+    assert len(out["flags"]) == 2 and out["flags"][0].split(" ", 1)[1].startswith("storages are inactive")
+    assert out["flags"][1].startswith("storage: ") and "of 80 rows judged" in out["flags"][1]
+    assert out["incomplete"] is True
     assert rawdoor.fits(len(_c(out).encode()), _c(out), cap=rawdoor.composed_cap()), len(_c(out))
 
 

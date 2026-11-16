@@ -282,13 +282,7 @@ def test_the_depth_cap_is_eight_exactly():
     assert problem and "deeper than 8" in problem, problem
 
 
-def test_a_shipped_file_nested_past_the_parsers_stack_is_refused_not_a_traceback(monkeypatch):
-    """Lens 4 on c31a318: json.loads itself raised RecursionError on a 10,000-deep value, before
-    any column was read, and the loader caught only (OSError, EOFError, ValueError, zlib.error)."""
-    from proximo.core.errors import ProximoError
-
-    blob = gzip.compress(b"[" * 100_000 + b"]" * 100_000)
-
+def _serve_package_file(monkeypatch, blob):
     class _Files:
         def joinpath(self, name):
             return self
@@ -296,5 +290,35 @@ def test_a_shipped_file_nested_past_the_parsers_stack_is_refused_not_a_traceback
         def read_bytes(self):
             return blob
     monkeypatch.setattr(apitree.resources, "files", lambda pkg: _Files())
+
+
+def test_a_shipped_file_nested_past_the_parsers_stack_is_refused_not_a_traceback(monkeypatch):
+    """Lens 4 on c31a318: json.loads itself raised RecursionError on a 10,000-deep value, before
+    any column was read, and the loader caught only (OSError, EOFError, ValueError, zlib.error).
+
+    Where the parser gives up is the machine's, not ours: Python 3.14 bounds recursion by the real
+    stack, so on a 16 MiB stack the same 100,000-deep file PARSES (public CI, 2026-11-16: this
+    test pinned the RecursionError sentence and went red there while green on an 8 MiB box). So
+    the overflow is raised here, not hoped for: whatever the stack, a RecursionError out of the
+    parser is the loader's sentence."""
+    from proximo.core.errors import ProximoError
+
+    _serve_package_file(monkeypatch, gzip.compress(b"{}"))
+
+    def _overflow(_text):
+        raise RecursionError("maximum recursion depth exceeded")
+    monkeypatch.setattr(apitree.json, "loads", _overflow)
     with pytest.raises(ProximoError, match=r"cannot be read \(RecursionError\)"):
         apitree.published.__wrapped__()
+
+
+def test_a_shipped_file_100000_deep_is_refused_by_a_sentence_on_any_stack(monkeypatch):
+    """The real file, the real parser. A small stack overflows in the parser; a large one parses
+    a list a hundred thousand deep, which is not the schema. Either way it is the loader's own
+    refusal, never a traceback and never a served address."""
+    from proximo.core.errors import ProximoError
+
+    _serve_package_file(monkeypatch, gzip.compress(b"[" * 100_000 + b"]" * 100_000))
+    with pytest.raises(ProximoError, match=r"cannot be read \(RecursionError\)|is not schema \d+ with rows") as refused:
+        apitree.published.__wrapped__()
+    assert "every address is refused" in str(refused.value)

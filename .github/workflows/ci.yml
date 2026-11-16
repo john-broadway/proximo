@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
         # The dual-major port (A13): every push proves the suite on BOTH supported mcp majors.
         # INVERTED IN 0.44.0, when the lock moved to 2.x: leg 2 now runs the lock's own
         # hash-pinned 2.x, and leg 1 overrides DOWN to 1.x to keep the published floor
