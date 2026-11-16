@@ -364,6 +364,18 @@ proximo-core uses local         # the guests with a disk or NIC on that storage 
 proximo-core changed 24h        # added, gone and changed, over 30m, 24h or 7d
 ```
 
+`where` takes the vendor's own words, exactly: an id or an exact name, alone or after one of the
+vendor's type words (`where lxc 105`, `where storage local`; the kinds are `qemu`, `lxc`, `node`,
+`storage`, `pool`, `bridge` and `backup`), separated by one plain space. No prefix, no synonym, no
+tag, case included; a target of digits is an id or nothing, never a name; a backup by its full volid,
+a bridge by its interface name; an ACL row answers to nothing here (`GET /access/acl`). A miss names
+the vendor's own list to read (`GET /cluster/resources`). The same lookup answers `proximo_find`.
+
+Those are PVE's. `learn`, `where` and `changed` take `--plane pbs`, `--plane pmg` or `--plane pdm` for the
+other products, each answered by that product's own ids and type words (a PBS backup group by `vm/105`,
+a PMG relay domain by its name, a PDM guest by `remote/pve1/guest/105`); the CHANGELOG's 0.53.0 entry
+lists every kind. `uses` stays PVE's and says so.
+
 An answer says how old it is and when it is incomplete (no whole cluster read yet, a guest whose
 config was never read), and "not in memory" never means "does not exist": each answer carries the
 published path that would read the thing live. Only a whole, unfiltered list read may mark a thing
@@ -374,7 +386,8 @@ ledger.
 off and `proximo doctor` flags it. `PROXIMO_MEMORY_PATH` moves the file (name the `.db` file itself,
 not a directory). The file is created `0600` and opened read-write, never creating, after the file
 and its sidecars are checked; a symlink, a hard link, a file another user owns, one that group or
-other can read, or an empty file memory did not create is refused, never quietly tightened.
+other can read, an empty file memory did not create, or a file a newer Proximo wrote is refused,
+never quietly tightened or wiped.
 
 ---
 

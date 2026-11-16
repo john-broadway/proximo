@@ -34,6 +34,7 @@ _COLUMNS: dict[str, tuple[type, ...]] = {
     "sight": (dict, type(None)), "one_of": (dict, type(None)),
     "consult": (str, type(None)),
     "permissions": (dict, type(None)),   # the vendor's rule, verbatim (the may/never map); None = none published
+    "row": (list, type(None)),   # the fields the vendor publishes on every row of a list read; None = none published
 }
 _SECRET = {"drop": list, "userinfo": list, "rows": list, "text": bool, "bearer": (str, type(None))}
 #: The opt-in lanes a gated row may be served on (spine.opt_in_refusal); None is ungated or a hard gate.
@@ -76,6 +77,9 @@ def published() -> dict[str, Any]:
                or r["wire"] not in ("http", "ssh") or r["lane"] not in LANES
                or rule_problem(r["permissions"], r["product"]) is not None
                or (r["wire"] == "ssh" and r["permissions"] is not None)   # Proximo's own rows: no vendor rule
+               or (r["row"] is not None and (r["method"] != "GET" or r["wire"] == "ssh"   # a vendor's list read only
+                                             or len(set(r["row"])) != len(r["row"])
+                                             or any(not isinstance(f, str) or not f for f in r["row"])))
                or (r["net"] is not None and (set(r["net"]) != {"snapshot", "rollback"}
                                              or any(not isinstance(v, str) for v in r["net"].values())))
                or (r["expect"] is not None and any(not isinstance(v, str) for v in r["expect"].values())))

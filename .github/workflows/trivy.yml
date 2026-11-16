@@ -1,7 +1,7 @@
 name: Trivy — image vulnerability scan
 
 # Continuous container-image scanning. Catches OS-package CVEs in the
-# python:3.13-slim base + the apt layer (openssh-client) that pip-audit (Python
+# python:3.14-slim base + the apt layer (openssh-client) that pip-audit (Python
 # deps only) and CodeQL (source only) never see. Findings land in the Security tab.
 on:
   push:
@@ -45,6 +45,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: proximo:scan
+          version: v0.76.2   # the scanner itself, latest; the action pins only its own code
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
@@ -55,7 +56,7 @@ jobs:
           # (17/17, 2026-06-24 -> 2026-06-30, `results_count: 0` each time per
           # `gh api repos/.../code-scanning/analyses?tool_name=Trivy`) found zero
           # fixable CRITICAL/HIGH findings, across multiple pulls of the
-          # python:3.13-slim base — so this isn't one lucky scan. The base is now
+          # python:3.13-slim base of that day — so this isn't one lucky scan. The base is now
           # digest-pinned (Dockerfile) and bumped weekly by Dependabot; this job
           # re-scans the pinned digest on every push to main and weekly (not on the
           # bump PR itself — no pull_request trigger here), so a newly-disclosed base
@@ -63,7 +64,7 @@ jobs:
           exit-code: '1'
 
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always()
         with:
           sarif_file: trivy-results.sarif

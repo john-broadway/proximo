@@ -94,8 +94,17 @@ def _check_flag(flag: Any, key: str, probe: str) -> None:
                                and all(isinstance(f, str) for f in flag["over"])
                                and isinstance(flag.get("at"), (int, float))):
         raise ProximoError(f"{where}: `over` takes [used, total] and a numeric `at`")
-    if "is" in flag and "expect" not in flag:
-        raise ProximoError(f"{where}: `is` takes an `expect` value")
+    if "is" in flag and ("expect" in flag) == ("never" in flag):
+        raise ProximoError(f"{where}: `is` takes an `expect` value or a `never` value, one of them")
+    if "never" in flag and "is" not in flag:
+        raise ProximoError(f"{where}: `never` is a value on an `is` flag")
+    if "absent" in flag:
+        if "over" not in flag or not isinstance(flag["absent"], str) or not flag["absent"]:
+            raise ProximoError(f"{where}: `absent` is a sentence on an `over` flag")
+        try:
+            flag["absent"].format_map(_Words())
+        except Exception as exc:  # noqa: BLE001 -- as `says` below
+            raise ProximoError(f"{where}: `absent` does not render ({safe_exception_text(exc)})") from exc
     try:                                   # a sentence that cannot render would abort a battery at run (lens 1)
         flag["says"].format_map(_Words())
     except Exception as exc:  # noqa: BLE001 -- `{a.b}` is an AttributeError, `{a[x]}` a TypeError: any is a refusal
@@ -189,6 +198,8 @@ def task_outcome(row: Any) -> str:
     s = str(status)
     if s == "OK":
         return "ok"
+    if s == "unknown":                 # the vendor's own word (PBS and PDM publish it beside OK and Error)
+        return "unknown"
     if s.startswith("WARNINGS: "):
         return "warnings"
     return "failed"
@@ -349,7 +360,7 @@ def _closed_lanes(plane: str, sub: Subject, bound: dict[str, str], plane_cfg: wi
 
 def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Plane,
              ledger_cfg: Any) -> tuple[dict[str, Any], str, list[str]]:
-    """One probe: the section, its outcome (ok / error / fenced) and the flags it raised."""
+    """One probe: the section, its outcome (ok / error / fenced / cut) and the flags it raised."""
     name = probe.name
     concrete = _concrete(probe, bound)
     prow = engine.resolve(plane, "GET", probe.path)
@@ -363,19 +374,7 @@ def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Pl
     wanted = probe.rows                    # a local, so its narrowing holds for the checker
     projected = wanted is not None
     try:
-        try:
-            env = engine.execute(prow, dict(probe.params), cfg=plane_cfg, path=concrete, ledger_cfg=ledger_cfg,
-                                 fields=",".join(wanted) if wanted is not None else "all", evaluating=True)
-        except ProximoError as exc:
-            # THE PROJECTION'S OWN REFUSAL IS NOT A FAILED READ. `fields=` refuses when no
-            # row carries a named field: no rows, none finished, every storage offline. The
-            # read answered; it is taken again raw (receipted again) and projected here, so an
-            # all-offline node gets its inactive sentences, not "read failed" (lens 1).
-            if not (projected and str(exc).startswith("fields:")):
-                raise
-            env = engine.execute(prow, dict(probe.params), cfg=plane_cfg, path=concrete, ledger_cfg=ledger_cfg,
-                                 fields="all", evaluating=True)
-            projected = False
+        env, projected = _read_rows(prow, probe, plane_cfg, concrete, ledger_cfg)
     except ProximoError as exc:            # refused by the spine, receipted by execute
         section["error"] = {"why": _words(prow, str(exc))}
         return section, "error", [_INCOMPLETE.format(name=name)]
@@ -414,13 +413,17 @@ def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Pl
         for k in ("total", "returned", "truncated"):
             if k in env:
                 section[k] = env[k]
-        if env.get("truncated"):
-            section["window"] = f"{len(rows)} of the {env.get('total')} most recent, cut by the door's cap"
-        if any("failed" in f for f in probe.flags):
+        tasks = any("failed" in f for f in probe.flags)
+        cut = _cut(section, name, len(rows), env, tasks, judged=bool(probe.flags))
+        if cut == "all":
+            return section, "error", [_INCOMPLETE.format(name=name)]
+        if tasks:
             section.update(_tasks(rows, probe))
         else:
             section["rows"] = rows
         found = _contained(probe, rows, len(rows))
+        if cut is not None and found is not None:
+            return section, "cut", [*found, cut]
     else:
         if not isinstance(data, dict):
             section["error"] = {"why": f"the read answered {_shape(data)}, not the record the battery expects"}
@@ -434,6 +437,62 @@ def _section(plane: str, probe: Probe, bound: dict[str, str], plane_cfg: wire.Pl
         section["error"] = {"why": f"the flags of {name} could not be evaluated from the vendor's values"}
         return section, "error", [f"{name} flags not evaluated; diagnosis incomplete"]
     return section, "ok", found
+
+
+def _read_rows(prow: engine.Row, probe: Probe, plane_cfg: wire.Plane, concrete: str,
+               ledger_cfg: Any) -> tuple[dict[str, Any], bool]:
+    """The probe's read and whether the door projected it. THE PROJECTION'S OWN REFUSAL IS NOT A FAILED
+    READ. `fields=` refuses when no row carries a named field: none finished, every storage offline, no
+    store ever collected. The read answered, so it is asked again (receipted again) for the fields the
+    rows do carry, one named field dropped per refusal; a raw row is read only when none is left, because
+    a raw row is what the size law cuts first (a datastore row with its month of `history`, a GC row with
+    its cache statistics: lens on 1e3013f)."""
+    def read(fields: str) -> dict[str, Any]:
+        return engine.execute(prow, dict(probe.params), cfg=plane_cfg, path=concrete, ledger_cfg=ledger_cfg,
+                              fields=fields, evaluating=True)
+    if probe.rows is None:
+        return read("all"), False
+    asking = list(probe.rows)
+    while True:
+        try:
+            return read(",".join(asking)), True
+        except ProximoError as exc:
+            text = str(exc)
+            if not text.startswith("fields:"):
+                raise
+            head, _, carried = text.partition("; the rows carry: ")
+            gone = next((f for f in asking if f"'{f}'" in head), None) \
+                if text.startswith("fields: no row carries") else None
+            if gone is None or len(asking) == 1:
+                return read("all"), False
+            asking.remove(gone)
+            if carried and " more)" not in carried and " keys (" not in carried:
+                # the refusal named every key the rows carry (a trusted address, the list whole): ask once
+                # for what is there, never once per missing field
+                asking = [f for f in asking if f"'{f}'" in carried] or asking[:1]
+
+
+def _cut(section: dict[str, Any], name: str, kept: int, env: Mapping[str, Any], tasks: bool,
+         judged: bool = True) -> str | None:
+    """What the door's cap did to a rows probe: None (nothing, or a task list's window, which is one by
+    design: the newest N), "all" when it cut every row, else the sentence for a list cut partway.
+
+    A WINDOW OF NOTHING IS NOT A CLEAN BILL. One row over the cap (a PBS datastore row with its month of
+    history) came back as 0 of 1, no flag, "ok", complete: the read answered and nothing of it was judged.
+    A LIST CUT PARTWAY IS NOT ALL OF IT. A list of stores is not a window: the rows past the cut were never
+    judged, so the ones read are judged and the diagnosis says it is incomplete (lens on 452dbbb: 46 of 80
+    stores read clean)."""
+    if not env.get("truncated"):
+        return None
+    total = env.get("total")
+    section["window"] = (f"{kept} of the {total} most recent, cut by the door's cap" if tasks
+                         else f"{kept} of the {total} rows, cut by the door's cap")
+    if not kept and total:
+        section["error"] = {"why": f"the door's cap cut every row (0 of {total}); not evaluated"}
+        return "all"
+    if tasks or not judged:                # a window by design, or evidence the battery judges none of
+        return None
+    return f"{name}: {kept} of {total} rows judged (cut by the door's cap); diagnosis incomplete"
 
 
 def _unjudgeable(probe: Probe, data: dict) -> str | None:
@@ -490,6 +549,14 @@ def _tasks(rows: list[dict], probe: Probe) -> dict[str, Any]:
     failed = [r for r in rows if task_outcome(r) == "failed"]
     return {"asked": probe.params.get("limit"), "seen": len(rows), "by_outcome": dict(outcomes),
             "failed": failed[:FAILED_ROWS], "failed_total": len(failed)}
+
+
+def _same(value: Any, word: Any) -> bool:
+    """The vendor's value against the authored one, by what it says: a product that writes its numbers as
+    strings (PMG's counts) and its booleans as 0/1 or true/false still says the same thing."""
+    def text(v: Any) -> str:
+        return str(int(v)) if isinstance(v, bool) else str(v)
+    return text(value) == text(word)
 
 
 def _get(record: dict, dotted: str) -> Any:
@@ -562,9 +629,17 @@ def _flags(probe: Probe, records: list[dict], seen: int | None = None) -> list[s
                 if f is not None and f > flag["at"]:
                     pct = round(100 * f) if math.isfinite(100 * f) else "over 100"
                     out.append(_say(flag, r, pct=pct))
+                elif "absent" in flag and all(_get(r, k) is None for k in (*flag["over"], flag.get("fraction", ""))):
+                    # the row carries no usage at all (a store the vendor could not look up): named, never
+                    # read as under the threshold
+                    out.append(_say({"says": flag["absent"]}, r))
             elif "is" in flag:
                 v = r.get(flag["is"])
-                if v not in (None, "") and v != flag["expect"]:
+                if v in (None, ""):
+                    continue
+                # `expect`: any other value is named. `never`: only that value is (a service that `failed`,
+                # where dead, exited and a timer's `success` are all ordinary).
+                if (_same(v, flag["never"])) if "never" in flag else (not _same(v, flag["expect"])):
                     out.append(_say(flag, r, value=v))
             elif "lines" in flag:
                 v = r.get(flag["lines"])

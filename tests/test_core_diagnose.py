@@ -394,10 +394,12 @@ def test_a_template_path_names_no_subject(box, monkeypatch):
         diagnose.run("pve", "/nodes/{node}", cfg=box)
 
 
-def test_a_plane_with_no_subjects_says_so(box, monkeypatch):
-    with pytest.raises(ProximoError, match="no diagnosis is authored.*pbs"):
-        diagnose.run("pbs", "/nodes/localhost",
-                     cfg=wire.Plane("pbs", "https://pbs.invalid:8007/api2/json", box.token_path))
+def test_every_product_has_a_node_battery_and_a_path_without_one_names_it(box, monkeypatch):
+    for plane in ("pve", "pbs", "pmg", "pdm"):
+        assert f"{plane}:GET /nodes/{{node}}" in diagnose.subjects()
+    with pytest.raises(ProximoError, match=r"no diagnosis is authored.*subjects on pmg: /nodes/\{node\}"):
+        diagnose.run("pmg", "/config/domains",
+                     cfg=wire.Plane("pmg", "https://pmg.invalid:8006/api2/json", box.token_path))
 
 
 def test_an_unconfigured_plane_is_the_doors_unconfigured_not_a_refusal(monkeypatch):
@@ -591,7 +593,8 @@ def test_b2_an_untrusted_probe_refused_before_its_data_keeps_its_label_and_its_w
 def test_n1_rows_that_lack_every_named_field_are_read_again_raw_not_reported_as_a_failed_read(box, monkeypatch):
     """NON-BLOCKING 1: the projection refuses when no row carries a named field (no rows, none
     finished, every storage offline) and the section said "read failed". The read answered; it is
-    taken again raw, receipted again, projected here, and an all-offline node gets its sentences."""
+    taken again, receipted again, for the fields the rows do carry (raw only when there are no rows to
+    say what they carry), and an all-offline node gets its sentences."""
     monkeypatch.setenv("PROXIMO_RAW_MAX_TOKENS", "100000")    # whole sections; the answer cap: test_door_fixes.py
     offline = [{"storage": "nfs-a", "type": "nfs", "active": 0, "enabled": 1},
                {"storage": "nfs-b", "type": "nfs", "active": 0, "enabled": 1}]
@@ -703,3 +706,435 @@ def test_a_rows_probe_answered_a_record_is_read_once(box, monkeypatch):
     out = diagnose.run("pve", NODE, cfg=box)
     assert [c for c in w.calls if c[1].endswith("/storage")].__len__() == 1, w.calls
     assert out["battery"]["storage"]["error"]["why"] == "the read answered a record, not the list the battery expects"
+
+
+# --- PBS and PDM: the node's own reads, on the fields those products publish ------------------------
+# The rows are the shape the home PBS answered on 2026-11-13 (values invented): a status with `memory`
+# {free, total, used} and `root` {avail, total, used}, task rows with `status` and `endtime`, one
+# datastore-usage row.
+
+_PBS_STATUS = {"uptime": 1_720_000, "cpu": 0.03, "loadavg": [0.1, 0.2, 0.3], "wait": 0.001, "kversion": "x",
+               "memory": {"free": 1_800, "total": 2_000, "used": 200},
+               "root": {"avail": 10_000, "total": 20_000, "used": 9_000}, "swap": {"free": 0, "total": 0, "used": 0},
+               "cpuinfo": {"cpus": 2, "model": "invented", "sockets": 1}}
+_PBS_TASKS = [{"upid": f"UPID:pbs:{i:08X}:0:0:0:backup:tank:invented@pbs:", "node": "pbs", "pid": i, "pstart": 1,
+               "starttime": 1_700_000_000 + i, "endtime": 1_700_000_060 + i, "status": "OK", "user": "invented@pbs",
+               "worker_type": "backup", "worker_id": "tank"} for i in range(6)]
+_PBS_STORES = [{"store": "tank", "total": 1_000, "used": 100, "avail": 900, "mount-status": "nonremovable",
+                "backend-type": "filesystem", "history": [0.1] * 4}]
+
+
+def _plane(box, name):
+    port = {"pbs": 8007, "pdm": 8443, "pmg": 8006}[name]
+    return wire.Plane(name, f"https://{name}.invalid:{port}/api2/json", box.token_path)
+
+
+_PBS_GC = [{"store": "tank", "last-run-state": "OK", "last-run-endtime": 1_700_000_000, "still-bad": 0,
+            "removed-bad": 0, "pending-bytes": 0, "disk-bytes": 9, "disk-chunks": 3, "index-data-bytes": 9,
+            "index-file-count": 1, "pending-chunks": 0, "removed-bytes": 0, "removed-chunks": 0,
+            "schedule": "sun 03:00", "upid": "UPID:pbs:0:0:0:0:garbage_collection:tank:root@pam:"}]
+_SERVICES = [{"service": "proxmox-backup", "name": "proxmox-backup", "desc": "x", "state": "running",
+              "unit-state": "enabled"},
+             {"service": "chrony", "name": "chrony", "desc": "x", "state": "dead", "unit-state": "not-found"},
+             {"service": "cron", "name": "cron", "desc": "x", "state": "exited", "unit-state": "enabled"}]
+
+
+def _pbs_wire(monkeypatch, status=None, stores=None, tasks=None, fail=None, gc=None, services=None):
+    return _wire(monkeypatch, {"/nodes/localhost/status": status if status is not None else _PBS_STATUS,
+                               "/status/datastore-usage": stores if stores is not None else _PBS_STORES,
+                               "/admin/gc": gc if gc is not None else _PBS_GC,
+                               "/nodes/localhost/services": services if services is not None else _SERVICES,
+                               "/nodes/localhost/tasks": tasks if tasks is not None else _PBS_TASKS}, fail)
+
+
+def test_a_pbs_node_diagnosis_reads_status_datastores_and_tasks_and_is_receipted(box, monkeypatch):
+    monkeypatch.setenv("PROXIMO_RAW_MAX_TOKENS", "100000")
+    w = _pbs_wire(monkeypatch)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert [c[1] for c in w.calls] == ["/nodes/localhost/status", "/status/datastore-usage", "/admin/gc",
+                                       "/nodes/localhost/services", "/nodes/localhost/tasks"]
+    assert w.calls[4][2] == {"limit": 50}
+    assert out["plane"] == "pbs" and out["subject"] == "a PBS node" and out["address"] == "GET /nodes/{node}"
+    st = out["battery"]["status"]
+    assert set(st) >= {"uptime", "cpu", "loadavg", "memory", "root"} and "cpuinfo" not in st and "swap" not in st
+    [store] = out["battery"]["datastores"]["rows"]
+    assert set(store) == {"store", "total", "used", "avail", "mount-status"}          # never the month of history
+    assert out["battery"]["tasks"]["by_outcome"] == {"ok": 6}
+    assert out["flags"] == [] and out["incomplete"] is False
+    assert "no shell lane" in out["shell"]["skipped"]
+    last = _rows()[-1]
+    assert last["action"] == "core.diagnose" and last["outcome"] == "ok"
+    assert last["detail"]["sections"] == {k: "ok" for k in ("status", "datastores", "gc", "services", "tasks")}
+    [gc] = out["battery"]["gc"]["rows"]
+    assert set(gc) == {"store", "last-run-state", "last-run-endtime", "still-bad", "removed-bad", "pending-bytes"}
+    assert {tuple(sorted(r)) for r in out["battery"]["services"]["rows"]} == {("service", "state", "unit-state")}
+
+
+@pytest.mark.parametrize("status,flag", [
+    ({**_PBS_STATUS, "memory": {"free": 50, "total": 1_000, "used": 950}}, "node memory at 95%"),
+    ({**_PBS_STATUS, "root": {"avail": 80, "total": 1_000, "used": 920}}, "root filesystem at 92%"),
+])
+def test_a_pbs_nodes_memory_or_root_filesystem_over_ninety_percent_is_flagged(box, monkeypatch, status, flag):
+    _pbs_wire(monkeypatch, status=status)
+    assert diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"] == [flag]
+
+
+def test_a_pbs_node_at_exactly_ninety_percent_is_not_flagged(box, monkeypatch):
+    _pbs_wire(monkeypatch, status={**_PBS_STATUS, "memory": {"total": 100, "used": 90},
+                                   "root": {"total": 100, "used": 90}})
+    assert diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"] == []
+
+
+def test_a_datastore_over_ninety_percent_is_flagged_and_one_with_no_usage_is_named_not_read_clean(box, monkeypatch):
+    stores = [{"store": "tank", "total": 1_000, "used": 950, "avail": 50, "mount-status": "nonremovable"},
+              {"store": "cold", "total": 1_000, "used": 100, "avail": 900, "mount-status": "nonremovable"},
+              {"store": "away", "mount-status": "notmounted"}]                     # unreadable: no usage published
+    _pbs_wire(monkeypatch, stores=stores)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["flags"] == ["datastore tank at 95%", "datastore away is without usage figures; not evaluated"]
+
+
+def test_failed_pbs_tasks_are_counted_by_the_vendors_exit_text(box, monkeypatch):
+    tasks = [*_PBS_TASKS[:3], {**_PBS_TASKS[3], "status": "unable to open chunk store"},
+             {**_PBS_TASKS[4], "status": "WARNINGS: 2"},
+             {k: v for k, v in _PBS_TASKS[5].items() if k not in ("endtime", "status")}]            # still running
+    _pbs_wire(monkeypatch, tasks=tasks)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["flags"] == ["1 failed task(s) among the 6 most recent"]
+    assert out["battery"]["tasks"]["by_outcome"] == {"ok": 3, "failed": 1, "warnings": 1, "running": 1}
+
+
+def test_a_pbs_read_the_vendor_fails_is_one_section_and_an_incomplete_diagnosis(box, monkeypatch):
+    _pbs_wire(monkeypatch, fail={"/status/datastore-usage": RuntimeError("vendor down")})
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["incomplete"] is True and "error" in out["battery"]["datastores"]
+    assert "memory" in out["battery"]["status"]                                   # the other reads still ran
+
+
+def test_a_pdm_node_diagnosis_reads_status_and_tasks(box, monkeypatch):
+    w = _wire(monkeypatch, {"/nodes/localhost/status": {**_PBS_STATUS, "root": {"total": 100, "used": 95}},
+                            "/nodes/localhost/tasks": [{**_PBS_TASKS[0], "status": "connection refused"}]})
+    out = diagnose.run("pdm", "/nodes/localhost", cfg=_plane(box, "pdm"))
+    assert [c[1] for c in w.calls] == ["/nodes/localhost/status", "/nodes/localhost/tasks"]
+    assert out["plane"] == "pdm" and out["subject"] == "a PDM node"
+    assert out["flags"] == ["root filesystem at 95%", "1 failed task(s) among the 1 most recent"]
+    assert set(out["battery"]) == {"status", "tasks"}
+
+
+def test_a_pbs_path_with_no_battery_names_the_subject_that_exists(box, monkeypatch):
+    with pytest.raises(ProximoError, match=r"no diagnosis is authored.*subjects on pbs: /nodes/\{node\}"):
+        diagnose.run("pbs", "/admin/datastore/tank", cfg=_plane(box, "pbs"))
+
+
+def test_a_window_the_cap_cut_to_no_rows_at_all_is_not_a_clean_section(box, monkeypatch):
+    """Found on the home PBS, 2026-11-13: one row over the cap answered `0 of 1`, raised no flag and read ok
+    and complete. Nothing was judged, so the section says so and the diagnosis is incomplete. The row
+    here is a failed task whose exit text is a page long, at the head of the list."""
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")
+    _pbs_wire(monkeypatch, tasks=[{**_PBS_TASKS[0], "status": "unable to open chunk store: " + "x" * 9_000},
+                                  *_PBS_TASKS[1:]])
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    section = out["battery"]["tasks"]
+    assert "cut every row (0 of 6)" in section["error"]["why"] and "failed" not in section
+    assert out["incomplete"] is True and any("tasks" in f for f in out["flags"])
+    assert _rows()[-1]["detail"]["sections"]["tasks"] == "error"
+
+
+def test_a_window_the_cap_cut_but_left_rows_in_is_still_judged(box, monkeypatch):
+    monkeypatch.setenv("PROXIMO_RAW_MAX_BYTES", "1152")
+    _pbs_wire(monkeypatch, tasks=[{**t, "status": "boom"} for t in _PBS_TASKS * 9][:50])
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    tasks = out["battery"]["tasks"]
+    assert "error" not in tasks and 0 < tasks["returned"] < 50 and "failed task(s)" in " ".join(out["flags"])
+
+
+# --- PMG: the node's own reads, on what the box answers ----------------------------------------------
+# The shape the lab's PMG 9.1 answered on 2026-11-13 (values invented): the doc names `insync`, `time`,
+# `uptime` and the boot fields; the answer also carries cpu, loadavg (strings), memory, rootfs, swap.
+
+_PMG_STATUS = {"insync": 1, "time": 1_700_000_000, "uptime": 424, "cpu": 0.3, "wait": 0.01, "kversion": "x",
+               "loadavg": ["0.10", "0.20", "0.30"], "pmgversion": "pmg-api/9.1.0/invented",
+               "memory": {"free": 1_700, "total": 4_000, "used": 1_600},
+               "rootfs": {"avail": 11_000, "free": 12_000, "total": 16_000, "used": 4_000},
+               "swap": {"free": 1_000, "total": 1_000, "used": 0}, "cpuinfo": {"cpus": 2}}
+_PMG_TASKS = [{"upid": f"UPID:mx1:{i:08X}:0:0:aptupdate::root@pam:", "node": "mx1", "pid": i, "pstart": 1, "id": "",
+               "type": "aptupdate", "user": "root@pam", "starttime": 1_700_000_000 + i,
+               "endtime": 1_700_000_010 + i, "status": "OK"} for i in range(4)]
+
+
+_PMG_SERVICES = [{"service": "pmg-smtp-filter", "name": "pmg-smtp-filter", "desc": "x", "state": "running",
+                  "unit-state": "enabled", "active-state": "active"},
+                 {"service": "fetchmail", "name": "fetchmail", "desc": "x", "state": "dead", "unit-state": "enabled",
+                  "active-state": "inactive"},
+                 {"service": "pmg-daily", "name": "pmg-daily", "desc": "x", "state": "success", "unit-state": "static",
+                  "active-state": "inactive"}]
+_PMG_RULES = [{"channel": "updates.spamassassin.org", "update_avail": 0},
+              {"channel": "other.example", "update_avail": 0}]
+_PMG_VIRUS = [{"name": "daily", "type": "ClamAV-VDB", "build_time": "29 Jun 2026 06-27 +0000", "nsigs": "355479",
+               "version": "28046"}]
+_PMG_QUEUE = [{"domain": "TOTAL", "total": "3", "5m": "0", "10m": "0", "1280m+": "2"},
+              {"domain": "example.org", "total": "3", "5m": "0", "10m": "0", "1280m+": "2"}]
+
+
+def _pmg_wire(monkeypatch, status=None, tasks=None, services=None, rules=None):
+    return _wire(monkeypatch, {"/nodes/mx1/status": status if status is not None else _PMG_STATUS,
+                               "/nodes/mx1/services": services if services is not None else _PMG_SERVICES,
+                               "/nodes/mx1/spamassassin/rules": rules if rules is not None else _PMG_RULES,
+                               "/nodes/mx1/clamav/database": _PMG_VIRUS, "/nodes/mx1/postfix/qshape": _PMG_QUEUE,
+                               "/nodes/mx1/tasks": tasks if tasks is not None else _PMG_TASKS})
+
+
+def test_a_pmg_node_diagnosis_reads_status_and_tasks_and_is_receipted(box, monkeypatch):
+    w = _pmg_wire(monkeypatch)
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert [c[1] for c in w.calls] == ["/nodes/mx1/status", "/nodes/mx1/services", "/nodes/mx1/spamassassin/rules",
+                                       "/nodes/mx1/clamav/database", "/nodes/mx1/postfix/qshape", "/nodes/mx1/tasks"]
+    assert w.calls[5][2] == {"limit": 50}
+    assert out["plane"] == "pmg" and out["subject"] == "a PMG node"
+    st = out["battery"]["status"]
+    assert set(st) == {"address", "uptime", "insync", "cpu", "loadavg", "memory", "rootfs"}   # never pmgversion, swap
+    assert out["battery"]["tasks"]["by_outcome"] == {"ok": 4}
+    assert out["flags"] == [] and out["incomplete"] is False and "no shell lane" in out["shell"]["skipped"]
+    every = ("status", "tasks", "services", "spam_rules", "virus_db", "mail_queue")
+    assert _rows()[-1]["detail"]["sections"] == {k: "ok" for k in every}
+    assert out["battery"]["mail_queue"]["rows"] == [{"domain": "TOTAL", "total": "3"},
+                                                    {"domain": "example.org", "total": "3"}]   # shown, never judged
+    assert out["battery"]["virus_db"]["rows"] == _PMG_VIRUS
+
+
+@pytest.mark.parametrize("status,flag", [
+    ({**_PMG_STATUS, "memory": {"free": 40, "total": 1_000, "used": 960}}, "node memory at 96%"),
+    ({**_PMG_STATUS, "rootfs": {"avail": 60, "free": 70, "total": 1_000, "used": 930}}, "root filesystem at 93%"),
+])
+def test_a_pmg_nodes_memory_or_root_filesystem_over_ninety_percent_is_flagged(box, monkeypatch, status, flag):
+    _pmg_wire(monkeypatch, status=status)
+    assert diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))["flags"] == [flag]
+
+
+def test_a_pmg_status_that_carries_only_what_the_doc_names_raises_no_flag_and_no_error(box, monkeypatch):
+    """The usage fields are seen in the answer, not published: a box that leaves them out is not judged
+    full and is not a failed read."""
+    _pmg_wire(monkeypatch, status={"insync": 1, "time": 1_700_000_000, "uptime": 424})
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == [] and "error" not in out["battery"]["status"]
+
+
+def test_failed_pmg_tasks_are_counted_by_the_vendors_exit_text(box, monkeypatch):
+    _pmg_wire(monkeypatch, tasks=[*_PMG_TASKS[:2], {**_PMG_TASKS[2], "status": "command 'apt-get update' failed"},
+                                  {**_PMG_TASKS[3], "status": "WARNINGS: 1"}])
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == ["1 failed task(s) among the 4 most recent"]
+
+
+# --- the lens on 452dbbb, folded -----------------------------------------------------------------------
+
+def test_a_datastore_the_vendor_could_not_read_is_named_alone_or_beside_a_healthy_one(box, monkeypatch):
+    """F1: a row with the vendor's `error` and no usage raised no flag and read complete."""
+    broken = {"store": "broken", "mount-status": "nonremovable", "error": "unable to open chunk store"}
+    for stores in ([_PBS_STORES[0], broken], [broken]):
+        _pbs_wire(monkeypatch, stores=stores)
+        out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+        assert out["flags"] == ["datastore broken is without usage figures; not evaluated"], stores
+
+
+def test_a_store_with_usage_under_the_threshold_or_a_zero_total_is_not_named_absent(box, monkeypatch):
+    stores = [{"store": "a", "total": 1_000, "used": 900, "mount-status": "nonremovable"},      # exactly 90%
+              {"store": "b", "total": 0, "used": 0, "mount-status": "nonremovable"}]
+    _pbs_wire(monkeypatch, stores=stores)
+    assert diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"] == []
+
+
+def test_the_vendors_own_unknown_task_state_is_not_a_failed_task(box, monkeypatch):
+    """F2: PBS and PDM publish `unknown` beside OK and Error; it was counted as a failure."""
+    _pbs_wire(monkeypatch, tasks=[*_PBS_TASKS[:2], {**_PBS_TASKS[2], "status": "unknown"}])
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["flags"] == [] and out["battery"]["tasks"]["by_outcome"] == {"ok": 2, "unknown": 1}
+    assert diagnose.task_outcome({"endtime": 1, "status": "unknown error"}) == "failed"       # only the word alone
+
+
+def test_a_store_list_the_cap_cut_partway_judges_what_it_read_and_says_incomplete(box, monkeypatch):
+    """F3: 46 of 80 stores read clean and complete; the last, at 99%, was never judged."""
+    stores = [{"store": f"s{i:02d}", "total": 1_000, "used": 950 if i == 0 else 100, "avail": 50,
+               "mount-status": "nonremovable"} for i in range(80)]
+    _pbs_wire(monkeypatch, stores=stores)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    section = out["battery"]["datastores"]
+    assert 0 < len(section["rows"]) < 80 and "rows, cut by the door's cap" in section["window"]
+    assert out["incomplete"] is True and "datastore s00 at 95%" in out["flags"]
+    assert any(f.startswith("datastores: ") and "of 80 rows judged" in f for f in out["flags"])
+    assert _rows()[-1]["detail"]["sections"]["datastores"] == "cut"
+
+
+def test_the_pdm_battery_is_held_to_its_window_its_fields_and_its_thresholds(box, monkeypatch):
+    """F4: mutations of the PDM record stayed green."""
+    w = _wire(monkeypatch, {"/nodes/localhost/status": {**_PBS_STATUS, "memory": {"total": 100, "used": 90},
+                                                        "root": {"total": 100, "used": 90}},
+                            "/nodes/localhost/tasks": _PBS_TASKS})
+    out = diagnose.run("pdm", "/nodes/localhost", cfg=_plane(box, "pdm"))
+    assert w.calls[1][2] == {"limit": 50}
+    assert set(out["battery"]["status"]) == {"address", "uptime", "cpu", "loadavg", "memory", "root"}
+    assert out["flags"] == [] and "no shell lane" in out["shell"]["skipped"]             # exactly 90% is not past it
+    _wire(monkeypatch, {"/nodes/localhost/status": {**_PBS_STATUS, "memory": {"total": 100, "used": 91},
+                                                    "root": {"total": 100, "used": 91}},
+                        "/nodes/localhost/tasks": _PBS_TASKS})
+    assert diagnose.run("pdm", "/nodes/localhost", cfg=_plane(box, "pdm"))["flags"] == \
+        ["node memory at 91%", "root filesystem at 91%"]
+
+
+def test_a_pbs_task_row_keeps_what_it_ran_on(box, monkeypatch):
+    _pbs_wire(monkeypatch, tasks=[{**_PBS_TASKS[0], "status": "boom"}])
+    [failed] = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["battery"]["tasks"]["failed"]
+    assert failed["worker_type"] == "backup" and failed["worker_id"] == "tank"
+
+
+@pytest.mark.parametrize("flag", [{"is": "status", "expect": "x", "says": "s", "absent": "a"},
+                                  {"over": ["a", "b"], "at": 0.9, "says": "s", "absent": ""},
+                                  {"over": ["a", "b"], "at": 0.9, "says": "s", "absent": "{a.b}"}])
+def test_an_absent_sentence_anywhere_but_a_renderable_one_on_an_over_flag_refuses_the_load(flag):
+    with pytest.raises(ProximoError, match="absent"):
+        diagnose._check_flag(flag, "pbs:GET /x", "p")
+
+
+# --- the products' own signals: only where the vendor's own word decides -----------------------------
+
+@pytest.mark.parametrize("row,flag", [
+    ({"last-run-state": "Error: unable to lock"}, "garbage collection on tank ended Error: unable to lock"),
+    ({"still-bad": 4}, "datastore tank: 4 bad chunk(s) still referenced after garbage collection"),
+])
+def test_a_garbage_collection_that_did_not_end_ok_or_left_bad_chunks_is_flagged(box, monkeypatch, row, flag):
+    _pbs_wire(monkeypatch, gc=[{**_PBS_GC[0], **row}])
+    assert diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"] == [flag]
+
+
+def test_a_datastore_never_collected_is_not_judged(box, monkeypatch):
+    never = {"store": "new", "disk-bytes": 0, "disk-chunks": 0, "index-data-bytes": 0, "index-file-count": 0,
+             "pending-bytes": 0, "pending-chunks": 0, "removed-bad": 0, "removed-bytes": 0, "removed-chunks": 0,
+             "still-bad": 0}
+    for gc in ([never], [_PBS_GC[0], never]):
+        _pbs_wire(monkeypatch, gc=gc)
+        out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+        assert out["flags"] == [] and out["incomplete"] is False, gc
+
+
+@pytest.mark.parametrize("plane,path,wire", [("pbs", "/nodes/localhost", _pbs_wire), ("pmg", "/nodes/mx1", _pmg_wire)])
+def test_only_a_service_the_unit_manager_calls_failed_is_named(box, monkeypatch, plane, path, wire):
+    """dead (not installed, or just not running), exited and a timer's `success` are ordinary; the home PBS
+    reads `chrony` dead / not-found and the lab PMG `fetchmail` dead / enabled, and neither is a fault."""
+    wire(monkeypatch)
+    assert diagnose.run(plane, path, cfg=_plane(box, plane))["flags"] == []
+    bad = {"service": "postfix", "name": "postfix", "desc": "x", "state": "failed", "unit-state": "enabled"}
+    wire(monkeypatch, services=[*(_SERVICES if plane == "pbs" else _PMG_SERVICES), bad])
+    assert diagnose.run(plane, path, cfg=_plane(box, plane))["flags"] == ["service postfix is in the failed state"]
+
+
+def test_a_pmg_node_out_of_sync_is_flagged_after_its_usage_is_judged(box, monkeypatch):
+    _pmg_wire(monkeypatch, status={**_PMG_STATUS, "insync": 0, "memory": {"total": 100, "used": 95}})
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == ["node memory at 95%", "node is not in sync with its cluster (the vendor's insync is 0)"]
+
+
+@pytest.mark.parametrize("waiting", [1, True])
+def test_a_spam_rule_channel_with_an_update_waiting_is_flagged_by_name(box, monkeypatch, waiting):
+    _pmg_wire(monkeypatch, rules=[_PMG_RULES[0], {"channel": "other.example", "update_avail": waiting}])
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == ["spam rules: an update is waiting on other.example"]
+    _pmg_wire(monkeypatch, rules=[{"channel": "a.example", "update_avail": False}])
+    assert diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))["flags"] == []
+
+
+def test_the_mail_queue_and_the_virus_database_are_evidence_and_raise_no_flag(box, monkeypatch):
+    """How many queued mails are too many, and how old a signature set may be, are numbers nobody authored."""
+    for probe in ("mail_queue", "virus_db"):
+        assert diagnose.subjects()["pmg:GET /nodes/{node}"].probes[probe].flags == ()
+
+
+@pytest.mark.parametrize("flag", [{"is": "state", "says": "s"},
+                                  {"is": "state", "expect": "a", "never": "b", "says": "s"},
+                                  {"off": "x", "never": "b", "says": "s"}])
+def test_an_is_flag_takes_exactly_one_of_expect_and_never(flag):
+    with pytest.raises(ProximoError, match="expect|never"):
+        diagnose._check_flag(flag, "pbs:GET /x", "p")
+
+
+# --- the lens on 1e3013f, folded -------------------------------------------------------------------------
+
+def test_the_mail_queue_section_is_untrusted_because_its_domains_are_whoever_was_written_to(box, monkeypatch):
+    """F1: the queue by recipient domain rode into every PMG diagnosis with no label."""
+    assert engine.resolve("pmg", "GET", "/nodes/mx1/postfix/qshape").untrusted is True
+    _pmg_wire(monkeypatch)
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["untrusted"] is True and out["battery"]["mail_queue"]["untrusted"] is True
+    assert "untrusted" not in out["battery"]["services"]
+
+
+def test_an_evidence_list_the_cap_cut_partway_is_a_window_not_an_incomplete_diagnosis(box, monkeypatch):
+    """F2: nothing in the mail queue is judged, so a long one said "rows judged" and read incomplete."""
+    queue = [{"domain": "TOTAL", "total": "400"}, *({"domain": f"recipient-domain-{i:04d}.example", "total": "2"}
+                                                    for i in range(400))]
+    _wire(monkeypatch, {"/nodes/mx1/status": _PMG_STATUS, "/nodes/mx1/services": _PMG_SERVICES,
+                        "/nodes/mx1/spamassassin/rules": _PMG_RULES, "/nodes/mx1/clamav/database": _PMG_VIRUS,
+                        "/nodes/mx1/postfix/qshape": queue, "/nodes/mx1/tasks": _PMG_TASKS})
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == [] and out["incomplete"] is False
+    assert "rows, cut by the door's cap" in out["battery"]["mail_queue"]["window"]
+
+
+def test_a_refused_projection_asks_once_more_for_what_the_rows_carry_and_never_reads_the_raw_row(box, monkeypatch):
+    """F3: the raw re-read was capped before it was projected. Thirty stores never collected, the last
+    with bad chunks: twenty were read and the bad one was never named."""
+    never = [{"store": f"s{i:02d}", "disk-bytes": 0, "disk-chunks": 0, "index-data-bytes": 0, "index-file-count": 0,
+              "pending-bytes": 0, "pending-chunks": 0, "removed-bad": 0, "removed-bytes": 0, "removed-chunks": 0,
+              "still-bad": 7 if i == 29 else 0, "cache-stats": {"hits": 3_957_016, "misses": 313_598}}
+             for i in range(30)]
+    w = _pbs_wire(monkeypatch, gc=never)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["flags"] == ["datastore s29: 7 bad chunk(s) still referenced after garbage collection"]
+    assert out["incomplete"] is False and _rows()[-1]["detail"]["sections"]["gc"] == "ok"   # all 30 were judged
+    assert [c[1] for c in w.calls].count("/admin/gc") == 2                      # refused once, asked once more
+    # every store unreadable, each with its month of history: named, not "read failed"
+    dead = [{"store": "tank", "mount-status": "nonremovable", "error": "x", "history": [0.123456789] * 900},
+            {"store": "away", "mount-status": "notmounted", "error": "x", "history": [0.123456789] * 900}]
+    _pbs_wire(monkeypatch, stores=dead)
+    out = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))
+    assert out["flags"] == ["datastore tank is without usage figures; not evaluated",
+                            "datastore away is without usage figures; not evaluated"]
+
+
+def test_the_pmg_battery_is_held_to_its_thresholds_and_its_fields(box, monkeypatch):
+    """F4: PMG mutations stayed green where PBS's and PDM's were pinned."""
+    _pmg_wire(monkeypatch, status={**_PMG_STATUS, "memory": {"total": 100, "used": 90},
+                                   "rootfs": {"total": 100, "used": 90}},
+              tasks=[{**_PMG_TASKS[0], "status": "boom"}])
+    out = diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))
+    assert out["flags"] == ["1 failed task(s) among the 1 most recent"]              # exactly 90% is not past it
+    [failed] = out["battery"]["tasks"]["failed"]
+    assert failed["type"] == "aptupdate" and failed["id"] == "" and "starttime" in failed
+    assert {tuple(sorted(r)) for r in out["battery"]["services"]["rows"]} == {("service", "state", "unit-state")}
+    _pmg_wire(monkeypatch, status={**_PMG_STATUS, "memory": {"total": 100, "used": 91},
+                                   "rootfs": {"total": 100, "used": 91}})
+    assert diagnose.run("pmg", "/nodes/mx1", cfg=_plane(box, "pmg"))["flags"] == \
+        ["node memory at 91%", "root filesystem at 91%"]
+
+
+@pytest.mark.parametrize("value,named", [(0, False), ("0", False), (False, False), (None, False), (1, True),
+                                         ("1", True), (True, True), (4, True)])
+def test_a_vendor_value_is_compared_by_what_it_says_whether_a_number_a_string_or_a_boolean(box, monkeypatch, value,
+                                                                                         named):
+    """F6: `expect = 0` named a string "0": PMG writes several of its numbers as strings."""
+    _pbs_wire(monkeypatch, gc=[{**_PBS_GC[0], "still-bad": value}])
+    assert bool(diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"]) is named
+
+
+def test_an_absent_sentence_reads_the_fraction_field_too():
+    probe = diagnose.Probe("p", "/x", None, ("s",), {}, ({"over": ["used", "total"], "fraction": "frac", "at": 0.9,
+                                                          "says": "s {s} at {pct}%", "absent": "s {s} absent"},))
+    assert diagnose._flags(probe, [{"s": "a"}]) == ["s a absent"]
+    assert diagnose._flags(probe, [{"s": "a", "frac": 0.5}]) == []
+    assert diagnose._flags(probe, [{"s": "a", "frac": 0.95}]) == ["s a at 95%"]
+
+
+def test_seven_of_the_same_new_flag_read_as_one_grammatical_line(box, monkeypatch):
+    failed = [{"service": f"svc{i}", "state": "failed", "unit-state": "enabled"} for i in range(7)]
+    _pbs_wire(monkeypatch, services=failed)
+    [line] = diagnose.run("pbs", "/nodes/localhost", cfg=_plane(box, "pbs"))["flags"]
+    assert line.startswith("7 services are in the failed state: svc0, svc1, svc2 and 4 more")

@@ -139,6 +139,8 @@ def _answer(rule: Any, product: str, method: str, fill: Mapping[str, Any], at: A
     if rule is None:
         if who == "root@pam":           # the user itself (a root ticket, PMG's root credential): never a token
             return Answer(MAY, "the vendor publishes no rule and admits root@pam itself, which is served")
+        if product == "pmg":            # PMG has no API tokens: the reason is the user, not the credential's kind
+            return Answer(NEVER, "the vendor publishes no rule: only root@pam itself")
         return Answer(NEVER, "the vendor publishes no rule: only root@pam itself, never an API token")
     words = rule.get("description")
     if rule.get("user") == "world":

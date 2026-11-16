@@ -43,7 +43,7 @@ from typing import Any, Literal
 import httpx
 
 from proximo import __version__
-from proximo.core import anchor, apitree, engine, prompts, rawdoor, registry, search, wire
+from proximo.core import anchor, apitree, engine, memory, prompts, rawdoor, registry, search, wire
 from proximo.core import diagnose as diagnose_mod
 from proximo.core import undo as restore_mod
 from proximo.core.doors import BANNER
@@ -98,11 +98,24 @@ MAX_FIND = 25
 
 
 def _shape(found: dict[str, Any], cap: rawdoor.Cap | None = None,
-           extra: dict[str, Any] | None = None) -> dict[str, Any]:
+           extra: dict[str, Any] | None = None,
+           recalled: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A find answer a small model can hold. Each match keeps its address, method, access and tier;
     the authored sentence is cut to its first sentence (a plan carries it whole) and the parameter
     names to the first six with a count (`proximo_plan fields=` lists the rest). Then matches
-    leave from the end until the whole answer is under the cap, and the answer says so."""
+    leave from the end until the whole answer is under the cap, and the answer says so.
+
+    `recalled` is what the estate memory knew for the words (`_recall`): a list of blocks, one per
+    plane, under ONE key, `memory`, measured with the rest; each match is served without its own
+    paths (the block's `paths` carry them, in rank order). When the addresses are down to one and it
+    still does not fit, `_shed` takes the blocks down one step at a time:
+    plain descriptions first, from the end (`matches_shown`; the last block first), and only then
+    paths from the end (`paths_shown`). A match that carries `args` (a PBS group: the vendor ids a
+    snapshots read needs, the same class as a path) is never shed while its block hands out a path it
+    explains; it leaves only WITH the paths only it explains. A path is dropped whole, never cut, and
+    every block keeps one. THE CAP IS HARD: a block still over it at that floor is dropped
+    whole, last block first; with every block gone the answer is exactly the one memory-off gives
+    (no `memory` key)."""
     matches = []
     for m in found.get("matches", []):
         # CAPABILITY BY AVAILABILITY: only an address this door will serve (published, not gated, held or
@@ -119,6 +132,13 @@ def _shape(found: dict[str, Any], cap: rawdoor.Cap | None = None,
             m["params"], m["params_more"] = params[:6], len(params) - 6
         matches.append(m)
     out = {**found, "matches": matches, **(extra or {})}       # `extra` is part of the answer: measured with it
+    explains: list[list[tuple[str, ...]]] = []
+    if recalled:
+        out["memory"] = []
+        for b in recalled:
+            block, keys = _served(b)
+            out["memory"].append(block)
+            explains.append(keys)
     cap = cap or rawdoor.answer_cap()
 
     def fits_with(extra: dict[str, Any]) -> bool:
@@ -132,10 +152,97 @@ def _shape(found: dict[str, Any], cap: rawdoor.Cap | None = None,
     trailer = rawdoor.note_problems({"truncated": True, "returned": 99, "next": _FIND_NEXT})
     while len(out["matches"]) > 1 and not fits_with(trailer):
         out["matches"] = out["matches"][:-1]
+    while "memory" in out and not fits_with(trailer) and _shed(out["memory"], explains):
+        pass
+    # THE CAP IS HARD: a block still over it at its floor goes WHOLE, last block first,
+    # never a path without its args. With every block gone the answer is the one memory-off gives.
+    while out.get("memory") and not fits_with(trailer):
+        out["memory"].pop()
+        explains.pop()
+    if "memory" in out and not out["memory"]:
+        return _shape(found, cap=cap, extra=extra)
     return {**out, **trailer, "returned": len(out["matches"])}
 
 
 _FIND_NEXT = "narrow: add words or a plane"
+
+
+def _vendor_ids(m: Any) -> tuple[str, ...]:
+    """The paths a match that carries `args` explains (a PBS group: its snapshots read needs those
+    args); () for a plain description, which explains nothing a path does not already say."""
+    if isinstance(m, dict) and "args" in m and isinstance(m.get("paths"), list):
+        return tuple(p for p in m["paths"] if isinstance(p, str))
+    return ()
+
+
+def _served(block: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, ...]]]:
+    """A block as served (each listed match without its own paths) and, beside it, what each match
+    explains (`_vendor_ids`), in the order of `matches`. A fenced whole is ONE unit: its JSON is read
+    for the args it carries, never changed."""
+    out = dict(block)
+    told = out.get("matches")
+    if isinstance(told, list):
+        keys = [_vendor_ids(m) for m in told]
+        out["matches"] = [{k: v for k, v in m.items() if k != "paths"} if isinstance(m, dict) else m for m in told]
+        return out, keys
+    if isinstance(told, dict):
+        try:
+            inner = json.loads(told.get("data") or "null")
+        except (TypeError, ValueError):
+            inner = None
+        ids = tuple(dict.fromkeys(p for m in inner for p in _vendor_ids(m))) if isinstance(inner, list) else ()
+        return out, [ids]
+    return out, []
+
+
+def _shed(blocks: list[dict[str, Any]], explains: list[list[tuple[str, ...]]]) -> bool:
+    """One step off the memory blocks, False when nothing more can go. `explains[i][j]`
+    is what match j of block i explains (`_served`); it moves with its match.
+
+    1. A plain description (explains nothing), the last one of the last block that has one.
+    2. Else, from the last block that hands out more than one path, its last path: alone when no
+       match explains it; otherwise the last match that explains it leaves, WITH every path no
+       remaining match explains. Never down to no path."""
+    for block, keys in zip(reversed(blocks), reversed(explains), strict=True):
+        if "matches" not in block:
+            continue
+        plain = [j for j, k in enumerate(keys) if not k]
+        if not plain:
+            continue
+        _drop_match(block, keys, plain[-1])
+        return True
+    for block, keys in zip(reversed(blocks), reversed(explains), strict=True):
+        paths = block.get("paths", [])
+        if len(paths) <= 1:
+            continue
+        last = paths[-1]
+        why = [j for j, k in enumerate(keys) if last in k]
+        if not why:
+            block["paths"] = paths[:-1]
+            block["paths_shown"] = len(block["paths"])
+            return True
+        j = why[-1]
+        rest = [k for i, k in enumerate(keys) if i != j]
+        kept = [p for p in paths if p not in keys[j] or any(p in k for k in rest)]
+        if not kept:
+            continue
+        _drop_match(block, keys, j)
+        block["paths"] = kept
+        block["paths_shown"] = len(kept)
+        return True
+    return False
+
+
+def _drop_match(block: dict[str, Any], keys: list[tuple[str, ...]], j: int) -> None:
+    """Match j leaves (a fenced whole is its one match); the block says how many it shows."""
+    del keys[j]
+    told = block["matches"]
+    if isinstance(told, list) and len(told) > 1:
+        block["matches"] = told[:j] + told[j + 1:]
+        block["matches_shown"] = len(block["matches"])
+    else:
+        del block["matches"]
+        block["matches_shown"] = 0
 
 
 def find(query: str, plane: Plane | None = None, limit: int = 5) -> dict[str, Any]:
@@ -149,7 +256,47 @@ def find(query: str, plane: Plane | None = None, limit: int = 5) -> dict[str, An
     if plane is not None and plane not in apitree.PRODUCTS:
         raise ProximoError(f"unknown plane {rawdoor.quote(plane)}; known planes: {', '.join(apitree.PRODUCTS)}")
     note = {"limit_note": f"limit <= {MAX_FIND}"} if limit > MAX_FIND else {}
-    return _shape(search.find(query, plane=plane, limit=min(limit, MAX_FIND)), extra=note)
+    return _shape(search.find(query, plane=plane, limit=min(limit, MAX_FIND)), extra=note,
+                  recalled=_recall(query, plane))
+
+
+def _recall(query: str, plane: str | None) -> list[dict[str, Any]] | None:
+    """What the estate memory knows for these words (`memory.resolve`, the phase B seam), ONE BLOCK PER
+    PLANE that found something, each carrying `plane` (and every match in it carrying `plane` too):
+    `where`'s found answer, its stamp (`source`, `as_of`, `age_seconds`) and taint mark as memory gave
+    them. Each match keeps its own `paths` HERE only: `_shape` reads them for what a match explains and
+    serves the match without them (the block's `paths` carry them, in rank order, each path once:
+    two PBS groups in one store share one snapshots path).
+
+    The planes asked: of `plane` when one is named, else of every plane in `apitree.PRODUCTS` order, each
+    that has a memory shape AND a box this caller holds a token for (`wire.env_base_url` set). A plane
+    with no token is never asked, named or not (John 2026-11-09: "it's our job to find what they have
+    based on what they allow us to look at"). A plane with no shape has no estate and gives no block.
+
+    None when no plane gave a block: memory found nothing (find claims nothing about a target it does
+    not know). A plane's memory failing in ANY way drops THAT plane's block only, never the find and
+    never another plane's block. That includes a taint marker that could not be written (the block
+    goes, so the model never sees the guest text it was not marked for). The mark is set inside
+    `where` before the cap is applied, so a block the cap cuts to its paths (vendor ids) has still
+    marked the session for the descriptions it dropped: over-marking, the safe direction. A gone or
+    pathless row is dropped inside `where` (`need_paths`) before anything is rendered, so it marks
+    nothing."""
+    planes = [p for p in ([plane] if plane is not None else apitree.PRODUCTS)
+              if memory.shape(p) is not None and wire.env_base_url(p)]
+    blocks = []
+    for p in planes:
+        try:
+            out = memory.resolve(query, plane=p)
+        except Exception:  # noqa: BLE001, S112 -- a convenience never fails the find it rides on
+            continue
+        if not out.get("found") or not out.get("paths"):
+            continue
+        block = {"plane": p, **{k: v for k, v in out.items() if k != "found"}}
+        block["paths"] = list(dict.fromkeys(block["paths"]))
+        if isinstance(block.get("matches"), list):
+            block["matches"] = [{"plane": p, **m} for m in block["matches"] if isinstance(m, dict)]
+        blocks.append(block)
+    return blocks or None
 
 
 def words_to_address(plane: str, method: str, words: list[str]) -> dict[str, Any]:

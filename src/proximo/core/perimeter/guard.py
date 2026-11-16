@@ -16,6 +16,7 @@ for the same reason ``governed.call_governed`` is shared:
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import os
 import warnings
 from collections.abc import Callable
@@ -73,6 +74,34 @@ def default_allowed_hosts(url: str) -> list[str]:
     if host:
         hosts.add(host)
     return sorted(hosts)
+
+
+def host_patterns(hosts: list[str]) -> list[str]:
+    """*hosts* as the Host check will meet them: an IPv6 literal also in its bracketed forms.
+
+    A client that dials ``http://[::1]:8080/`` sends ``Host: [::1]:8080`` and the Host check
+    compares ``[::1]``, brackets kept, while the loopback default, ``urlparse(url).hostname`` and
+    an operator's own list all name the address bare. Bare never matched, so a door bound to an
+    IPv6 address could not be reached by that address. Each IPv6 literal keeps its own spelling
+    and gains two bracketed ones: as written, and compressed (a client sends the compressed form
+    whatever was dialed: ``[0:0:0:0:0:0:0:1]`` goes out as ``[::1]``). A zone id is left out of
+    the bracketed forms: a Host header carries none, and the check cannot parse one. A name, an
+    IPv4 address and a wildcard pass through untouched, in order; nothing here adds a wildcard.
+    """
+    out: list[str] = []
+    for h in hosts:
+        forms = [h]
+        bare = h[1:-1] if h.startswith("[") and h.endswith("]") else h
+        if ":" in bare:
+            unzoned = bare.split("%", 1)[0]
+            try:
+                addr = ipaddress.IPv6Address(unzoned)
+            except ValueError:
+                pass                              # `name:port` and the like: not ours to rewrite
+            else:
+                forms += [f"[{unzoned.lower()}]", f"[{addr.compressed}]"]
+        out.extend(f for f in forms if f not in out)
+    return out
 
 
 def load_token_file(env_var: str) -> str | None:
@@ -183,7 +212,7 @@ def guard_middleware(url: str, *, face: str, token: str | None, protect: Callabl
     serving a badge never loads the 0.44 server from here (lens, 2026-09-27: it did, on the
     first protected request, while the door's docstring said it never would).
     """
-    hosts = allowed_hosts or default_allowed_hosts(url)
+    hosts = host_patterns(allowed_hosts or default_allowed_hosts(url))
     if "*" in hosts:
         warnings.warn(
             f"PROXIMO {face} host allowlist contains '*' — DNS-rebind/Host protection is DISABLED; "

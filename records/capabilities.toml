@@ -155,7 +155,7 @@ proof = ["tests/test_memory.py::test_where_an_id_names_kind_node_status_and_the_
          "tests/test_memory.py::test_the_file_is_bounded_and_says_what_it_dropped",
          "tests/test_memory.py::test_two_boxes_behind_one_ledger_never_mix",
          "tests/test_memory.py::test_deleting_the_file_loses_convenience_never_proof",
-         "tests/test_memory.py::test_a_build_without_fts5_searches_by_like_and_doctor_flags_it",
+         "tests/test_memory.py::test_memory_keeps_no_search_index",
          "tests/test_memory.py::test_learn_reads_every_source_through_execute_and_says_complete",
          "tests/test_memory.py::test_learn_over_its_budget_is_incomplete_and_names_it",
          "tests/test_memory.py::test_memory_never_dials_on_its_own",

@@ -34,3 +34,21 @@ jobs:
           results_file: scorecard-results.sarif
           results_format: sarif
           publish_results: true   # -> OpenSSF dashboard/badge; NOT uploaded to the Security tab
+
+      # The action logs a failed publish ("error sending scorecard results to webapp: http response
+      # 500") and still exits 0, so a green run said nothing about the badge (2026-11-06: the badge
+      # went to "invalid repo path" behind a green check). Ask the public API for THIS commit; a
+      # result for another commit, or none, after the retries is a red run.
+      - name: Check the score was published
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          url="https://api.scorecard.dev/projects/github.com/${REPO}"
+          for i in 1 2 3 4 5 6; do
+            got=$(curl -fsS --max-time 20 "$url" | jq -r '.repo.commit // empty' || true)
+            if [ "$got" = "$SHA" ]; then echo "published: $SHA"; exit 0; fi
+            echo "try $i: the API holds '${got:-nothing}', want $SHA"; sleep 30
+          done
+          echo "::error::the Scorecard API never showed this commit's result: the publish failed (see the step above)"
+          exit 1

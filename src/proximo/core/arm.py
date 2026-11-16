@@ -148,6 +148,50 @@ def ticket_state(cred: dict[str, Any], product: str, box: str) -> ArmGateState:
     return ArmGateState(enforced=True, armed=True, reason=f"a ticket for {cred['user']}, armed until {dies}")
 
 
+#: The vendor's auth id a token line names before its secret: `user@realm!name`.
+TOKEN_ID = re.compile(r"[^\s!=:@]+@[^\s!=:@]+![^\s!=:@]+")
+
+
+def served_id(cfg: Any) -> str | None:
+    """WHO the box's served credential is, by its PUBLIC id only, read through `served_credential` (the
+    one reader the wire uses): a token line's `user@realm!name` (the part before PVE's `=` or PBS/PDM's
+    `:`), or the `user@realm` of a ticket the wire would send to this box (this product's, this box's,
+    inside the vendor's two hours). None for anything else (unreadable, a ticket the wire would not send,
+    a line that names no id): unknown. `cfg` is duck-typed: `product`, `base_url`, `token_path`. Never a
+    secret byte: the line is cut at its first separator before anything is returned. PMG has no tokens:
+    see `_pmg_user`."""
+    if getattr(cfg, "product", "") == "pmg":
+        return _pmg_user(cfg)
+    kind, cred = served_credential(getattr(cfg, "token_path", "") or "")
+    if kind == "ticket":
+        live = ticket_state(cred, getattr(cfg, "product", ""), getattr(cfg, "base_url", "")).armed
+        return cred["user"] if live else None
+    if kind != "token":
+        return None
+    head = cred.decode("utf-8", "replace").lstrip("﻿").split("\n", 1)[0].strip()
+    head = head.split("=", 1)[0].split(":", 1)[0]
+    return head if TOKEN_ID.fullmatch(head) else None
+
+
+#: A PMG user, `user@realm`: what a PMG credential file names on its first line.
+PMG_USER = re.compile(r"[^\s!=:@]+@[^\s!=:@]+")
+
+
+def _pmg_user(cfg: Any) -> str | None:
+    """WHO a PMG box's served credential is: in credential mode (`cfg.credential`) the file is two lines,
+    `user@realm` then the password, and the first line is the user, held to the shape `wire.pmg_login`
+    holds it to (a second line, one line of password). Password mode names no one here: the file IS the
+    password, whatever it spells. Only the first line is ever returned, and only when it is a user."""
+    if not getattr(cfg, "credential", False):
+        return None
+    kind, cred = served_credential(getattr(cfg, "token_path", "") or "")
+    if kind != "token":
+        return None
+    user, _, password = cred.decode("utf-8", "replace").partition("\n")
+    user, password = user.strip().lstrip("﻿"), password.strip()
+    return user if password and "\n" not in password and PMG_USER.fullmatch(user) else None
+
+
 def raw_is_ticket_shaped(path: str) -> bool:
     """True when the served file starts like a ticket file (`{`): a malformed one fails closed with its own
     words instead of being compared as a token to the pair."""

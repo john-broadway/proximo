@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_FROM = re.compile(r"^FROM (python:3\.13-slim)@(sha256:[0-9a-f]{64})(?: AS \w+)?$", re.M)
+_FROM = re.compile(r"^FROM (python:3\.14-slim)@(sha256:[0-9a-f]{64})(?: AS \w+)?$", re.M)
 
 
 def _dockerfile() -> str:
@@ -131,3 +131,19 @@ def test_every_image_build_passes_the_cache_busting_arg():
         "these image builds do not pass the cache-busting build-arg, so their "
         f"`apt-get upgrade` layer replays from cache and ships stale packages: {missing}"
     )
+
+
+# --- the release gate tests the Python the image ships (lens on b53d171, 2026-11-16) ----------
+# release.yml's test job is what the publish `needs:`; it said 3.13 while the image moved to 3.14,
+# so the last gate before a release ran a different interpreter from the one that shipped.
+
+
+def test_release_gate_tests_the_python_the_image_ships():
+    root = Path(__file__).resolve().parent.parent
+    image = re.search(r"^FROM python:(\d+\.\d+)-slim@", _dockerfile(), re.M)
+    gate = re.search(
+        r'python-version: "(\d+\.\d+)"\s+# the version baked into the image',
+        (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"),
+    )
+    assert image and gate, (image, gate)
+    assert gate.group(1) == image.group(1), f"release gate {gate.group(1)} != image {image.group(1)}"
