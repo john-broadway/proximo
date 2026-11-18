@@ -25,6 +25,7 @@ from typing import Any
 
 from proximo.core.doors.network import main_of, recorder
 from proximo.core.errors import ProximoError
+from proximo.core.words import at_start
 
 FACE = "mcp-http"
 PROG = "proximo-mcp-http"
@@ -36,14 +37,17 @@ _HELP = "the network door needs the [mcp-http] extra: pip install 'proximo-proxm
 def build_app(url: str | None = None, *, token: str | None = None,
               allowed_hosts: list[str] | None = None, stateless: bool = True,
               json_response: bool = False) -> Any:
-    """The ASGI app: the core's six tools behind the shared perimeter. Needs a lifespan host."""
+    """The ASGI app: the core's six tools behind the shared perimeter. Needs a lifespan host.
+    The operator's words ride only when the door has a bearer: with none, any caller that reaches
+    the port is every caller, and the words are read by no one (`core.words.at_start`)."""
     from proximo.core.doors.mcp import build_server
     try:
         from proximo.core.perimeter.mcp_http import build_app as perimeter
     except ImportError as e:
         raise ProximoError(_HELP) from e
     return perimeter(url, token=token, allowed_hosts=allowed_hosts, stateless=stateless,
-                     json_response=json_response, instance=build_server(), record=recorder(PROG))
+                     json_response=json_response, instance=build_server(words=at_start(bearer=bool(token))),
+                     record=recorder(PROG))
 
 
 def _flag(name: str) -> str:

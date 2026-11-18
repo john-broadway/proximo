@@ -28,6 +28,7 @@ _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 41242  # A2A is 41241; the HTTP face sits beside it
 _TOKEN_FILE_ENV = "PROXIMO_HTTP_TOKEN_FILE"  # noqa: S105 -- env var NAME, not a secret value
 _TOOLS_PREFIX = "/tools/"
+_WORDS = ("/instructions", "/runbooks")     # the operator's words: protected like the tools
 
 
 _DESCRIPTION = (
@@ -105,7 +106,7 @@ def _audit_rejection(tool_name: str | None, reason: str, record) -> None:
 
 def build_app(url: str | None = None, *, token: str | None = None,
               allowed_hosts: list[str] | None = None, dispatch, record,
-              description: str = _DESCRIPTION):
+              description: str = _DESCRIPTION, words=None):
     """Build the Proximo HTTP-face ASGI application.
 
     Args:
@@ -124,12 +125,19 @@ def build_app(url: str | None = None, *, token: str | None = None,
         record: How the perimeter's badge camera and the rejection rows are written. Required:
                the core door's own (``network.recorder``), or an embedder's.
         description: the OpenAPI document's sentence (``build_openapi``).
+        words: the operator's words as the door read them at its start (``core.words.Words``:
+               ``.instructions`` and ``.runbooks``). Served ONLY when *token* is set, on three GET
+               routes behind the bearer: ``/instructions``, ``/runbooks``, ``/runbooks/{name}``.
+               With no token the routes do not exist (404). With a token and nothing to serve they
+               answer the app's own 404, so the one change on the wire is that these three paths
+               are 401 without the bearer. They are never in ``/openapi.json``:
+               the open document does not say whether an operator has words.
     """
     import json as _json  # noqa: PLC0415
 
     import anyio.to_thread  # noqa: PLC0415, F401 -- [http]-extra deps present only with the extra
     from starlette.applications import Starlette  # noqa: PLC0415
-    from starlette.responses import JSONResponse  # noqa: PLC0415
+    from starlette.responses import JSONResponse, PlainTextResponse  # noqa: PLC0415
     from starlette.routing import Route  # noqa: PLC0415
 
     from ..doors.dispatch import DispatchError  # noqa: PLC0415
@@ -180,11 +188,36 @@ def build_app(url: str | None = None, *, token: str | None = None,
         Route("/tools/{tool_name}", _tool, methods=["POST"]),
     ]
 
+    # The operator's words: behind the bearer or not at all. Words only; nothing here decides by them.
+    text = getattr(words, "instructions", None)
+    books = {book.name: book for book in getattr(words, "runbooks", ())}
+    # A route exists only for what there is to serve, so with the bearer and nothing to serve the
+    # app answers these paths as it did before the words existed, whatever the method.
+    async def _instructions(_request):
+        return PlainTextResponse(text)
+
+    async def _runbooks(_request):
+        return JSONResponse([{"name": b.name, "title": b.title, "plane": b.plane} for b in books.values()])
+
+    async def _runbook(request):
+        book = books.get(request.path_params["name"])
+        if book is None:                 # the app's own 404; an unknown name is never echoed
+            return PlainTextResponse("Not Found", status_code=404)
+        return PlainTextResponse(book.text)
+
+    if token and text is not None:
+        routes.append(Route(_WORDS[0], _instructions, methods=["GET"]))
+    if token and books:
+        routes += [Route(_WORDS[1], _runbooks, methods=["GET"]),
+                   Route(_WORDS[1] + "/{name}", _runbook, methods=["GET"])]
+
     # The shared perimeter stack (TrustedHost → CrossOriginGuard → Bearer-with-token) — one
     # contract for every face; this face only picks its protected paths and 401 body.
     middleware = guard_middleware(
         url, face="HTTP", token=token,
-        protect=lambda path: path.startswith(_TOOLS_PREFIX),
+        # the words' paths and everything under them, so a trailing slash meets the bearer before the router
+        protect=lambda path: (path.startswith(_TOOLS_PREFIX)
+                              or any(path == w or path.startswith(w + "/") for w in _WORDS)),
         unauthorized_body={"error": "unauthorized"},
         allowed_hosts=allowed_hosts, record=record,
     )

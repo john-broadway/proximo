@@ -1,0 +1,315 @@
+{
+ "initialize": {
+  "capabilities": {
+   "prompts": {
+    "listChanged": false
+   },
+   "resources": {
+    "listChanged": false,
+    "subscribe": false
+   },
+   "tools": {
+    "listChanged": false
+   }
+  },
+  "protocolVersion": "2025-11-25",
+  "serverInfo": {
+   "name": "proximo",
+   "version": "<proximo's version>"
+  }
+ },
+ "prompts": [
+  {
+   "arguments": [
+    {
+     "name": "node",
+     "required": false
+    }
+   ],
+   "description": "Runbook: read-only health sweep of the cluster (DIAGNOSE, no changes).",
+   "name": "diagnose_cluster"
+  },
+  {
+   "arguments": [
+    {
+     "name": "node",
+     "required": true
+    },
+    {
+     "name": "hostname",
+     "required": true
+    }
+   ],
+   "description": "Runbook: provision a new LXC within policy (look, plan, call, verify).",
+   "name": "provision_container"
+  },
+  {
+   "arguments": [
+    {
+     "name": "expected_head",
+     "required": false
+    }
+   ],
+   "description": "Runbook: verify the PROVE ledger against a head you hold, and read what it holds.",
+   "name": "review_receipts"
+  },
+  {
+   "arguments": [
+    {
+     "name": "guest",
+     "required": true
+    }
+   ],
+   "description": "Runbook: back up a guest (by vmid) and verify the backup landed.",
+   "name": "safe_backup"
+  },
+  {
+   "arguments": [
+    {
+     "name": "guest",
+     "required": true
+    },
+    {
+     "name": "target_node",
+     "required": true
+    }
+   ],
+   "description": "Runbook: migrate a guest (by vmid) to another node safely (look, plan, call, verify).",
+   "name": "safe_migration"
+  }
+ ],
+ "tools": [
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "READ-ONLY: the PROVE ledger, newest first, bounded; says when it truncated.",
+   "inputSchema": {
+    "properties": {
+     "action": {
+      "type": "string"
+     },
+     "limit": {
+      "default": 20,
+      "type": "integer"
+     },
+     "mutations_only": {
+      "default": false,
+      "type": "boolean"
+     },
+     "target": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "audit_entries",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "audit_entriesDictOutput",
+    "type": "object"
+   }
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "READ-ONLY: walk the chain, report the first break; expected_head catches a cut tail; path=<archive> checks a sealed archive.",
+   "inputSchema": {
+    "properties": {
+     "expected_head": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "audit_verify",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "audit_verifyDictOutput",
+    "type": "object"
+   }
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "MUTATION: run a governed POST/PUT/DELETE. Without confirm=true it returns the plan (verdict, consent id, current, change) and mutates nothing. Refused unless the operator is armed AND the address has an authored blast-radius tier. Every call, refused or executed, is receipted. Task-backed calls are waited on (wait=N s, default 60, max 600; 0 submits only). method=undo with path=<undo.id> puts a receipt's capture back, plan first; withheld or unpublished keys come back as skipped.",
+   "inputSchema": {
+    "properties": {
+     "args": {
+      "type": "object"
+     },
+     "confirm": {
+      "default": false,
+      "type": "boolean"
+     },
+     "method": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     },
+     "plane": {
+      "enum": [
+       "pve",
+       "pbs",
+       "pmg",
+       "pdm"
+      ],
+      "type": "string"
+     },
+     "wait": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "plane",
+     "method",
+     "path"
+    ],
+    "type": "object"
+   },
+   "name": "proximo_call",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "_callDictOutput",
+    "type": "object"
+   }
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "READ-ONLY: find API addresses by plain words ('list datastores'). A verb picks the method. Returns access and blast-radius tier. 5 by default.",
+   "inputSchema": {
+    "properties": {
+     "limit": {
+      "default": 5,
+      "type": "integer"
+     },
+     "plane": {
+      "enum": [
+       "pve",
+       "pbs",
+       "pmg",
+       "pdm"
+      ],
+      "type": "string"
+     },
+     "query": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "type": "object"
+   },
+   "name": "proximo_find",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "findDictOutput",
+    "type": "object"
+   }
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "READ-ONLY, mutates nothing: the governed verdict (armed, tier, consent) for one address, with the parameters you gave and the required ones you lack; fields='name1,name2' or 'all' shows the vendor's full schema. A mutation's plan also reads the target: current, change, noop. Run before proximo_call. path may be words: one match is planned, several come back to pick from.",
+   "inputSchema": {
+    "properties": {
+     "args": {
+      "type": "object"
+     },
+     "fields": {
+      "type": "string"
+     },
+     "method": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     },
+     "plane": {
+      "enum": [
+       "pve",
+       "pbs",
+       "pmg",
+       "pdm"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "plane",
+     "method",
+     "path"
+    ],
+    "type": "object"
+   },
+   "name": "proximo_plan",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "_planDictOutput",
+    "type": "object"
+   }
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
+   "inputSchema": {
+    "properties": {
+     "args": {
+      "type": "object"
+     },
+     "diagnose": {
+      "default": false,
+      "type": "boolean"
+     },
+     "fields": {
+      "type": "string"
+     },
+     "params": {
+      "type": "object"
+     },
+     "path": {
+      "type": "string"
+     },
+     "plane": {
+      "enum": [
+       "pve",
+       "pbs",
+       "pmg",
+       "pdm"
+      ],
+      "type": "string"
+     },
+     "since": {
+      "type": "string"
+     },
+     "wait": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "plane",
+     "path"
+    ],
+    "type": "object"
+   },
+   "name": "proximo_read",
+   "outputSchema": {
+    "additionalProperties": true,
+    "title": "_readDictOutput",
+    "type": "object"
+   }
+  }
+ ]
+}

@@ -1,0 +1,89 @@
+{
+ "capabilities": {
+  "extendedAgentCard": true,
+  "pushNotifications": false,
+  "streaming": false
+ },
+ "defaultInputModes": [
+  "application/json",
+  "text/plain"
+ ],
+ "defaultOutputModes": [
+  "application/json",
+  "text/plain"
+ ],
+ "description": "The ethical Proxmox operator agent — one governed core, three faces (MCP, A2A, API). Every mutation is planned, audited, and reversible by construction.",
+ "name": "Proximo",
+ "securityRequirements": [
+  {
+   "schemes": {
+    "bearerAuth": {}
+   }
+  }
+ ],
+ "securitySchemes": {
+  "bearerAuth": {
+   "httpAuthSecurityScheme": {
+    "scheme": "bearer"
+   }
+  }
+ },
+ "skills": [
+  {
+   "description": "READ-ONLY: find API addresses by plain words ('list datastores'). A verb picks the method. Returns access and blast-radius tier. 5 by default.",
+   "id": "proximo_find",
+   "name": "proximo_find",
+   "tags": [
+    "proximo"
+   ]
+  },
+  {
+   "description": "READ-ONLY, mutates nothing: the governed verdict (armed, tier, consent) for one address, with the parameters you gave and the required ones you lack; fields='name1,name2' or 'all' shows the vendor's full schema. A mutation's plan also reads the target: current, change, noop. Run before proximo_call. path may be words: one match is planned, several come back to pick from.",
+   "id": "proximo_plan",
+   "name": "proximo_plan",
+   "tags": [
+    "proximo"
+   ]
+  },
+  {
+   "description": "READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
+   "id": "proximo_read",
+   "name": "proximo_read",
+   "tags": [
+    "proximo"
+   ]
+  },
+  {
+   "description": "MUTATION: run a governed POST/PUT/DELETE. Without confirm=true it returns the plan (verdict, consent id, current, change) and mutates nothing. Refused unless the operator is armed AND the address has an authored blast-radius tier. Every call, refused or executed, is receipted. Task-backed calls are waited on (wait=N s, default 60, max 600; 0 submits only). method=undo with path=<undo.id> puts a receipt's capture back, plan first; withheld or unpublished keys come back as skipped.",
+   "id": "proximo_call",
+   "name": "proximo_call",
+   "tags": [
+    "proximo"
+   ]
+  },
+  {
+   "description": "READ-ONLY: the PROVE ledger, newest first, bounded; says when it truncated.",
+   "id": "audit_entries",
+   "name": "audit_entries",
+   "tags": [
+    "audit"
+   ]
+  },
+  {
+   "description": "READ-ONLY: walk the chain, report the first break; expected_head catches a cut tail; path=<archive> checks a sealed archive.",
+   "id": "audit_verify",
+   "name": "audit_verify",
+   "tags": [
+    "audit"
+   ]
+  }
+ ],
+ "supportedInterfaces": [
+  {
+   "protocolBinding": "JSONRPC",
+   "protocolVersion": "1.0",
+   "url": "http://127.0.0.1:41241/"
+  }
+ ],
+ "version": "<proximo's version>"
+}

@@ -45,6 +45,14 @@ MV = "src/proximo/core/memory_pve.py"
 DG = "src/proximo/core/diagnose.py"
 AR = "src/proximo/core/arm.py"
 CL = "src/proximo/core/doors/cli.py"
+WF = "src/proximo/core/wordsfile.py"
+WI = "src/proximo/core/instructions.py"
+WR = "src/proximo/core/runbooks.py"
+WW = "src/proximo/core/words.py"
+RS = "src/proximo/core/perimeter/rest.py"
+AC = "src/proximo/core/perimeter/a2a/card.py"
+AA = "src/proximo/core/perimeter/a2a/app.py"
+AX = "src/proximo/core/perimeter/a2a/executor.py"
 MC = "src/proximo/core/doors/mcp.py"
 
 #: (name, file, the gate as written, the gate neutered)
@@ -724,6 +732,85 @@ M = [
     ('M74-SHELL-PLANE-HAS-A-SHAPE', CL,
      '        if memory.shape(ns.plane) is None:\n',
      '        if False:\n'),
+    # The operator's words (0.54): one gate per refusal. Each was planted by hand on the words test
+    # files first; the round asks the whole suite the same question.
+    ('M209-WORDS-A-NAMED-PIPE-NEVER-BLOCKS-A-DOOR', WF,
+     'os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC', 'os.O_RDONLY | os.O_CLOEXEC'),
+    ('M210-WORDS-ONLY-A-REGULAR-FILE-IS-SERVED', WF,
+     '        if not stat.S_ISREG(st.st_mode):\n            raise Refused(NOT_REGULAR)\n', ''),
+    ('M211-WORDS-A-KERNEL-FILE-IS-NEVER-SERVED', WF,
+     '        if any(real == k or real.startswith(k + os.sep) for k in _KERNEL):\n'
+     '            raise Refused(NOT_REGULAR)\n', ''),
+    ('M212-WORDS-A-FILE-ANOTHER-VARIABLE-NAMES-IS-NEVER-SERVED', WF,
+     '        if (name := collides(st, real)) is not None:\n            raise Refused(SECRET, name)\n', ''),
+    ('M213-WORDS-A-FILE-WITH-A-SECOND-NAME-IS-NEVER-SERVED', WF,
+     '        if st.st_nlink != 1:\n            raise Refused(LINKED)\n', ''),
+    ('M214-WORDS-A-FOLDER-ANOTHER-VARIABLE-NAMES-IS-GUARDED', WF,
+     '            if real == inside or real.startswith(inside.rstrip(os.sep) + os.sep):\n'
+     '                return name\n', ''),
+    ('M215-WORDS-AN-UNREADABLE-REGISTRY-PROVES-NOTHING', WF,
+     '        raise Refused(UNPROVEN, registry.ENV) from None\n', '        targets = {}\n'),
+    ('M216-WORDS-THE-READ-IS-BOUNDED', WF,
+     'chunk = os.read(fd, cap + 1 - len(raw))', 'chunk = os.read(fd, 1 << 30)'),
+    ('M217-WORDS-THE-OLD-NAME-IS-NOT-READ', WI,
+     '    path = os.environ.get(ENV, "").strip()\n    if not path:\n        return None\n    try:',
+     '    path = os.environ.get(ENV, "").strip() or os.environ.get(OLD, "").strip()\n'
+     '    if not path:\n        return None\n    try:'),
+    ('M218-WORDS-THE-INSTRUCTIONS-GO-THROUGH-THE-GUARDED-READER', WI,
+     '        return wordsfile.read(path, CAP)\n',
+     "        return open(os.path.expanduser(path), 'rb').read(CAP + 1).decode('utf-8-sig')\n"),
+    ('M219-WORDS-A-DOOR-WITH-NO-BEARER-READS-NOTHING', WW,
+     '    if not bearer:\n', '    if False:\n'),
+    ('M220-WORDS-A-REFUSED-FILE-NEVER-STOPS-A-DOOR', WW,
+     '        except ProximoError as e:\n            said.append(f"proximo: {e}; no caller receives the instructions',
+     '        except KeyError as e:\n            said.append(f"proximo: {e}; no caller receives the instructions'),
+    ('M221-RUNBOOK-NAMES-AT-LEAST-ONE-ADDRESS', WR,
+     '    if not named:\n', '    if False:\n'),
+    ('M222-RUNBOOK-EVERY-ADDRESS-IS-PUBLISHED-ON-ITS-PLANE', WR,
+     '                raise ProximoError(f"it names an address {plane} does not publish: {said}") from None\n',
+     '                continue\n'),
+    ('M223-RUNBOOK-A-HELD-ADDRESS-IS-NOT-CALLABLE', WR,
+     '        if row.excluded or row.held:\n', '        if row.excluded:\n'),
+    ('M224-RUNBOOK-NOTHING-FOLLOWS-A-PATH-BUT-PUNCTUATION', WR,
+     '        if _AFTER.match(rest) is None:\n', '        if False:\n'),
+    ('M225-RUNBOOK-NO-PATH-WITHOUT-ITS-METHOD', WR,
+     '    if any(not any(a <= m.start() < b for a, b in inside) for m in _SLASH.finditer(text)):\n',
+     '    if False:\n'),
+    ('M232-RUNBOOK-A-TEMPLATE-IS-THE-VENDORS-OWN-SPELLING', WR,
+     '        if "{" in path and row.path != path:\n', '        if False:\n'),
+    ('M233-RUNBOOK-NO-VENDOR-API-URL', WR,
+     '    if "/api2/" in text.lower():\n', '    if False:\n'),
+    ('M226-RUNBOOK-THE-FIVE-KEEP-THEIR-NAMES', WR,
+     '            if name in own:\n', '            if False:\n'),
+    ('M227-RUNBOOK-ONLY-THE-FIRST-32-ARE-OPENED', WR,
+     '    for file in names[:MAX]:\n', '    for file in names:\n'),
+    ('M228-RUNBOOK-THE-FOLDER-LISTING-IS-BOUNDED', WR,
+     '                if seen > FOLDER_MAX:\n', '                if False:\n'),
+    ('M229-RUNBOOK-ONLY-A-RUNBOOK-NAME-IS-A-CANDIDATE', WR,
+     '                if NAME.fullmatch(entry.name):\n', "                if entry.name.endswith('.md'):\n"),
+    ('M230-REST-NO-TOKEN-NO-WORDS-ROUTES', RS,
+     '    if token and text is not None:\n', '    if text is not None:\n'),
+    ('M231-REST-THE-WORDS-ARE-BEHIND-THE-BEARER', RS,
+     'or any(path == w or path.startswith(w + "/") for w in _WORDS)),', 'or False),'),
+    # The operator's words on the A2A door: the extended card, and a runbook by its skill.
+    ('M234-A2A-EVERY-DOOR-WITH-A-TOKEN-SAYS-AN-EXTENDED-CARD-EXISTS', AC,
+     '        card.capabilities.extended_agent_card = True\n', ''),
+    ('M235-A2A-NO-TOKEN-NO-WORDS', AA,
+     '    if token:   # the ONE place the words pass', '    if True:   # the ONE place the words pass'),
+    ('M236-A2A-THE-INSTRUCTIONS-STAND-UNDER-THEIR-LABEL', AC,
+     'f"{card.description}\\n\\n{INSTRUCTIONS_LABEL}\\n{instructions}"',
+     'f"{card.description}\\n\\n{instructions}"'),
+    ('M237-A2A-A-CHANGED-CARD-LOSES-THE-OLD-SEAL', AC,
+     '    del extended.signatures[:]\n', ''),
+    ('M238-A2A-THE-EXTENDED-CARD-IS-SIGNED-AGAIN', AC,
+     '        sign_card(extended, signing_key, jku=jwks_url)\n    return extended',
+     '        pass\n    return extended'),
+    ('M239-A2A-A-RUNBOOK-SKILL-IS-APART-FROM-THE-TOOLS', AC,
+     'AgentSkill(id=RUNBOOK_PREFIX + book.name, name=book.title,', 'AgentSkill(id=book.name, name=book.title,'),
+    ('M240-A2A-A-RUNBOOK-TAKES-NO-ARGUMENTS', AX,
+     '            if raw not in (None, {}):\n', '            if False:\n'),
+    ('M241-A2A-A-RUNBOOK-IS-ANSWERED-BEFORE-THE-DISPATCH', AX,
+     '        if isinstance(tool_name, str) and tool_name in self._runbooks:\n', '        if False:\n'),
 ]
 
 #: The round's test set: the whole suite. Until the cut (2026-10-18) this was a hand-kept list of

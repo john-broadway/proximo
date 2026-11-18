@@ -17,6 +17,7 @@ readable so clients can fetch it before authenticating.
 from __future__ import annotations
 
 import importlib.metadata
+from collections.abc import Iterable
 from typing import Any
 
 from a2a.types import (
@@ -94,6 +95,10 @@ def build_agent_card(
     )
 
     if secured:
+        # A door with a token says an authenticated extended card exists, WHETHER OR NOT the
+        # operator has words (`extended_card`): on for every such door, the open card tells no
+        # one which doors have them. Set before the seal, so the signature covers it.
+        card.capabilities.extended_agent_card = True
         # Declare the bearer scheme the server enforces (app.py), so A2A clients can self-configure
         # from discovery instead of learning it only from a 401. Scopeless requirement.
         card.security_schemes["bearerAuth"].http_auth_security_scheme.scheme = "bearer"
@@ -106,3 +111,39 @@ def build_agent_card(
         sign_card(card, signing_key, jku=jwks_url)
 
     return card
+
+
+#: The one line between Proximo's own description and the operator's text in the extended card.
+INSTRUCTIONS_LABEL = "Operator instructions (not Proximo's):"
+#: Every operator runbook's skill carries this one description: whose it is.
+RUNBOOK_DESCRIPTION = "Operator runbook (not Proximo's)."
+#: A runbook's skill id. Neither a tool name nor a runbook name can hold a dot, so the six tools
+#: and the runbooks are apart by construction (a runbook file may be named `proximo_call.md`).
+RUNBOOK_PREFIX = "runbook."
+
+
+def extended_card(card: AgentCard, *, instructions: str | None = None, runbooks: Iterable[Any] = (),
+                  signing_key: OperatorKey | None = None, jwks_url: str | None = None) -> AgentCard:
+    """The card `GetExtendedAgentCard` answers, behind the bearer: the open card plus the operator's
+    words as the door read them at its start (`core.words`; handed in, never imported here).
+
+    With no words it is the open card ITSELF, the same object, seal included. With words it is a
+    copy: the instructions after Proximo's own description under one fixed line, each runbook one
+    more skill after the six (`runbook.<name>`, its title, one fixed description, its plane as a
+    tag; the text is fetched by calling the skill, never carried here). A changed card's old seal
+    no longer verifies, so it is cleared and the copy is signed again with the same key.
+    """
+    books = tuple(runbooks)
+    if instructions is None and not books:
+        return card
+    extended = AgentCard()
+    extended.CopyFrom(card)
+    if instructions is not None:
+        extended.description = f"{card.description}\n\n{INSTRUCTIONS_LABEL}\n{instructions}"
+    for book in books:
+        extended.skills.append(AgentSkill(id=RUNBOOK_PREFIX + book.name, name=book.title,
+                                          description=RUNBOOK_DESCRIPTION, tags=["runbook", book.plane]))
+    del extended.signatures[:]
+    if signing_key is not None:
+        sign_card(extended, signing_key, jku=jwks_url)
+    return extended

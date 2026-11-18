@@ -35,7 +35,7 @@ def test_the_mcp_door_prints_the_banner_on_stderr_at_start(monkeypatch, capsys):
     class _Server:
         def run(self):
             pass
-    monkeypatch.setattr(mcp, "build_server", lambda: _Server())
+    monkeypatch.setattr(mcp, "build_server", lambda **_: _Server())
     assert mcp.main([]) == 0   # an explicit argv: `main()` reads sys.argv, which is pytest's here
     assert doors.BANNER.rstrip("\n") in capsys.readouterr().err
 

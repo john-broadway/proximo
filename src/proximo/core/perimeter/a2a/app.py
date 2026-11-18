@@ -29,7 +29,7 @@ from starlette.routing import Route
 
 from ...secretfile import refuse_exposed_secret
 from ..guard import guard_middleware, require_auth_for_public
-from .card import build_agent_card
+from .card import RUNBOOK_PREFIX, build_agent_card, extended_card
 from .executor import ProximoAgentExecutor
 from .signing import OperatorKey, jwks, load_operator_key
 
@@ -79,7 +79,7 @@ def _require_auth_for_public(host: str | None, token: str | None, *, where: str)
 
 def build_app(rpc_url: str | None = None, *, token: str | None = None,
               allowed_hosts: list[str] | None = None,
-              signing_key: OperatorKey | None = None, dispatch, record) -> Starlette:
+              signing_key: OperatorKey | None = None, dispatch, record, words=None) -> Starlette:
     """Build the Proximo A2A ASGI application.
 
     Args:
@@ -99,6 +99,11 @@ def build_app(rpc_url: str | None = None, *, token: str | None = None,
                  the six core tools and every call lands on the core's engine behind THIS perimeter.
         record:  How the perimeter's badge camera and the executor's rejection rows are written.
                  Required: the core door's own (``network.recorder``), or an embedder's.
+        words:   The operator's words as the door read them at its start (``core.words.Words``:
+                 ``.instructions`` and ``.runbooks``). Served ONLY when *token* is set: in the
+                 authenticated extended card, and each runbook's text by a call to its skill.
+                 With no token they are dropped here, whoever handed them in: nothing would stand
+                 between them and anyone who reaches the port.
     """
     if rpc_url is None:
         rpc_url = f"http://{_DEFAULT_HOST}:{_DEFAULT_PORT}/"
@@ -111,10 +116,21 @@ def build_app(rpc_url: str | None = None, *, token: str | None = None,
     card = build_agent_card(rpc_url, secured=bool(token), signing_key=signing_key, jwks_url=jwks_url,
                             tools=dispatch.list_sync())
 
+    books: tuple = ()
+    extended = {}
+    if token:   # the ONE place the words pass: the flag on the open card says an extended card
+        # exists, and with no words it is the open card itself. With no token nothing is read off
+        # `words` at all, so nothing can be listed, described or fetched.
+        books = tuple(getattr(words, "runbooks", ()))
+        extended["extended_agent_card"] = extended_card(
+            card, instructions=getattr(words, "instructions", None), runbooks=books,
+            signing_key=signing_key, jwks_url=jwks_url)
     handler = DefaultRequestHandler(
-        agent_executor=ProximoAgentExecutor(dispatch=dispatch, record=record),
+        agent_executor=ProximoAgentExecutor(dispatch=dispatch, record=record,
+                                            runbooks={RUNBOOK_PREFIX + b.name: b.text for b in books}),
         task_store=InMemoryTaskStore(),
         agent_card=card,
+        **extended,
     )
     routes = (
         create_jsonrpc_routes(request_handler=handler, rpc_url=rpc_path)

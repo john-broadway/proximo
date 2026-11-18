@@ -1,0 +1,405 @@
+{
+ "components": {
+  "securitySchemes": {
+   "bearerAuth": {
+    "scheme": "bearer",
+    "type": "http"
+   }
+  }
+ },
+ "info": {
+  "description": "Proximo's governed core over HTTP: six tools that reach every address the planes publish (find, plan, read, call, and the ledger's entries and verify), the same engine, pillars and receipts the MCP doors serve. Mutations are PLAN-by-default: without confirm=true you get a recorded plan, never a change; with it, the call runs only armed AND tiered.",
+  "title": "Proximo",
+  "version": "<proximo's version>"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/tools/audit_entries": {
+   "post": {
+    "description": "READ-ONLY: the PROVE ledger, newest first, bounded; says when it truncated.",
+    "operationId": "audit_entries",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "action": {
+          "type": "string"
+         },
+         "limit": {
+          "default": 20,
+          "type": "integer"
+         },
+         "mutations_only": {
+          "default": false,
+          "type": "boolean"
+         },
+         "target": {
+          "type": "string"
+         }
+        },
+        "type": "object"
+       }
+      }
+     },
+     "required": false
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "audit_entries"
+   }
+  },
+  "/tools/audit_verify": {
+   "post": {
+    "description": "READ-ONLY: walk the chain, report the first break; expected_head catches a cut tail; path=<archive> checks a sealed archive.",
+    "operationId": "audit_verify",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "expected_head": {
+          "type": "string"
+         },
+         "path": {
+          "type": "string"
+         }
+        },
+        "type": "object"
+       }
+      }
+     },
+     "required": false
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "audit_verify"
+   }
+  },
+  "/tools/proximo_call": {
+   "post": {
+    "description": "MUTATION: run a governed POST/PUT/DELETE. Without confirm=true it returns the plan (verdict, consent id, current, change) and mutates nothing. Refused unless the operator is armed AND the address has an authored blast-radius tier. Every call, refused or executed, is receipted. Task-backed calls are waited on (wait=N s, default 60, max 600; 0 submits only). method=undo with path=<undo.id> puts a receipt's capture back, plan first; withheld or unpublished keys come back as skipped.",
+    "operationId": "proximo_call",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "args": {
+          "type": "object"
+         },
+         "confirm": {
+          "default": false,
+          "type": "boolean"
+         },
+         "method": {
+          "type": "string"
+         },
+         "path": {
+          "type": "string"
+         },
+         "plane": {
+          "enum": [
+           "pve",
+           "pbs",
+           "pmg",
+           "pdm"
+          ],
+          "type": "string"
+         },
+         "wait": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "plane",
+         "method",
+         "path"
+        ],
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "proximo_call"
+   }
+  },
+  "/tools/proximo_find": {
+   "post": {
+    "description": "READ-ONLY: find API addresses by plain words ('list datastores'). A verb picks the method. Returns access and blast-radius tier. 5 by default.",
+    "operationId": "proximo_find",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "limit": {
+          "default": 5,
+          "type": "integer"
+         },
+         "plane": {
+          "enum": [
+           "pve",
+           "pbs",
+           "pmg",
+           "pdm"
+          ],
+          "type": "string"
+         },
+         "query": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "query"
+        ],
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "proximo_find"
+   }
+  },
+  "/tools/proximo_plan": {
+   "post": {
+    "description": "READ-ONLY, mutates nothing: the governed verdict (armed, tier, consent) for one address, with the parameters you gave and the required ones you lack; fields='name1,name2' or 'all' shows the vendor's full schema. A mutation's plan also reads the target: current, change, noop. Run before proximo_call. path may be words: one match is planned, several come back to pick from.",
+    "operationId": "proximo_plan",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "args": {
+          "type": "object"
+         },
+         "fields": {
+          "type": "string"
+         },
+         "method": {
+          "type": "string"
+         },
+         "path": {
+          "type": "string"
+         },
+         "plane": {
+          "enum": [
+           "pve",
+           "pbs",
+           "pmg",
+           "pdm"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "plane",
+         "method",
+         "path"
+        ],
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "proximo_plan"
+   }
+  },
+  "/tools/proximo_read": {
+   "post": {
+    "description": "READ-ONLY: run a GET by /path, or by words with no slash. args = query parameters (params: old name). Rows come lean with a total; fields='all' or 'name,status' for others; over the cap you get counts and a next line. since='24h': what changed, from the door's snapshots. wait=N on .../tasks/{upid}/status waits up to N s (max 600). diagnose=true on a node or guest path: health and advisory flags. Credentials come back withheld.",
+    "operationId": "proximo_read",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "args": {
+          "type": "object"
+         },
+         "diagnose": {
+          "default": false,
+          "type": "boolean"
+         },
+         "fields": {
+          "type": "string"
+         },
+         "params": {
+          "type": "object"
+         },
+         "path": {
+          "type": "string"
+         },
+         "plane": {
+          "enum": [
+           "pve",
+           "pbs",
+           "pmg",
+           "pdm"
+          ],
+          "type": "string"
+         },
+         "since": {
+          "type": "string"
+         },
+         "wait": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "plane",
+         "path"
+        ],
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Result (a PLAN for an unconfirmed mutation)."
+     },
+     "400": {
+      "description": "Malformed request (non-object body / missing param)."
+     },
+     "401": {
+      "description": "Missing/invalid bearer token."
+     },
+     "404": {
+      "description": "Unknown tool."
+     },
+     "413": {
+      "description": "Request body too large."
+     },
+     "415": {
+      "description": "Content-Type must be application/json."
+     },
+     "502": {
+      "description": "The tool ran and failed (sanitized)."
+     }
+    },
+    "summary": "proximo_read"
+   }
+  }
+ },
+ "security": [
+  {
+   "bearerAuth": []
+  }
+ ]
+}

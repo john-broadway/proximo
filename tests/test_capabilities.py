@@ -42,6 +42,7 @@ WAS = re.compile(r"^src/proximo/[\w/]+\.py(:[\w.]+)?$")
 
 # Every id the record has ever held. A row is never deleted; it is retired by name.
 KNOWN = frozenset({
+    "operator-words",
     "arm-gates-every-mutation", "split-ssh-target-refused", "secrets-withheld-at-any-depth",
     "privsep-token-and-user-grant", "ledger-tail-cut-caught", "unkeyed-chain-sealed-not-deleted",
     "arguments-cast-to-published-types", "pdm-typed-arrays",
@@ -58,6 +59,7 @@ KNOWN = frozenset({
 
 # Every id that has ever stood. It stays standing, or is retired by ruling; it never slips back.
 STANDING = frozenset({
+    "operator-words",
     "arm-gates-every-mutation", "split-ssh-target-refused", "secrets-withheld-at-any-depth",
     "privsep-token-and-user-grant", "ledger-tail-cut-caught", "unkeyed-chain-sealed-not-deleted",
     "arguments-cast-to-published-types", "allowlist-compares-grants", "door-services-raised",

@@ -432,6 +432,167 @@ continues to report `ssh_target_configured` for the default box's `PROXIMO_SSH_T
 
 ---
 
+## Your words to every caller: `PROXIMO_INSTRUCTIONS`
+
+One Proximo often serves several clients: a desktop app, a few projects, coding sessions in
+containers. Each needs the same site guidance (which targets exist, your approval rules per tier,
+when to ask for a snapshot), and kept in each client it drifts. Write it once, on the box:
+
+```bash
+PROXIMO_INSTRUCTIONS=/etc/proximo/instructions.md
+```
+
+The file's text is sent as the MCP `instructions` in every session's `initialize`: over stdio, and
+over the MCP-HTTP door when that door has a bearer token. Clients that honour the field put it in
+the model's context. The REST door answers it at `GET /instructions`, behind its bearer token, the
+A2A door carries it in its extended agent card (below), and `proximo-core instructions` prints it
+in a shell. A network door with no token cannot tell one
+caller from another, so it reads none of your words and says so in one line at start. The file is read when the door starts (restart
+to change) and held to 8192 bytes, since every session carries it. `~` is your home folder, and a
+byte-order mark at the head of the file is dropped.
+
+Set and unusable, the door still starts and sends none: the text governs nothing, so a typo or a
+missing bind mount costs your callers the guidance, never the door. It says so on stderr at start,
+naming the variable, never the path. The file is refused when it is:
+
+- unreadable, not UTF-8, empty, or over the cap;
+- not a regular file (a named pipe, a folder, a device, anything under `/proc`, `/sys` or `/dev`);
+- a file with a second name (a hard link);
+- a file that another `PROXIMO_` variable or your target registry names, or one inside a folder
+  one of them names. This is the guard against pointing the variable at a token by mistake: a
+  symlink to the token is the same file, and the refusal names the variable it collided with.
+  When the registry is set and cannot be read, nothing is served, since nothing proves the file
+  is not one it names.
+
+The same guard refuses the files Proximo keeps for itself even when no variable names them (the
+ledger and its key, the memory file, the store and download folders, the env file), and it refuses
+on a platform that cannot say where an opened file really is. A refusal names the variable, or the
+registry, that the file belongs to, never a path.
+
+The guard knows the secrets Proximo is told about. It does not know an SSH private key your `ssh`
+finds by itself, or a file named only inside another file's contents.
+
+`proximo doctor` reports whether the instructions are configured and their size, and flags a file
+no caller would receive. Doctor reads the file when you run it: it describes the file, not a door
+already running. If you ran the branch that named this variable `PROXIMO_MCP_INSTRUCTIONS`: that
+name is not read, and a serving door and `doctor` both say so while it is set.
+
+The cap is a guard, not a target. Some clients truncate a server's instructions well below it, so
+aim for under 2 KB and put the rules that matter first, so a cut copy still carries them; `doctor`
+notes a file over 2048 bytes as advice. It is operator config, trusted like `targets.toml`, and
+text for the caller only: nothing in Proximo reads it, so no sentence in it can arm, grant or widen
+anything.
+
+Everything in this file is disclosed: every byte goes to every caller the door serves, and on to
+that caller's model. The guard catches the named mistakes and no others, so never point the
+variable at a credential or at anything you would not paste into a chat, and keep the file where
+the agent cannot write: whoever can write it speaks as the server to every later session.
+
+---
+
+## Your own runbooks: `PROXIMO_RUNBOOKS_DIR`
+
+Proximo ships five runbooks (safe migration, diagnose the cluster, provision a container, safe
+backup, review receipts). Yours sit beside them. Name a folder:
+
+```bash
+PROXIMO_RUNBOOKS_DIR=/etc/proximo/runbooks
+```
+
+Each file in it named like `drain_node.md` (a lowercase letter, then lowercase letters, digits and
+underscores, 40 characters at most, then `.md`) is one runbook. Any other entry is ignored and
+counted. A runbook is fixed text, with no arguments:
+
+```markdown
+# Drain a node before maintenance
+
+plane: pve
+
+1. proximo_read pve GET /nodes/{node}/qemu to list the guests.
+2. For each running guest, proximo_plan pve POST /nodes/{node}/qemu/{vmid}/migrate.
+3. Show each plan to the operator and wait for a yes before any call.
+```
+
+The first line is the title (`# ` and 1 to 80 printable characters). The next line that is not
+blank names one plane: `plane: pve`, `pbs`, `pmg` or `pdm`. A procedure that spans two products is
+two files. The rest is your procedure, at most 8192 bytes a file. Proximo reads the first 32
+runbook files by name and says so when there are more; a folder of more than 4096 entries is
+refused whole.
+
+A model follows what it is handed, so a runbook is held to five rules about the addresses it names,
+the rules Proximo's own five are tested with:
+
+1. It names at least one address: a method and a path, upper case, one space, as `GET /nodes`.
+2. Every address it names is one its plane publishes. A template is written in the vendor's own
+   spelling, `GET /nodes/{node}/status`; `{n}` or any made-up `{name}` is refused, because it would
+   be checked as some other address.
+3. None is an address Proximo excludes or holds: published is not callable.
+4. Only sentence punctuation may follow a path. `GET /nodes/pve1.lab/status` is refused, because
+   the check would have judged a shorter path than the one written. Write the template,
+   `GET /nodes/{node}/status`.
+5. No path stands without its method: any word that starts with a slash must be the path of an
+   address. So `**POST** /nodes/...`, a lowercase `get`, and the tools' own `path="/nodes/..."`
+   form are refused, and so is a vendor API URL (anything with `/api2/` in it, in any case). A
+   link to a page (`https://...`) may stay. The cost: a runbook cannot mention a filesystem path
+   such as `/etc/network/interfaces`.
+
+The rules read slashes. They do not see a path written with no leading slash, or a character that
+only looks like a slash.
+
+A runbook that fails a rule is not served. The door says so on stderr at start and `proximo doctor`
+flags it, naming the runbook by its file's name and, for an address, the method and path as
+written. A file with the name of one of Proximo's own five is refused. Each file meets the same
+guard as the instructions file: not a link to a token, not a file with a second name, not a pipe. A
+broken file or folder costs you the runbooks, never the door.
+
+Where they are served:
+
+| Door | Your runbooks |
+|---|---|
+| MCP over stdio | prompts beside the five, each described as `Operator runbook (not Proximo's).` |
+| MCP over HTTP | the same, when the door has a bearer token |
+| REST | `GET /runbooks` (name, title, plane) and `GET /runbooks/{name}`, behind the bearer token |
+| A2A | skills named `runbook.<name>` in the extended agent card; a call to one returns its text |
+| shell | `proximo-core runbook list` and `proximo-core runbook show <name>` |
+
+Each runbook's name, title and plane, and that one description, are sent to a caller unasked; its text is sent when the
+caller asks for it, behind one fixed line, `Operator runbook (not Proximo's): <name>.`. The REST
+routes and `GET /instructions` exist only when the REST door has a token, and none of them is in
+`/openapi.json`: the open document does not say whether you have words.
+
+**On the A2A door** the words ride in the protocol's own second card, the extended agent card,
+which a peer gets with the method `GetExtendedAgentCard` and only with the bearer token. The open
+card at `/.well-known/agent-card.json` never carries them. On every A2A door that has a token it
+says an extended card exists (`capabilities.extendedAgentCard: true`), whether you have words or
+not, so it does not say which doors have them. An A2A door with no token serves no words and its
+card is unchanged.
+
+- Your instructions follow Proximo's own description in the extended card, under the line
+  `Operator instructions (not Proximo's):`.
+- Each runbook is one more skill after the six tools: `runbook.<name>`, its title, the description
+  `Operator runbook (not Proximo's).`, and its plane as a tag. A peer gets the text by calling
+  that skill, with no arguments (a call that sends any is refused). The call runs nothing and
+  writes no row in the ledger.
+- With a signing key set, the extended card is signed with the same key as the open one.
+
+A peer asks for the extended card only when its own program does, and what a peer shows its model
+from a card is that peer's business. Proximo puts your words where the protocol says they belong;
+it cannot make a peer read them.
+
+The shell verbs print exactly what a door serves, and are the same on `proximo` and
+`proximo-core`. They exit 0 when shown, 3 for the caller's own mistake (the variable unset, an
+unknown name), 2 when the words are set and refused, with the reason on stderr.
+
+Proximo checks the addresses and nothing else. It does not check a runbook's argument names, its
+tool names or its wording, and nothing in Proximo reads a runbook to decide anything: every step a
+model takes from it goes through the same plan, tier and arm as a step the model invented. The
+text is yours and is trusted like `targets.toml`: it is not marked as untrusted data, and text
+inside it can claim anything, so keep the folder where the agent cannot write. A small model in a
+4K window holds a short runbook better than a long one: Proximo's own five are each under 1,800
+characters, and `proximo doctor` notes, as advice, each of yours that is served over that size.
+
+---
+
 ## No model at all — the shell door
 
 The same install ships `proximo-core`, the engine from a shell or a cron job, with no model, no

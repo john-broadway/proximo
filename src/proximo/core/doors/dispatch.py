@@ -25,6 +25,8 @@ from typing import Any
 
 from proximo.core import rawdoor
 from proximo.core.errors import ProximoError
+from proximo.core.words import NONE as NO_WORDS
+from proximo.core.words import Words
 
 
 class DispatchError(Exception):
@@ -137,18 +139,19 @@ def normalize(result: Any) -> dict[str, Any]:
 
 
 class Core:
-    """The six core tools as a dispatch: `build_server()` once, on first use, and the three
+    """The six core tools as a dispatch: `build_server(words=)` once, on first use, and the three
     operations a face needs. Handed to the perimeter's `rest.build_app` and `a2a.app.build_app`
     as `dispatch=`, so the core's REST and A2A doors are the 0.44 perimeters with this behind them."""
 
-    def __init__(self) -> None:
+    def __init__(self, words: Words = NO_WORDS) -> None:
         self._instance: Any = None
+        self._words = words          # the operator's words as the door read them at its start
 
     @property
     def instance(self) -> Any:
         if self._instance is None:
             from proximo.core.doors.mcp import build_server
-            self._instance = build_server()
+            self._instance = build_server(words=self._words)
         return self._instance
 
     async def list(self) -> list[Any]:

@@ -22,6 +22,7 @@ from typing import Any
 from proximo.core.doors.dispatch import Core
 from proximo.core.doors.network import main_of, recorder
 from proximo.core.errors import ProximoError
+from proximo.core.words import at_start
 
 FACE = "http"
 PROG = "proximo-http"
@@ -43,8 +44,9 @@ def build_app(url: str | None = None, *, token: str | None = None,
         from proximo.core.perimeter.rest import build_app as perimeter
     except ImportError as e:
         raise ProximoError(_HELP) from e
-    return perimeter(url, token=token, allowed_hosts=allowed_hosts, dispatch=Core(),
-                     record=recorder(PROG), description=DESCRIPTION)
+    words = at_start(bearer=bool(token))    # read at build, said once; served behind the bearer only
+    return perimeter(url, token=token, allowed_hosts=allowed_hosts, dispatch=Core(words),
+                     record=recorder(PROG), description=DESCRIPTION, words=words)
 
 
 def main(argv: list[str] | None = None) -> int:

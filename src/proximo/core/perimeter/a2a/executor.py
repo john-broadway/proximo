@@ -15,6 +15,11 @@ The inbound ``Message`` must contain a ``DataPart`` whose ``.data`` is a JSON ob
 ``"skill"`` is accepted as an alias for ``"tool"`` (backward-compatible with the earlier slice
 wire format). ``params`` may be absent/null (an empty object). Any other shape produces a clean
 failed-task response.
+
+One kind of name is answered here and never dispatched: an operator runbook's skill
+(``runbook.<name>``, listed only in the authenticated extended card). It is the operator's own
+words, fixed text: the answer is one text artifact named ``runbook``, it takes no arguments
+(anything but absent or ``{}`` is refused and recorded), and it runs nothing.
 """
 
 from __future__ import annotations
@@ -31,6 +36,8 @@ from a2a.utils.errors import UnsupportedOperationError
 from ... import rawdoor
 from ...doors.dispatch import DispatchError
 
+RUNBOOK_TAKES_NONE = "an operator runbook takes no arguments"
+
 
 class ProximoAgentExecutor(AgentExecutor):
     """Stateless A2A executor — parses, routes through the governed core, replies.
@@ -41,10 +48,13 @@ class ProximoAgentExecutor(AgentExecutor):
     reaches nothing of the 0.44 server itself.
     """
 
-    def __init__(self, *, dispatch, record) -> None:
+    def __init__(self, *, dispatch, record, runbooks=None) -> None:
         super().__init__()
         self._dispatch = dispatch
         self._record = record
+        # skill id -> the served text of an operator runbook (`card.RUNBOOK_PREFIX` + its name).
+        # Words, not tools: a hit is answered here and never reaches the dispatch.
+        self._runbooks: dict[str, str] = dict(runbooks or {})
 
     async def _fail(self, updater: TaskUpdater, message: str) -> None:
         """Wrap `message` in a TaskUpdater failed-message — the shared 'fail the task' tail."""
@@ -84,6 +94,7 @@ class ProximoAgentExecutor(AgentExecutor):
 
         tool_name: str | None = None
         params: dict | None = None
+        raw: object = None
         message = context.message
         if message is not None:
             for payload in get_data_parts(message.parts):
@@ -100,6 +111,18 @@ class ProximoAgentExecutor(AgentExecutor):
                 'Expected a DataPart with shape {"tool": "<name>", "params": {...}}.'
                 " No such part found in the inbound message.",
             )
+            return
+
+        if isinstance(tool_name, str) and tool_name in self._runbooks:
+            # The operator's own procedure, as fixed text. It takes no arguments, runs nothing,
+            # passes no gate (there is nothing to govern) and writes no row, like the shell's
+            # `runbook show` and the REST door's route.
+            if raw not in (None, {}):
+                self._audit_rejection(tool_name, RUNBOOK_TAKES_NONE)
+                await self._fail(updater, RUNBOOK_TAKES_NONE)
+                return
+            await updater.add_artifact(parts=[new_text_part(self._runbooks[tool_name])], name="runbook")
+            await updater.complete()
             return
 
         try:

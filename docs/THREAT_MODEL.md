@@ -76,6 +76,20 @@ is expected behavior (see `SECURITY.md` → "Honest scope notes"):
   when unsure; a CI completeness test blocks a new tool shipping unclassified).
 - **TAINT only guards mutations *after* an untrusted read** — which is the injection
   vector, but state it plainly.
+- **The operator's words are disclosed, and trusted.** The instructions file
+  (`PROXIMO_INSTRUCTIONS`) and the runbooks folder (`PROXIMO_RUNBOOKS_DIR`) are sent to every
+  caller the door serves and on to its model; a network door with no bearer token serves neither.
+  On the A2A door they ride only in the authenticated extended card and a runbook's own skill; the
+  open card says an extended card exists on every door with a token, words or none, so it does
+  not say who has them. A runbook a peer fetched stays readable by that task's id to any holder
+  of the same bearer until the door restarts; every holder of the bearer may read it anyway.
+  They are operator config, trusted like `targets.toml` and outside the taint machinery: whoever
+  can write the file or the folder speaks as the server to every later session, so keep both out
+  of the agent's reach. No permission check is made on them (it would refuse a root-owned 0644
+  file an operator rightly has). The reader refuses a file another `PROXIMO_` variable or the
+  target registry names, a link to one, and a file with a second name; it cannot know a secret
+  that no variable names. An operator runbook's addresses are checked against the table; its
+  wording is not, and nothing in Proximo reads the words to decide anything.
 - **The operator's token scope is load-bearing.** Running with a root-equivalent token
   against guidance is misconfiguration, not a Proximo vulnerability.
 

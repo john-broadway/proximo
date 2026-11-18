@@ -12,6 +12,9 @@ README and becomes a property the test suite checks.
     proximo-core where 105                          # kind, node, status, the concrete path
     proximo-core uses local                         # the guests with a disk or NIC on it
     proximo-core changed 24h                        # added, gone, changed
+    proximo-core instructions                       # the operator's instructions, as a door serves them
+    proximo-core runbook list                       # the operator's runbooks: name, plane, title
+    proximo-core runbook show drain_node            # one of them, as a door serves it
 
 Exit codes are the contract for scripts: 0 executed, 2 refused by the spine, 3 the caller's
 own mistake (bad syntax, unconfigured estate), 4 the vendor refused or could not be reached.
@@ -67,6 +70,50 @@ def mint_main(argv: list[str]) -> int:
         return EXIT_USAGE
     print(json.dumps(recipe, indent=2) if ns.json else mint.render_text(recipe), end="" if not ns.json else "\n")
     return EXIT_OK
+
+
+def words_main(argv: list[str]) -> int:
+    """`proximo-core instructions`, `runbook list`, `runbook show <name>`: the operator's words as
+    a door serves them, printed. The shell is the operator's own terminal, so nothing is withheld
+    for want of a bearer. They read the file or folder now, write no ledger row and no file. Exit 0
+    shown; 3 the caller's (the variable unset, an unknown name, a bad argument); 2 set and refused,
+    the refusal on stderr."""
+    from proximo.core import instructions, runbooks  # noqa: PLC0415 -- only these verbs read the words
+    try:
+        if argv == ["instructions"]:
+            text = instructions.load()
+            if text is None:
+                print(f"proximo-core: {instructions.ENV} is not set", file=sys.stderr)
+                return EXIT_USAGE
+            sys.stdout.write(text)
+            return EXIT_OK
+        if argv not in (["runbook", "list"], ["runbook", "show", *argv[2:3]]) or argv == ["runbook", "show"]:
+            print("usage: proximo-core instructions | runbook list | runbook show <name>", file=sys.stderr)
+            return EXIT_USAGE
+        folder = runbooks.load()
+        if folder is None:
+            print(f"proximo-core: {runbooks.ENV} is not set", file=sys.stderr)
+            return EXIT_USAGE
+    except ProximoError as exc:
+        print(f"proximo-core: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    if argv[1] == "list":
+        for line in runbooks.said(folder):
+            print(f"proximo-core: {line}", file=sys.stderr)
+        for book in folder.served:
+            print(f"{book.name}\t{book.plane}\t{book.title}")
+        return EXIT_OK
+    name = argv[2]
+    for book in folder.served:
+        if book.name == name:
+            sys.stdout.write(book.text)
+            return EXIT_OK
+    for refusal in folder.refused:
+        if refusal.name == name:
+            print(f"proximo-core: an operator runbook is not served: {name}: {refusal.reason}", file=sys.stderr)
+            return EXIT_REFUSED
+    print("proximo-core: no operator runbook has that name (`proximo-core runbook list` names them)", file=sys.stderr)
+    return EXIT_USAGE
 
 
 def doctor_main(argv: list[str]) -> int:
@@ -550,6 +597,8 @@ def main(argv: list[str] | None = None) -> int:
         return arm_main("disarm", argv[1:])
     if argv[:2] == ["consent", "show"]:
         return consent_show(argv[2:])
+    if argv[:1] in (["instructions"], ["runbook"]):
+        return words_main(argv)
     from proximo.core.doors.network import refuse_surfaces  # noqa: PLC0415
     if refuse_surfaces("proximo-core"):                   # a retired switch still set: told here, not served past
         return EXIT_USAGE

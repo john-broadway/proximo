@@ -23,6 +23,7 @@ from typing import Any
 from proximo.core.doors.dispatch import Core
 from proximo.core.doors.network import main_of, recorder
 from proximo.core.errors import ProximoError
+from proximo.core.words import at_start
 
 FACE = "a2a"
 PROG = "proximo-a2a"
@@ -39,8 +40,10 @@ def build_app(url: str | None = None, *, token: str | None = None,
         from proximo.core.perimeter.a2a.app import build_app as perimeter
     except ImportError as e:
         raise ProximoError(_HELP) from e
+    # Read at build, said once; served behind the bearer only: the extended card, and a runbook's skill.
+    words = at_start(bearer=bool(token))
     return perimeter(url, token=token, allowed_hosts=allowed_hosts, signing_key=signing_key,
-                     dispatch=Core(), record=recorder(PROG))
+                     dispatch=Core(words), record=recorder(PROG), words=words)
 
 
 def _build(url: str, token: str | None, allowed: list[str] | None) -> Any:

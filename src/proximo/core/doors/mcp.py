@@ -59,6 +59,8 @@ from proximo.core.ledger import (
     verify_lines,
 )
 from proximo.core.secretfile import safe_exception_text
+from proximo.core.words import NONE as NO_WORDS
+from proximo.core.words import Words, at_start
 
 #: The four planes, as the schema says them: a model picks one; a word that is none of them is refused
 #: by name (the bar-3 drive of 2026-10-18 sent "default" when the schema said only `str`).
@@ -543,13 +545,16 @@ def _targets_advertised() -> bool:
         return True
 
 
-def build_server(name: str = "proximo") -> Any:
-    """The MCP server with the six tools registered. Imports the SDK here and nowhere else."""
+def build_server(name: str = "proximo", *, words: Words = NO_WORDS) -> Any:
+    """The MCP server with the six tools registered. Imports the SDK here and nowhere else.
+    `words` is the operator's words as a door read them at its start (`core.words.at_start`);
+    this reads no environment for them, so a bare call serves none."""
     try:
         from proximo.core.mcpcompat import forbid_undeclared, make_server, slim_schemas, tool_annotations_kwargs
     except ImportError as e:
         raise ProximoError(_HELP) from e
-    server = make_server(name, __version__)
+    # The operator's instructions (`core.instructions`): text in `initialize`, read by nothing here.
+    server = make_server(name, __version__, instructions=words.instructions)
     ro = tool_annotations_kwargs(read_only=True)
     rw = tool_annotations_kwargs(read_only=False)
 
@@ -623,14 +628,15 @@ def build_server(name: str = "proximo") -> Any:
     # `target` ran the call on the env box). Last, so it covers every tool registered above.
     forbid_undeclared(server)
     slim_schemas(server)   # after: the refusal reads the argument models, the model reads these
-    prompts.register(server)   # the five runbooks: text over these six tools, no authority
+    prompts.register(server, words.runbooks)   # the five, then the operator's: text over these six tools, no authority
     return server
 
 
 PROG = "proximo"
-_VERBS = ("mint", "doctor", "badge", "arm", "disarm")
+_VERBS = ("mint", "doctor", "badge", "arm", "disarm", "instructions", "runbook")
 _USAGE = f"""usage: {PROG}                 serve the MCP door over stdio (six tools, every published address)
-       {PROG} mint|doctor|badge|arm|disarm   the operator's verbs, the same as `proximo-core <verb>`
+       {PROG} mint|doctor|badge|arm|disarm|instructions|runbook
+                               the operator's verbs, the same as `proximo-core <verb>`
        {PROG} --help
 
 configured by env: PROXIMO_API_BASE_URL + PROXIMO_TOKEN_PATH (pve), PROXIMO_PBS_/PMG_/PDM_ for the
@@ -663,7 +669,8 @@ def main(argv: list[str] | None = None) -> int:
     if refuse_surfaces(PROG):
         return 3
     try:
-        server = build_server()
+        # stdio: the caller is the operator's own process, the one that set the variables
+        server = build_server(words=at_start(bearer=True))
     except ProximoError as e:
         print(f"{PROG}: {e}", file=sys.stderr)
         return 3

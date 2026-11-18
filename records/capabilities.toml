@@ -427,6 +427,22 @@ proof = ["tests/test_reach_grant.py::test_ids_added_are_a_widening_and_name_exac
          "tests/test_reach_grant.py::test_the_shell_door_greets_before_a_call_that_can_mutate_and_not_before_a_read",
          "tests/test_reach_grant.py::test_switching_a_lane_with_no_allowlist_on_is_a_widening"]
 
+[capability.operator-words]
+what = "The operator's own instructions and runbooks, carried by every door: MCP instructions and prompts, REST behind the bearer, the A2A extended card and a skill per runbook, the shell; a file that could be a credential is never served."
+origin = "field: issue #123 (alexdelprete, 2026-11-01), the operator's rules kept in each client drifted"
+status = "standing"
+proof = [
+  "tests/test_words_on_every_door.py::test_with_no_words_set_the_mcp_wire_is_the_one_before_the_words",
+  "tests/test_words_on_every_door.py::test_mcp_http_with_no_bearer_carries_none_and_says_why_once",
+  "tests/test_words_on_every_door.py::test_rest_without_the_bearer_is_401_and_says_nothing",
+  "tests/test_words_on_every_door.py::test_the_shell_prints_exactly_what_mcp_serves_and_writes_nothing",
+  "tests/test_core_instructions.py::test_a_token_file_is_never_served_however_it_is_reached",
+  "tests/test_core_instructions.py::test_a_named_pipe_hangs_neither_the_door_nor_doctor",
+  "tests/test_core_runbooks.py::test_a7_one_sound_runbook_among_five_that_are_not",
+  "tests/test_words_on_every_door.py::test_b2_the_open_card_of_a_door_with_a_token_is_the_same_bytes_words_or_none",
+  "tests/test_words_on_every_door.py::test_b8_calling_a_runbooks_skill_returns_the_text_mcp_serves_and_touches_nothing",
+]
+
 [capability.runbook-prompts]
 what = "MCP prompts: safe migration, diagnose the cluster, provision a container, safe backup, review receipts."
 origin = "design: the 0.44 server"

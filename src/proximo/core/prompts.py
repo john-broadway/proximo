@@ -19,10 +19,14 @@ resolves each one against the table and the door's own tool list, and bounds eac
 """
 from __future__ import annotations
 
+import inspect
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 PLANE = "pve"
+#: Every operator runbook carries this one description: whose it is, in the list a caller reads.
+OPERATORS = "Operator runbook (not Proximo's)."
 _P = "proximo_plan pve"
 _R = "proximo_read pve GET"
 _APPROVE = ("Show the plan (verdict, tier, current, change) to the operator and wait. Call with "
@@ -163,7 +167,20 @@ RUNBOOKS: tuple[Callable[..., str], ...] = (
     safe_migration, diagnose_cluster, provision_container, safe_backup, review_receipts)
 
 
-def register(server: object) -> None:
-    """Register the five on an MCP server instance (the SDK's `prompt` decorator, both majors)."""
+def _fixed(text: str) -> Callable[[], str]:
+    def runbook() -> str:
+        return text
+    return runbook
+
+
+def register(server: object, runbooks: Iterable[Any] = ()) -> None:
+    """Register the five on an MCP server instance (the SDK's `prompt` decorator, both majors),
+    then the operator's runbooks the door read at its start (`core.runbooks.Runbook`: name, title
+    and the served text), each a prompt with no arguments and one fixed description. `title` is
+    passed only to an SDK whose `prompt` takes it."""
     for fn in RUNBOOKS:
         server.prompt()(fn)  # type: ignore[attr-defined]
+    titled = "title" in inspect.signature(server.prompt).parameters  # type: ignore[attr-defined]
+    for book in runbooks:
+        extra = {"title": book.title} if titled else {}
+        server.prompt(name=book.name, description=OPERATORS, **extra)(_fixed(book.text))  # type: ignore[attr-defined]
