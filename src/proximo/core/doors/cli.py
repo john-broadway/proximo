@@ -6,7 +6,8 @@ rather than three places where governance might differ. Agent-agnostic stops bei
 README and becomes a property the test suite checks.
 
     proximo-core pve GET /nodes/pve1/status
-    proximo-core pve DELETE /nodes/pve1/qemu/101 purge=1
+    proximo-core pve DELETE /nodes/pve1/qemu/101 purge=1            # its plan; nothing moves
+    proximo-core pve DELETE /nodes/pve1/qemu/101 purge=1 --confirm  # run it
     proximo-core pve GET /nodes --target east      # a box PROXIMO_TARGETS names
     proximo-core learn                              # the one deliberate pass that fills the memory
     proximo-core where 105                          # kind, node, status, the concrete path
@@ -15,9 +16,12 @@ README and becomes a property the test suite checks.
     proximo-core instructions                       # the operator's instructions, as a door serves them
     proximo-core runbook list                       # the operator's runbooks: name, plane, title
     proximo-core runbook show drain_node            # one of them, as a door serves it
+    proximo-core audit verify                       # walk the ledger's chain; exit 2 when it does not hold
+    proximo-core audit entries --limit 5            # the newest rows, as every tool door serves them
 
 Exit codes are the contract for scripts: 0 executed, 2 refused by the spine, 3 the caller's
-own mistake (bad syntax, unconfigured estate), 4 the vendor refused or could not be reached.
+own mistake (bad syntax, unconfigured estate, a mutation given neither --confirm nor --plan: its
+plan is printed and stderr says it did not run), 4 the vendor refused or could not be reached.
 Anything else is a bug in Proximo and prints a traceback on purpose: a crash must not be
 laundered into a tidy refusal, because a script that cannot tell "the spine said no" from "the
 door broke" will retry the wrong one.
@@ -38,6 +42,73 @@ from proximo.core.errors import ProximoError
 from proximo.core.secretfile import safe_exception_text, safe_text
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE, EXIT_VENDOR = 0, 2, 3, 4
+
+
+_AUDIT_USAGE = ("usage: proximo-core audit verify [--expected-head H] [--path ARCHIVE] | "
+                "audit entries [--limit N] [--target T] [--action A] [--mutations-only]")
+_AUDIT_FLAGS = {"verify": {"--expected-head": "expected_head", "--path": "path"},
+                "entries": {"--limit": "limit", "--target": "target", "--action": "action"}}
+
+
+def _audit_args(argv: list[str]) -> tuple[str, dict[str, Any]] | None:
+    """(verb, keyword arguments), or None for anything this verb does not take. Parsed by hand: argparse
+    prints its own usage and exits 2, which on this door is the spine's refusal, never a typo."""
+    if not argv or argv[0] not in _AUDIT_FLAGS:
+        return None
+    verb, rest, kw = argv[0], argv[1:], {}
+    while rest:
+        flag = rest.pop(0)
+        if verb == "entries" and flag == "--mutations-only":
+            kw["mutations_only"] = True
+        elif flag in _AUDIT_FLAGS[verb] and rest:
+            kw[_AUDIT_FLAGS[verb][flag]] = rest.pop(0)
+        else:
+            return None
+    if "limit" in kw:
+        if not kw["limit"].isdigit() or not 1 <= int(kw["limit"]) <= 1000:
+            return None
+        kw["limit"] = int(kw["limit"])
+    return verb, kw
+
+
+def audit_main(argv: list[str]) -> int:
+    """`proximo-core audit verify [--expected-head H] [--path ARCHIVE]` and `audit entries [--limit N]
+    [--target T] [--action A] [--mutations-only]`: the two ledger tools every tool door serves, by the
+    same two functions, so the README's "on every door" holds on this one too. Reads; they write no
+    row and mint no key. `verify` exits 0 ONLY when the chain was walked and holds: a broken chain, a
+    ledger that cannot be read at all (a directory, bytes that are not text) and an answer that is not
+    a plain yes all exit 2, with the answer printed so a script reads why. `entries` exits 0 with the
+    rows, 2 when the ledger's bytes cannot be read. 3 is the caller's (an unknown flag, a limit outside
+    1..1000, and for `entries` a box with no ledger at all: there is nothing to list)."""
+    from proximo.core.doors import mcp as tools  # noqa: PLC0415 -- only this verb reads the ledger's tools
+    parsed = _audit_args(argv)
+    if parsed is None:
+        print(_AUDIT_USAGE, file=sys.stderr)
+        return EXIT_USAGE
+    verb, kw = parsed
+    try:
+        out = tools.audit_verify(**kw) if verb == "verify" else tools.audit_entries(**kw)
+    except ProximoError as exc:
+        print(f"proximo-core: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except (OSError, ValueError) as exc:           # a ledger that is not text raises a ValueError
+        why = f"the ledger could not be read ({type(exc).__name__}); a chain that cannot be read does not hold"
+        if verb == "verify":
+            print(json.dumps({"ok": False, "reason": why}, separators=(",", ":"), sort_keys=True))
+        else:
+            print(f"proximo-core: {why}", file=sys.stderr)
+        return EXIT_REFUSED
+    print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
+    return EXIT_OK if verb == "entries" or out.get("ok") is True else EXIT_REFUSED
+
+
+def _not_run() -> int:
+    """A mutation given neither --plan nor --confirm: its plan was printed and nothing ran. Exit 3, the
+    caller's, and a line on stderr: a script written when a bare mutation ran must not read "exit 0" and
+    believe its backup, its restart or its delete happened. `--plan` asks for the plan and exits 0."""
+    print("proximo-core: planned, not run: a mutation runs with --confirm (--plan prints the plan and exits 0)",
+          file=sys.stderr)
+    return EXIT_USAGE
 
 
 def parse_args(pairs: list[str]) -> dict[str, str]:
@@ -602,6 +673,8 @@ def main(argv: list[str] | None = None) -> int:
     from proximo.core.doors.network import refuse_surfaces  # noqa: PLC0415
     if refuse_surfaces("proximo-core"):                   # a retired switch still set: told here, not served past
         return EXIT_USAGE
+    if argv[:1] == ["audit"]:                             # after the retired-switch refusal, like any call
+        return audit_main(argv[1:])
     if argv[:1] == ["arm"] or argv[:1] and argv[0] in MEMORY_VERBS:
         return arm_main("arm", argv[1:]) if argv[0] == "arm" else memory_main(argv[0], argv[1:])
     ap = argparse.ArgumentParser(prog="proximo-core", description=(__doc__ or "").split("\n")[0],
@@ -614,6 +687,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="show the governed decision, the published schema, the target as it "
                          "stands and, on PVE, what the vendor's own door answers the served token "
                          "(governed reads, receipted); mutate nothing")
+    ap.add_argument("--confirm", action="store_true",
+                    help="run a mutation. Without it a POST, PUT, DELETE or `undo` prints its plan and "
+                         "mutates nothing, as on every other door; a read needs no flag")
     ap.add_argument("--fields", default=None,
                     help="a read's rows are LEAN by default (names, states, ids); 'all' for the "
                          "vendor's rows, 'a,b' for exactly those")
@@ -656,7 +732,9 @@ def _run(ns: argparse.Namespace) -> int:
     except ProximoError as e:
         print(f"unconfigured: {e}", file=sys.stderr)
         return EXIT_USAGE
-    if not _greeted(ns.method.upper() != "GET" and not ns.plan and not ns.diagnose):   # `undo` is not a GET
+    # --plan WINS over --confirm, everywhere: a line that asks for the plan mutates nothing, whatever else it says.
+    run = ns.confirm and not ns.plan
+    if not _greeted(ns.method.upper() != "GET" and run and not ns.diagnose):   # a plan greets nobody
         return EXIT_USAGE
     try:
         if ns.diagnose:
@@ -672,18 +750,25 @@ def _run(ns: argparse.Namespace) -> int:
             print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
             return EXIT_OK
         if ns.method.lower() == "undo":
-            # The restore (B2): plan with --plan, run without; the id is the path argument.
+            # The restore (B2): its plan unless --confirm; the id is the path argument.
             if ns.args:
                 raise ProximoError("undo takes no arguments: the capture is the argument; drop k=v")
-            out = undo.restore(ns.path, plane=ns.plane, cfg=cfg, confirm=not ns.plan, wait=ns.wait)
+            out = undo.restore(ns.path, plane=ns.plane, cfg=cfg, confirm=run, wait=ns.wait)
             print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
-            return EXIT_OK if out.get("allowed", True) else EXIT_REFUSED
+            if not out.get("allowed", True):
+                return EXIT_REFUSED
+            return EXIT_OK if run or ns.plan or out.get("status") != "plan" else _not_run()
         row = engine.resolve(ns.plane, ns.method, ns.path)
         args = parse_args(ns.args)
-        if ns.plan:
+        # PLAN BY DEFAULT, AS ON EVERY OTHER DOOR. Until 2026-11-19 a bare mutation here RAN, the one door
+        # where it did, and the README's "nothing moves without confirm" was false of it (the 2026-11-19
+        # read). A mutation now runs only with --confirm; without it the plan is printed and nothing moves.
+        if ns.plan or (row.access != engine.READ and not run):
             out = engine.plan(row, args, ns.path, cfg=cfg, detail=ns.fields)   # --fields: the full schema of those
             print(json.dumps(out, separators=(",", ":"), sort_keys=True))
-            return EXIT_OK if out["allowed"] else EXIT_REFUSED
+            if not out["allowed"]:
+                return EXIT_REFUSED
+            return EXIT_OK if ns.plan else _not_run()
         out = engine.execute(row, args, path=ns.path, cfg=cfg, fields=ns.fields, since=ns.since, wait=ns.wait)
         print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
         return EXIT_OK

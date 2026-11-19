@@ -671,6 +671,7 @@ def test_a_config_for_another_plane_is_refused_at_govern_and_at_the_wire(monkeyp
     served, source = tmp_path / "served", tmp_path / "arm-source"
     served.write_text("armed\n")
     source.write_text("armed\n")      # two files, same bytes: the pve box IS armed
+    source.chmod(0o600)               # the arm source is the write token at rest: private, or it does not arm
     pve = wire.Plane("pve", "https://pve.invalid:8006/api2/json", str(served), arm_source=str(source))
     row = engine.Row(**{**engine.resolve("pbs", "POST", "/admin/datastore/tank/gc").__dict__,
                         "tier": "disruptive"})

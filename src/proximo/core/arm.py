@@ -75,6 +75,18 @@ def _read_token(path: str) -> bytes | None:
         return None
 
 
+def _others_can_read(path: str) -> bool:
+    """True when a POSIX file's mode grants group or other anything. A path that cannot be
+    stat'ed answers False here: the read below reports it, and perms are not that story."""
+    if os.name != "posix":
+        return False
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode) and bool(st.st_mode & 0o077)   # a directory is the read's refusal
+
+
 def served_credential(path: str) -> tuple[str, Any]:
     """What the served file holds: ("token", bytes), ("ticket", {ticket, csrf, box, prefix, user, issued}) or
     ("unreadable", why). THE ONE READER for the predicate and the wire, so they never disagree. A ticket file
@@ -309,6 +321,13 @@ def arm_state(cfg: Any | None = None) -> ArmGateState:
         # b"" == b"" would otherwise call an empty token a match against an empty arm source.
         return ArmGateState(enforced=True, armed=False, reason="the served token is empty")
 
+    if _others_can_read(arm_source):
+        # THE WRITE TOKEN AT REST. A served token gets a mode floor before it is sent
+        # (`secretfile`); the arm source IS the write token and had none, so a 0644 source armed
+        # while any user on the box could read the authority it stands for (the 2026-11-19 read).
+        return ArmGateState(enforced=True, armed=False,
+                            reason="the arm source is group/other-accessible, so anything on this box "
+                                   "could read the write token; chmod 600 it")
     expected = _read_token(arm_source)
     readonly_bytes = _read_token(readonly)
     if expected is not None and readonly_bytes is not None and expected == readonly_bytes:

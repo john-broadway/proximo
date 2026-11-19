@@ -25,7 +25,9 @@ RECORD = pathlib.Path(__file__).resolve().parent.parent / "records" / "taint.tom
 #: pmg 34 · pve 29 · pbs 21 · pdm 5 on 2026-09-23 (the 0.44 ADVERSARIAL_TOOLS' addresses), + 14
 #: pve guest-agent reads on 2026-10-03 (B5: the agent lane is opt-in now, not a hard wall, so its
 #: guest-authored reads carry a taint line like any other guest-byte channel).
-EXACT_LINES = 113  # +1 B3: GET /nodes/{node}/lxc/{vmid}/probe; +1 node shell: GET /nodes/{node}/probe;
+EXACT_LINES = 126  # +13 the log-shaped reads no 0.44 wrapper served (2026-11-19: PDM journal, syslog, task logs,
+#  changelogs; PVE cluster, firewall and replication logs)
+#  +1 B3: GET /nodes/{node}/lxc/{vmid}/probe; +1 node shell: GET /nodes/{node}/probe;
 #  +1 DIAGNOSE on PMG (2026-11-13): pmg GET /nodes/{node}/postfix/qshape, the queue by recipient domain
 #  +1 the download lane (2026-10-04): pmg GET /quarantine/download, attacker bytes to disk
 #  +2 consult (2026-10-25): pve GET /nodes/{node}/qemu|lxc/{vmid}/pending, the guest config fan-out

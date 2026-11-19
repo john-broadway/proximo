@@ -19,6 +19,8 @@ The rules, mechanically:
 
 Usage:
   python scripts/copy_ripple_check.py check                    # in-repo gate (also in tests)
+  python scripts/copy_ripple_check.py check --tests N --wire B # the same, and the README's test count is N and
+                                                               # its `tools/list` byte count is B
   python scripts/copy_ripple_check.py satellites PATH [PATH…]  # each file must carry vCURRENT
 
 Consumed by tests/test_copy_ripple.py (always-on) and the release ripple. Stdlib only.
@@ -266,6 +268,34 @@ def check_satellite_text(text: str, current: str, name: str) -> list[str]:
     return problems
 
 
+_TEST_COUNT_RE = re.compile(r"(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d+) (?:in-process )?tests\b")
+
+
+def check_test_count(text: str, canonical: int) -> list[str]:
+    """Every "N tests" the README states is the number the PUBLIC tree collects: the tree a stranger
+    clones, which leaves out the internal-only tests, so it is the one count a reader can check
+    (John, 2026-11-19; until then the README carried the internal tree's larger number). The caller
+    supplies it (`check --tests N`; `scripts/release.sh` collects on the tree `build-tree` would
+    publish), because this gate also runs inside the suite and cannot count the suite from there."""
+    problems = []
+    for found in _TEST_COUNT_RE.findall(text):
+        if int(found.replace(",", "")) != canonical:
+            problems.append(f"README: claims {found} tests but the public tree collects {canonical:,}: "
+                            "a stale count. Update every place the README states it.")
+    return problems
+
+
+_WIRE_RE = re.compile(r"`tools/list` over stdio is ([\d,]+) bytes")
+
+
+def check_wire_bytes(text: str, measured: int) -> list[str]:
+    """The README's measured cost of connecting is the number measured NOW (`scripts/measure_tools_list.py`).
+    It said 5,544 for a month while the door answered 4,039 (the 2026-11-19 read). A README that no
+    longer states the figure passes: the check is of a number that is there."""
+    return [f"README: says `tools/list` is {found} bytes but the door answers {measured:,}: re-measured, "
+            "the README is stale." for found in _WIRE_RE.findall(text) if int(found.replace(",", "")) != measured]
+
+
 def _canonical_tool_count(root: Path) -> int | None:
     manifest = root / "lhm.plugin.json"
     if not manifest.exists():
@@ -327,6 +357,14 @@ def check_repo(root: Path) -> list[str]:
 def _main(argv: list[str]) -> int:
     if argv[:1] == ["check"]:
         problems = check_repo(REPO_ROOT)
+        rest, readme = argv[1:], (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        measured = {"--tests": check_test_count, "--wire": check_wire_bytes}
+        while len(rest) >= 2 and rest[0] in measured and rest[1].isdigit():
+            problems += measured.pop(rest[0])(readme, int(rest[1]))
+            rest = rest[2:]
+        if rest:
+            print("usage: copy_ripple_check.py check [--tests N] [--wire N]", file=sys.stderr)
+            return 2
     elif argv[:1] == ["satellites"] and len(argv) > 1:
         current = version_tools.read_pyproject_version(REPO_ROOT)
         problems = []

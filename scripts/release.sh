@@ -55,7 +55,23 @@ uv run python scripts/gen_tools_doc.py >/dev/null 2>&1 || { printf 'release: gen
 git diff --exit-code --stat docs/TOOLS.md || { printf 'release: docs/TOOLS.md drifted — commit the regenerated file.\n' >&2; RC=1; }
 # The copy gate. It lived only in the suite, and the suite is not in this gate, so 0.47.0's first
 # green gate shipped a VERIFY.md example still naming 0.46.2 (found by the full suite after).
-uv run python scripts/copy_ripple_check.py check || RC=1
+# ...and two numbers the README states, each read back against a measurement (the 2026-11-19 read:
+# both had been typed once and never checked). THE TEST COUNT is the PUBLIC tree's, the one a
+# stranger clones: the tree build-tree would publish from git HEAD, collected in a scratch copy with
+# this project's env. A collection ERROR still prints "N tests collected, 1 error", so the line must
+# END at the count's own words and pytest must exit 0. THE WIRE BYTES are measured from the stdio
+# door as a client meets it. An empty number is a refusal, never a pass.
+PUBTREE="$(uv run python scripts/release_leak_audit.py build-tree 2>/dev/null | tail -1)"
+PUBDIR="$(mktemp -d)"; TESTS=""
+if [ -n "$PUBTREE" ] && git archive "$PUBTREE" 2>/dev/null | tar -x -C "$PUBDIR"; then
+  COLLECTED="$(cd "$PUBDIR" && uv run --project "$ROOT" pytest --collect-only -q -p no:cacheprovider 2>&1)" && \
+    TESTS="$(printf '%s\n' "$COLLECTED" | sed -n 's/^\([0-9][0-9]*\) tests collected in [0-9.]*s$/\1/p' | tail -1)" || TESTS=""
+fi
+rm -rf "$PUBDIR"
+[ -n "$TESTS" ] || { printf 'release: could not count the public tree (build-tree, or pytest --collect-only, did not end clean)\n' >&2; RC=1; TESTS=0; }
+WIRE="$(uv run python scripts/measure_tools_list.py 2>/dev/null | tail -1)"
+case "$WIRE" in ''|*[!0-9]*) printf 'release: could not measure tools/list over stdio\n' >&2; RC=1; WIRE=0 ;; esac
+uv run python scripts/copy_ripple_check.py check --tests "$TESTS" --wire "$WIRE" || RC=1
 uv run ruff check . || RC=1   # full repo — match CI's `ruff check .` (src+tests+scripts), not a subset
 # pyright over src ([tool.pyright]), against the lock's mcp major. No CI ran it, and README's
 # "pyright clean" rotted to 23 errors unseen (10-18); a release is the gate that always runs.

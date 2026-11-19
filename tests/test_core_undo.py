@@ -420,7 +420,11 @@ def test_the_shell_door_takes_undo_as_the_method_and_the_id_as_the_path(box, mon
     assert cli.main(["pve", "undo", out["undo"]["id"], "--plan"]) == cli.EXIT_OK
     printed = json.loads(capsys.readouterr().out)
     assert printed["status"] == "plan" and printed["arguments"]["memory"] == "4096" and w.mutations() == []
-    assert cli.main(["pve", "undo", out["undo"]["id"]]) == cli.EXIT_OK
+    # a bare undo is its plan and nothing moves (the shell door plans unless told to run)
+    assert cli.main(["pve", "undo", out["undo"]["id"]]) == cli.EXIT_USAGE
+    said = capsys.readouterr()
+    assert json.loads(said.out)["status"] == "plan" and "--confirm" in said.err and w.mutations() == []
+    assert cli.main(["pve", "undo", out["undo"]["id"], "--confirm"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["restored"] == ["memory"] and len(w.mutations()) == 1
     assert cli.main(["pve", "undo", "ffffffffffff"]) == cli.EXIT_REFUSED
     assert "no capture" in capsys.readouterr().err

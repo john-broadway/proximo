@@ -75,6 +75,13 @@ jobs:
           EOF
       - name: Lint
         run: ruff check .
+      - name: Type check (pyright over src, on the lock's mcp major)
+        # The README says "pyright clean" and only the internal runner and the release gate
+        # checked it; a reader of this repository could not. The 2.x leg is the lock's own major,
+        # the one mcpcompat's TYPE_CHECKING branch names. pyright is in requirements/dev.txt and
+        # fetches its node runtime on first use: a red here that names a download is the runner.
+        if: matrix.mcp-major == '2'
+        run: pyright
       - name: Test
         run: pytest -q -ra
 

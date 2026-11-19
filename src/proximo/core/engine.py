@@ -1590,12 +1590,19 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # shape is the path built for odd or hostile vendor bytes; written raw it put a secret and
     # a locator in the hash chain (lens 6). A shape-valid id is bounded by its own class.
     upid = (str(data) if spine.upid_node(data) else safe_text(str(data))) if submitted else ""   # submitted: a str
-    _record(ledger_cfg, "core.execute", row, outcome="submitted" if submitted else "ok",
-            detail={"tier": tier, "params": sorted(args), "intent": intent, **_untrusted_detail(row),
-                    **_capture_of(undo), **({"upid": upid} if submitted else {}),
-                    **({"restores": restores} if restores else {})},
-            called=called, remote=remote)
-    out = {**_envelope(row, called, data), "undo": undo, "intent": intent,
+    landed = _record(ledger_cfg, "core.execute", row, outcome="submitted" if submitted else "ok",
+                     detail={"tier": tier, "params": sorted(args), "intent": intent, **_untrusted_detail(row),
+                             **_capture_of(undo), **({"upid": upid} if submitted else {}),
+                             **({"restores": restores} if restores else {})},
+                     called=called, remote=remote)
+    # THE OUTCOME ROW IS BEST-EFFORT, AND SAYS SO WHEN IT FAILS. The mutation ran; refusing now would
+    # lie the other way. But an answer that looked like any other left the caller believing the chain
+    # held an outcome it does not (the 2026-11-19 read): the `executing` row before it is there, this
+    # one is not, and the caller is the only one who can know to say so.
+    lost = {} if landed is not None else {
+        "receipt": "outcome not recorded: the ledger could not be written after the vendor answered; "
+                   "the plan row written before the call is on the chain"}
+    out = {**_envelope(row, called, data), "undo": undo, "intent": intent, **lost,
            **({"default_node": {"node": rawdoor.echo_wire(node), "from": NODE_ENV}} if node else {}),
            **({"risk_hint": reading} if reading else {})}
     if submitted:

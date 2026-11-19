@@ -43,7 +43,7 @@ It does all of that with **six tools**, over **every address the four Proxmox pr
 
 That's the product: **a hypervisor an AI can operate without being able to wreck it.**
 
-Read-only by default. No mutation runs on the first call: it returns its blast radius as a plan for you to see first. A tamper-evident receipt for every change.
+Read-only by default. A mutation called without `confirm=true` returns its plan and changes nothing; with it, the plan is written to the ledger before anything moves. A tamper-evident receipt for every change.
 
 The comparison isn't Proximo vs. the GUI. It's **Proximo vs. handing an LLM your root token and hoping.**
 
@@ -130,10 +130,10 @@ Everything that touches a Proxmox product is a call: the web UI, `pct` and `qm` 
 
 | | A call on its own | Through Proximo |
 |---|---|---|
-| Before it runs | nothing | **a plan, recorded first**: the verdict, the live target, the exact change, the blast radius |
+| Before it runs | nothing | **a plan, recorded first**: the verdict, the exact change, the blast radius, and the live target where the vendor publishes a read for it |
 | Record of what happened | app logs, editable | **keyed, hash-chained ledger**; `audit_verify` catches edits, reordering and, against a pinned head, truncation |
 | Undo | by hand, if you kept notes | the record captured first, restored through the vendor's own write |
-| Command inside an LXC | broad SSH | opt-in, fail-closed allowlist, judged like any mutation |
+| Command inside an LXC | broad SSH | opt-in, fail-closed allowlist of containers, judged like any mutation |
 | Products covered | one at a time | **PVE + PBS + PMG + PDM**, one governed plane |
 | Verify the artifact you run | varies | signed image · PyPI provenance · SBOM · [Scorecard](https://scorecard.dev/viewer/?uri=github.com/john-broadway/proximo) |
 
@@ -145,7 +145,7 @@ The spine has six pillars. Four stand by default:
 
 | Control | What it does |
 |---|---|
-| **PLAN** | Every mutation first returns a recorded preview: the exact change, live state, blast radius, an advisory risk rating. Nothing mutates without its plan recorded; one `confirm=true` call records and performs. |
+| **PLAN** | Called without `confirm=true`, a mutation returns its preview: the exact change, the live state where the vendor publishes a read for it, blast radius, an advisory risk rating. Nothing mutates without its plan recorded; one `confirm=true` call records and performs. |
 | **PROVE** | Keyed (HMAC-SHA256), hash-chained audit ledger; `audit_verify` catches edits, reordering, insertion. Pin the head off-box (`expected_head`) to catch truncation too: that's the strong guarantee, and it's opt-in. |
 | **UNDO** | One rule: every mutation with a GET twin captures the record before it runs, and the receipt carries an `undo.id`; the restore is the vendor's own write at the same path, with the captured record, as a governed mutation (planned, armed, receipted, itself undoable). A container command can take a snapshot first and then **fail closed** if it can't. Where the vendor publishes no write to put a record back (a delete, a collection, a path with no PUT) the answer is a sentence, never a guessed reverse call. |
 | **DIAGNOSE** | Read-only evidence battery + node health → advisory flags that surface *incompleteness* too, so an empty list never reads as a false clean bill. |
@@ -157,7 +157,7 @@ Two are **yours to raise, by design**, off until their state paths exist, becaus
 | **CONSENT** | Independent, out-of-band approval per plan: an agent (compromised, confused, or steered by injected text) cannot confirm its own mutation. Grants live in a directory only you write (`PROXIMO_CONSENT_DIR`), expire on a TTL, and never clear a taint. |
 | **CONTAIN** | The kill-switch: one trip file halts every mutation immediately, mid-incident, no redeploy and no restart. Checked fresh on every mutation; fails closed. Put the trip path where only you can write (`PROXIMO_CONTAIN_TRIP_PATH`). |
 
-`proximo doctor` reports the spine: which pillars stand, which sockets are empty, and exactly how to fill them. Four more controls ship off until configured: **ARM** (a mutation runs only while the served token *is* the write token), a FORBID/RATE **ENVELOPE**, **TAINT** (the prompt-injection mitigation), and **PRINCIPAL** (who-asked attribution). Scope and lease are not Proximo's any more: the write token's own ACL is the scope and its own `expire` is the lease, both enforced by Proxmox, and `proximo mint` prints the commands that make such a token. What each control defends against: **[SECURITY.md](SECURITY.md)**.
+`proximo doctor` reports the spine: which pillars stand, which sockets are empty, and exactly how to fill them. **ARM** stands from the start: no mutation runs until an arm is configured and the served token *is* the write token. Three more controls ship off until configured: a FORBID/RATE **ENVELOPE**, **TAINT** (the prompt-injection mitigation), and **PRINCIPAL** (who-asked attribution). Scope and lease are not Proximo's any more: the write token's own ACL is the scope and its own `expire` is the lease, both enforced by Proxmox, and `proximo mint` prints the commands that make such a token. What each control defends against: **[SECURITY.md](SECURITY.md)**. These controls hold against a caller through the door; a process running as the door's own user is outside them, and `proximo doctor` says what it can reach.
 
 > **Honesty note (load-bearing):** risk ratings are an *advisory heuristic*, not a sandbox — `LOW` means "no state change," **not** "safe," and the absence of a `HIGH` flag is not a safety signal. Review every change yourself.
 > **The floor beneath it all is the token you mint:** Proxmox RBAC holds even if Proximo's process is fully compromised — a stronger guarantee than anything Proximo's own code provides. Scope it to exactly what you mean to grant: [SECURITY.md](SECURITY.md).
@@ -183,7 +183,7 @@ Forge a byte yourself and watch the chain refuse: <a href="VERIFY.md">VERIFY.md<
 | **Proxmox Backup Server** | REST API + scoped token | datastores, namespaces, snapshots, sync, GC, verify, tape |
 | **Proxmox Mail Gateway** | Ticket auth | mail flow, quarantine, filtering rules, domains, services |
 | **Proxmox Datacenter Manager** | API token | federated fleet: reads plus governed control (power/snapshot/migrate, dry-run-first) |
-| **Container and node shell** | `ssh` → `pct exec`, a fixed host battery | run-command-in-container, `psql`, log tailing, a host health read: what the API structurally can't do. Opt-in lanes, each behind its own switch and allowlist, judged like any mutation |
+| **Container and node shell** | `ssh` → `pct exec`, a fixed host battery | run-command-in-container, `psql`, log tailing, a host health read: what the API structurally can't do. Opt-in lanes, each behind its own switch, the guest lanes behind an allowlist too; a command is judged like any mutation, a lane's read like any read |
 
 Those backends are deliberately boring. Anyone can call them. **The product is the trust layer over them.**
 
@@ -207,11 +207,11 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 **The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing), and the estate memory behind `proximo-core learn | where 105 | uses local | changed 24h`: what the governed reads have seen, answered from one file beside the ledger, no model, no network. Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.54.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.54.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.55.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.55.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.54.0 (the operator's words, on every door).** Your site rules and your own runbooks live once, on the box: `PROXIMO_INSTRUCTIONS` names a text file and `PROXIMO_RUNBOOKS_DIR` a directory of runbook files, and every door carries them in its own slot: MCP as `instructions` and prompts, REST behind the bearer, A2A in its authenticated extended card, the shell as `proximo-core instructions` and `runbook list|show`. They are words only: nothing in Proximo reads them to decide anything, and every step a model takes from them still goes through plan, tier and arm. Every byte is disclosed to the caller, so the read refuses on doubt: a file another `PROXIMO_` variable names (a token, or a link to one) is never served, and a network door with no bearer token serves none. A runbook is checked against the vendor's own table: every address it names must be published and not one Proximo excludes or holds, or the runbook is not served. The instructions are from alexdelprete (#123).
+> **New in 0.55.0 (the shell door plans before it runs).** `proximo-core` now prints a mutation's plan and sends no write unless you say `--confirm`. It was the one door where a bare call ran, so **add `--confirm` to any script that mutates.** This came out of a fresh read of our claims against the code: where a sentence said more than the code did, one of them changed. Also from that read: a ledger with no rows answers `ok: null`, not `true`, and `proximo-core audit verify` walks the chain from a shell.
 >
-> Recent: **0.53.0** had `proximo_find` answer from the estate memory and brought the memory and DIAGNOSE to PBS, PMG and PDM. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.54.0** carried your instructions and your own runbooks on every door. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -228,9 +228,9 @@ Wire it into your MCP client as the command `proximo`, with the `PROXIMO_*` env 
 
 **Docker (GHCR):** `docker run -i --rm … ghcr.io/john-broadway/proximo:latest`. Multi-arch, SBOM, sigstore-signed provenance (`gh attestation verify oci://ghcr.io/john-broadway/proximo --owner john-broadway`). Mirrored to Docker Hub (`docker.io/jebroadway/proximo`, identical digest); GHCR stays the signed primary.
 
-> **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist.
+> **Safe by default:** API-only out of the box. The two near-root edges are opt-in and say so loudly: LXC exec (`PROXIMO_ENABLE_EXEC=1`, near-root on the host) and the qemu-guest-agent edge (`PROXIMO_ENABLE_AGENT=1`, near-root in a guest). Each is scoped by its own fail-closed allowlist of guests; inside an allowed guest the command is the caller's.
 >
-> **Smallest footprint by construction:** the door advertises six schemas and nothing else. Measured on this release, `tools/list` over stdio is 5,544 bytes on the wire (about 1,400 tokens at the four-bytes-a-token heuristic; 1,568 as a stock 1.5B's chat template renders it, counted by its server), and that is the whole cost of connecting; the estate behind it is searched, not loaded. There is nothing to scope: a plane you have not configured is simply not reachable, a plane you have is reachable whole, and the gates do not shrink with the doorway. PLAN and PROVE apply to every address however small the model.
+> **Smallest footprint by construction:** the door advertises six schemas and nothing else. Measured on this release, `tools/list` over stdio is 4,039 bytes on the wire (about 1,000 tokens at the four-bytes-a-token heuristic), and that is the whole cost of connecting; the estate behind it is searched, not loaded. There is nothing to scope: a plane you have not configured is simply not reachable, a plane you have is reachable whole, and the gates do not shrink with the doorway. PLAN and PROVE apply to every address however small the model.
 
 **The network faces (experimental, opt-in):** `proximo-a2a` speaks Agent2Agent. `proximo-http` serves plain HTTP + generated `/openapi.json` for no-code clients. `proximo-mcp-http` serves **MCP itself over Streamable HTTP** (the SDK's native transport) for networked MCP clients: no third-party stdio→HTTP bridge, so the perimeter stays Proximo's. **LXC on your Proxmox host, one line:** on the PVE node as root, `bash -c "$(curl -fsSL https://raw.githubusercontent.com/john-broadway/proximo/main/packaging/lxc/ct/proximo.sh)"` builds a Debian 13 container running `proximo-mcp-http` with Proximo from PyPI, its own service user, and a minted bearer on port 41243. Community-scripts engine (MIT) pointed at Proximo's own tree, their telemetry off; the same line inside the container updates it. Details: [docs/SETUP.md](docs/SETUP.md#as-an-lxc-on-the-proxmox-host), files: [`packaging/lxc/`](packaging/lxc/).
 
@@ -248,12 +248,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.54.0**: **the operator's words, on every door.** Your instructions and your own runbooks, carried by MCP,
-  REST, A2A and the shell; words only, behind the bearer on every network door; a file that could be a credential
-  is never served; a runbook's addresses are checked against the vendor's table. Independent lenses on every
-  lane, folded; every refusal has a gate the suite catches. 6,689 tests.
+- 🩸 **0.55.0**: **the shell door plans before it runs.** A bare mutation prints its plan and does not run;
+  `--confirm` runs it. A fresh read of our claims against the code changed the sentences that said more than
+  the code did. Every new refusal has a gate the suite catches. 6,744 tests.
 
-**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **6,689 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
+**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **6,744 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
 
 **Proven live** (not mocks): the governed path end to end against a real PVE 9 node through this door, plans reading the live target, receipts on the keyed chain, before-state captures and their restore. The 0.44 wrappers' live record (a 3-node cluster, PBS, PMG, PDM, a real cross-datacenter move) stays in [`CHANGELOG.md`](./CHANGELOG.md) where it was earned; it is not re-claimed for the core.
 **Not yet proven — said plainly:** a small local model finishing a whole task through this door. Measured and driven on 0.45: a stock 1.5B behind llama.cpp with a 4,096-token context the server enforces, against a real PVE node, read-only. Its calls landed and the door's refusals named the fix each time (an invented field, the real ones listed); the prompt peaked at 3,074 tokens; the model did not finish the task, it invented a number. The window holds; a 1.5B does not. *Hardware*-watchdog fencing (needs physical iTCO/IPMI), and behavior at production scale. The 20 held addresses are never fired: refused by sentence, by design, not a gap.

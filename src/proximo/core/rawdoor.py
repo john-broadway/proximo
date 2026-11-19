@@ -689,7 +689,8 @@ PROTECTED = frozenset({
     "arguments_more", "change_more", "change_untrusted", "restores", "skipped", "differs_unwritten", "removes",
     "snapshot", "cap_problem", "read_only", "not_shown_whole", "operator_view", "arguments_unpublished_more",
     "restored", "deleted", "attempted", "skipped_more", "unknown_parameters",
-    "parameters_more", "required_missing", "also_refused", "undo_notes"})
+    "parameters_more", "required_missing", "also_refused", "undo_notes",
+    "receipt"})          # "outcome not recorded": the one line that says the chain lacks this answer's row
 
 
 _TRIM_NEXT = "trimmed: ask a part by its own address, or narrow with args or fields="
@@ -900,7 +901,7 @@ _NOISE = frozenset({"untrusted", "derived", "channel", "tier", "needs", "withhel
                     "noop", "truncated", "summarized", "consent", "also", "grant_path", "unpublished", "next"})
 #: what an over-cap answer keeps of the real one: the verdict and the identifiers a caller acts on
 _KEEP = ("address", "plane", "allowed", "needs", "tier", "consent_id", "status", "intent", "ok", "incomplete",
-         "restores", "called_path", "total", "returned")
+         "restores", "called_path", "total", "returned", "receipt")
 
 
 def kind_of(name: str, answer: dict[str, Any]) -> str:

@@ -331,7 +331,8 @@ def test_the_module_stays_small():
     # 252: PROVE's anchor station added two lines here; its words and logic live in core/anchor.py.
     # 254: the shell wait (#106) added two; its words and logic live in core/shell.py (timeout_report).
     # 256: the estate memory's station adds two lines; its words and logic live in core/memory.py.
-    assert len([x for x in inspect.getsource(doctor).splitlines() if x.strip()]) <= 256
+    # 257: the same-user station adds one; its words and logic live in core/sameuser.py.
+    assert len([x for x in inspect.getsource(doctor).splitlines() if x.strip()]) <= 257
 
 
 def test_the_wires_own_refusal_of_a_readable_secret_is_said_without_its_path(box, monkeypatch, tmp_path):

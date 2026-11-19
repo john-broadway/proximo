@@ -14,8 +14,9 @@ different env must not hide behind each other's rows), and writes a row when it 
 `first_with_history`, `widened` (an id or `*` appeared, or a lane was switched on) or `narrowed`.
 An unchanged start writes nothing (the ledger stays signal, not heartbeat). A row carries ids, the
 lane switches and the STORE each allowlist came from (`envfile.source`, in words), never a path, a
-host or a value of any other key. The `proximo-core` shell door greets before a call that can
-mutate (a non-GET, or an undo), not per call: it has no start, and a read cannot use a lane.
+host or a value of any other key. The `proximo-core` shell door greets before a call that WILL
+mutate (a non-GET or an undo given `--confirm` and not `--plan`), not per call: it has no start, and
+a plan greets nobody.
 
 TWO KINDS OF "CANNOT PROVE", treated differently on purpose.
 - The ledger cannot be READ or the row cannot be WRITTEN: the grant is not on the chain and cannot

@@ -423,10 +423,10 @@ def test_the_shell_door_greets_before_a_call_that_can_mutate_and_not_before_a_re
     monkeypatch.setattr(engine, "execute", lambda *a, **k: ran.append(a[0].method) or {})
     assert cli.main(["pve", "GET", "/version"]) == 0
     assert greeted == []
-    assert cli.main(["pve", "POST", "/nodes/pve1/qemu/100/status/start"]) == 0
+    assert cli.main(["pve", "POST", "/nodes/pve1/qemu/100/status/start", "--confirm"]) == 0
     assert greeted == ["cli"] and ran == ["GET", "POST"]
     monkeypatch.setattr(reach, "greet", lambda prog, face: False)
-    assert cli.main(["pve", "POST", "/nodes/pve1/qemu/100/status/stop"]) == 3 and len(ran) == 2
+    assert cli.main(["pve", "POST", "/nodes/pve1/qemu/100/status/stop", "--confirm"]) == 3 and len(ran) == 2
 
 
 # --- doctor: the reach section ---------------------------------------------------------------------

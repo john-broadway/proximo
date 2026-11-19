@@ -9,19 +9,21 @@ gated rows carry their sentences so what the door refuses on purpose is read, no
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 from collections import Counter
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from proximo.core import engine  # noqa: E402
+from proximo.core import engine, spine, undo  # noqa: E402
 
 PLANES = ("pve", "pbs", "pmg", "pdm")
 CLASSES = (
     ("read", "reads served"),
     ("open", "mutations open to an armed operator (tiered)"),
-    ("opt-in", "opened by an operator switch, judged like any mutation (guest agent, container and node shell)"),
+    ("opt-in", "opened by an operator switch: a command is judged like any mutation, a read like any read "
+               "(guest agent, container and node shell)"),
     ("download", "the download lane: bytes land on this host under a cap once PROXIMO_ENABLE_DOWNLOAD is on"),
     ("held", "mutations refused on purpose, with a sentence (`needs=held`)"),
     ("stream", "hard-gated, served by nothing"),
@@ -58,6 +60,33 @@ def tunnel_kind(row: engine.Row) -> str:
     return "protocol upgrade (websocket, backup and reader protocols, migration tunnels)"
 
 
+def put_back(row: engine.Row) -> str:
+    """What UNDO can do for one served mutation, by the engine's own rules and nobody's estimate:
+    `engine._readback_twin` decides whether the record is captured before the write, and the
+    restore's own conditions (`undo.restore`) decide whether a capture can be written back."""
+    if engine._readback_twin(row, None, False) is None:
+        return "none"                                  # no served read at the path: nothing is captured
+    if row.creates:
+        return "create"                                # a judged create: the restore is its DELETE
+    if engine.table()[(row.product, "GET", row.twin)].row is not None:
+        return "kept"                                  # the read is a LIST: `undo.restore` writes back a record only
+    if row.method == "PUT" and undo._body(row):
+        return "put"
+    if row.method == "POST" and undo.same_write(row) is not None:
+        return "put"
+    return "kept"                                      # captured on the receipt; the vendor publishes no write back
+
+
+UNDO_CLASSES = (
+    ("put", "captured first, and put back by the vendor's own PUT"),
+    ("create", "a create: put back by the vendor's DELETE of what it made"),
+    ("kept", "captured first and kept on the receipt; the vendor publishes no write that restores it "
+             "(a delete, a read that answers a list, a POST that is not the PUT's write)"),
+    ("none", "nothing captured from a read: the vendor publishes none at the path, or the call's net is a "
+             "snapshot instead (a rollback takes one; a shell command takes one where the operator asks)"),
+)
+
+
 def render() -> str:
     rows = list(engine.table().values())
     by = Counter(classify(r) for r in rows)
@@ -74,6 +103,24 @@ def render() -> str:
     if by["SILENT"]:
         out += ["", f"**{by['SILENT']} published mutation(s) have NO verdict** (the guard is red):",
                 *(f"- `{r.key}`" for r in rows if classify(r) == "SILENT")]
+    served = [r for r in rows if classify(r) == "open" or (classify(r) == "opt-in" and r.access == engine.MUTATE)]
+    was = os.environ.pop(spine.UNDO_ENV, None)         # the table is of the default, whatever this shell holds
+    try:
+        back = Counter(put_back(r) for r in served)
+    finally:
+        if was is not None:
+            os.environ[spine.UNDO_ENV] = was
+    shown = sum(1 for r in served if engine._read_of(r)[0] is not None)
+    out += ["", "## Undo: what a served mutation leaves to put back", "",
+            f"Of the {len(served)} mutations an armed operator can reach (open, or behind a lane's switch), with",
+            "`PROXIMO_UNDO` at its default. The classes are the engine's own capture rule and the restore's own",
+            "conditions, read from the published schema: what a call CAN leave, before any run. A capture over",
+            "the receipt's size bound keeps only its hash, and that is decided at the call.", "",
+            "| what UNDO does | mutations |", "|---|---|"]
+    out += [f"| {label} | {back[key]} |" for key, label in UNDO_CLASSES]
+    out += [f"| **every served mutation** | **{len(served)}** |", "",
+            f"A plan shows the target as it stands for {shown} of the {len(served)}: where the vendor publishes a",
+            "read of the record, or of the guest's state for an action on it."]
     out += ["", "## Held: refused on purpose", "",
             "A held line is a judgement with a sentence, read by `govern()` before arm. Opening one is a",
             "line moved from `[tier.held]` to `[tier]` in `tiers.toml`, John's hand by name.", ""]

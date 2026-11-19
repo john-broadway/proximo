@@ -8,12 +8,30 @@ and refuses a published mutation with no verdict at all.
 |---|---|---|---|---|---|
 | reads served | 884 | 322 | 172 | 192 | 198 |
 | mutations open to an armed operator (tiered) | 785 | 308 | 165 | 199 | 113 |
-| opened by an operator switch, judged like any mutation (guest agent, container and node shell) | 32 | 32 | 0 | 0 | 0 |
+| opened by an operator switch: a command is judged like any mutation, a read like any read (guest agent, container and node shell) | 32 | 32 | 0 | 0 | 0 |
 | the download lane: bytes land on this host under a cap once PROXIMO_ENABLE_DOWNLOAD is on | 5 | 1 | 3 | 1 | 0 |
 | mutations refused on purpose, with a sentence (`needs=held`) | 20 | 6 | 5 | 4 | 5 |
 | hard-gated, served by nothing | 0 | 0 | 0 | 0 | 0 |
 | excluded: not a JSON call (protocol upgrades, console tickets, a deprecated alias) | 78 | 16 | 22 | 29 | 11 |
 | **every published address** | **1804** | 685 | 367 | 425 | 327 |
+
+## Undo: what a served mutation leaves to put back
+
+Of the 800 mutations an armed operator can reach (open, or behind a lane's switch), with
+`PROXIMO_UNDO` at its default. The classes are the engine's own capture rule and the restore's own
+conditions, read from the published schema: what a call CAN leave, before any run. A capture over
+the receipt's size bound keeps only its hash, and that is decided at the call.
+
+| what UNDO does | mutations |
+|---|---|
+| captured first, and put back by the vendor's own PUT | 190 |
+| a create: put back by the vendor's DELETE of what it made | 5 |
+| captured first and kept on the receipt; the vendor publishes no write that restores it (a delete, a read that answers a list, a POST that is not the PUT's write) | 346 |
+| nothing captured from a read: the vendor publishes none at the path, or the call's net is a snapshot instead (a rollback takes one; a shell command takes one where the operator asks) | 259 |
+| **every served mutation** | **800** |
+
+A plan shows the target as it stands for 556 of the 800: where the vendor publishes a
+read of the record, or of the guest's state for an action on it.
 
 ## Held: refused on purpose
 

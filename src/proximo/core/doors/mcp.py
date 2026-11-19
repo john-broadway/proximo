@@ -481,18 +481,27 @@ def audit_verify(expected_head: str | None = None, path: str | None = None) -> d
         if not os.path.isfile(target):
             raise ProximoError(f"no archive named {rawdoor.quote(path)} beside the ledger")
         v = verify_chain(target, key)
-        return {"ok": v.ok, "entries": v.entries, "broken_at": v.broken_at, "reason": v.reason,
+        return {"ok": None if v.ok and not v.entries else v.ok,        # no rows walked: nothing was verified
+                "entries": v.entries, "broken_at": v.broken_at, "reason": v.reason,
                 "head": v.head, "segments": [list(s) for s in v.segments], "archive": path}
     pin, pinned = _pinned_head(expected_head)
     anchored = anchor.from_env()
     exists = os.path.exists(cfg.audit_log_path)
+    # NOT `ok: true` WHEN NOTHING WAS WALKED. A fresh box, a box whose ledger was deleted and one whose
+    # ledger was emptied (to nothing, or to a newline: `getsize == 0` was beaten by one, the lens) answer
+    # the same here, and `true` called all three a chain that holds (the 2026-11-19 read). `null` is "no
+    # answer"; a pin or an anchor is what tells them apart, and with either this is never reached.
+    nothing = {"ok": None, "entries": 0, "broken_at": None, "reason": None, "head": None, "keyed": None,
+               "note": f"no ledger rows at {cfg.audit_log_path}: nothing was verified. Either nothing has "
+                       "been recorded here, PROXIMO_AUDIT_LOG points elsewhere, or the ledger was removed "
+                       "or emptied; a pinned head (expected_head) tells those apart"}
     if not exists and pin is None and anchored is None:
-        return {"ok": True, "entries": 0, "broken_at": None, "reason": None, "head": None, "keyed": None,
-                "note": f"no ledger at {cfg.audit_log_path}: nothing has been recorded here, or "
-                        "PROXIMO_AUDIT_LOG points elsewhere"}
+        return nothing
     if exists:
         ledger = AuditLedger(cfg.audit_log_path, key=key)
         v = ledger.verify(pin, None) if pinned == "argument" else ledger.verify(None, pin)
+        if v.ok and v.entries == 0 and pin is None and anchored is None:
+            return nothing
         head, keyed = ledger.head(), ledger.keyed
     else:   # a pin names a ledger that must exist: an absent file is a wipe, not "nothing happened"
         v = verify_lines([], key, pin, None) if pinned == "argument" else verify_lines([], key, None, pin)
@@ -633,9 +642,9 @@ def build_server(name: str = "proximo", *, words: Words = NO_WORDS) -> Any:
 
 
 PROG = "proximo"
-_VERBS = ("mint", "doctor", "badge", "arm", "disarm", "instructions", "runbook")
+_VERBS = ("mint", "doctor", "badge", "arm", "disarm", "instructions", "runbook", "audit")
 _USAGE = f"""usage: {PROG}                 serve the MCP door over stdio (six tools, every published address)
-       {PROG} mint|doctor|badge|arm|disarm|instructions|runbook
+       {PROG} mint|doctor|badge|arm|disarm|instructions|runbook|audit
                                the operator's verbs, the same as `proximo-core <verb>`
        {PROG} --help
 

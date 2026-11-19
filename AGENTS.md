@@ -68,9 +68,9 @@ Don't take the above on trust. Check it:
 
 - Run `proximo doctor`. It reports which pillars stand, which planes are reached, and whether
   the ledger's chain is whole — before any AI is wired in.
-- Read the ledger. Every call lands in a keyed hash-chained audit log; `audit_verify` checks
-  the chain — and the *strong* tail-attack guarantee is the opt-in pinned head
-  (`expected_head`), not the bare check. SECURITY.md states exactly what holds, and where.
+- Read the ledger. A mutation's plan lands in a keyed hash-chained audit log before it runs;
+  `audit_verify` checks the chain — and the *strong* tail-attack guarantee is the opt-in pinned
+  head (`expected_head`), not the bare check. SECURITY.md states exactly what holds, and where.
 - Read [SECURITY.md](SECURITY.md), including the parts that say what *doesn't* hold.
 - Read [VERIFY.md](VERIFY.md) for the no-telemetry proof you can run yourself.
 - Read the source. All of it is here.

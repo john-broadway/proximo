@@ -62,7 +62,9 @@ async def test_a2a_client_to_server_end_to_end(build_app, tmp_path, monkeypatch)
         result = next((a for a in artifacts if a.name == "result"), None)
         assert result is not None, "no 'result' artifact returned over A2A"
         data = get_data_parts(result.parts)
-        assert data and isinstance(data[0], dict) and data[0].get("ok") is True
+        # no ledger exists on this fresh box: the tool answered, and since 2026-11-19 it says nothing was
+        # verified (`ok: null`) where it used to say `true`
+        assert data and isinstance(data[0], dict) and data[0]["ok"] is None and data[0]["entries"] == 0
 
 
 # --- Task 6: verified-caller E2E, real A2A client -> real badge -> real governed dispatch --------

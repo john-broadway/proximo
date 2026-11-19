@@ -78,7 +78,8 @@ async def test_the_card_advertises_the_six_core_tools(env):
     assert "bearerAuth" in card.security_schemes
     assert state == TaskState.TASK_STATE_COMPLETED
     result = next(a for a in artifacts if a.name == "result")
-    assert get_data_parts(result.parts)[0]["ok"] is True
+    answer = get_data_parts(result.parts)[0]          # a fresh box, no ledger: nothing verified (since 2026-11-19)
+    assert answer["ok"] is None and answer["entries"] == 0
 
 
 async def test_a_refused_mutation_fails_the_task_with_the_spines_sentence(env, monkeypatch):

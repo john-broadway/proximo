@@ -212,6 +212,11 @@ read-only token in its place when one is configured. The two hours are measured 
 box's clock from the issue time the vendor signed into the ticket: a box whose clock is more than
 two hours off the vendor's reads a fresh ticket as dead or not yet valid, and says so.
 
+On PMG the door also logs in on its own: with the configured credential, to get the session
+ticket every PMG call rides, and again when that ticket expires. That login is the wire's own
+and is not a ledger row; every call it serves is. A person's `arm` is a row, as above: one is
+a person taking write authority, the other is the wire keeping a session.
+
 ```sh
 proximo-core arm              # log in; serve the ticket (from YOUR terminal, never an agent's)
 proximo-core disarm           # the read-only token back (needs no secret; any shell)
@@ -346,7 +351,8 @@ var is set — there's no partial-on state. Don't assume a name in this table is
 you unless you've configured it.
 
 The way to read the table: the trust spine is **six pillars — four ship standing, two are
-yours to erect.** PLAN·PROVE·UNDO·DIAGNOSE are structural (no configuration removes them).
+yours to erect.** PLAN·PROVE·DIAGNOSE are structural (no configuration removes them); UNDO
+stands unless you opt out.
 CONSENT and CONTAIN can only ever be raised by *you*, because their entire value is that
 their state paths sit **outside the agent's reach** — a pillar Proximo raised for you would
 be a pillar the agent could lower for itself. `proximo doctor` reports the spine: which
@@ -355,7 +361,7 @@ configured paths back — a hijacked session shouldn't learn where you put your 
 
 | Control | Defends against | Default | Turn on with |
 |---|---|---|---|
-| **PLAN** | A mutation landing with no preview of the live target, no blast-radius judgement, no chance to review first | **On**, always | n/a — not optional |
+| **PLAN** | A mutation landing with no recorded plan: no verdict, no blast-radius judgement, no live target where the vendor publishes a read for it | **On**, always | n/a — not optional; a caller that sends `confirm=true` without reading the plan has skipped the review, not the record |
 | **PROVE** | An edited, reordered, or silently truncated mutation history | **On** (keyed HMAC-SHA256 ledger, no unkeyed mode) | n/a — keyed always; `PROXIMO_AUDIT_EXPECTED_HEAD` for the off-box pin |
 | **UNDO** | An unrecoverable mistake where the vendor publishes a write to put the record back | **On** (fail-closed: a mutation whose before-state cannot be read does not run) | `PROXIMO_UNDO=0` opts out |
 | **DIAGNOSE** | Acting on a guest/node with no read-only evidence gathered first | **On**, always | n/a — `diagnose=true` on a node or guest read |
@@ -372,8 +378,9 @@ Four more switches widen what Proximo can **do**, rather than protect what it's 
 doing — don't confuse them with the gates above: `PROXIMO_ENABLE_EXEC` (near-root
 `ssh → pct exec`), `PROXIMO_ENABLE_AGENT` (qemu-guest-agent in-guest ops),
 `PROXIMO_ENABLE_NODE_SHELL` (the host's read-only battery) and `PROXIMO_ENABLE_DOWNLOAD`
-(bytes land on this host). All are off by default and, once on, each is bounded by its own
-fail-closed allowlist or cap, and each is judged like any mutation.
+(bytes land on this host). All are off by default. Once on, the two guest lanes are each bounded
+by a fail-closed allowlist of guests, the download lane by its byte cap, and the node lane by its
+fixed read-only battery; a command is judged like any mutation, a lane's read like any read.
 
 There is nothing to scope: the door advertises six tools, a plane you have not configured is
 not reachable, a plane you have is reachable whole, and the gates do not shrink with the

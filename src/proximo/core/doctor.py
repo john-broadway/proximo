@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from proximo.core import anchor, arm, engine, memory, rawdoor, reach, registry, shell, spine, wire, words
+from proximo.core import anchor, arm, engine, memory, rawdoor, reach, registry, sameuser, shell, spine, wire, words
 from proximo.core.errors import ProximoError
 from proximo.core.ledger import (
     LedgerConfig,
@@ -58,6 +58,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
     chain_ok = chain_ok and report["anchor"]["state"] != "diverged"   # a chain that lost its pin is not whole
     report["pillars"] = _pillars(report, chain_ok, flags)
     report["memory"] = memory.station(lcfg, flags)       # the estate memory's state (core/memory.py)
+    report["same_user"] = sameuser.station(lcfg, flags, words.held())   # what this door's user could change
     retired = spine.retired_refusal()
     report["retired"] = [retired.reason] if retired else []
     if retired:
@@ -77,7 +78,7 @@ def run(ledger_cfg: Any = None) -> dict[str, Any]:
 #: and the report must say it is not whole). Each prefix opens one flag.
 _ADVISORY = ("CONSENT is inert", "CONTAIN has no trip path", "CONTAIN: no rate cap", "UNDO is off",
              "a sealed rotation archive sits beside the ledger", "PROVE has no off-box anchor") + reach.ADVISORY \
-    + memory.ADVISORY + words.ADVISORY
+    + memory.ADVISORY + words.ADVISORY + sameuser.ADVISORY
 
 
 def _said(exc: ProximoError) -> str:
@@ -210,7 +211,7 @@ def _ledger(lcfg: Any, flags: list[str]) -> tuple[dict[str, Any], bool]:
         flags.append("the ledger is configured keyed and no key is readable; its chain cannot be judged")
         return section, False
     v = verify_lines(lines, key)
-    section["chain"] = "ok" if v.ok else f"broken at {v.broken_at}: {v.reason}"
+    section["chain"] = ("no rows" if not v.entries else "ok") if v.ok else f"broken at {v.broken_at}: {v.reason}"
     if not v.ok:
         flags.append(f"the ledger's chain is {section['chain']}; nothing after that row is evidence")
     open_rows = in_flight(parse_lines(lines))

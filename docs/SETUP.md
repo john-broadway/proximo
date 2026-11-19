@@ -16,8 +16,8 @@ care about is **one idea**, so read this part first:
 That's defense in depth, in the right order:
 
 - **The floor — your token's permissions.** Enforced by Proxmox, held by you, impossible for Proximo to exceed.
-- **On top — Proximo's safety net.** Every mutation is **planned** (the verdict, the live target and the
-  exact change, before anything runs), **proven** (a keyed, tamper-evident record of every move), and
+- **On top — Proximo's safety net.** Every mutation is **planned** (the verdict, the exact change, and the
+  live target where the vendor publishes a read for it, before anything runs), **proven** (a keyed, tamper-evident record of every move), and
   **undone where the vendor publishes a write to put the record back** (a mutation captures the record it
   is about to change; the restore is the vendor's own write with that record).
 
@@ -603,13 +603,16 @@ bash script, then MCP, A2A and HTTP are protocol adapters over the same decision
 proximo-core pve GET /nodes/pve1/status
 proximo-core pve GET /cluster/resources --fields name,status
 proximo-core pve POST /nodes/pve1/qemu/100/status/start --plan     # the verdict, the schema, the target as it stands; mutates nothing
-proximo-core pve POST /nodes/pve1/qemu/100/status/start            # runs it, armed and tiered, and waits on the task
-proximo-core pve undo <undo.id>                                     # puts a captured record back
+proximo-core pve POST /nodes/pve1/qemu/100/status/start            # the same plan: a mutation runs only with --confirm (exit 3 says it did not)
+proximo-core pve POST /nodes/pve1/qemu/100/status/start --confirm  # runs it, armed and tiered, and waits on the task
+proximo-core pve undo <undo.id> --confirm                           # puts a captured record back
+proximo-core audit verify                                           # walks the ledger's chain; exit 0 only when it holds
 ```
 
 Exit codes are the contract: 0 executed, 2 refused by the spine, 3 the caller's own mistake (bad
-syntax, an unconfigured estate, a retired switch still set), 4 the vendor refused or could not be
-reached. The verbs `mint`, `doctor`, `badge`, `arm` and `disarm` are the same on both commands.
+syntax, an unconfigured estate, a retired switch still set, a mutation given neither `--confirm`
+nor `--plan`: its plan is printed and stderr says it did not run), 4 the vendor refused or could
+not be reached. The verbs `mint`, `doctor`, `badge`, `arm` and `disarm` are the same on both commands.
 
 ---
 

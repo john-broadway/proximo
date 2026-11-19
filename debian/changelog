@@ -1,3 +1,11 @@
+proximo (0.55.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.55.0 (minor, breaking on the shell door: a mutation
+    prints its plan and runs only with --confirm; a ledger with no rows
+    answers ok: null; audit verify and audit entries on the shell door).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Thu, 19 Nov 2026 22:00:00 +0000
+
 proximo (0.54.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.54.0 (minor: the operator's instructions and

@@ -105,8 +105,8 @@ def _env_names(v: object) -> object:
 
 
 def _chain(v: object) -> object:
-    if v == "ok":
-        return "ok"
+    if v in ("ok", "no rows"):        # "no rows": a chain with nothing in it, which is not a chain that holds
+        return v
     if isinstance(v, str):
         for head in ("broken", "unjudgeable"):
             if v.startswith(head):
@@ -176,6 +176,7 @@ _FLAGS: tuple[tuple[re.Pattern[str], str], ...] = tuple((re.compile(p), c) for p
     (r"CONSENT is advisory", "consent-advisory"),
     (r"CONSENT is inert", "consent-inert"),
     (r"UNDO is off", "undo-off"),
+    (r"the door's own user can write", "same-user-can-write"),
     (r"the (agent|shell|node) lane's allowlist is garbled", "lane-allowlist-garbled:{1}"),
     (r"the shell timeout is garbled", "shell-timeout-garbled"),
     (r"the exit ceiling is garbled", "exit-ceiling-garbled"),

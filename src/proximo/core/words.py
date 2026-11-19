@@ -31,6 +31,11 @@ NO_BEARER = "this door has no bearer token, so the operator's words are not serv
 ADVISORY = (*instructions.ADVISORY, runbooks.LONG)
 
 
+def held() -> dict[str, list[str | None]]:
+    """Where the operator's words are read from, as a kind for the doctor's same-user station."""
+    return {"the operator's words": [os.environ.get(instructions.ENV), os.environ.get(runbooks.ENV)]}
+
+
 def at_start(*, bearer: bool) -> Words:
     """Read both halves once and say each refusal once on stderr. `bearer=False` reads nothing."""
     said: list[str] = []
