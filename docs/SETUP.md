@@ -521,6 +521,8 @@ plane: pve
 3. Show each plan to the operator and wait for a yes before any call.
 ```
 
+For full ones, see `packaging/runbooks/`: `restore_test.md` (prove a VM backup by restoring a copy), `ct_restore_test.md` (the same for a container), `snapshot_change.md` (change a VM with a snapshot to fall back on), `clone_dev_vm.md` (build a dev VM from a cloud-init template), `snapshot_hygiene.md` (old and leftover snapshots), `decommission_guest.md` (remove a guest for good), and five read-only checks: `backup_coverage.md`, `backup_failures.md`, `storage_capacity.md`, `cert_expiry.md` and `update_check.md`.
+
 The first line is the title (`# ` and 1 to 80 printable characters). The next line that is not
 blank names one plane: `plane: pve`, `pbs`, `pmg` or `pdm`. A procedure that spans two products is
 two files. The rest is your procedure, at most 8192 bytes a file. Proximo reads the first 32
