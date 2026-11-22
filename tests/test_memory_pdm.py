@@ -984,12 +984,15 @@ def test_an_id_the_check_refuses_hands_out_no_path_though_the_table_would_serve_
 
 
 def test_the_bad_ids_are_ones_the_table_would_serve():
-    """Why the cases above test the id check and not the table: each bad id passes `_published`."""
+    """Why the cases above test the id check and not the table: each bad id passes `_published`.
+
+    Except `.`: since GHSA-pm7c-9g59-j62g the path's spelling refuses a lone dot segment too, so
+    for that id the table is a second wall, not a hole the id check alone covers."""
     for bad in SERVED_BAD:
         assert not memory._ID.fullmatch(bad)
         for p in (f"/pve/remotes/alpha/nodes/n1/storage/{bad}/status", f"/pve/remotes/alpha/nodes/{bad}/status",
                   f"/pbs/remotes/{bad}/datastore", f"/remotes/remote/{bad}/config", f"/config/views/{bad}"):
-            assert memory._published("pdm", p), p
+            assert bool(memory._published("pdm", p)) is (bad != "."), p
 
 
 def test_the_control_paths_are_handed_out(cfg):

@@ -51,6 +51,28 @@ def _origin_is_cross(origin: str, host: str | None) -> bool:
         return True  # "null", protocol-relative, or otherwise malformed → fail closed
     return parts.netloc.lower() != (host or "").strip().lower()
 
+def _guarded_paths(scope) -> tuple[str, ...]:
+    """Every spelling of this request's path that `protect` must be asked about.
+
+    The full path, and, when the face is mounted under a prefix (a Starlette `Mount` sets
+    `root_path`), the path the mounted app routes on: the prefix removed by WHOLE segment, the
+    way Starlette's own router strips it. GHSA-pm7c-9g59-j62g: the guards asked only about
+    `request.url.path`, so an embedder that mounted a face at `/proximo` sent
+    `/proximo/tools/...` to a `protect` that selects `/tools/...`, and the bearer, the
+    cross-origin guard and the badge camera all stood aside. Asking about both means a mount
+    can add protection and never remove it.
+    """
+    path = scope["path"]
+    root = scope.get("root_path") or ""
+    if root and path.startswith(root) and path[len(root):len(root) + 1] in ("/", ""):
+        return (path, path[len(root):] or "/")
+    return (path,)
+
+
+def _is_protected(protect: Callable[[str], bool], scope) -> bool:
+    return any(protect(p) for p in _guarded_paths(scope))
+
+
 # Max request-body size for a skill/RPC call. Params are tiny; anything larger is a mistake or a
 # memory-pressure probe. A cheap DoS floor (finding #4), enforced before the body is buffered.
 MAX_BODY_BYTES = 128 * 1024
@@ -255,7 +277,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self._body = unauthorized_body
 
     async def dispatch(self, request, call_next):
-        if self._protect(request.url.path):
+        if _is_protected(self._protect, request.scope):
             scheme, _, presented = request.headers.get("authorization", "").partition(" ")
             if scheme.lower() != "bearer" or not presented or not hmac.compare_digest(presented, self._token):
                 return JSONResponse(self._body, status_code=401,
@@ -295,7 +317,7 @@ class CrossOriginGuardMiddleware(BaseHTTPMiddleware):
         self._protect = protect
 
     async def dispatch(self, request, call_next):
-        if request.method == "POST" and self._protect(request.url.path):
+        if request.method == "POST" and _is_protected(self._protect, request.scope):
             if request.headers.get("sec-fetch-site", "").lower() in _CROSS_ORIGIN_FETCH_SITES:
                 return JSONResponse({"error": "cross-origin request refused"}, status_code=403)
 
@@ -373,7 +395,7 @@ class PrincipalMiddleware(BaseHTTPMiddleware):
         self._seen: set[str] = set()
 
     async def dispatch(self, request, call_next):
-        if not self._protect(request.url.path):
+        if not _is_protected(self._protect, request.scope):
             return await call_next(request)
         from ..principal import reset_active_caller, set_active_caller  # noqa: PLC0415
         from .badge import BadgeError, load_pins_live, verify_badge  # noqa: PLC0415

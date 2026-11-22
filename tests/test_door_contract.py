@@ -79,3 +79,12 @@ def test_every_refusal_lane_sampled_says_its_own_words(served):
                   "the container shell lane is off", "pmg is not configured", "pve publishes no GET"):
         assert words in said, words
     assert "[Claude," not in said and "<scratch>" in said
+
+
+def test_a_build_leaves_no_scratch_folder_behind(monkeypatch, tmp_path):
+    # The builder once leaked one `door-contract-*` folder per run into /tmp (a memory-backed
+    # tmpfs on the dev box: 1,028 had piled up). Point tempfile at an empty folder and count.
+    import tempfile
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    g.build()
+    assert list(tmp_path.iterdir()) == []

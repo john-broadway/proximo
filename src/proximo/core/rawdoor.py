@@ -82,6 +82,11 @@ def estimate_tokens(text: str) -> int:
 _KEY = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _BAD_SEGMENT = re.compile(r"[\s?#]|[\x00-\x1f\x7f]")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# A placeholder is a WHOLE segment (`{node}`). A brace anywhere else (`{/x}`, `a{b}`) let the
+# table's normalizer collapse it across a `/` and govern a path with a different segment count
+# from the one it would send (the GHSA-pm7c lens, 2026-11-22; execute's bind refused it, the plan
+# did not).
+_PLACEHOLDER = re.compile(r"\{[A-Za-z0-9_-]+\}")
 
 # The guest-agent subtree: ONE definition, referenced by _GATED here and by the opt-in gate in
 # `proximo.core.spine` (spine imports this constant, so the prefix is not retyped). Unlike the
@@ -157,10 +162,15 @@ def reject_malformed(path: str, *, allow_placeholders: bool = False) -> None:
     judges the DECODED spelling too, for what breaks the door's invariants: a control character
     (a lens sent `192.0.2.0%0A%2F24`, whose `%0A` decoded into the newline that separates the
     forbid haystack's fields and split the operator's entry in two; THIS check is what kills it),
-    an empty or `..` segment, and any `%` that survives one decode (`%252F`, `%zz`: what the
+    an empty, `.` or `..` segment, and any `%` that survives one decode (`%252F`, `%zz`: what the
     vendor would make of a second decode is not ours to guess). Not a space, `#` or `?` inside a
     value: the wire gets the encoded bytes, a file name may carry them, and a lens found the
     wider rule refusing `Windows 11 Pro.iso`.
+
+    A lone `.` segment (raw or `%2e`) dies with `..`: GHSA-pm7c-9g59-j62g showed
+    `PUT /nodes/localhost/network/.` on pbs governed as `PUT /nodes/{node}/network/{iface}`
+    while httpx removes the dot segment and sends `PUT /nodes/localhost/network`, a different
+    address. A dot inside a value (`.vmbr0`, `a..b.iso`) is a name, not a segment, and passes.
     """
     decoded = unquote(path)
     bad = (
@@ -169,15 +179,16 @@ def reject_malformed(path: str, *, allow_placeholders: bool = False) -> None:
         or "//" in decoded
         or _BAD_SEGMENT.search(path)
         or _CONTROL.search(decoded)
-        or ".." in decoded.split("/")
+        or not {".", ".."}.isdisjoint(decoded.split("/"))
         or "%" in decoded
         or (not allow_placeholders and ("{" in path or "}" in path))
+        or any(("{" in seg or "}" in seg) and not _PLACEHOLDER.fullmatch(seg) for seg in path.split("/"))
     )
     if bad:
         raise ProximoError(
             f"malformed path {quote(path)}: an absolute API path"
             + ("" if allow_placeholders else " with real values in it (no `{placeholders}`)")
-            + ", no query string, no empty or '..' segments and no whitespace; inside a value "
+            + ", no query string, no empty, '.' or '..' segments and no whitespace; inside a value "
               "a '/' is %2F, a control character is refused however it is spelled, and a '%' "
               "must not survive one decode (query parameters go in `args`)"
         )

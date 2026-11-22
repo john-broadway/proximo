@@ -1,3 +1,11 @@
+proximo (0.55.1-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.55.1 (patch, security: a lone '.' path segment is
+    refused; a face mounted under a prefix keeps its guards;
+    GHSA-pm7c-9g59-j62g).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 22 Nov 2026 03:30:00 +0000
+
 proximo (0.55.0-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.55.0 (minor, breaking on the shell door: a mutation

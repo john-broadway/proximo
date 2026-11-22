@@ -2,6 +2,16 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.55.1] — 2026-11-22
+
+**A dot segment is refused.** Reported by Kamipiula (GHSA-pm7c-9g59-j62g). A path with a lone `.` segment, raw or `%2e`, passed the spelling check. The core governed `PUT /nodes/localhost/network/.` on pbs as the row `PUT /nodes/{node}/network/{iface}`, while the HTTP client removes the dot segment and sends `PUT /nodes/localhost/network`, a different address. A `.` segment is now refused beside `..`, before the address is matched. A dot inside a value (`.vmbr0`) is a name and still passes.
+
+**A face mounted under a prefix keeps its guards (same report).** The bearer check, the cross-origin guard and the badge camera asked about the request's full path. An application that mounts a face under a Starlette `Mount` prefix sent `/prefix/tools/...` to a check that selects `/tools/...`, and all three stood aside. They now ask about the path the mounted face routes on as well as the full one, so a mount can add protection and never remove it. `proximo serve` and the shipped doors do not mount under a prefix and were not affected.
+
+**A brace that is not a whole segment is refused.** Found by the review of the fix above. A path like `/nodes/{/qemu/100}` was planned as `GET /nodes/{node}`, a row with a different number of segments. Execution already refused it before anything was sent, so only a plan could be issued on it. A placeholder must now be a whole segment (`{node}`).
+
+**The door-contract script cleans up after itself.** `scripts/gen_door_contract.py` left one temporary folder behind on every run.
+
 ## [0.55.0] — 2026-11-19
 
 **The shell door plans before it runs.** Breaking: this changes what a script does. Until now `proximo-core pve POST ...` ran the mutation, the one door where a call with no confirmation did; every other door returns the plan first. A POST, PUT, DELETE or `undo` on the shell now prints its plan, sends no write, and runs only with `--confirm`. A bare mutation whose plan is allowed exits 3, not 0, with one line on stderr, so a cron job written for the old behaviour fails loudly and does not read success for work that did not happen; one the spine refuses still exits 2. `--plan` still prints the plan and exits 0 when it is allowed, and wins when both flags are given. Reads are unchanged. **Add `--confirm` to every shell mutation you mean to run.**

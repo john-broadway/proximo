@@ -163,7 +163,10 @@ def build() -> dict[str, Any]:
     environment is put back as it was found, so a suite's own pins survive the run."""
     saved = dict(os.environ)
     try:
-        return _build()
+        # The scratch folder is removed with the run (it once leaked one folder per run into a
+        # memory-backed /tmp; a sweep found 1,028).
+        with tempfile.TemporaryDirectory(prefix="door-contract-") as scratch:
+            return _build(scratch)
     finally:
         os.environ.clear()
         os.environ.update(saved)
@@ -184,11 +187,10 @@ def _sample_env(env: dict[str, str], scratch: str) -> dict[str, str]:
     return out
 
 
-def _build() -> dict[str, Any]:
+def _build(scratch: str) -> dict[str, Any]:
     for var in list(os.environ):
         if var.startswith("PROXIMO_"):
             del os.environ[var]
-    scratch = tempfile.mkdtemp(prefix="door-contract-")
     base = {"PROXIMO_ENV_FILE": os.path.join(scratch, "absent.env"),
             "PROXIMO_AUDIT_LOG": os.path.join(scratch, "audit.log")}
     os.environ.update(base)
