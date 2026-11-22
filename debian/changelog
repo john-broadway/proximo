@@ -1,3 +1,10 @@
+proximo (0.56.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.56.0 (minor: a guest-agent exec waits for its exit
+    through exec-status; an unconfirmed exit carries no exit code).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Sun, 22 Nov 2026 06:00:00 +0000
+
 proximo (0.55.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.55.1 (patch, security: a lone '.' path segment is

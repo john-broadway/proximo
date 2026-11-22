@@ -2,6 +2,10 @@
 
 All notable changes to Proximo. Format loosely follows Keep a Changelog; versions are SemVer.
 
+## [0.56.0] — 2026-11-22
+
+**A guest-agent exec waits for its exit.** Asked for in #98 by RavenLiao. A POST to `/nodes/{node}/qemu/{vmid}/agent/exec` answered only the pid the agent started, so a caller had to build the polling loop itself. Proximo now reads the agent's `exec-status` for that pid every two seconds until `wait` has run out (the last read can land one interval past it) (the task wait's knob and bounds; `wait=0` only submits), and hands back the exit code, any signal and the output from that read. Only the agent's own `exited` is a finish. The agent's `out-truncated` and `err-truncated` are carried and say a stream is a prefix. When the wait runs out or a status read fails, the answer says the exit is not confirmed, carries no exit code, and names the pid and the read to ask again: the process is not stopped and the command is not run again. The output is labelled untrusted and never reaches the ledger; one `core.exec` receipt records exited, running or error with the exit code. Only the agent exec row's answer is polled, and only for a positive integer pid.
+
 ## [0.55.1] — 2026-11-22
 
 **A dot segment is refused.** Reported by Kamipiula (GHSA-pm7c-9g59-j62g). A path with a lone `.` segment, raw or `%2e`, passed the spelling check. The core governed `PUT /nodes/localhost/network/.` on pbs as the row `PUT /nodes/{node}/network/{iface}`, while the HTTP client removes the dot segment and sends `PUT /nodes/localhost/network`, a different address. A `.` segment is now refused beside `..`, before the address is matched. A dot inside a value (`.vmbr0`) is a name and still passes.

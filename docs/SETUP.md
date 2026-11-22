@@ -323,6 +323,14 @@ model sends changes it. When the wait runs out only the local ssh client stops: 
 still be running on the node, and the answer says so. A client may have its own limit per tool
 call, shorter than yours.
 
+A guest-agent exec (`POST /nodes/{node}/qemu/{vmid}/agent/exec`) answers with the pid the agent
+started, and Proximo then waits for it: it reads the agent's `exec-status` for that pid every two
+seconds until `wait` has run out (the last read can land one interval past it) (the same knob and bounds as a task wait; `wait=0` only submits). Only the
+agent's own `exited` is a finish; the exit code, any signal and the output come from that read, and
+the agent's own truncation flags say when a stream is a prefix. When the wait runs out, or a status
+read fails, the answer says the exit is not confirmed, carries no exit code, and gives the pid and
+the `exec-status` read to ask again. Nothing is stopped and nothing is run again.
+
 Every answer a model is handed leaves the door under a byte ceiling: 1,152 for a read, 2,048 for a
 plan or a call, 3,072 for a diagnosis. One over its ceiling is replaced by a short fixed shape (the
 verdict, the undo id, the task status, counts of what was left out), not truncated, so a command's

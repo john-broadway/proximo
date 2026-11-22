@@ -1540,6 +1540,7 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # the grant spent as ONE step (`_spend_gates`), and a refusal there gives the slots back.
     # a taint marker that cannot be written refuses HERE, with nothing spent
     _taint_before_the_wire(row, ledger_cfg, called, remote, mutation=True)
+    _taint_the_exec_wait(row, ledger_cfg, called, remote, wait)
     before = _read_back(row, client, called, ledger_cfg, remote, view, net_of is not None)
     if before is not None and (lock := _vendor_lock(row, args, before.get("before"))) is not None:
         # The consent id was judged on `submitted`, above; a caller that sent no digest (consent inert, or
@@ -1586,13 +1587,17 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     # its id; "ok" here would let PROVE say ok for an outcome nobody has seen yet (a process
     # that dies mid-wait leaves an honest "submitted" and no task row). The wait closes it.
     submitted = spine.looks_like_upid(data)
+    # A GUEST EXEC IS SUBMITTED TOO: the agent answers the pid of a process it started, not its
+    # exit (0.44's pve_agent_exec). Keyed on the ROW, never on an answer that happens to carry one.
+    pid = _agent_pid(row, data)
     # THE ID ON THE ROW IS THE SHAPE OR SCRUBBED TEXT. An answer that says UPID but is not the
     # shape is the path built for odd or hostile vendor bytes; written raw it put a secret and
     # a locator in the hash chain (lens 6). A shape-valid id is bounded by its own class.
     upid = (str(data) if spine.upid_node(data) else safe_text(str(data))) if submitted else ""   # submitted: a str
-    landed = _record(ledger_cfg, "core.execute", row, outcome="submitted" if submitted else "ok",
+    landed = _record(ledger_cfg, "core.execute", row, outcome="submitted" if (submitted or pid) else "ok",
                      detail={"tier": tier, "params": sorted(args), "intent": intent, **_untrusted_detail(row),
                              **_capture_of(undo), **({"upid": upid} if submitted else {}),
+                             **({"pid": pid} if pid else {}),
                              **({"restores": restores} if restores else {})},
                      called=called, remote=remote)
     # THE OUTCOME ROW IS BEST-EFFORT, AND SAYS SO WHEN IT FAILS. The mutation ran; refusing now would
@@ -1608,6 +1613,11 @@ def execute(row: Row, args: dict[str, Any] | None = None, *, cfg: wire.Plane | N
     if submitted:
         out["task"] = _task_of(client, row, called, upid, TASK_WAIT_DEFAULT if wait is None else wait,
                                ledger_cfg, intent, remote)
+    if pid:
+        out["exec"] = _exec_of(client, row, called, pid, TASK_WAIT_DEFAULT if wait is None else wait,
+                               ledger_cfg, intent, remote)
+        if out["exec"].get("output", {}).get("untrusted"):
+            out["untrusted"] = True                # the guest's bytes are in this answer now
     return out
 
 
@@ -2356,6 +2366,117 @@ def _task_of(client: Any, row: Row, called: str, upid: str, wait: int, ledger_cf
                         "seconds": task["seconds"], "status": task["status"], "exitstatus": task["exitstatus"]},
                 called=called, remote=remote)
     return task
+
+
+AGENT_EXEC = ("pve", "POST", "/nodes/{node}/qemu/{vmid}/agent/exec")
+AGENT_EXEC_STATUS = ("pve", "GET", "/nodes/{node}/qemu/{vmid}/agent/exec-status")
+_EXEC_META = ("exitcode", "signal")
+_EXEC_CUT = (("out-truncated", "out-data"), ("err-truncated", "err-data"))
+
+
+def _agent_pid(row: Row, data: Any) -> int | None:
+    """The pid of a guest exec's answer: only the agent exec row's, only a positive integer (a
+    bool is not one). Anything else is not polled, whatever it carries."""
+    if (row.product, row.method, row.path) != AGENT_EXEC or not isinstance(data, dict):
+        return None
+    pid = data.get("pid")
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+
+
+def _exited(st: Any) -> bool:
+    """The agent's own word that the process exited: `true`, or the integer 1. Nothing else, and
+    never a falsy or missing value (that would fake an exit for a command still running)."""
+    v = st.get("exited") if isinstance(st, dict) else None
+    return v is True or (type(v) is int and v == 1)
+
+
+def _exec_wait_seconds(wait: Any) -> int | None:
+    """The seconds a guest exec will wait: `wait` clamped to the task wait's bounds, the default when
+    None, and None when it is not a whole number of seconds (nothing is polled then)."""
+    try:
+        return max(0, min(int(TASK_WAIT_DEFAULT if wait is None else wait), spine.TASK_WAIT_MAX))
+    except Exception:  # noqa: BLE001 -- any wait that cannot be read polls nothing; the pid is kept
+        return None
+
+
+def _taint_the_exec_wait(row: Row, ledger_cfg: Any, called: str, remote: str | None, wait: Any) -> None:
+    """A guest exec's wait reads the guest's bytes through `exec-status`: when it WILL read (a wait
+    above 0), that read is marked here, before the exec is sent, so a marker that cannot be written
+    refuses before the command runs, never after it ran with its pid lost (the lens on #98,
+    2026-11-22). Like the mutation mark beside it, this marks before anything is spent: a refusal
+    after it, or a POST that fails, leaves the session marked (fail-closed: over-marked, never under).
+    `wait=0`, or a wait that is not a number, reads nothing and marks nothing. Any other row: nothing."""
+    if (row.product, row.method, row.path) == AGENT_EXEC and (_exec_wait_seconds(wait) or 0) > 0:
+        _taint_before_the_wire(table()[AGENT_EXEC_STATUS], ledger_cfg, called + "-status", remote, mutation=True)
+
+
+def _unconfirmed(spath: str, pid: int, cause: str) -> str:
+    """What an unconfirmed guest exec did NOT do, and how to ask again (#98): a wait that ends is
+    not a cancel and never a re-run, and the answer carries no exit code it did not see."""
+    return (f"exit not confirmed: {cause}. The process was not stopped and will not be run again; "
+            f"ask the agent with GET {rawdoor.echo_wire(spath)} pid={pid}")
+
+
+def _exec_of(client: Any, row: Row, called: str, pid: int, wait: int, ledger_cfg: Any, intent: str,
+             remote: str | None) -> dict[str, Any]:
+    """The wait on a guest exec and its ONE receipt (0.44's pve_agent_exec poll). The poll is the
+    mutation's own read-back, like the UPID wait: through the client already built, not governed
+    again (the operator was allowed the exec on this guest; the lane already judged its vmid). The
+    vendor's `exec-status` for the pid, every TASK_INTERVAL, until `exited` is true or `wait` runs
+    out: nothing else is a finish. The output comes back through the status read's own envelope
+    (bounded, untrusted, fenced when the fence is on), taint-marked before the first read; the
+    vendor's own truncation flags say a stream is a prefix; the receipt carries the exit code and
+    the signal, never the output. A poll that fails keeps the pid in the answer (lens 5's rule)."""
+    srow = table()[AGENT_EXEC_STATUS]
+    spath = called + "-status"
+    unwaited = {"pid": pid, "exited": False, "timed_out": False, "polls": 0, "seconds": 0}
+    w = _exec_wait_seconds(wait)
+    if w is None:
+        return {**unwaited, "why": _unconfirmed(spath, pid, "the wait is not a whole number of seconds, "
+                                                          "so nothing was polled")}
+    if w == 0:
+        return {**unwaited, "why": "wait=0 submits only; read exec-status with this pid"}
+    try:
+        _taint_before_the_wire(srow, ledger_cfg, spath, remote)
+    except ProximoError:      # already marked before the exec ran; a second failure keeps the pid
+        return {**unwaited, "why": _unconfirmed(spath, pid, "the taint marker for the status read could "
+                                                          "not be written, so the status was not read")}
+    t0, polls, st = spine._CLOCK(), 0, None
+    try:
+        while True:
+            polls += 1
+            st = client.call("GET", spath, {"pid": pid})
+            if _exited(st):
+                break
+            if spine._CLOCK() - t0 >= w:
+                break
+            spine._SLEEP(spine.TASK_INTERVAL)
+    except Exception as exc:
+        seen = {"polls": polls, "seconds": int(round(spine._CLOCK() - t0)), "poll_error": wire_error(exc)}
+        landed = _record(ledger_cfg, "core.exec", row, outcome="error",
+                         detail={"tier": row.tier, "intent": intent, "pid": pid, **seen}, called=called,
+                         remote=remote)
+        res = {**unwaited, **seen, "why": _unconfirmed(spath, pid, "the status read failed")}
+        if landed is None:
+            res["receipt"] = "exec outcome not recorded: the ledger could not be written after the status read"
+        return res
+    exited = _exited(st)
+    seconds = int(round(spine._CLOCK() - t0))
+    meta = {k: st[k] for k in _EXEC_META if exited and isinstance(st.get(k), int) and not isinstance(st[k], bool)}
+    cut = [stream for flag, stream in _EXEC_CUT if exited and st.get(flag) is True]
+    landed = _record(ledger_cfg, "core.exec", row, outcome="exited" if exited else "running",
+                     detail={"tier": row.tier, "intent": intent, "pid": pid, "polls": polls, "seconds": seconds,
+                             **meta, **({"truncated": cut} if cut else {})}, called=called, remote=remote)
+    res = {**unwaited, "exited": exited, "timed_out": not exited, "polls": polls, "seconds": seconds, **meta}
+    if landed is None:
+        res["receipt"] = "exec outcome not recorded: the ledger could not be written after the status read"
+    if not exited:
+        res["why"] = _unconfirmed(spath, pid, f"the wait ran out after {seconds}s")
+    if exited:
+        res["output"] = _envelope(srow, spath, st)
+        if cut:
+            res["truncated"] = cut                 # the agent's own cut: these streams are a prefix
+    return res
 
 
 TASK_WAIT_DEFAULT = 60

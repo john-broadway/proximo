@@ -11,8 +11,8 @@ because the subtree was hard-refused before it existed. The whole existing suite
 opt-in unset, so default-off must stay byte-identically "refused". That is the first control here.
 
 Not covered by this half (named in the parity row): the ssh exec lane (ct_exec/ct_psql), the
-exec-status auto-poll (exec returns the vendor's pid; poll exec-status as a read), the reach
-mirror, B2's snapshot and B3's shell batteries. Live proof needs the operator armed (his hand);
+exec-status wait (its own file, tests/test_core_agent_exec_wait.py), the reach mirror, B2's snapshot
+and B3's shell batteries. Live proof needs the operator armed (his hand);
 the fixtures cite 0.44's backend docstrings, each marked "VERIFIED live (PVE 9.2)".
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from proximo.core import engine, rawdoor
+from proximo.core import engine, rawdoor, spine
 from proximo.core.doors import mcp as door
 
 NODE = "pve1"
@@ -47,6 +47,14 @@ def _wire(monkeypatch, answer=None):
     w = Wire(answer)
     monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
     return w
+
+
+def _clock(monkeypatch):
+    """A guest exec now waits on its pid (test_core_agent_exec_wait.py): the default wait runs on
+    this clock, so a status that never exits times out in no real time."""
+    t = [0.0]
+    monkeypatch.setattr(spine, "_CLOCK", lambda: t[0])
+    monkeypatch.setattr(spine, "_SLEEP", lambda s: t.__setitem__(0, t[0] + s))
 
 
 def _rows() -> list[dict]:
@@ -125,8 +133,9 @@ def test_an_opted_in_mutation_meets_arm_then_tier_then_runs(box, monkeypatch):
 def test_an_opted_in_exec_reaches_the_wire_with_its_command_and_is_receipted(box, monkeypatch):
     _on(monkeypatch)
     w = _wire(monkeypatch, answer={"pid": 1234})
-    out = engine.execute(engine.resolve("pve", "POST", EXEC), {"command": ["id"]}, cfg=box, path=EXEC)
-    assert w.calls[-1] == ("POST", EXEC, {"command": ["id"]})
+    # wait=0 submits only: this test is the gate's reach; the wait on the pid is its own file
+    out = engine.execute(engine.resolve("pve", "POST", EXEC), {"command": ["id"]}, cfg=box, path=EXEC, wait=0)
+    assert w.calls == [("POST", EXEC, {"command": ["id"]})]
     assert out["data"] == {"pid": 1234}
     acts = [(r["action"], r["outcome"]) for r in _rows()]
     assert ("core.execute", "executing") in acts and acts[-1][0] == "core.execute"
@@ -146,6 +155,7 @@ def test_every_agent_mutation_carries_a_tier_so_an_opted_in_armed_call_is_never_
 def test_the_exec_argv_and_stdin_are_fingerprinted_in_the_ledger_never_raw(box, monkeypatch):
     _on(monkeypatch)
     _wire(monkeypatch, answer={"pid": 9})
+    _clock(monkeypatch)                      # the wait runs too: its receipt must not carry them either
     engine.execute(engine.resolve("pve", "POST", EXEC),
                    {"command": ["mysql", "-psup3rsecret"], "input-data": "DROP TABLE x"},
                    cfg=box, path=EXEC)
@@ -219,10 +229,15 @@ def test_the_mcp_read_and_call_doors_serve_the_agent_lane_when_opted_in(box, mon
     out = door.read("pve", STATUS, {"pid": 9}, cfg=box)
     assert out["untrusted"] is True
     _wire(monkeypatch, answer={"pid": 9})
+    _clock(monkeypatch)
     plan = door.call("pve", "POST", EXEC, {"command": ["id"]}, cfg=box)      # plan by default
     assert plan["status"] == "plan" and plan["tier"] == "destructive" and plan["allowed"] is True
     done = door.call("pve", "POST", EXEC, {"command": ["id"]}, confirm=True, cfg=box)
     assert done["data"] == {"pid": 9}
+    # the door carries the wait: this status never exits, so the pid comes back unconfirmed
+    assert done["exec"]["pid"] == 9 and done["exec"]["timed_out"] is True and "exitcode" not in done["exec"]
+    sub = door.call("pve", "POST", EXEC, {"command": ["id"]}, confirm=True, cfg=box, wait=0)
+    assert sub["exec"]["polls"] == 0                                       # wait=0 reaches the engine
 
 
 def test_no_new_tool_the_door_still_registers_six(box):

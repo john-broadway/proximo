@@ -951,7 +951,18 @@ def over_cap(name: str, answer: dict[str, Any], size: int, ceiling: int) -> dict
     task = answer.get("task")
     if isinstance(task, dict):
         out["task"] = {k: echo(str(task[k]), 40) for k in ("status", "exitstatus") if k in task}
-    counts = {k: len(v) for k, v in answer.items() if isinstance(v, (list, dict)) and v and k not in ("undo", "task")}
+    ex = answer.get("exec")
+    if isinstance(ex, dict):      # a guest exec's pid and verdict survive the cut; its output does not
+        kept = {k: ex[k] for k in ("pid", "exited", "timed_out", "exitcode", "signal")
+                if type(ex.get(k)) in (int, bool)}
+        if isinstance(ex.get("truncated"), list):
+            kept["truncated"] = [echo(str(t), 12) for t in ex["truncated"][:2]]
+        for k, n in (("why", 240), ("receipt", 100)):
+            if isinstance(ex.get(k), str):
+                kept[k] = echo(ex[k], n)
+        out["exec"] = kept
+    counts = {k: len(v) for k, v in answer.items()
+              if isinstance(v, (list, dict)) and v and k not in ("undo", "task", "exec")}
     if counts:
         out["counts"] = dict(list(counts.items())[:8])
     out["next"] = _operator_line(name, answer)
