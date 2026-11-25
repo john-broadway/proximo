@@ -10,6 +10,6 @@ Show each plan, wait for a yes. Tasks need task.succeeded=true. Failed or cut re
 4. Make only the agreed change, then repeat step 1's reads. The operator says keep or roll back.
 5. Keep: on a separate yes DELETE /nodes/{node}/qemu/{vmid}/snapshot/{snapname}, then list names: it must be gone.
 6. Roll back: list as in 3; stop unless current's parent is still that name. Say what is lost (disk and config changes since) and kept (description, tags). On a separate yes POST /nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback.
-7. The VM is now stopped. If it was running, POST /nodes/{node}/qemu/{vmid}/status/start; on a lock error retry for a minute. Repeat step 1's reads until they answer, five minutes at most. Rolled back is proven only if all equal the notes.
+7. After a rollback the VM is stopped. If it was running, POST /nodes/{node}/qemu/{vmid}/status/start; on a lock error retry for a minute. Repeat step 1's reads until they answer, five minutes at most. The rollback is proven only if all equal the notes.
 
 Report what was compared, the result, power state and snapshots left (Proximo adds a proximo_ one per rollback). The operator closes the agent lane.

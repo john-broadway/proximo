@@ -10,4 +10,4 @@ Show each plan, wait for a yes. Tasks need task.succeeded=true. Failed or cut re
 4. GET /nodes/{node}/qemu/{vmid}/status/current (fields=status). Running: re-read step 1's fields, stop unless unchanged, POST /nodes/{node}/qemu/{vmid}/status/shutdown with timeout=120. Failed or still running: stop; a forced stop is the operator's call.
 5. On a separate yes: re-read step 1's fields; stop unless unchanged. DELETE /nodes/{node}/qemu/{vmid} with purge=1. GET /cluster/resources with type=vm, plain (empty: gone), else fields=vmid: it must be gone.
 
-Report name, newest backup (kept, untested), what went with it, gone or not. Backups and disks it did not reference stay.
+Report name, newest backup (kept, untested), what went with it, gone or not. All backups and unreferenced disks stay.
