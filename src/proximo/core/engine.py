@@ -998,7 +998,10 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
     # the wire; the plan diffed them, so `vmid` read as a change on every config plan and a
     # store's own name echoed by its record made a garbage collection a no-op (lens 9).
     compared = {k: v for k, v in args.items() if k not in bind(row, path)}
-    out = _diff(row, compared, path, env["data"], action, read_at=concrete, named=not untrusted)
+    data, cut = env["data"], _cut(env)
+    if cut is not None and action is None and row.method == "POST" and isinstance(data, list):
+        data, cut = _whole_identities(row, twin, concrete, _as_sent(row, compared), data, cut, cfg, ledger_cfg)
+    out = _diff(row, compared, path, data, action, read_at=concrete, named=not untrusted, cut=cut)
     # A PLAN ANSWER IS AN ANSWER: the receipts fingerprint a secret-named field and the record's
     # fields (`ledgered`), and the plan echoed them raw, the live read's old value under `from`
     # and the caller's new one under `to` (found sweeping B19's 78 newly reachable addresses: a
@@ -1013,12 +1016,100 @@ def _live_state(row: Row, args: dict[str, Any], path: str | None, cfg: wire.Plan
     return out
 
 
+def _cut(env: Mapping[str, Any]) -> dict[str, Any] | None:
+    """What the size law left out of a read's envelope, or None when the data is whole. A cut list
+    still carries `data` (the rows that fit) beside `returned` and `total`: it is a prefix of the
+    vendor's answer in the vendor's order, never the population."""
+    if "returned" not in env and not env.get("truncated") and not env.get("summarized"):
+        return None
+    return {k: env[k] for k in ("returned", "total") if k in env}
+
+
+def _id_like(args: Mapping[str, Any]) -> list[str]:
+    return [k for k in args if k == "id" or k.endswith("id") or k in _ID_KEYS]
+
+
+def _identity_keys(args: Mapping[str, Any], data: list[Any]) -> list[str]:
+    """The id-like arguments the rows carry under the same name: what a create's identity is compared on."""
+    return [k for k in _id_like(args) if any(isinstance(r, dict) and k in r for r in data)]
+
+
+def _same_identity(r: Any, args: Mapping[str, Any], keys: list[str]) -> bool:
+    return isinstance(r, dict) and any(k in r and str(r[k]) == str(args[k]) for k in keys)
+
+
+def _as_sent(row: Row, args: Mapping[str, Any]) -> dict[str, Any]:
+    """The arguments as the call would send them. THE PLAN COMPARES WHAT THE CALL SENDS (lens on
+    GHSA-qpqv, 2026-11-27): `vmid="0101"` goes to the vendor as the integer 101, and the plan compared
+    the text "0101" with the rows and called guest 101 absent. A value the cast refuses (`abc`, `0x65`)
+    stays as given and never raises out of a plan: the call itself refuses that value before the wire."""
+    out = dict(args)
+    for k in _id_like(args):
+        try:
+            out[k] = coerce_args(row, {k: args[k]})[k]
+        except ProximoError:
+            pass
+    return out
+
+
+def _whole_identities(row: Row, twin: Row, concrete: str, args: Mapping[str, Any], data: list[Any],
+                      cut: dict[str, Any], cfg: wire.Plane | None,
+                      ledger_cfg: Any) -> tuple[list[Any], dict[str, Any] | None]:
+    """A CUT LIST IS NOT THE POPULATION (GHSA-qpqv-jwjc-w64q, kevwillow 2026-11-26). A create's plan
+    compared its id against the rows that fit the evaluation cap and read a guest in the part that
+    did not fit as absent: a restore over an existing guest planned `exists: false`, sometimes, by
+    the vendor's row order. A row that IS in the part read is there, and is answered as before.
+    Otherwise the same list is fetched again once for each id-like ARGUMENT, when the address publishes
+    every one of them (the part read cannot say which keys the rest carries), and judged on that one
+    column, a few bytes a row in the door's envelope. A key no row carries is not compared, as on a
+    whole list. A column still over the cap,
+    or a read that is refused, fails or answers no list, hands the first read on as cut, and `_diff`
+    claims nothing from it. Each look is a governed read like the first: receipted, withheld, bounded.
+    THE LOOKS ARE BOUNDED BY THE ADDRESS, NOT BY THE CALLER: one for each id-like parameter the address
+    publishes. An id-like name it does not publish (300 of them made 302 fetches of one list; lens 2)
+    gets no look and the plan claims nothing: the call would refuse that argument anyway."""
+    if any(_same_identity(r, args, _identity_keys(args, data)) for r in data):
+        return data, cut
+    if any(_published(row, key) is None for key in _id_like(args)):
+        return data, cut                   # checked before the first look: no fetch for a plan that claims nothing
+    columns: list[Any] = []
+    for key in _id_like(args):
+        try:
+            plane = cfg if cfg is not None else wire.Plane.from_env(twin.product)
+            env = execute(twin, {}, cfg=plane, path=concrete, ledger_cfg=ledger_cfg, fields=key, evaluating=True)
+        except NoSuchField:                # no row carries this key: it is not an identity here
+            continue
+        except Exception:                  # refused or failed, receipted by execute: the first read stands, as cut
+            return data, cut
+        if not isinstance(env.get("data"), list) or _cut(env) is not None:
+            return data, cut
+        columns.extend(env["data"])
+    return columns, None
+
+
 def _diff(row: Row, args: dict[str, Any], path: str, data: Any, action: str | None,
-          read_at: str | None = None, named: bool = True) -> dict[str, Any]:
+          read_at: str | None = None, named: bool = True, cut: dict[str, Any] | None = None) -> dict[str, Any]:
     """`current`, `change` and `noop` from the twin's answer. `noop` is claimed only where a
     state is compared: a power action whose status already is the expected one, or arguments
     the record already holds; an action with no arguments is never a no-op (lens 8: a PBS
-    garbage collection read as one). `read_at` is the concrete address the plan read."""
+    garbage collection read as one). `read_at` is the concrete address the plan read. `cut` is
+    what the size law left out of a list (`_cut`): the rows in hand are then a prefix, and nothing
+    is counted or called absent from them."""
+    sent = _as_sent(row, args)             # identity is compared on what the call sends; a diff shows what was given
+    if cut is not None and not isinstance(data, list):
+        return {"current": {"why": "the record is over the door's cap; the change cannot be shown", **cut},
+                "change": {}, "noop": False}
+    if cut is not None and isinstance(data, list):
+        seen = next((r for r in data if _same_identity(r, sent, _identity_keys(args, data))), None) \
+            if action is None and row.method == "POST" else None
+        if seen is not None:               # a row in the part IS there; `compared` names the keys the part carries
+            return {"current": {"creates": True, "exists": True, "compared": _identity_keys(args, data),
+                                "existing": lean(seen)}, "change": {}, "noop": False}
+        return {"current": {"collection": True, **cut,
+                            "why": "the list at this path is over the door's cap and was read in part: "
+                                   "nothing is counted or called absent from a part",
+                            **({"next": f"proximo_read GET {read_at} lists the rows"} if read_at else {})},
+                "change": {} if action is None else {"action": action}, "noop": False}
     if action is not None:
         current = (lean(data) if isinstance(data, dict) else summarize(data, named=named)
                    if isinstance(data, list) else {"data": data})
@@ -1041,13 +1132,11 @@ def _diff(row: Row, args: dict[str, Any], path: str, data: Any, action: str | No
         # `exists` is claimed only when an identity was COMPARED: an id-like argument that the
         # rows carry under the same name. A snapshot's `snapname` against rows keyed `name` was
         # never compared and read as "does not exist" (lens 9).
-        keys = [k for k in args if (k == "id" or k.endswith("id") or k in _ID_KEYS)
-                and any(isinstance(r, dict) and k in r for r in data)]
+        keys = _identity_keys(args, data)
         if not keys:
             return {"current": {"creates": True, "identity": "not compared: no argument the rows carry by name"},
                     "change": {}, "noop": False}
-        existing = next((r for r in data if isinstance(r, dict)
-                         and any(k in r and str(r[k]) == str(args[k]) for k in keys)), None)
+        existing = next((r for r in data if _same_identity(r, sent, keys)), None)
         current = {"creates": True, "exists": existing is not None, "compared": keys,
                    **({"existing": lean(existing)} if existing else {})}
         return {"current": current, "change": {}, "noop": False}
@@ -1777,10 +1866,14 @@ def _undo_before(row: Row, args: dict[str, Any], client: Any, called: str, cfg: 
 
 
 def _read_data(product: str, template: str, values: Mapping[str, Any], cfg: Any, ledger_cfg: Any,
-               extra: Mapping[str, Any] | None = None) -> Any:
+               extra: Mapping[str, Any] | None = None, *, part: bool = False) -> Any:
     """The data of a governed GET the safety net needs (`execute`: receipted, withheld, bounded; a
     `judging` read, so it marks nothing tainted). Raises when the plane serves no such read or the
-    answer is over the cap."""
+    answer is over the cap. A LIST over the cap still answers the rows that fit: `part=True` hands
+    back `(data, whole)`, for the caller that must not read a row's absence from a part. Refusing
+    every list in part here took a rollback away from any guest with more snapshots than fit, even to
+    a snapshot in the part, and re-judged every storage as unknown (lens 2 on GHSA-qpqv, 2026-11-27):
+    what a part can and cannot say is the caller's to rule, one caller at a time."""
     r = table().get((product, "GET", template))
     if r is None or r.gate or r.excluded:
         raise ProximoError(f"{product} publishes no GET {template} this door serves")
@@ -1788,7 +1881,7 @@ def _read_data(product: str, template: str, values: Mapping[str, Any], cfg: Any,
                   judging=safetynet.JUDGING, evaluating=True)    # a verdict's read, never a model's
     if "data" not in env:
         raise ProximoError(f"the answer of {template} is over the door's cap")
-    return env["data"]
+    return (env["data"], _cut(env) is None) if part else env["data"]
 
 
 _NEVER_SENT = frozenset({"ConnectError", "ConnectTimeout", "PoolTimeout", "UnsupportedProtocol", "InvalidURL",
@@ -1855,7 +1948,8 @@ def _net_view(row: Row, args: Mapping[str, Any], called: str, cfg: Any, ledger_c
     core/safetynet.py says what stops a net and on whose volumes). Keys: `take` (a snapshot
     first), `why` (the sentence the plan and the receipt print when none is taken or the storage
     is not settled), `exists` (the rollback's target snapshot is there: True, False, or None when
-    unread), `blocked`/`cannot`/`unsettled` (storage TYPES and reasons, never names), `running`
+    unread or when the list was read in part and the target is not among its rows),
+    `blocked`/`cannot`/`unsettled` (storage TYPES and reasons, never names), `running`
     (the guest's state now) and `node`.
     Order matters: the target is checked BEFORE any snapshot exists, because a rollback to a
     snapshot that is not there would otherwise first create a real one.
@@ -1880,21 +1974,25 @@ def _net_view(row: Row, args: Mapping[str, Any], called: str, cfg: Any, ledger_c
     view["node"] = node
     extra = {"node": node} if node and "node" in snap.params and "node" not in where else {}
 
-    def read(template: str, **more: Any) -> Any:
+    def read(template: str, part: bool = False, **more: Any) -> Any:
         """A governed GET of this guest; `node` rides when the caller named it, and so does anything
         in `more` that the read publishes (PDM's config read REQUIRES `state`)."""
         params = table()[(row.product, "GET", template)].params
         return _read_data(row.product, template, where, cfg, ledger_cfg,
-                          {k: v for k, v in {**extra, **more}.items() if k in params})
+                          {k: v for k, v in {**extra, **more}.items() if k in params}, part=part)
 
     try:
-        listed = read(snap.path)
+        listed, whole = read(snap.path, part=True)
         names = {e.get("name") for e in listed if isinstance(e, dict)} if isinstance(listed, list) else None
-        view["exists"] = None if names is None else where.get("snapname") in names
+        # A SNAPSHOT IN THE PART READ IS THERE; one that is not, on a list read in part, is not known
+        # to be absent (the create plan's rule, GHSA-qpqv): unknown, never "not on this guest".
+        view["exists"] = (None if names is None else True if where.get("snapname") in names
+                          else False if whole else None)
+        in_part = names is not None and not whole and view["exists"] is None
     except Exception:
-        view["exists"] = None
+        view["exists"], in_part = None, False
     if view["exists"] is not True:
-        view["why"] = _target_unconfirmed() if view["exists"] is None else None
+        view["why"] = None if view["exists"] is False else _target_in_part() if in_part else _target_unconfirmed()
         return view
     _judge_storage(view, row, read, base, where, node, cfg, ledger_cfg)
     for status_t in (base + "/status/current", base + "/status"):
@@ -1913,6 +2011,11 @@ def _net_view(row: Row, args: Mapping[str, Any], called: str, cfg: Any, ledger_c
                        "if the storage refuses the rollback because of it the rollback fails and the "
                        "snapshot stays")
     return view
+
+
+def _target_in_part() -> str:
+    return ("could not confirm the snapshot to roll back to is on this guest: its snapshot list is over the "
+            "door's cap and the snapshot is not among the rows read, so the rollback is refused")
 
 
 def _target_unconfirmed() -> str:
@@ -3251,6 +3354,11 @@ _SAID_ESCAPES = str.maketrans({"\\": "\\\\", "'": "\\'", "\n": "\\n", "\r": "\\r
 _CARRIES_BYTES, _CARRIES_KEY_BYTES = 280, 64
 
 
+class NoSuchField(ProximoError):
+    """`fields=` named a key the answer does not carry. A refusal like any other to a caller; the
+    plan's own second look (`_whole_identities`) tells it from a read that was refused or failed."""
+
+
 def project(data: Any, fields: str | None, *, record: bool = True, named: bool = True) -> Any:
     """Row by row: a record (a dict) is projected, anything else in the list rides through as
     it came (lens 2026-09-27: one stray None used to switch lean OFF for the whole list). ONE record
@@ -3267,7 +3375,7 @@ def project(data: Any, fields: str | None, *, record: bool = True, named: bool =
             raise ProximoError("fields: give names ('a,b'), 'all', or leave it out for the whole record")
         for name in want:
             if name not in data:
-                raise ProximoError(f"fields: no key {_said(name)} in this record; it carries: "
+                raise NoSuchField(f"fields: no key {_said(name)} in this record; it carries: "
                                    f"{_carries(set(data), named)}")
         return {k: data[k] for k in want}
     if not isinstance(data, list):
@@ -3283,7 +3391,7 @@ def project(data: Any, fields: str | None, *, record: bool = True, named: bool =
     have = {k for r in records for k in r}
     for name in want:
         if name not in have:
-            raise ProximoError(f"fields: no row carries {_said(name)}; the rows carry: "
+            raise NoSuchField(f"fields: no row carries {_said(name)}; the rows carry: "
                                f"{_carries(have, named)}")
     return [{k: r[k] for k in want if k in r} if isinstance(r, dict) else r for r in data]
 

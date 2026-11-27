@@ -633,3 +633,45 @@ def test_the_shipped_net_lines_are_exactly_the_four_rollbacks():
     lines = tomllib.loads(_real_undo())["net"]
     assert sorted(lines) == sorted(f"{k[0]}:{k[1]} {k[2]}" for k in (_key(p, kd) for _, p, kd, _, _ in GUESTS))
     assert all(len(v["why"].split()) >= 12 and set(v) == {"why"} for v in lines.values())
+
+
+def test_a_snapshot_list_read_in_part_never_calls_the_target_absent(plane, monkeypatch):
+    """The safety net's reads go through the evaluation cap too. A guest with more snapshots than fit
+    answered a part, and a target in the rest read as "not on this guest", with the caller told to fix
+    the arguments (lens on GHSA-qpqv, 2026-11-27). A list in part is not the list: existence is unknown."""
+    names = tuple(f"autosnap-{i:04d}-{'d' * 40}" for i in range(200)) + ("before",)
+    _wire(monkeypatch, snaps=names)
+    planned = _plan(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+    assert "snapshot_exists" not in planned["safety_net"]              # unknown, never false
+    assert "not on this guest" not in json.dumps(planned)
+    with pytest.raises(ProximoError, match="could not confirm"):
+        _rollback(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+
+
+def test_a_snapshot_in_the_part_read_still_rolls_back_behind_its_net(plane, monkeypatch):
+    """What the part CAN say: a target among the rows that fit is there. The first fold refused every
+    list in part and took the rollback away from any guest with more snapshots than fit (lens 2)."""
+    names = ("before",) + tuple(f"autosnap-{i:04d}-{'d' * 40}" for i in range(200))
+    api = _wire(monkeypatch, snaps=names)
+    planned = _plan(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+    assert planned["safety_net"]["snapshot_exists"] is True
+    _rollback(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+    posts = [p for p in _posts(api)]
+    assert len(posts) == 2 and posts[0].endswith("/snapshot") and posts[1].endswith("/rollback"), posts
+
+
+def test_a_snapshot_list_in_part_without_the_target_says_why_it_is_refused(plane, monkeypatch):
+    names = tuple(f"autosnap-{i:04d}-{'d' * 40}" for i in range(200)) + ("before",)
+    _wire(monkeypatch, snaps=names)
+    planned = _plan(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+    assert "over the door's cap" in planned["safety_net"]["why"] and "refused" in planned["safety_net"]["why"]
+
+
+def test_a_storage_listing_read_in_part_judges_the_storages_it_read(plane, monkeypatch):
+    """What a part of the storage listing CAN say: a definition among the rows read is that storage's.
+    Refusing the whole listing re-judged every volume as unknown (lens 2); nothing held that (lens 3)."""
+    many = STORAGES + [{"storage": f"extra-{i:03d}-{'s' * 40}", "type": "dir"} for i in range(200)]
+    assert len(json.dumps(many, separators=(",", ":"))) > 6 * 1024             # the listing IS read in part
+    _wire(monkeypatch, storages=many)
+    planned = _plan(plane, "pve", "qemu", "/nodes/pve1/qemu/100")
+    assert planned["safety_net"] == {"taken": True, "snapshot_exists": True}, planned["safety_net"]

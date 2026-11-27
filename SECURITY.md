@@ -16,11 +16,11 @@ Proximo's protection comes from two layers that do not fail the same way. Don't 
    Proximo can do either. Scope the token to read-only, or to exactly the write surface
    you mean to hand over, and this floor holds no matter what happens above it. It's the
    only layer here that assumes Proximo's own process might be hostile.
-2. **The in-process gates** — PLAN/PROVE/UNDO/DIAGNOSE plus the opt-in CONSENT/CONTAIN/
-   ARM/FORBID/RATE/TAINT controls (table below). These raise the bar **within** Proximo's
+2. **The in-process gates** — PLAN/PROVE/UNDO/DIAGNOSE and ARM, plus the opt-in CONSENT/
+   CONTAIN/FORBID/RATE/TAINT controls (table below). These raise the bar **within** Proximo's
    own trust domain: previews before mutation, a tamper-evident record, rollback where the
-   vendor publishes a write to put the record back, and (opt-in) independent authorization,
-   a kill-switch, a write token present only while armed, and rate/blast-radius limits. But
+   vendor publishes a write to put the record back, a write token present only while armed,
+   and (opt-in) independent authorization, a kill-switch, and rate/blast-radius limits. But
    they're enforced by code running in the *same process, same OS user* as the agent they're
    meant to constrain. If that agent (or whatever's hijacked it) can also write to a gate's
    own state — the CONSENT directory, the CONTAIN trip-file path, the arm source, the
@@ -347,8 +347,9 @@ back-port branch.
 ## Security controls & defaults
 
 Every control below either ships **on** by default or is **fully inert** until its env
-var is set — there's no partial-on state. Don't assume a name in this table is protecting
-you unless you've configured it.
+var is set — there's no partial-on state — with one exception, ARM: unconfigured, it is not
+inert but closed, and every mutation is refused (`needs: "arm"`) until an arm is set up.
+Don't assume any other name in this table is protecting you unless you've configured it.
 
 The way to read the table: the trust spine is **six pillars — four ship standing, two are
 yours to erect.** PLAN·PROVE·DIAGNOSE are structural (no configuration removes them); UNDO
@@ -368,7 +369,7 @@ configured paths back — a hijacked session shouldn't learn where you put your 
 | **TIER** | A mutation nobody judged | **On**, always: an address with no authored blast-radius tier is refused for mutation, armed or not; 20 are held by sentence | n/a — the record is `tiers.toml`, changed by a release |
 | **CONSENT** | An agent — compromised, confused, or persuaded by injected instructions — confirming its own mutation with no independent, out-of-band grant | **Off** | `PROXIMO_CONSENT_DIR` (+ `PROXIMO_CONSENT_TTL_SECONDS`) |
 | **CONTAIN** (kill-switch) | Needing to halt *every* mutation immediately, mid-incident, without a redeploy or restart | **Off** | `PROXIMO_CONTAIN_TRIP_PATH` |
-| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **Off** | a person: `proximo-core arm` (the vendor's ticket, two hours); a job: `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` is what `disarm` restores and what rides when a ticket has died); per plane `PROXIMO_PBS_*` / `PDM_*` / `PMG_*`; per target `arm_source` |
+| **ARM** (write only while armed) | A standing write credential serving mutations around the clock — write authority existing at rest when no operator meant it to | **On**, always: with no arm configured, every mutation is refused | a person: `proximo-core arm` (the vendor's ticket, two hours); a job: `PROXIMO_ARM_SOURCE` (`PROXIMO_READONLY_SOURCE` is what `disarm` restores and what rides when a ticket has died); per plane `PROXIMO_PBS_*` / `PDM_*` / `PMG_*`; per target `arm_source` |
 | **FORBID** | An explicitly forbidden address being mutated by an agent that has gone off-script | **Off** | `PROXIMO_FORBID` (case-insensitive substrings of `plane:METHOD /path`) |
 | **RATE** | Blast radius under hijack — unlimited-speed mutation | **Off** | `PROXIMO_RATE_MAX` (+ `PROXIMO_RATE_WINDOW`, default 60 s) |
 | **TAINT** (untrusted-read coupling) | Prompt injection riding in on adversarial read output (guest logs, quarantine mail, free-text config) then steering a mutation the agent confirms for itself | **Off** | `PROXIMO_TAINT_TRACK`, `PROXIMO_TAINT_FORBID`, `PROXIMO_TAINT_REQUIRE_CONSENT`, `PROXIMO_TAINT_FENCE` |
@@ -530,9 +531,11 @@ access is broadest:
 - **UNDO is not universal.** It covers what the vendor publishes a write to put back. A
   delete, a collection, a path with no PUT, or a PUT that is a different operation from the
   POST gets a sentence instead of a restore. That's documented scope, not a missing feature.
-- **The opt-in gates (CONSENT/CONTAIN/ARM/FORBID/RATE/TAINT) are inert until configured**
+- **The opt-in gates (CONSENT/CONTAIN/FORBID/RATE/TAINT) are inert until configured**
   — see "Security controls & defaults" above. A report that one of them "didn't stop"
-  an action when its env var was never set is expected behavior, not a finding.
+  an action when its env var was never set is expected behavior, not a finding. ARM is
+  not among them: unconfigured, it refuses every mutation, and a mutation that runs with
+  no arm configured is a finding.
 - **Not yet proven:** a small local model finishing a whole task through the door (a stock 1.5B
   was driven against a real node inside a 4,096-token context: its calls landed, the prompt
   peaked at 3,074 tokens, and it did not finish the task), hardware-watchdog fencing, and

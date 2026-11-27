@@ -325,7 +325,7 @@ call, shorter than yours.
 
 A guest-agent exec (`POST /nodes/{node}/qemu/{vmid}/agent/exec`) answers with the pid the agent
 started, and Proximo then waits for it: it reads the agent's `exec-status` for that pid every two
-seconds until `wait` has run out (the last read can land one interval past it) (the same knob and bounds as a task wait; `wait=0` only submits). Only the
+seconds until `wait` has run out; the last read can land one interval past it. `wait` is the same knob, with the same bounds, as a task wait, and `wait=0` only submits. Only the
 agent's own `exited` is a finish; the exit code, any signal and the output come from that read, and
 the agent's own truncation flags say when a stream is a prefix. When the wait runs out, or a status
 read fails, the answer says the exit is not confirmed, carries no exit code, and gives the pid and

@@ -981,3 +981,234 @@ def test_an_armed_plan_refused_for_its_node_keeps_that_refusal_and_names_the_wal
     sent = rawdoor.finish("proximo_plan", out)
     assert "over_cap" not in sent
     assert len(json.dumps(sent, separators=(",", ":"), ensure_ascii=False)) <= rawdoor.CEILINGS["plan"]
+
+
+# --- a create's identity is judged on the whole list, or not at all (GHSA-qpqv-jwjc-w64q) ---------
+
+def _guest_rows(n, first=100):
+    """`n` rows the shape PVE answers `GET /nodes/{node}/qemu` with (about 250 bytes a guest, so 27
+    guests are already over the 6 KiB evaluation cap)."""
+    return [{"vmid": first + i, "name": f"guest-{first + i}", "status": "running", "cpu": 0.0123456789,
+             "cpus": 4, "mem": 2147483648, "maxmem": 4294967296, "disk": 0, "maxdisk": 34359738368,
+             "uptime": 1234567, "netin": 123456789012, "netout": 98765432109, "diskread": 12345678901,
+             "diskwrite": 10987654321, "pid": 1234567, "tags": "prod;web"} for i in range(n)]
+
+
+def test_a_guest_list_over_the_cap_never_reads_an_existing_guest_as_absent(armed_plane, monkeypatch):
+    """The reported case: a restore planned over a guest that is there, on a node whose guest list is
+    over the evaluation cap. The vendor's row order varies, so the guest is tried at every position."""
+    rows = _guest_rows(40)
+    assert len(json.dumps(rows, separators=(",", ":"))) > rawdoor.EVALUATION_MAX_BYTES   # the list IS cut
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    said = []
+    for at in range(len(rows)):
+        listing = rows[at:] + rows[:at]
+        monkeypatch.setattr(engine, "_client", lambda product, c=None, listing=listing: Twin(listing))
+        out = engine.plan(row, {"vmid": "100", "archive": "bs:backup/any.vma.zst", "force": 1},
+                          "/nodes/pve1/qemu", cfg=armed_plane)
+        said.append(out["current"].get("exists"))
+    assert said == [True] * 40
+
+
+def test_an_absent_id_is_called_absent_only_from_the_whole_list_read_by_its_key(armed_plane, monkeypatch):
+    """Over the cap and not in the part that fit: the list is read again by the compared key alone, whole,
+    and THAT read says absent. Both reads are receipted; a list under the cap is read once, as before."""
+    w = Twin(_guest_rows(40))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": "999"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"].items() >= {"creates": True, "exists": False, "compared": ["vmid"]}.items()
+    assert w.calls == [("GET", "/nodes/pve1/qemu", {})] * 2
+    assert [(r["action"], r["outcome"]) for r in _rows()] == [("core.execute", "ok")] * 2
+    out = engine.plan(row, {"vmid": "139"}, "/nodes/pve1/qemu", cfg=armed_plane)    # the last row: cut the first time
+    assert out["current"].items() >= {"creates": True, "exists": True, "compared": ["vmid"],
+                                      "existing": {"vmid": 139}}.items()
+    small = Twin(_guest_rows(3))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: small)
+    out = engine.plan(row, {"vmid": "999"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"].items() >= {"creates": True, "exists": False}.items() and len(small.calls) == 1
+
+
+def test_a_list_still_over_the_cap_by_its_key_alone_claims_nothing(armed_plane, monkeypatch):
+    """A node with more guests than fit even as bare ids: the plan says the list was read in part, with
+    the counts, and carries no `exists` at all. A guest in the part that was read is still there."""
+    rows = _guest_rows(4000)
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: Twin(rows))
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": "4099", "force": 1}, "/nodes/pve1/qemu", cfg=armed_plane)
+    cur = out["current"]
+    assert "exists" not in cur and "creates" not in cur
+    assert cur["total"] == 4000 and 0 < cur["returned"] < 4000
+    assert "read in part" in cur["why"] and out["noop"] is False and out["change"] == {}
+    out = engine.plan(row, {"vmid": "100"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"].items() >= {"creates": True, "exists": True}.items()
+
+
+def test_a_second_read_that_fails_leaves_the_plan_claiming_nothing(armed_plane, monkeypatch):
+    class Once(Twin):
+        def call(self, method, path, params=None):
+            if path != DOOR_READ and len(self.calls) >= 1:
+                self.calls.append((method, path, dict(params or {})))
+                raise _http(500)
+            return super().call(method, path, params)
+    w = Once(_guest_rows(40))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": "139"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert len(w.calls) == 2 and "exists" not in out["current"] and "read in part" in out["current"]["why"]
+    assert "pve.invalid" not in json.dumps(out)
+
+
+def test_a_collection_read_in_part_is_never_counted_from_the_part(armed_plane, monkeypatch):
+    """A PUT whose read is the collection: the total is the vendor's row count, never the rows that fit."""
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: Twin(_guest_rows(40)))
+    monkeypatch.setattr(engine, "_read_of", lambda row: (engine.resolve("pve", "GET", "/nodes/{node}/qemu"),
+                                                        "/nodes/{node}/qemu", None, None))
+    row = _tiered("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")
+    out = engine.plan(row, {"memory": "1"}, CONFIG, cfg=armed_plane)
+    assert out["current"]["total"] == 40 and out["current"]["returned"] < 40 and out["current"]["collection"] is True
+
+
+# --- the lens on that fix (2026-11-27): each of these was a fault it planted that stayed green, or a hole it found ---
+
+@pytest.mark.parametrize("given", ["0101", " 101", "+101", 101, "101"])
+def test_identity_is_compared_on_what_the_call_sends(armed_plane, monkeypatch, given):
+    """`vmid="0101"` goes to the vendor as the integer 101. The plan compared the text and called guest
+    101 absent, on a whole list and on a cut one alike."""
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    assert engine.coerce_args(row, {"vmid": given}) == {"vmid": 101}        # what the call sends
+    for n in (3, 40):
+        w = Twin(_guest_rows(n))
+        monkeypatch.setattr(engine, "_client", lambda product, c=None, w=w: w)
+        out = engine.plan(row, {"vmid": given, "force": 1}, "/nodes/pve1/qemu", cfg=armed_plane)
+        assert out["current"]["exists"] is True, (given, n)
+        # found in the part read, on the cast value: one read and the whole row, never a second look
+        assert len(w.calls) == 1 and out["current"]["existing"]["name"] == "guest-101", (given, n)
+
+
+def test_a_row_in_the_part_read_answers_as_a_whole_list_does_with_one_read(armed_plane, monkeypatch):
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    answers = []
+    for n in (3, 40):
+        w = Twin(_guest_rows(n))
+        monkeypatch.setattr(engine, "_client", lambda product, c=None, w=w: w)
+        answers.append(engine.plan(row, {"vmid": "101"}, "/nodes/pve1/qemu", cfg=armed_plane)["current"])
+        assert len(w.calls) == 1
+    assert answers[0] == answers[1] and answers[0]["existing"]["name"] == "guest-101"
+
+
+def test_the_second_look_asks_by_the_arguments_never_by_the_part_read(armed_plane, monkeypatch):
+    """The part read cannot say which keys the rest carries. A first row over the cap alone leaves an empty
+    part, and an id only a row beyond the cut carries is still an identity: both are judged whole."""
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    rows = _guest_rows(5)
+    rows[0]["tags"] = "x" * 7000                                          # one row over the 6 KiB cap
+    w = Twin(rows)
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    out = engine.plan(row, {"vmid": "104"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"].items() >= {"exists": True, "compared": ["vmid"]}.items() and len(w.calls) == 2
+    def only_the_last_has_a_vmgenid(n):
+        rows = _guest_rows(n)
+        rows[-1]["vmgenid"] = "gen-7"
+        return rows
+    said = []
+    for n in (3, 40):
+        monkeypatch.setattr(engine, "_client", lambda product, c=None, n=n: Twin(only_the_last_has_a_vmgenid(n)))
+        out = engine.plan(row, {"vmid": "999", "vmgenid": "gen-7"}, "/nodes/pve1/qemu", cfg=armed_plane)
+        said.append((out["current"]["exists"], out["current"]["compared"]))
+    assert said == [(True, ["vmid", "vmgenid"])] * 2
+
+
+def test_the_second_looks_are_bounded_by_what_the_address_publishes(armed_plane, monkeypatch):
+    """An id-like name the address does not publish gets no look and the plan claims nothing: 300 such
+    names made 302 fetches of one list. No POST address publishes more than three id-like parameters."""
+    most = max(len(engine._id_like(r.params)) for (_, method, _), r in engine.table().items() if method == "POST")
+    assert most == 3
+    w = Twin(_guest_rows(40))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    args = {"vmid": "999", **{f"x{i}id": "1" for i in range(300)}}
+    out = engine.plan(row, args, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert "exists" not in out["current"] and "read in part" in out["current"]["why"]
+    assert len(w.calls) == 1                                     # checked before the first look, whatever the order
+    w.calls.clear()
+    out = engine.plan(row, {"vmid": "999", "storage": "tank", "x0id": "1"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert "exists" not in out["current"] and len(w.calls) == 1
+
+
+@pytest.mark.parametrize("given", ["abc", "0x65", "1e2", None, [101], True])
+def test_a_value_the_cast_refuses_never_raises_out_of_a_plan_or_matches(armed_plane, monkeypatch, given):
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: Twin(_guest_rows(3)))
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": given}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"]["exists"] is False
+
+
+def test_every_id_like_argument_is_cast_and_a_part_hit_names_the_keys_the_part_carries(armed_plane, monkeypatch):
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: Twin(_guest_rows(40)))
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"storage": "tank", "vmid": "0101"}, "/nodes/pve1/qemu", cfg=armed_plane)   # vmid: second
+    assert out["current"]["exists"] is True and out["current"]["compared"] == ["vmid"]
+
+
+def test_an_id_like_argument_no_row_carries_is_not_compared_and_costs_no_verdict(armed_plane, monkeypatch):
+    """A restore names `storage`, which a guest row does not carry: the id is still judged whole."""
+    w = Twin(_guest_rows(40))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": "999", "storage": "tank"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert out["current"].items() >= {"creates": True, "exists": False, "compared": ["vmid"]}.items()
+    assert len(w.calls) == 3                                              # the list, then one look a key
+
+
+@pytest.mark.parametrize("name", ["vmid,name", "vmid ", ",vmid", "allid,", "ALL"])
+def test_a_key_name_fields_cannot_ask_for_alone_claims_nothing(armed_plane, monkeypatch, name):
+    rows = _guest_rows(40)
+    for r in rows:
+        r[name] = r["vmid"]
+    monkeypatch.setattr(engine, "_ID_KEYS", (*engine._ID_KEYS, name))
+    w = Twin(rows)
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    out = engine.plan(_tiered("pve", "POST", "/nodes/{node}/qemu"), {name: "999"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert "exists" not in out["current"] and len(w.calls) == 1
+
+
+@pytest.mark.parametrize("second", [{"a": 1}, None, "text"])
+def test_a_second_look_that_answers_no_list_claims_nothing(armed_plane, monkeypatch, second):
+    class Two(Twin):
+        def call(self, method, path, params=None):
+            first = super().call(method, path, params)
+            return second if path != DOOR_READ and len(self.calls) >= 2 else first
+    w = Two(_guest_rows(40))
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: w)
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu")
+    out = engine.plan(row, {"vmid": "139"}, "/nodes/pve1/qemu", cfg=armed_plane)
+    assert "exists" not in out["current"] and "read in part" in out["current"]["why"]
+    assert '"a"' not in json.dumps(out["current"])
+
+
+def test_an_action_whose_read_is_a_list_in_part_tallies_nothing_and_keeps_its_action(armed_plane, monkeypatch):
+    monkeypatch.setattr(engine, "_client", lambda product, c=None: Twin(_guest_rows(40)))
+    monkeypatch.setattr(engine, "_read_of", lambda row: (engine.resolve("pve", "GET", "/nodes/{node}/qemu"),
+                                                        "/nodes/{node}/qemu", "start", None))
+    row = _tiered("pve", "POST", "/nodes/{node}/qemu/{vmid}/status/start")
+    out = engine.plan(row, {}, "/nodes/pve1/qemu/101/status/start", cfg=armed_plane)
+    assert out["current"]["total"] == 40 and "tally" not in json.dumps(out["current"])
+    assert out["change"] == {"action": "start"} and out["noop"] is False
+
+
+def test_a_record_marked_cut_is_never_diffed():
+    """No mutation's read answers a record in part today (the one bearer read is no twin), so this holds
+    `_diff` directly: handed a record with a cut beside it, it shows no change and claims no no-op."""
+    row = _tiered("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")
+    out = engine._diff(row, {"memory": "2048"}, CONFIG, {"memory": 2048}, None, cut={"total": 9})
+    assert out == {"current": {"why": "the record is over the door's cap; the change cannot be shown", "total": 9},
+                   "change": {}, "noop": False}
+
+
+def test_a_record_marked_cut_plans_without_raising(armed_plane):
+    """The same branch through `_live_state`, which reads `change` from what `_diff` answers (a KeyError, lens 3)."""
+    row = _tiered("pve", "PUT", "/nodes/{node}/qemu/{vmid}/config")
+    out = engine._live_state(row, {"memory": "1"}, CONFIG, armed_plane, None,
+                             env={"data": {"memory": 2048}, "truncated": True})
+    assert "cannot be shown" in out["current"]["why"] and out["change"] == {} and out["noop"] is False

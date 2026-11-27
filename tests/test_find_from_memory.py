@@ -1089,7 +1089,9 @@ def test_a_capped_pdm_block_sheds_whole_matches_and_never_a_path_without_its_rem
     full_matches = whole[0]["matches"] if isinstance(whole[0]["matches"], list) else None
     if fence == "0":
         assert full_matches and all(m["remote"] in names for m in full_matches)
-        served_full = [{k: v for k, v in m.items() if k != "paths"} for m in full_matches]
+        # a match's `age_seconds` is the clock's, not memory's: each recall below stamps its own, and a second
+        # that ticked over between two recalls failed this test on a hosted runner (2026-11-26). Compared without it.
+        served_full = [{k: v for k, v in m.items() if k not in ("paths", "age_seconds")} for m in full_matches]
     found = {"matches": []}
     full = len(json.dumps(mcp._shape(found, recalled=mcp._recall("105", "pdm")), separators=(",", ":")))
     cut_matches = cut_paths = False
@@ -1104,7 +1106,9 @@ def test_a_capped_pdm_block_sheds_whole_matches_and_never_a_path_without_its_rem
         assert paths and set(paths) <= set(full_paths) and len(paths) == len(set(paths)), (n, paths)
         assert paths == full_paths[:len(paths)], (n, paths)                   # from the end, rank order kept
         if fence == "0" and isinstance(block.get("matches"), list):
-            assert all(m in served_full for m in block["matches"]), n         # each match whole, its remote with it
+            assert all({k: v for k, v in m.items() if k != "age_seconds"} in served_full
+                       for m in block["matches"]), n                           # each match whole, its remote with it
+            assert all(isinstance(m.get("age_seconds"), int) for m in block["matches"]), n
             cut_matches = cut_matches or len(block["matches"]) < len(served_full)
         cut_paths = cut_paths or len(paths) < len(full_paths)
     assert cut_paths and (cut_matches or fence == "1"), "the sweep never cut the block: the test looked at nothing"
