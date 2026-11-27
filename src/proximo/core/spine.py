@@ -93,7 +93,8 @@ UNDO_MAX_BYTES = 64 * 1024
 # ---- TASK WAIT (B4) -----------------------------------------------------------------------------
 # 0.44's `wait_for_task` contract, carried whole: a failed or timed-out task is a RESULT, never an
 # exception (a genuine API error from the poll still propagates); `succeeded` is fail-closed, a
-# stopped task whose exitstatus is missing or not "OK" is not a success. The sleep and the clock
+# stopped task whose exitstatus is missing, or is neither "OK" nor exactly the vendor's `WARNINGS: <n>`
+# (it completed; #142 item 34), is not a success. The sleep and the clock
 # are module attributes so a suite drives a 600 s wait by counting, never by waiting.
 _SLEEP = time.sleep
 _CLOCK = time.monotonic
@@ -122,6 +123,9 @@ def upid_node(upid: Any) -> str | None:
     return fields[1] if len(fields) > 2 and fields[1] else None
 
 
+_WARNINGS = re.compile(r"WARNINGS: ([0-9]{1,9})", re.ASCII)
+
+
 def task_wait(fetch_status: Callable[[], Any], *, timeout: int, interval: int = TASK_INTERVAL) -> dict[str, Any]:
     """Poll `fetch_status()` until the task is terminal (`status == "stopped"`) or `timeout`
     seconds pass; one poll past the deadline is the last. `{finished, succeeded, status,
@@ -133,8 +137,13 @@ def task_wait(fetch_status: Callable[[], Any], *, timeout: int, interval: int = 
         polls += 1
         if st.get("status") == "stopped":
             exit_ = st.get("exitstatus")
-            return {"finished": True, "succeeded": exit_ == "OK", "status": "stopped",
-                    "exitstatus": exit_, "timed_out": False, "polls": polls}
+            # A TASK THAT ENDS IN WARNINGS COMPLETED (#142 item 34, kevwillow; John's ruling 2026-11-27):
+            # a Debian 13 container ends every start with "WARNINGS: 1" and is running. Only the vendor's
+            # exact words count, with a number; the count rides beside the exit text.
+            warned = _WARNINGS.fullmatch(exit_) if isinstance(exit_, str) else None
+            return {"finished": True, "succeeded": exit_ == "OK" or warned is not None, "status": "stopped",
+                    "exitstatus": exit_, "timed_out": False, "polls": polls,
+                    **({"warnings": int(warned.group(1))} if warned else {})}
         if _CLOCK() >= deadline:
             return {"finished": False, "succeeded": False, "status": st.get("status"),
                     "exitstatus": st.get("exitstatus"), "timed_out": True, "polls": polls}

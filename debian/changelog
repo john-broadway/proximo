@@ -1,3 +1,11 @@
+proximo (0.57.0-1) UNRELEASED; urgency=medium
+
+  * Track upstream 0.57.0 (breaking: the shell's exit code says how the
+    work ended, 5 it ran and failed and 6 not known to have finished;
+    eleven example operator runbooks in packaging/runbooks).
+
+ -- John Broadway <271895126+john-broadway@users.noreply.github.com>  Fri, 27 Nov 2026 20:00:00 +0000
+
 proximo (0.56.1-1) UNRELEASED; urgency=medium
 
   * Track upstream 0.56.1 (security patch, GHSA-qpqv-jwjc-w64q: a create's

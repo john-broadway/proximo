@@ -207,11 +207,11 @@ The six tools with typed inputs: [`docs/TOOLS.md`](docs/TOOLS.md) · the walkthr
 
 **The core alone, no model in the loop:** the same install ships `proximo-core pve GET /nodes/pve1/status` (or `--plan` on any address: the verdict and the published schema, touching nothing), and the estate memory behind `proximo-core learn | where 105 | uses local | changed 24h`: what the governed reads have seen, answered from one file beside the ledger, no model, no network. Its import closure is `httpx` and nothing else (measured by a test); every published address on all four products; the same arm gate, tiers and audit ledger as the MCP door. The core has its own network doors, each the 0.44 face's perimeter with the core behind it: `proximo-mcp-http` (MCP over streamable HTTP), `proximo-http` (REST, `POST /tools/{name}` with an OpenAPI document) and `proximo-a2a` (an Agent2Agent card whose skills are the six tools).
 
-> 📦 **`0.56.1`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.56.1), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
+> 📦 **`0.57.0`**: on [PyPI](https://pypi.org/project/proximo-proxmox/), [GitHub](https://github.com/john-broadway/proximo/releases/tag/v0.57.0), and [GHCR](https://github.com/john-broadway/proximo/pkgs/container/proximo) (signed multi-arch image).
 >
-> **New in 0.56.1 (a security patch: a plan could call an existing guest absent).** A create's plan says whether the id is already there. On a node with more guests than fit the door's 6 KiB evaluation cap it compared against the part that fit, so a restore planned over an existing guest could answer `exists: false`. It now judges the whole list, or says it read a part and claims nothing. Two neighbours found by the review ride with it: the id is compared as the call sends it, and a rollback's snapshot list read in part no longer calls its target absent. Reported by kevwillow (GHSA-qpqv-jwjc-w64q).
+> **New in 0.57.0 (breaking: the shell's exit code says how the work ended).** `proximo-core` exited 0 for every call the vendor accepted, so a failed snapshot, a backup still running when `--wait` ran out and `false` run in a guest all read as success to a script. Two codes are new: 5, it ran and failed; 6, not known to have finished. A task that ends in warnings counts as completed, and `runbook list` exits 2 while a file is refused. A script that tested `$?` after a mutation now sees 5 or 6 where it saw 0. Eleven example operator runbooks ship in `packaging/runbooks/`. The exit codes were found by kevwillow's round (#142); the runbooks are his (#141).
 >
-> Recent: **0.56.0** made a guest-agent exec wait for its exit. See [SECURITY.md](SECURITY.md) for what each control honestly holds.
+> Recent: **0.56.1** was a security patch (GHSA-qpqv-jwjc-w64q). See [SECURITY.md](SECURITY.md) for what each control honestly holds.
 
 Proximo runs **on your machine**, on demand. No daemon, no open port.
 
@@ -248,11 +248,11 @@ One container is the demo. A cluster is the point.
 
 ## Status: the arena record
 
-- 🩸 **0.56.1**: **a security patch.** A create's plan judges the id on the whole list, never on the part
-  that fit the door's cap, and compares it as the call sends it. Each fix has a test that fails on 0.56.0.
-  6,860 tests.
+- 🩸 **0.57.0**: **the shell's exit code says how the work ended.** 5, it ran and failed; 6, not known to
+  have finished; a task that ends in warnings completed. Breaking for a script that read `$?`. Eleven example
+  runbooks, held to the loader by a test. 6,989 tests.
 
-**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **6,860 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
+**The numbers, honestly:** six tools over 1,804 published addresses, governed by what each address is (its method decides read or write, total by construction; the blast-radius tier is the one human-authored column, and an untiered mutation is refused, armed or not). **6,989 in-process tests** (ruff + pyright clean) pin the engine, the six pillars, the doors and the records, and a gate round neuters each pillar's gate one at a time and asks the suite to notice. This workspace administers its own Proxmox estate through Proximo daily (dogfood).
 
 **Proven live** (not mocks): the governed path end to end against a real PVE 9 node through this door, plans reading the live target, receipts on the keyed chain, before-state captures and their restore. The 0.44 wrappers' live record (a 3-node cluster, PBS, PMG, PDM, a real cross-datacenter move) stays in [`CHANGELOG.md`](./CHANGELOG.md) where it was earned; it is not re-claimed for the core.
 **Not yet proven — said plainly:** a small local model finishing a whole task through this door. Measured and driven on 0.45: a stock 1.5B behind llama.cpp with a 4,096-token context the server enforces, against a real PVE node, read-only. Its calls landed and the door's refusals named the fix each time (an invented field, the real ones listed); the prompt peaked at 3,074 tokens; the model did not finish the task, it invented a number. The window holds; a 1.5B does not. *Hardware*-watchdog fencing (needs physical iTCO/IPMI), and behavior at production scale. The 20 held addresses are never fired: refused by sentence, by design, not a gap.

@@ -19,9 +19,16 @@ README and becomes a property the test suite checks.
     proximo-core audit verify                       # walk the ledger's chain; exit 2 when it does not hold
     proximo-core audit entries --limit 5            # the newest rows, as every tool door serves them
 
-Exit codes are the contract for scripts: 0 executed, 2 refused by the spine, 3 the caller's
-own mistake (bad syntax, unconfigured estate, a mutation given neither --confirm nor --plan: its
-plan is printed and stderr says it did not run), 4 the vendor refused or could not be reached.
+Exit codes are the contract for scripts: 0 executed and ended in success, 2 refused by the spine,
+3 the caller's own mistake (bad syntax, unconfigured estate, a mutation given neither --confirm nor
+--plan: its plan is printed and stderr says it did not run), 4 the vendor refused or could not be
+reached (a request that was sent and got no answer is 4 too, and may have run), 5 it ran and
+failed (a task that did not end in success, a guest or container command
+that exited non-zero or was killed), 6 not known to have finished (the wait ran out, the status could not be
+read after the call, or the exit carries no result). `--wait 0` on a task or a guest-agent exec
+submits only and exits 0. A task
+that ends `WARNINGS: n` is a success. A read exits 0 whatever it found, but for a task-status
+read with `--wait`, which exits by the task's own end.
 Anything else is a bug in Proximo and prints a traceback on purpose: a crash must not be
 laundered into a tidy refusal, because a script that cannot tell "the spine said no" from "the
 door broke" will retry the wrong one.
@@ -36,12 +43,76 @@ from typing import Any
 
 import httpx
 
-from proximo.core import diagnose, doctor, engine, envfile, rawdoor, reach, registry, undo
+from proximo.core import diagnose, doctor, engine, envfile, rawdoor, reach, registry, shell, undo
 from proximo.core.doors import BANNER
 from proximo.core.errors import ProximoError
 from proximo.core.secretfile import safe_exception_text, safe_text
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE, EXIT_VENDOR = 0, 2, 3, 4
+#: THE CALL WENT THROUGH AND THE WORK DID NOT (kevwillow's no-skill round, #142 items 2 to 4; John's
+#: ruling 2026-11-27). 5: it ran and failed (a task that ended in anything but success, a guest
+#: command that exited non-zero or was killed). 6: not known to have finished (the wait ran out, the
+#: status could not be read, or the exit carries no result). Until then all of these exited 0, and a
+#: cron job read a failed snapshot, a backup still running and `false` in a guest as success. 4 stays
+#: what it was: the vendor refused the call, or the request failed on the wire. That still holds a
+#: mutation that was SENT and got no answer, which may have run; a lane command whose ssh timed out is
+#: still 2. Telling "sent, outcome unknown" from "never sent" belongs to the wire, per request, and is
+#: not decided at this door (John's ruling 2026-11-27, after three reviews of doing it here).
+EXIT_FAILED, EXIT_UNFINISHED = 5, 6
+
+
+def exit_of(out: Any, wait: int | None, *, command: bool = False) -> int:
+    """The exit code of an answer that EXECUTED: the task's or the guest command's own outcome.
+
+    A table. 5 outranks 6 where one answer carries both; nothing here is ever 2, 3 or 4:
+      a task that finished and did not succeed            5
+      a guest command that exited non-zero or was killed  5  (the agent's exec; a lane COMMAND's `returncode`)
+      a wait that ran out                                 6
+      a status read that failed after the call            6  (the work was accepted and may be running:
+                                                              4 would tell a script to send it again)
+      a guest command that exited with no result          6  (neither an exit code nor a signal)
+      a wait that was wanted and polled nothing           6
+      a lane command that answered ssh's own 255          6  (it started, and either it exited 255 or the
+                                                              connection dropped while it ran: the lane
+                                                              says `exit_ambiguous`, and 5 would say it ended)
+      anything else                                       0  (succeeded, a wait of 0, or nothing to wait on)
+    `wait` is the caller's `--wait`: 0 or less submits only and is never a failure to finish.
+    `command` is true only for a lane's COMMAND (the door passes the row's own access and wire: a
+    mutation on the ssh lanes, `exec` and `psql`). A lane READ's `returncode` is data, never an exit
+    (a probe of a standalone node answers `pvecm`'s 2 and the node
+    is healthy; records/diagnose.toml), so no read exits 5 for what it found. A read that WAITS on a
+    task (`GET .../tasks/{upid}/status --wait N`) is the one read with an outcome of its own."""
+    if not isinstance(out, dict):
+        return EXIT_OK
+    wanted = wait is None or wait > 0
+    codes = [EXIT_OK]
+    task = out.get("task")
+    if isinstance(task, dict):
+        state = undo.task_state(out)
+        codes.append(EXIT_OK if state is None else EXIT_FAILED if state == "failed"
+                     else EXIT_UNFINISHED if state == "timed_out"
+                     else (EXIT_UNFINISHED if wanted else EXIT_OK) if state == "submitted"
+                     else EXIT_UNFINISHED)
+    ran = out.get("exec")
+    if isinstance(ran, dict):
+        if ran.get("timed_out"):
+            codes.append(EXIT_UNFINISHED)
+        elif ran.get("exited") is True:
+            code, signal = ran.get("exitcode"), ran.get("signal")
+            known = type(code) is int or type(signal) is int
+            codes.append(EXIT_UNFINISHED if not known else EXIT_FAILED if code or type(signal) is int else EXIT_OK)
+        elif wanted:                           # nothing confirmed an exit: a status read that failed lands here too
+            codes.append(EXIT_UNFINISHED)
+    data = out.get("data") if command else None
+    if isinstance(data, dict) and data.get("proximo_untrusted") is True and isinstance(data.get("data"), str):
+        try:                                   # the fence wraps a lane's answer for a model: the code is inside
+            data = json.loads(data["data"])
+        except (ValueError, RecursionError):
+            data = None
+    rc = data.get("returncode") if isinstance(data, dict) else None
+    if type(rc) is int and rc != 0:
+        codes.append(EXIT_UNFINISHED if rc == shell.SSH_EXIT else EXIT_FAILED)
+    return EXIT_FAILED if EXIT_FAILED in codes else EXIT_UNFINISHED if EXIT_UNFINISHED in codes else EXIT_OK
 
 
 _AUDIT_USAGE = ("usage: proximo-core audit verify [--expected-head H] [--path ARCHIVE] | "
@@ -173,7 +244,9 @@ def words_main(argv: list[str]) -> int:
             print(f"proximo-core: {line}", file=sys.stderr)
         for book in folder.served:
             print(f"{book.name}\t{book.plane}\t{book.title}")
-        return EXIT_OK
+        # A FILE THAT IS SET AND REFUSED IS EXIT 2 HERE TOO, as `show` and SETUP say (#142 item 30): a
+        # folder whose only file was refused listed nothing and exited 0. The ones served still print.
+        return EXIT_REFUSED if folder.refused else EXIT_OK
     name = argv[2]
     for book in folder.served:
         if book.name == name:
@@ -757,6 +830,9 @@ def _run(ns: argparse.Namespace) -> int:
             print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
             if not out.get("allowed", True):
                 return EXIT_REFUSED
+            ended = exit_of(out, ns.wait) if run else EXIT_OK   # a restore that ran: its write's own end
+            if ended != EXIT_OK:
+                return ended
             return EXIT_OK if run or ns.plan or out.get("status") != "plan" else _not_run()
         row = engine.resolve(ns.plane, ns.method, ns.path)
         args = parse_args(ns.args)
@@ -771,7 +847,7 @@ def _run(ns: argparse.Namespace) -> int:
             return EXIT_OK if ns.plan else _not_run()
         out = engine.execute(row, args, path=ns.path, cfg=cfg, fields=ns.fields, since=ns.since, wait=ns.wait)
         print(json.dumps(out, separators=(",", ":"), sort_keys=True, default=str))
-        return EXIT_OK
+        return exit_of(out, ns.wait, command=row.access != engine.READ and row.wire == "ssh")
     except ProximoError as e:
         print(f"refused: {e}", file=sys.stderr)
         return EXIT_REFUSED

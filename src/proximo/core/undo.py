@@ -235,6 +235,10 @@ def _task_state(out: dict[str, Any]) -> str | None:
             else "timed_out" if task.get("timed_out") else "unknown")
 
 
+#: the same reading for the shell door's exit code (`doors/cli.exit_of`): one rule for what a task's end means
+task_state = _task_state
+
+
 def _rollback(ref: str, entry: dict, detail: dict, lines: list[str], lcfg: Any, cfg: wire.Plane | None,
               ledger_cfg: Any, aimed_at: str | None, confirm: bool, wait: int | None,
               product: str = "pve", entries: list[dict] | None = None) -> dict[str, Any]:

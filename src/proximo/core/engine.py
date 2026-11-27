@@ -2368,8 +2368,8 @@ def _snapshot_first(row: Row, called: str, cfg: Any, ledger_cfg: Any, intent: st
     snapshot create through `execute` (armed, tiered, receipted, waited), so the net is as
     accountable as the act; it was fixed, and its own walls met, before anything was spent
     (`_net_snapshot`, `_snapshot_wall`). FAIL-CLOSED: anything short of a task that finished OK
-    refuses the act before it runs. The capture names the snapshot and the vendor's rollback, so
-    `undo <id>` puts the guest back."""
+    (or with the vendor's `WARNINGS: n`: it completed) refuses the act before it runs. The capture
+    names the snapshot and the vendor's rollback, so `undo <id>` puts the guest back."""
     where = bind(row, rawdoor.canonical(called))
     net = cast(Mapping[str, str], row.net)
     snap = view["snap"]

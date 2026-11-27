@@ -521,6 +521,8 @@ plane: pve
 3. Show each plan to the operator and wait for a yes before any call.
 ```
 
+For full ones, see `packaging/runbooks/`: `restore_test.md` (prove a VM backup by restoring a copy), `ct_restore_test.md` (the same for a container), `snapshot_change.md` (change a VM with a snapshot to fall back on), `clone_dev_vm.md` (build a dev VM from a cloud-init template), `snapshot_hygiene.md` (old and leftover snapshots), `decommission_guest.md` (remove a guest for good), and five read-only checks: `backup_coverage.md`, `backup_failures.md`, `storage_capacity.md`, `cert_expiry.md` and `update_check.md`.
+
 The first line is the title (`# ` and 1 to 80 printable characters). The next line that is not
 blank names one plane: `plane: pve`, `pbs`, `pmg` or `pdm`. A procedure that spans two products is
 two files. The rest is your procedure, at most 8192 bytes a file. Proximo reads the first 32
@@ -589,7 +591,8 @@ it cannot make a peer read them.
 
 The shell verbs print exactly what a door serves, and are the same on `proximo` and
 `proximo-core`. They exit 0 when shown, 3 for the caller's own mistake (the variable unset, an
-unknown name), 2 when the words are set and refused, with the reason on stderr.
+unknown name), 2 when the words are set and refused, with the reason on stderr. `runbook list` exits
+2 while any file in the folder is refused; the ones that are served still print.
 
 Proximo checks the addresses and nothing else. It does not check a runbook's argument names, its
 tool names or its wording, and nothing in Proximo reads a runbook to decide anything: every step a
@@ -617,10 +620,24 @@ proximo-core pve undo <undo.id> --confirm                           # puts a cap
 proximo-core audit verify                                           # walks the ledger's chain; exit 0 only when it holds
 ```
 
-Exit codes are the contract: 0 executed, 2 refused by the spine, 3 the caller's own mistake (bad
-syntax, an unconfigured estate, a retired switch still set, a mutation given neither `--confirm`
-nor `--plan`: its plan is printed and stderr says it did not run), 4 the vendor refused or could
-not be reached. The verbs `mint`, `doctor`, `badge`, `arm` and `disarm` are the same on both commands.
+Exit codes are the contract:
+
+| Exit | What happened |
+|---|---|
+| 0 | It executed and ended in success. A task that ends `WARNINGS: n` is a success; the answer carries `task.warnings`. `--wait 0` on a task or a guest-agent exec submits only and is 0. |
+| 2 | Refused by the spine. |
+| 3 | The caller's own mistake: bad syntax, an unconfigured estate, a retired switch still set, a mutation given neither `--confirm` nor `--plan` (its plan is printed and stderr says it did not run). |
+| 4 | The vendor answered with an error, or the request failed on the wire. A connection that never opened ran nothing. Anything else that exits 4 after a mutation may have run, a request that was sent and got no answer (a timeout, a dropped connection) included: read the target before sending it again. |
+| 5 | It ran and failed: a task that ended any other way (`task.succeeded` is false), a guest-agent command that exited non-zero or was killed, a container command (`POST .../exec` or `.../psql`, which run to their end whatever `--wait` says) with a non-zero `returncode` other than 255. |
+| 6 | Not known to have finished: the wait ran out (`timed_out`), the status could not be read after the call (`poll_error`), or a guest command's exit carried no result. Also an answer whose task id the door could not poll, and a container command that answered 255, which is also ssh's own exit (`exit_ambiguous` in the answer). The call may be running: do not send it again before you have looked. |
+
+Exit 2 and exit 4 do not prove that nothing ran: read stderr and the target before sending a
+mutation again. The answer is printed whatever the code. A read exits 0 whatever it found: a probe's or a log
+read's `returncode` is data in the answer, never the exit. The one read with an end of its own is
+a task-status read with `--wait`, which exits by the task's (a poll of it that cannot reach the
+vendor is 4, like any read). Earlier releases exited 0 for every
+call the vendor accepted: a script that tested `$?` after a snapshot, a backup or a guest command
+now sees 5 or 6 where it saw 0. The verbs `mint`, `doctor`, `badge`, `arm` and `disarm` are the same on both commands.
 
 ---
 

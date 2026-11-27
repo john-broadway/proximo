@@ -248,7 +248,7 @@ def test_the_shell_prints_exactly_what_mcp_serves_and_writes_nothing(rules, book
     before = _listing(env)
     assert _shell(["instructions"], capsys) == (0, served.instructions, "")
     rc, out, err = _shell(["runbook", "list"], capsys)
-    assert (rc, out) == (0, "drain_node\tpve\tDrain a node\n")
+    assert (rc, out) == (2, "drain_node\tpve\tDrain a node\n")   # the sound one still prints; `bad` is set and refused
     assert err == ("proximo-core: an operator runbook is not served: bad: it names an address pve does not "
                    "publish: GET /nodes/{node}/nope\n")
     assert _shell(["runbook", "show", "drain_node"], capsys) == (0, served.runbooks[0].text, "")
@@ -783,3 +783,23 @@ async def test_the_a2a_perimeter_itself_serves_no_words_without_a_token_whoever_
     held = perimeter.build_app(f"{BASE}/", token=TOKEN, dispatch=Core(), record=recorder("test"), words=handed)
     _card, extended = await _cards(held)
     assert RULES in extended.description                          # the control: with a token they are served
+
+
+def test_runbook_list_exits_2_only_while_a_file_is_refused(env, monkeypatch, capsys):
+    """#142 item 30 (kevwillow): a folder whose only file was refused listed nothing and exited 0, while
+    `show` and SETUP said 2. A folder of sound files, or an empty one, is still 0."""
+    folder = env / "runbooks"
+    folder.mkdir()
+    monkeypatch.setenv("PROXIMO_RUNBOOKS_DIR", str(folder))
+    assert _shell(["runbook", "list"], capsys) == (0, "", "")
+    (folder / "bad.md").write_text("# Bad\n\nplane: pve\n\nGET /nodes/{node}/nope\n")
+    rc, out, err = _shell(["runbook", "list"], capsys)
+    assert (rc, out) == (2, "") and "bad: it names an address pve does not publish" in err
+    (folder / "bad.md").unlink()
+    (folder / "drain_node.md").write_text(BOOK)
+    assert _shell(["runbook", "list"], capsys) == (0, "drain_node\tpve\tDrain a node\n", "")
+    # a file the folder IGNORES is not a refusal: a wrong extension, a capital, a subfolder
+    (folder / "notes.txt").write_text("x")
+    (folder / "Misnamed.md").write_text(BOOK)
+    (folder / "sub").mkdir()
+    assert _shell(["runbook", "list"], capsys) == (0, "drain_node\tpve\tDrain a node\n", "")

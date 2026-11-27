@@ -855,6 +855,19 @@ M = [
      '        if v.ok and v.entries == 0 and pin is None and anchored is None:\n', '        if False:\n'),
     ('M252-DOCTOR-THE-SAME-USER-LINE-IS-SAID', "src/proximo/core/sameuser.py",
      '    if kinds:\n', '    if False:\n'),
+    # the shell's exit says how the work ended (#142 items 2 to 4 and 30, 2026-11-27)
+    ('M260-SHELL-A-FAILED-TASK-IS-NOT-EXIT-ZERO', CL,
+     '        return exit_of(out, ns.wait, command=row.access != engine.READ and row.wire == "ssh")\n',
+     '        return EXIT_OK\n'),
+    ('M261-SHELL-A-FAILED-UNDO-IS-NOT-EXIT-ZERO', CL,
+     '            ended = exit_of(out, ns.wait) if run else EXIT_OK ', '            ended = EXIT_OK '),
+    ('M262-SHELL-A-REFUSED-RUNBOOK-IS-NOT-EXIT-ZERO', CL,
+     '        return EXIT_REFUSED if folder.refused else EXIT_OK\n', '        return EXIT_OK\n'),
+    ('M263-SHELL-A-WAIT-THAT-RAN-OUT-IS-NOT-EXIT-ZERO', CL,
+     '                     else EXIT_UNFINISHED if state == "timed_out"\n',
+     '                     else EXIT_OK if state == "timed_out"\n'),
+    ('M264-SHELL-A-READS-RETURNCODE-IS-DATA-NOT-AN-EXIT', CL,
+     '    data = out.get("data") if command else None\n', '    data = out.get("data")\n'),
 ]
 
 #: The round's test set: the whole suite. Until the cut (2026-10-18) this was a hand-kept list of
